@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-binaries-20261012/falcon_algebraic",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "8",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--trace"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "8",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "cwd": "/tmp/bitz-falcon-poc-push-20261012",
+  "binary": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-binaries-20261012/falcon_algebraic",
+    "sha256": "4be7d3973533007d57e8d67b5a4a2d8aa704b8d6b691fb3ed9b08ca1855f0d08"
+  }
+}

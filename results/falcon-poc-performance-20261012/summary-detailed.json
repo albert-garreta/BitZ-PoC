@@ -1,0 +1,5207 @@
+{
+  "definition": "Median across 21 untraced trials per cell; stages are inclusive diagnostic medians across 9 traced trials. Warmups excluded.",
+  "rows": [
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 8.944043,
+          "min": 8.925297,
+          "max": 9.114034,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 132.261538,
+          "min": 130.882389,
+          "max": 133.75816700000001,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 141.213335,
+          "min": 139.82744399999999,
+          "max": 142.68745199999998,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 30.445139,
+          "min": 30.37637,
+          "max": 30.516554000000003,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 93680,
+          "min": 93600,
+          "max": 93716,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 8.940215,
+          "prove_ms": 132.98832199999998,
+          "total_prover_ms": 141.921564,
+          "verify_ms": 30.445139,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 93600
+        },
+        "43": {
+          "witness_commit_ms": 8.944103,
+          "prove_ms": 131.121151,
+          "total_prover_ms": 140.086714,
+          "verify_ms": 30.426344,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 93716
+        },
+        "44": {
+          "witness_commit_ms": 8.946496999999999,
+          "prove_ms": 132.16857100000001,
+          "total_prover_ms": 141.117743,
+          "verify_ms": 30.449106999999998,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 93680
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 8.997974000000001,
+          "min": 8.975292,
+          "max": 9.315525,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 4.067651000000001,
+          "min": 4.054176,
+          "max": 4.237322,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 3.095153,
+          "min": 3.079914,
+          "max": 3.149645,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.552184,
+          "min": 0.544801,
+          "max": 0.639218,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 42.487912,
+          "min": 42.358266,
+          "max": 42.710392,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 31.372743,
+          "min": 31.214464,
+          "max": 31.622566,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 6.162032,
+          "min": 6.1503499999999995,
+          "max": 6.219842,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 59.101416,
+          "min": 58.646707,
+          "max": 59.552419,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 11.078909,
+          "min": 10.971627,
+          "max": 11.114256,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 12.657504999999999,
+          "min": 11.372174000000001,
+          "max": 13.65468,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.198536,
+          "min": 0.161716,
+          "max": 0.203344,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 141.338101,
+          "min": 139.096211,
+          "max": 142.101764,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 19.431614,
+          "min": 19.337035,
+          "max": 19.612556,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 8.797487,
+          "min": 8.716763000000002,
+          "max": 8.896523000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 8.949523,
+          "min": 8.847819999999999,
+          "max": 9.174048,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 0.739649,
+          "min": 0.734589,
+          "max": 0.7405499999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011280000000000002,
+          "min": 0.011132,
+          "max": 0.011359999999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.006842,
+          "min": 0.006622,
+          "max": 0.007914000000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.032351000000000005,
+          "min": 0.0322,
+          "max": 0.033093000000000004,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.04117799999999999,
+          "min": 0.040878000000000005,
+          "max": 0.041431,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.728478,
+          "min": 0.7237279999999999,
+          "max": 0.75622,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 14.110852999999999,
+          "min": 14.073431000000001,
+          "max": 14.196534,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 4.074595,
+          "min": 4.027406,
+          "max": 4.157292,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 19.416435,
+          "min": 19.322287,
+          "max": 19.597467,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.7494780000000001,
+          "min": 0.7422629999999999,
+          "max": 0.7899339999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 2.397162,
+          "min": 2.391042,
+          "max": 2.410649,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.361784,
+          "min": 0.357265,
+          "max": 0.36481,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 55.261024,
+          "min": 54.826353000000005,
+          "max": 55.676821000000004,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 0.8596569999999998,
+          "min": 0.850858,
+          "max": 0.8630560000000002,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 2.746222,
+          "min": 2.732098,
+          "max": 2.769596999999999,
+          "count": 9
+        },
+        "prove|falcon_integer:native_prefix": {
+          "median": 5.613565,
+          "min": 5.602885000000001,
+          "max": 5.633903,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 0.40622800000000003,
+          "min": 0.376752,
+          "max": 0.49396399999999996,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.06785,
+          "min": 0.065343,
+          "max": 0.07081499999999998,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 2.506901,
+          "min": 2.500057,
+          "max": 2.534823,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 1.1474499999999999,
+          "min": 1.138513,
+          "max": 1.160103,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 4.17862,
+          "min": 2.8350840000000006,
+          "max": 5.157992999999999,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.6432859999999999,
+          "min": 0.6387269999999999,
+          "max": 0.645892,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.928035,
+          "min": 1.916955,
+          "max": 1.9342579999999998,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 1.864185,
+          "min": 1.859807,
+          "max": 1.876228,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 8.060612,
+          "min": 6.7427909999999995,
+          "max": 9.061044,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 2.6187720000000003,
+          "min": 2.610887,
+          "max": 2.662584,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 3.8944789999999996,
+          "min": 3.849707999999999,
+          "max": 3.9471539999999985,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 6.15585,
+          "min": 6.147254,
+          "max": 6.165017,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.197704,
+          "min": 0.162988,
+          "max": 0.205538,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 30.578661999999998,
+          "min": 30.468843999999997,
+          "max": 30.862078,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 14.158583,
+          "min": 14.139046,
+          "max": 14.237663,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 3.218936,
+          "min": 3.2032670000000003,
+          "max": 3.489087,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 17.703977,
+          "min": 17.652019000000003,
+          "max": 18.015746,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 9.010117999999999,
+          "min": 8.987515,
+          "max": 9.327798,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 141.350524,
+          "min": 139.108484,
+          "max": 142.11401800000002,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 150.338159,
+          "min": 148.135323,
+          "max": 151.35027300000002,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 30.592136999999997,
+          "min": 30.482601000000003,
+          "max": 30.875674,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.39367098515533333,
+        "min": 0.3869196492635934,
+        "max": 0.39526490706346856,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.4211023651492227,
+        "min": 0.4139523449403844,
+        "max": 0.42264108162944136,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0687197966804227
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 1.926303,
+          "min": 1.763415,
+          "max": 1.990764,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 32.115238,
+          "min": 31.943212999999997,
+          "max": 32.809721,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 34.053202,
+          "min": 33.857492,
+          "max": 34.737165,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 10.422007,
+          "min": 10.284638000000001,
+          "max": 10.863952,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 96796,
+          "min": 96024,
+          "max": 97384,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 1.913489,
+          "prove_ms": 32.080512,
+          "total_prover_ms": 33.998489,
+          "verify_ms": 10.344942,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 96200
+        },
+        "43": {
+          "witness_commit_ms": 1.914139,
+          "prove_ms": 32.05851,
+          "total_prover_ms": 33.991555,
+          "verify_ms": 10.486609,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 96816
+        },
+        "44": {
+          "witness_commit_ms": 1.934087,
+          "prove_ms": 32.466853,
+          "total_prover_ms": 34.339924,
+          "verify_ms": 10.403001999999999,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 97224
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 1.9748249999999998,
+          "min": 1.831533,
+          "max": 2.009019,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 1.002546,
+          "min": 0.852813,
+          "max": 1.0419800000000001,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.390629,
+          "min": 0.369359,
+          "max": 0.406298,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.108806,
+          "min": 0.104918,
+          "max": 0.112352,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 10.986524,
+          "min": 10.929657,
+          "max": 11.323191999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 7.457752,
+          "min": 7.391147,
+          "max": 7.773209,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 1.167438,
+          "min": 1.098708,
+          "max": 1.185031,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 16.564702,
+          "min": 16.360996999999998,
+          "max": 17.202759,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 3.503585,
+          "min": 3.492183,
+          "max": 3.520066,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 4.686321,
+          "min": 4.516179999999999,
+          "max": 4.809324,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.197343,
+          "min": 0.16180599999999998,
+          "max": 0.203514,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 41.255592,
+          "min": 39.025154,
+          "max": 42.117020999999994,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 5.273721999999999,
+          "min": 2.9619009999999997,
+          "max": 5.704166,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 1.2352779999999999,
+          "min": 1.2269510000000001,
+          "max": 1.24866,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 2.632808,
+          "min": 2.603693,
+          "max": 2.91405,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 0.117573,
+          "min": 0.113635,
+          "max": 0.12313299999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011222,
+          "min": 0.01108,
+          "max": 0.011431000000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.007654000000000001,
+          "min": 0.007083000000000001,
+          "max": 0.008236,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.032762,
+          "min": 0.032381,
+          "max": 0.033413,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.041358,
+          "min": 0.04099699999999999,
+          "max": 0.043190999999999986,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.14050600000000002,
+          "min": 0.107403,
+          "max": 0.168469,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 1.9268530000000001,
+          "min": 1.783312,
+          "max": 2.106143,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 2.678595,
+          "min": 0.561391,
+          "max": 3.0124269999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 5.258794,
+          "min": 2.9443569999999997,
+          "max": 5.688967,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.111902,
+          "min": 0.110008,
+          "max": 0.12379399999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.382894,
+          "min": 0.37793499999999997,
+          "max": 0.39785200000000004,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.05819,
+          "min": 0.057008,
+          "max": 0.061627,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 15.672957000000002,
+          "min": 15.467839000000001,
+          "max": 16.288961,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 0.8241169999999999,
+          "min": 0.8218170000000001,
+          "max": 0.832516,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 1.2133929999999997,
+          "min": 1.196303,
+          "max": 1.2219729999999995,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 0.082455,
+          "min": 0.06986200000000001,
+          "max": 0.088647,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.04296,
+          "min": 0.040639,
+          "max": 0.05123699999999999,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 0.355493,
+          "min": 0.35427000000000003,
+          "max": 0.360501,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 0.17726499999999998,
+          "min": 0.168799,
+          "max": 0.22237099999999999,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 1.057591,
+          "min": 0.9095290000000003,
+          "max": 1.2005390000000002,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.11173100000000001,
+          "min": 0.105649,
+          "max": 0.115278,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 0.998007,
+          "min": 0.9961429999999999,
+          "max": 0.999911,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.9445760000000001,
+          "min": 0.9432429999999999,
+          "max": 0.9470909999999999,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 3.196294,
+          "min": 3.0257919999999996,
+          "max": 3.325789,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.44398000000000004,
+          "min": 0.437347,
+          "max": 0.45982,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 2.661412000000001,
+          "min": 2.5599580000000026,
+          "max": 2.861398000000002,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 1.138172,
+          "min": 1.1156300000000001,
+          "max": 1.1546830000000001,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.196552,
+          "min": 0.161245,
+          "max": 0.201501,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 10.681538000000002,
+          "min": 10.361453,
+          "max": 11.022684,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 1.9658969999999998,
+          "min": 1.916645,
+          "max": 2.073461,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 1.490098,
+          "min": 1.460221,
+          "max": 1.9064450000000002,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 3.8503700000000003,
+          "min": 3.678986,
+          "max": 4.2814250000000005,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 1.9874889999999998,
+          "min": 1.844158,
+          "max": 2.021162,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 41.268055,
+          "min": 39.038019,
+          "max": 42.129363000000005,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 43.2642,
+          "min": 41.009616,
+          "max": 43.973652,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 10.696506,
+          "min": 10.375529,
+          "max": 11.036629,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3807605298605622,
+        "min": 0.375518376138638,
+        "max": 0.40867297503297945,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.4020625752084226,
+        "min": 0.3970821013978003,
+        "max": 0.43159920999905166,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.284999195708903
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 2.402272,
+          "min": 2.313875,
+          "max": 2.571693,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 32.694032,
+          "min": 31.849175,
+          "max": 33.722016,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 35.088439,
+          "min": 34.275662999999994,
+          "max": 36.128597,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 11.30108,
+          "min": 10.695173,
+          "max": 11.747584,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 99620,
+          "min": 97920,
+          "max": 100120,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 2.401902,
+          "prove_ms": 32.274849,
+          "total_prover_ms": 34.595187,
+          "verify_ms": 11.30108,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 100120
+        },
+        "43": {
+          "witness_commit_ms": 2.402272,
+          "prove_ms": 32.694032,
+          "total_prover_ms": 35.088439,
+          "verify_ms": 10.978760000000001,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 99144
+        },
+        "44": {
+          "witness_commit_ms": 2.4064910000000004,
+          "prove_ms": 33.615094,
+          "total_prover_ms": 35.984183,
+          "verify_ms": 11.427147999999999,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 99620
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 2.405278,
+          "min": 2.340796,
+          "max": 2.531627,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 0.758825,
+          "min": 0.689844,
+          "max": 0.79311,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.979221,
+          "min": 0.9136580000000001,
+          "max": 1.0259500000000001,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.16719599999999998,
+          "min": 0.15811899999999998,
+          "max": 0.182034,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 11.056337,
+          "min": 10.893088,
+          "max": 11.536404000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 7.298501,
+          "min": 7.150661,
+          "max": 7.748703,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 1.4729750000000001,
+          "min": 1.357347,
+          "max": 1.5351830000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 17.330081,
+          "min": 17.127516999999997,
+          "max": 17.527032000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 3.727668,
+          "min": 3.6363860000000003,
+          "max": 3.757736,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 5.414719,
+          "min": 5.275866,
+          "max": 5.618705,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.195751,
+          "min": 0.162748,
+          "max": 0.199858,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 42.607208,
+          "min": 40.504902,
+          "max": 43.165222,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 4.960459999999999,
+          "min": 2.925431,
+          "max": 5.134689,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 1.014549,
+          "min": 0.9516500000000001,
+          "max": 1.267836,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 2.495088,
+          "min": 2.3683680000000003,
+          "max": 2.563147,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 0.097605,
+          "min": 0.08841700000000001,
+          "max": 0.099829,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011231999999999999,
+          "min": 0.011210999999999999,
+          "max": 0.013325000000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.008245,
+          "min": 0.007352,
+          "max": 0.008776,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.033323,
+          "min": 0.032431999999999996,
+          "max": 0.034065,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.04123700000000001,
+          "min": 0.041007999999999996,
+          "max": 0.043473000000000005,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.287343,
+          "min": 0.182014,
+          "max": 0.347497,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 1.21671,
+          "min": 1.033274,
+          "max": 1.3927939999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 2.88762,
+          "min": 1.1498350000000002,
+          "max": 2.918168,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 4.945562,
+          "min": 2.910724,
+          "max": 5.118048,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.107193,
+          "min": 0.10234399999999999,
+          "max": 0.111551,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.403373,
+          "min": 0.39027799999999996,
+          "max": 0.41946300000000003,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.047079,
+          "min": 0.044594,
+          "max": 0.048892,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 16.42061,
+          "min": 16.178742999999997,
+          "max": 16.603886000000003,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 0.7770800000000001,
+          "min": 0.7417429999999999,
+          "max": 0.7892819999999999,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 1.2537319999999998,
+          "min": 1.200289,
+          "max": 1.288056,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 0.12793100000000002,
+          "min": 0.119536,
+          "max": 0.141889,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.08462100000000002,
+          "min": 0.081583,
+          "max": 0.09289700000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 0.23776999999999998,
+          "min": 0.229044,
+          "max": 0.24268900000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 0.130997,
+          "min": 0.122421,
+          "max": 0.265613,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 1.191632,
+          "min": 1.125547,
+          "max": 1.254143,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.10659199999999999,
+          "min": 0.10144199999999999,
+          "max": 0.112613,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.013206,
+          "min": 1.006243,
+          "max": 1.03139,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.948514,
+          "min": 0.941831,
+          "max": 0.962099,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 3.9713600000000002,
+          "min": 3.8535969999999997,
+          "max": 4.197387,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.368707,
+          "min": 0.362085,
+          "max": 0.37884700000000004,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 3.3897939999999975,
+          "min": 3.294532000000001,
+          "max": 3.6179069999999984,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 1.2639,
+          "min": 1.223754,
+          "max": 1.2868529999999998,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.195049,
+          "min": 0.160935,
+          "max": 0.198756,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 11.326357,
+          "min": 11.001964,
+          "max": 11.939917,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 1.354381,
+          "min": 1.154744,
+          "max": 1.4750889999999999,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 2.190051,
+          "min": 2.1658049999999998,
+          "max": 2.43246,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 3.9179690000000003,
+          "min": 3.618292,
+          "max": 4.17272,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 2.417541,
+          "min": 2.353069,
+          "max": 2.5440609999999997,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 42.61945,
+          "min": 40.517215,
+          "max": 43.177335,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 45.163711,
+          "min": 42.934866,
+          "max": 45.619643,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 11.340403,
+          "min": 11.01618,
+          "max": 11.953723,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.38563407217716655,
+        "min": 0.380951916568403,
+        "max": 0.39962616201987833,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.40699277963426106,
+        "min": 0.40193299366431656,
+        "max": 0.4227219713891983,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.3035850090316177
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 17.052014,
+          "min": 16.969477,
+          "max": 17.395324,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 258.876437,
+          "min": 257.180741,
+          "max": 261.426619,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 275.872486,
+          "min": 274.165438,
+          "max": 278.53366800000003,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 59.736508,
+          "min": 59.331662,
+          "max": 62.027309,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 206584,
+          "min": 206516,
+          "max": 206876,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 17.061893,
+          "prove_ms": 259.26781700000004,
+          "total_prover_ms": 276.31231699999995,
+          "verify_ms": 59.797011999999995,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 206584
+        },
+        "43": {
+          "witness_commit_ms": 17.077492,
+          "prove_ms": 260.19028199999997,
+          "total_prover_ms": 277.586036,
+          "verify_ms": 59.736508,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 206516
+        },
+        "44": {
+          "witness_commit_ms": 17.012049,
+          "prove_ms": 257.52612400000004,
+          "total_prover_ms": 274.623133,
+          "verify_ms": 59.689058,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 206876
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 17.158034999999998,
+          "min": 17.061162,
+          "max": 17.29835,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 8.735608000000001,
+          "min": 8.708938,
+          "max": 8.916220000000001,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 4.396243,
+          "min": 4.370344,
+          "max": 4.427111,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 1.297143,
+          "min": 1.283517,
+          "max": 1.307192,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 81.969168,
+          "min": 81.66885,
+          "max": 82.230572,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 63.00233299999999,
+          "min": 62.816030999999995,
+          "max": 63.387983,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 12.582834,
+          "min": 12.56005,
+          "max": 12.684846,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 110.41118,
+          "min": 109.564529,
+          "max": 113.51125099999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 18.839254,
+          "min": 18.811902,
+          "max": 18.965522,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 19.775503999999998,
+          "min": 19.300476,
+          "max": 20.717616,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.181643,
+          "min": 0.135086,
+          "max": 0.210538,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 267.53013,
+          "min": 265.053708,
+          "max": 271.34015500000004,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 40.230182000000006,
+          "min": 40.010306,
+          "max": 40.364666,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 17.596321000000007,
+          "min": 17.523844,
+          "max": 17.765933,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 18.957267,
+          "min": 18.873218,
+          "max": 19.227889,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 1.3867420000000001,
+          "min": 1.383035,
+          "max": 1.389007,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011290999999999999,
+          "min": 0.011231999999999999,
+          "max": 0.011551,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.008746,
+          "min": 0.008484,
+          "max": 0.009636999999999998,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.038572999999999996,
+          "min": 0.037451,
+          "max": 0.039825,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.041378000000000005,
+          "min": 0.040938,
+          "max": 0.043200999999999996,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 1.6198029999999999,
+          "min": 1.5984829999999999,
+          "max": 1.643658,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 28.794488,
+          "min": 28.720518000000002,
+          "max": 28.928361,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 8.984419,
+          "min": 8.906362,
+          "max": 9.057077,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 40.215144,
+          "min": 39.995408000000005,
+          "max": 40.349488,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 1.686338,
+          "min": 1.6525349999999999,
+          "max": 1.896787,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 4.797041,
+          "min": 4.782784,
+          "max": 5.054067,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.372585,
+          "min": 0.367435,
+          "max": 0.389336,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 103.087731,
+          "min": 102.216765,
+          "max": 106.108754,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 1.3124239999999998,
+          "min": 1.3020729999999998,
+          "max": 1.3253689999999998,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 5.438083,
+          "min": 5.426458,
+          "max": 5.484871999999999,
+          "count": 9
+        },
+        "prove|falcon_integer:native_prefix": {
+          "median": 10.212131,
+          "min": 10.205668,
+          "max": 10.240264,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 1.261695,
+          "min": 1.0692119999999998,
+          "max": 1.501298,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.11693100000000002,
+          "min": 0.11431799999999998,
+          "max": 0.120766,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 5.046692999999999,
+          "min": 5.033088,
+          "max": 5.16202,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 2.3350649999999997,
+          "min": 2.326389,
+          "max": 2.389548,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 4.675719999999999,
+          "min": 4.208836000000001,
+          "max": 5.480623,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 1.265924,
+          "min": 1.262277,
+          "max": 1.2757020000000001,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 3.768376,
+          "min": 3.75455,
+          "max": 3.776782,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 3.695458,
+          "min": 3.682543,
+          "max": 3.702691,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 10.802367,
+          "min": 10.299305,
+          "max": 11.674065,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 5.1885710000000005,
+          "min": 5.1648559999999994,
+          "max": 5.234107,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 6.968959000000001,
+          "min": 6.416316000000004,
+          "max": 7.434093999999993,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 12.714191999999999,
+          "min": 12.453789,
+          "max": 12.938165,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.18476,
+          "min": 0.13502499999999998,
+          "max": 0.212552,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 62.182553,
+          "min": 59.786071,
+          "max": 62.655428,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 29.115585,
+          "min": 28.837018999999998,
+          "max": 29.190597,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 9.463565000000001,
+          "min": 7.196548,
+          "max": 9.680806,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 39.021566,
+          "min": 36.637529,
+          "max": 39.232586,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 17.170158,
+          "min": 17.073876000000002,
+          "max": 17.310864,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 267.542735,
+          "min": 265.06650199999996,
+          "max": 271.352508,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 284.694728,
+          "min": 282.21448799999996,
+          "max": 288.426494,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 62.196529,
+          "min": 59.799766999999996,
+          "max": 62.669373,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.386412816833201,
+        "min": 0.38379060731955406,
+        "max": 0.3925796113887562,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.4139402911047584,
+        "min": 0.41114955578149376,
+        "max": 0.4199672611915842,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0334765809527886
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 3.565773,
+          "min": 3.318064,
+          "max": 3.7517739999999997,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 61.187742,
+          "min": 59.171539,
+          "max": 61.994497,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 64.71144500000001,
+          "min": 62.777999,
+          "max": 65.57078,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 19.85303,
+          "min": 18.616353,
+          "max": 20.264939,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 187460,
+          "min": 186984,
+          "max": 188064,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 3.515016,
+          "prove_ms": 61.255209,
+          "total_prover_ms": 64.71144500000001,
+          "verify_ms": 19.904227,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 187936
+        },
+        "43": {
+          "witness_commit_ms": 3.671292,
+          "prove_ms": 61.226224,
+          "total_prover_ms": 64.91022000000001,
+          "verify_ms": 19.977486,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 187372
+        },
+        "44": {
+          "witness_commit_ms": 3.565773,
+          "prove_ms": 59.798254,
+          "total_prover_ms": 63.337477,
+          "verify_ms": 19.847611,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 187392
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 3.636767,
+          "min": 3.414377,
+          "max": 3.805876,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 1.841662,
+          "min": 1.635853,
+          "max": 2.006945,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.700675,
+          "min": 0.696377,
+          "max": 0.728197,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.192995,
+          "min": 0.18538100000000002,
+          "max": 0.19853500000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 20.453596,
+          "min": 20.083557,
+          "max": 22.543598000000003,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 15.249736,
+          "min": 14.956531,
+          "max": 15.478949,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 2.449923,
+          "min": 2.355163,
+          "max": 2.4745589999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 27.396314,
+          "min": 26.532531000000002,
+          "max": 28.44097,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 5.138796999999999,
+          "min": 5.096167,
+          "max": 7.067414,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 5.562118,
+          "min": 5.4938590000000005,
+          "max": 5.718012,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.181984,
+          "min": 0.133783,
+          "max": 0.212502,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 71.54721,
+          "min": 70.153355,
+          "max": 72.647371,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 11.113424,
+          "min": 10.763613,
+          "max": 11.322149999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 2.3700520000000003,
+          "min": 2.3391910000000005,
+          "max": 2.391233,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 6.354366000000001,
+          "min": 6.281378,
+          "max": 6.529776999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 0.20631,
+          "min": 0.202423,
+          "max": 0.221499,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011432,
+          "min": 0.011323,
+          "max": 0.012025,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.009208000000000001,
+          "min": 0.008856,
+          "max": 0.010901999999999998,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.038352000000000004,
+          "min": 0.038031999999999996,
+          "max": 0.040527,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.041257999999999996,
+          "min": 0.041088,
+          "max": 0.041751,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.27183399999999996,
+          "min": 0.227119,
+          "max": 0.36844699999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 3.8760790000000003,
+          "min": 3.845662,
+          "max": 3.952514,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 6.128239,
+          "min": 5.903231999999999,
+          "max": 6.282570000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 11.098366,
+          "min": 10.748445,
+          "max": 11.30649,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.23422300000000001,
+          "min": 0.224174,
+          "max": 0.27515,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 1.101884,
+          "min": 0.9472210000000001,
+          "max": 1.272846,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.061997,
+          "min": 0.061446999999999995,
+          "max": 0.06366,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 25.498105,
+          "min": 24.801568,
+          "max": 26.504308,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 1.2922330000000004,
+          "min": 1.2844079999999998,
+          "max": 1.304476,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 2.275492999999998,
+          "min": 2.256886,
+          "max": 2.3389200000000003,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 0.154824,
+          "min": 0.14839100000000002,
+          "max": 0.20051,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.057941,
+          "min": 0.056667,
+          "max": 0.072346,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 0.690696,
+          "min": 0.684655,
+          "max": 0.816434,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 0.35031199999999996,
+          "min": 0.33797900000000003,
+          "max": 0.353028,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 1.1699730000000002,
+          "min": 1.102056,
+          "max": 1.270542,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.188376,
+          "min": 0.186162,
+          "max": 0.19033,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.005802,
+          "min": 1.001914,
+          "max": 1.017855,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.95219,
+          "min": 0.945187,
+          "max": 0.960597,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 3.707811,
+          "min": 3.614244,
+          "max": 3.851754,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.8090200000000001,
+          "min": 0.794282,
+          "max": 0.813107,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 2.9176629999999997,
+          "min": 2.842174000000001,
+          "max": 4.829474000000009,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 2.373829,
+          "min": 2.282356,
+          "max": 2.424545,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.183287,
+          "min": 0.136358,
+          "max": 0.214095,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 19.773481,
+          "min": 18.889048,
+          "max": 20.347796000000002,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 3.896619,
+          "min": 3.546607,
+          "max": 4.06676,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 5.2975970000000006,
+          "min": 5.13522,
+          "max": 5.354925,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 9.489994999999999,
+          "min": 9.180921,
+          "max": 9.813607000000001,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 3.64938,
+          "min": 3.42681,
+          "max": 3.81853,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 71.55992499999999,
+          "min": 70.165959,
+          "max": 72.659565,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 75.17590200000001,
+          "min": 73.861537,
+          "max": 76.36290699999999,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 19.788168,
+          "min": 18.903596,
+          "max": 20.362213,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3563182186118837,
+        "min": 0.34568989242267084,
+        "max": 0.3658211176742245,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.3848953828441377,
+        "min": 0.369826929728406,
+        "max": 0.39142774939541686,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.1695140670495734
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 3.8089220000000004,
+          "min": 3.531257,
+          "max": 4.145118,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 57.615556999999995,
+          "min": 56.451946,
+          "max": 58.671413,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 61.519529000000006,
+          "min": 60.300303,
+          "max": 62.567751,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 18.563202,
+          "min": 17.22964,
+          "max": 19.245151,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 191264,
+          "min": 189584,
+          "max": 192244,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 3.896217,
+          "prove_ms": 58.335818999999994,
+          "total_prover_ms": 62.084227,
+          "verify_ms": 18.766807,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 191088
+        },
+        "43": {
+          "witness_commit_ms": 3.795166,
+          "prove_ms": 57.623321999999995,
+          "total_prover_ms": 61.571117,
+          "verify_ms": 18.5623,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 191392
+        },
+        "44": {
+          "witness_commit_ms": 3.900896,
+          "prove_ms": 57.230318000000004,
+          "total_prover_ms": 61.051554,
+          "verify_ms": 18.502066000000003,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 191264
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 3.894695,
+          "min": 3.6660920000000004,
+          "max": 4.081297,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 1.3663530000000002,
+          "min": 1.187516,
+          "max": 1.4545409999999999,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 1.3515160000000002,
+          "min": 1.328622,
+          "max": 1.574978,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.250334,
+          "min": 0.232961,
+          "max": 0.26363800000000004,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 18.227837,
+          "min": 18.083766,
+          "max": 18.595312,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 13.313815,
+          "min": 13.144084,
+          "max": 13.554931,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 2.669698,
+          "min": 2.6039739999999996,
+          "max": 2.7509219999999996,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 29.879119,
+          "min": 29.655406,
+          "max": 30.364687,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 4.91332,
+          "min": 4.868766,
+          "max": 5.043667,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 6.14506,
+          "min": 6.031906,
+          "max": 6.199823,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prime": {
+          "median": 0.182165,
+          "min": 0.133542,
+          "max": 0.212902,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 70.723073,
+          "min": 69.71375400000001,
+          "max": 71.375395,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 9.639177,
+          "min": 9.498731999999999,
+          "max": 9.834857000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_dense_fold": {
+          "median": 1.748429,
+          "min": 1.6093920000000004,
+          "max": 1.8378160000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 5.340558,
+          "min": 5.202959,
+          "max": 5.491624,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_source_scan": {
+          "median": 0.14605600000000002,
+          "min": 0.13652799999999998,
+          "max": 0.16162500000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_fold": {
+          "median": 0.011332999999999998,
+          "min": 0.011239999999999998,
+          "max": 0.011452999999999998,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_prefix_sums": {
+          "median": 0.010249000000000001,
+          "min": 0.009579,
+          "max": 0.010850000000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_project": {
+          "median": 0.038903,
+          "min": 0.038493,
+          "max": 0.039124,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_spare_sums": {
+          "median": 0.041288,
+          "min": 0.041128,
+          "max": 0.04288199999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.591007,
+          "min": 0.44350900000000004,
+          "max": 0.6541669999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 2.237671,
+          "min": 2.195331,
+          "max": 2.273069,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 5.988704,
+          "min": 5.929261,
+          "max": 6.153726,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:prove": {
+          "median": 9.624179,
+          "min": 9.483934,
+          "max": 9.819638000000001,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.196822,
+          "min": 0.189749,
+          "max": 0.205137,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.9680300000000001,
+          "min": 0.79312,
+          "max": 1.012504,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.050406,
+          "min": 0.04734,
+          "max": 0.054413,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 28.103512000000002,
+          "min": 27.968206,
+          "max": 28.747489,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 1.1191250000000004,
+          "min": 1.0529309999999998,
+          "max": 1.1891900000000004,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 2.0244769999999996,
+          "min": 1.962861,
+          "max": 2.128344999999999,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 0.242007,
+          "min": 0.23643799999999998,
+          "max": 0.25491199999999997,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.14216800000000002,
+          "min": 0.13494499999999993,
+          "max": 0.16476300000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 0.44448000000000004,
+          "min": 0.414394,
+          "max": 0.575218,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 0.237709,
+          "min": 0.22741,
+          "max": 0.252518,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 1.304717,
+          "min": 1.2688869999999999,
+          "max": 1.352737,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.152418,
+          "min": 0.149352,
+          "max": 0.177916,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.021642,
+          "min": 1.01555,
+          "max": 1.030929,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.9540040000000001,
+          "min": 0.950347,
+          "max": 0.9648840000000001,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 4.5664750000000005,
+          "min": 4.457809,
+          "max": 4.6223,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.503272,
+          "min": 0.496438,
+          "max": 0.522869,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 5.986740000000001,
+          "min": 5.939872999999996,
+          "max": 6.233593000000006,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 2.503684,
+          "min": 2.255054,
+          "max": 2.6796469999999997,
+          "count": 9
+        },
+        "verify|falcon_algebraic:prime": {
+          "median": 0.182124,
+          "min": 0.133663,
+          "max": 0.210959,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 18.698056,
+          "min": 18.430561,
+          "max": 18.910878999999998,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 2.285752,
+          "min": 2.188468,
+          "max": 2.40624,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 5.430529,
+          "min": 5.396304,
+          "max": 5.472998,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:verify": {
+          "median": 8.119804,
+          "min": 7.997723,
+          "max": 8.264057,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 3.907389,
+          "min": 3.678265,
+          "max": 4.096677,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 70.735275,
+          "min": 69.725967,
+          "max": 71.38791,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 74.64270400000001,
+          "min": 73.46117000000001,
+          "max": 75.397722,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 18.712594,
+          "min": 18.444918,
+          "max": 18.925166,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3989058228070977,
+        "min": 0.3948599905155081,
+        "max": 0.40356893521445225,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.42318690595302944,
+        "min": 0.4192449382574677,
+        "max": 0.42770721872119033,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.2277113801052033
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 304.30946800000004,
+          "min": 303.78777099999996,
+          "max": 305.901218,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 1625.822426,
+          "min": 1618.545696,
+          "max": 1636.288336,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 1930.349896,
+          "min": 1924.301008,
+          "max": 1940.5396730000002,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 33.929759,
+          "min": 33.801316,
+          "max": 34.133894999999995,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2358864,
+          "min": 1957240,
+          "max": 2457632,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 304.30946800000004,
+          "prove_ms": 1625.904671,
+          "total_prover_ms": 1930.621018,
+          "verify_ms": 33.858985000000004,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2358864
+        },
+        "43": {
+          "witness_commit_ms": 304.285152,
+          "prove_ms": 1623.927713,
+          "total_prover_ms": 1928.275824,
+          "verify_ms": 34.060957,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2359140
+        },
+        "44": {
+          "witness_commit_ms": 304.339875,
+          "prove_ms": 1623.9165209999999,
+          "total_prover_ms": 1929.1780989999997,
+          "verify_ms": 33.929759,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2358704
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 307.73931300000004,
+          "min": 306.606011,
+          "max": 309.262113,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 7.84783,
+          "min": 7.825277000000001,
+          "max": 7.880310999999999,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 35.341529,
+          "min": 35.011694000000006,
+          "max": 37.920976,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 7.917822,
+          "min": 7.885540999999999,
+          "max": 8.016749,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 1.1499240000000002,
+          "min": 1.119587,
+          "max": 1.1594019999999998,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 307.55276100000003,
+          "min": 306.421361,
+          "max": 309.07894600000003,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 206.952272,
+          "min": 206.67729200000002,
+          "max": 208.404158,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 47.076909,
+          "min": 46.975277000000006,
+          "max": 47.347752,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 555.310212,
+          "min": 554.528986,
+          "max": 556.093474,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 15.130822,
+          "min": 15.091557,
+          "max": 15.252512,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 1.036981,
+          "min": 1.028264,
+          "max": 1.0427920000000002,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 34.676551,
+          "min": 34.579437,
+          "max": 35.249984999999995,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 1641.333146,
+          "min": 1634.315626,
+          "max": 1647.0799519999998,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 3.443321,
+          "min": 3.4150780000000003,
+          "max": 3.4878750000000003,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 9.959572999999999,
+          "min": 9.948191,
+          "max": 10.14878,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.367355,
+          "min": 0.358659,
+          "max": 0.37170299999999995,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 208.160246,
+          "min": 206.35257800000002,
+          "max": 209.673999,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 629.814746,
+          "min": 627.741445,
+          "max": 633.437225,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 222.861615,
+          "min": 220.982453,
+          "max": 224.38577800000002,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 143.79186099999998,
+          "min": 142.991738,
+          "max": 153.895736,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 191.937811,
+          "min": 189.797844,
+          "max": 192.42359000000002,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.127814,
+          "min": 1.841432,
+          "max": 2.369951,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 438.352955,
+          "min": 436.905057,
+          "max": 439.43756499999995,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 4.688536000000001,
+          "min": 4.655206000000001,
+          "max": 4.846384000000002,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 12.735270000000002,
+          "min": 12.708591000000004,
+          "max": 12.827813,
+          "count": 9
+        },
+        "prove|falcon_integer:native_prefix": {
+          "median": 14.694196,
+          "min": 14.643438999999999,
+          "max": 14.940031,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 42.216147,
+          "min": 41.099696,
+          "max": 42.524541,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 1.8745540000000005,
+          "min": 1.851083,
+          "max": 1.976937,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 22.461954,
+          "min": 22.408062,
+          "max": 22.872690000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 71.503148,
+          "min": 71.172602,
+          "max": 81.321633,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.030598,
+          "min": 0.030347,
+          "max": 0.030928,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.192895,
+          "min": 0.189939,
+          "max": 0.364349,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 12.813108999999999,
+          "min": 12.641444,
+          "max": 13.032392999999999,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001613,
+          "min": 0.001343,
+          "max": 0.0018440000000000002,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 1.235436,
+          "min": 1.22708,
+          "max": 1.243301,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 0.985303,
+          "min": 0.9836999999999999,
+          "max": 0.98873,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 0.60249,
+          "min": 0.585377,
+          "max": 0.654828,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.073328,
+          "min": 0.032962,
+          "max": 0.09367700000000001,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 17.705439,
+          "min": 17.585974,
+          "max": 17.812672000000003,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.159692,
+          "min": 0.151487,
+          "max": 0.208354,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 91.78491999999999,
+          "min": 91.49397099999999,
+          "max": 93.145682,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 117.305156,
+          "min": 117.056996,
+          "max": 117.448768,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 198.61062900000002,
+          "min": 198.418014,
+          "max": 198.92335,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 340.341773,
+          "min": 339.802212,
+          "max": 341.15740500000004,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 117.49580599999999,
+          "min": 117.24992099999999,
+          "max": 117.638777,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 141.75147199999998,
+          "min": 141.132111,
+          "max": 142.592332,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 91.93987299999999,
+          "min": 90.60584999999998,
+          "max": 92.641357,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 41.888949000000004,
+          "min": 41.687388,
+          "max": 42.352205,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 117.483693,
+          "min": 117.195759,
+          "max": 118.48080900000001,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 117.35897800000001,
+          "min": 117.070312,
+          "max": 118.35445,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 213.27045999999999,
+          "min": 211.997672,
+          "max": 214.11148999999997,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 107.311418,
+          "min": 107.101221,
+          "max": 107.519622,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 27.971749000000013,
+          "min": 23.574679999999972,
+          "max": 30.652880999999983,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 34.000543,
+          "min": 33.973872,
+          "max": 34.106223,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.030277000000000002,
+          "min": 0.029987,
+          "max": 0.030518,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001442,
+          "min": 0.001342,
+          "max": 0.001703,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 0.5663410000000001,
+          "min": 0.5644279999999999,
+          "max": 0.5742160000000001,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.156516,
+          "min": 0.14910199999999998,
+          "max": 0.20391600000000001,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 0.611877,
+          "min": 0.6079,
+          "max": 0.670138,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.001884,
+          "min": 0.001713,
+          "max": 0.002003,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.049143,
+          "min": 0.048912000000000004,
+          "max": 0.050936999999999996,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 307.73734,
+          "min": 306.60389599999996,
+          "max": 309.259689,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 1641.33024,
+          "min": 1634.3130910000002,
+          "max": 1647.0752129999998,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 1948.688783,
+          "min": 1941.9240810000001,
+          "max": 1954.8125529999998,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 33.9989,
+          "min": 33.97251,
+          "max": 34.10499,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.12697604841778765,
+        "min": 0.12528424711349234,
+        "max": 0.1277040189794409,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.13591410267051823,
+        "min": 0.134166582834733,
+        "max": 0.1366643732131451,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.009538442668769
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 66.43841,
+          "min": 65.44395999999999,
+          "max": 69.814524,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 314.06084699999997,
+          "min": 310.182533,
+          "max": 321.118873,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 381.931906,
+          "min": 376.59588599999995,
+          "max": 387.61404,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 20.812665000000003,
+          "min": 20.546732000000002,
+          "max": 21.113213,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2369200,
+          "min": 1965096,
+          "max": 2469668,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 66.495167,
+          "prove_ms": 315.811878,
+          "total_prover_ms": 382.49074299999995,
+          "verify_ms": 20.812665000000003,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2369436
+        },
+        "43": {
+          "witness_commit_ms": 66.413353,
+          "prove_ms": 313.405388,
+          "total_prover_ms": 381.931906,
+          "verify_ms": 20.875444,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2368680
+        },
+        "44": {
+          "witness_commit_ms": 66.43841,
+          "prove_ms": 313.341066,
+          "total_prover_ms": 380.19086400000003,
+          "verify_ms": 20.699141,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2369200
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 66.870968,
+          "min": 66.20233400000001,
+          "max": 67.90481299999999,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 1.0944500000000001,
+          "min": 1.081034,
+          "max": 1.115249,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 15.747417,
+          "min": 15.237153,
+          "max": 16.421242,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 1.381202,
+          "min": 1.3558839999999999,
+          "max": 1.401741,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.365241,
+          "min": 0.338741,
+          "max": 1.164843,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 66.66015,
+          "min": 66.00435,
+          "max": 67.679908,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 39.58904,
+          "min": 39.046824,
+          "max": 40.228277999999996,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 7.926519,
+          "min": 7.765965,
+          "max": 8.284917,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 79.223727,
+          "min": 78.457337,
+          "max": 80.077921,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 2.016253,
+          "min": 2.005743,
+          "max": 2.0349779999999997,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 1.047571,
+          "min": 1.037011,
+          "max": 1.0656649999999999,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 11.604201999999999,
+          "min": 11.490927999999998,
+          "max": 12.004119000000001,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 327.812079,
+          "min": 323.970075,
+          "max": 328.96029,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.44638399999999995,
+          "min": 0.438729,
+          "max": 0.45468000000000003,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 2.017184,
+          "min": 1.598763,
+          "max": 2.10991,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.062969,
+          "min": 0.060064,
+          "max": 0.063931,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 60.868438,
+          "min": 60.327646,
+          "max": 62.067625,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 100.986579,
+          "min": 99.725564,
+          "max": 101.50554000000001,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 64.181542,
+          "min": 63.67209999999999,
+          "max": 65.079991,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 30.397088999999998,
+          "min": 30.105607,
+          "max": 32.254591,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 54.626946000000004,
+          "min": 53.934506,
+          "max": 55.344032,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 1.7648270000000001,
+          "min": 1.6983110000000001,
+          "max": 1.787119,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 62.817423,
+          "min": 62.518237000000006,
+          "max": 63.285989,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 3.1863969999999995,
+          "min": 3.173833,
+          "max": 3.199738999999999,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 4.826988999999999,
+          "min": 4.799383,
+          "max": 5.311009999999999,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 13.10407,
+          "min": 12.951951,
+          "max": 13.466654,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 0.40853799999999996,
+          "min": 0.394367,
+          "max": 0.45402800000000004,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 3.684868,
+          "min": 3.628381,
+          "max": 3.713663,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 11.050245,
+          "min": 10.776988,
+          "max": 12.823428,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.03189,
+          "min": 0.031279,
+          "max": 0.032292,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.198165,
+          "min": 0.19681200000000001,
+          "max": 0.201702,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 2.102605,
+          "min": 1.582232,
+          "max": 2.1464079999999996,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001463,
+          "min": 0.0012929999999999999,
+          "max": 0.001963,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 0.26427,
+          "min": 0.228241,
+          "max": 0.302663,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 1.007335,
+          "min": 1.0008029999999999,
+          "max": 1.011363,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 0.10093099999999999,
+          "min": 0.095521,
+          "max": 0.12494599999999999,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.035868000000000004,
+          "min": 0.029756,
+          "max": 0.049313,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 4.77522,
+          "min": 4.224208,
+          "max": 4.866091,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.159521,
+          "min": 0.151576,
+          "max": 0.208484,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 12.603629999999997,
+          "min": 12.395585,
+          "max": 12.907365999999996,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 16.431881,
+          "min": 16.217026,
+          "max": 16.572136,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 25.766102,
+          "min": 25.644261,
+          "max": 27.506382,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 44.295179,
+          "min": 44.096564,
+          "max": 45.873614,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 16.627642,
+          "min": 16.413717000000002,
+          "max": 16.765983000000002,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 18.399122000000002,
+          "min": 18.316656000000002,
+          "max": 18.487918999999998,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 12.730158999999993,
+          "min": 12.549198,
+          "max": 12.777942999999995,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 5.416212,
+          "min": 5.3946510000000005,
+          "max": 5.493879,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 15.187709,
+          "min": 15.099312,
+          "max": 15.355376,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 15.111034,
+          "min": 15.028336999999999,
+          "max": 15.280835,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 32.987607000000004,
+          "min": 32.806765,
+          "max": 33.662423,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 14.417662,
+          "min": 14.302966,
+          "max": 14.812639,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 6.361861000000001,
+          "min": 5.756142999999994,
+          "max": 6.685978000000003,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 21.057598,
+          "min": 20.743404,
+          "max": 21.123854,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.030747999999999998,
+          "min": 0.030348,
+          "max": 0.031018,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001522,
+          "min": 0.0012020000000000002,
+          "max": 0.001843,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 0.573815,
+          "min": 0.571371,
+          "max": 0.582171,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.159792,
+          "min": 0.15123599999999998,
+          "max": 0.209366,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 0.625162,
+          "min": 0.61874,
+          "max": 0.707107,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.0016929999999999998,
+          "min": 0.001643,
+          "max": 0.001934,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.050265000000000004,
+          "min": 0.049764,
+          "max": 0.054592999999999996,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 66.867863,
+          "min": 66.199418,
+          "max": 67.901938,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 327.80922400000003,
+          "min": 323.96784,
+          "max": 328.958036,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 394.89058,
+          "min": 390.59515899999997,
+          "max": 395.825899,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 21.056136,
+          "min": 20.741841,
+          "max": 21.122311,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.1862149218268085,
+        "min": 0.18518311822308645,
+        "max": 0.1886794612307328,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.19653833541008264,
+        "min": 0.19461364189973263,
+        "max": 0.1981017884636834,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0437761571724986
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 55.639601,
+          "min": 54.195519,
+          "max": 61.409902,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 247.546443,
+          "min": 243.556839,
+          "max": 262.97035800000003,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 304.218837,
+          "min": 298.516233,
+          "max": 318.02502200000004,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 20.086081,
+          "min": 19.587569,
+          "max": 20.369907,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2378152,
+          "min": 1970752,
+          "max": 2478880,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 56.103788,
+          "prove_ms": 248.864666,
+          "total_prover_ms": 306.27117699999997,
+          "verify_ms": 19.983838,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2378532
+        },
+        "43": {
+          "witness_commit_ms": 54.959394,
+          "prove_ms": 247.546443,
+          "total_prover_ms": 303.663627,
+          "verify_ms": 20.149071,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2378152
+        },
+        "44": {
+          "witness_commit_ms": 55.656482,
+          "prove_ms": 246.805512,
+          "total_prover_ms": 301.90677500000004,
+          "verify_ms": 20.04341,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2378048
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 55.905133,
+          "min": 54.418051000000006,
+          "max": 56.706839,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 0.6941719999999999,
+          "min": 0.669636,
+          "max": 0.720181,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 14.909322,
+          "min": 14.325559,
+          "max": 15.30981,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 1.148352,
+          "min": 1.123525,
+          "max": 1.451995,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.390258,
+          "min": 0.377805,
+          "max": 1.213806,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 55.703451,
+          "min": 54.221409,
+          "max": 56.514966,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 31.202983,
+          "min": 30.395265000000002,
+          "max": 31.572380999999996,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 6.810208,
+          "min": 6.661497,
+          "max": 7.041315,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 45.90321,
+          "min": 45.644531,
+          "max": 46.395711,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 1.129666,
+          "min": 1.12133,
+          "max": 1.1561869999999999,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 1.33811,
+          "min": 1.317231,
+          "max": 1.4344329999999998,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 10.592338999999999,
+          "min": 10.435733,
+          "max": 10.763423,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 261.969055,
+          "min": 261.29520099999996,
+          "max": 266.747841,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.32923199999999997,
+          "min": 0.304787,
+          "max": 0.34393,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 1.444301,
+          "min": 1.427098,
+          "max": 1.744579,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.053622,
+          "min": 0.050816,
+          "max": 0.057879,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 58.15121,
+          "min": 57.555994,
+          "max": 58.884777,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 64.505495,
+          "min": 63.922864,
+          "max": 64.670196,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 60.90742100000001,
+          "min": 60.279654,
+          "max": 61.836348,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 25.364082,
+          "min": 25.052321999999997,
+          "max": 26.206033,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 55.107124,
+          "min": 54.419293,
+          "max": 55.865989,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 1.838106,
+          "min": 1.811165,
+          "max": 1.8685729999999998,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 42.933945,
+          "min": 42.293834000000004,
+          "max": 47.055819,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 2.1053030000000006,
+          "min": 2.0780190000000003,
+          "max": 2.1309299999999998,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 4.428461,
+          "min": 4.342579000000001,
+          "max": 4.821548,
+          "count": 9
+        },
+        "prove|falcon_joint:compact": {
+          "median": 11.151948,
+          "min": 10.859264,
+          "max": 12.082697999999999,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 1.0674790000000005,
+          "min": 0.907763,
+          "max": 1.165013,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 2.573416,
+          "min": 2.54381,
+          "max": 2.6068599999999997,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 8.022029,
+          "min": 7.778829,
+          "max": 8.536271,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.0318,
+          "min": 0.031319,
+          "max": 0.032601000000000005,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.230546,
+          "min": 0.224574,
+          "max": 0.298244,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 1.3988049999999999,
+          "min": 0.9496560000000001,
+          "max": 1.501058,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001343,
+          "min": 0.001252,
+          "max": 0.001713,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 0.167476,
+          "min": 0.159371,
+          "max": 0.183698,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 1.019618,
+          "min": 1.016793,
+          "max": 1.025709,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 0.11152100000000001,
+          "min": 0.099669,
+          "max": 0.148641,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.044214,
+          "min": 0.039344000000000004,
+          "max": 0.04734,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 4.02409,
+          "min": 3.555484,
+          "max": 4.137975,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.157699,
+          "min": 0.150123,
+          "max": 0.206049,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 7.641005,
+          "min": 7.452749,
+          "max": 8.014909,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 9.12793,
+          "min": 8.969551,
+          "max": 9.308281,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 13.159253,
+          "min": 12.941151,
+          "max": 13.449462,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 22.866589,
+          "min": 22.624571,
+          "max": 23.07364,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 9.326044,
+          "min": 9.166574,
+          "max": 9.505915,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 9.602568,
+          "min": 9.582761,
+          "max": 9.705072,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 7.374626,
+          "min": 7.292179999999998,
+          "max": 7.667184000000002,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 3.221672,
+          "min": 3.138304,
+          "max": 3.5476180000000004,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 7.750325,
+          "min": 7.713375,
+          "max": 8.713627,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 7.675624,
+          "min": 7.636259,
+          "max": 8.640899000000001,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 27.553712,
+          "min": 26.787904,
+          "max": 30.198534,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 7.688478,
+          "min": 7.5944,
+          "max": 8.092121,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 9.640437000000004,
+          "min": 9.367189,
+          "max": 10.167416,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 20.094998,
+          "min": 19.807294,
+          "max": 20.447936,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.031208999999999997,
+          "min": 0.030708,
+          "max": 0.035237000000000004,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001533,
+          "min": 0.001302,
+          "max": 0.001694,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 0.573535,
+          "min": 0.569447,
+          "max": 0.577412,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.157768,
+          "min": 0.15001399999999998,
+          "max": 0.20693099999999998,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 0.6246109999999999,
+          "min": 0.6151530000000001,
+          "max": 0.689013,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.0016840000000000002,
+          "min": 0.001593,
+          "max": 0.001843,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.050796,
+          "min": 0.049965,
+          "max": 0.051247,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 55.902698,
+          "min": 54.414755,
+          "max": 56.703292000000005,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 261.9667,
+          "min": 261.290172,
+          "max": 266.742451,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 318.374303,
+          "min": 316.720265,
+          "max": 321.15720600000003,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 20.093396,
+          "min": 19.80518,
+          "max": 20.446302,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.22151701660307,
+        "min": 0.21827341235610076,
+        "max": 0.22536162209729038,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.23189886119397765,
+        "min": 0.22859687976699292,
+        "max": 0.23665776453314136,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0582527336092646
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 362.64147,
+          "min": 361.499851,
+          "max": 363.8744,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 2596.964357,
+          "min": 2569.04382,
+          "max": 2629.505159,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 2959.5175489999997,
+          "min": 2931.809725,
+          "max": 2991.805493,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 63.258447999999994,
+          "min": 63.128792000000004,
+          "max": 63.47834300000001,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2768300,
+          "min": 2423224,
+          "max": 2835640,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 362.553192,
+          "prove_ms": 2596.964357,
+          "total_prover_ms": 2959.5175489999997,
+          "verify_ms": 63.20707,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2767984
+        },
+        "43": {
+          "witness_commit_ms": 362.172793,
+          "prove_ms": 2625.095511,
+          "total_prover_ms": 2987.656438,
+          "verify_ms": 63.364959,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2768300
+        },
+        "44": {
+          "witness_commit_ms": 362.754934,
+          "prove_ms": 2571.8436549999997,
+          "total_prover_ms": 2934.7749019999997,
+          "verify_ms": 63.255061,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2769448
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 364.268766,
+          "min": 362.094207,
+          "max": 367.822827,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 15.270335,
+          "min": 15.194462000000001,
+          "max": 15.504128000000001,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 54.922125,
+          "min": 54.430584999999994,
+          "max": 57.959407,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 14.815385000000001,
+          "min": 14.778625,
+          "max": 14.989034,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 1.203216,
+          "min": 0.6647470000000001,
+          "max": 2.293907,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 363.92429599999997,
+          "min": 361.73017899999996,
+          "max": 367.480841,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 228.3319,
+          "min": 227.79101400000002,
+          "max": 228.743045,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 48.337052,
+          "min": 48.056703999999996,
+          "max": 48.495340999999996,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 1031.702678,
+          "min": 1030.256853,
+          "max": 1033.561843,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 29.215604,
+          "min": 29.059509000000002,
+          "max": 29.487679,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 1.911374,
+          "min": 1.9044809999999999,
+          "max": 1.9251209999999999,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 64.91815600000001,
+          "min": 61.809599999999996,
+          "max": 65.419755,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 2613.911743,
+          "min": 2574.823488,
+          "max": 2642.3874490000003,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 7.820629000000001,
+          "min": 7.579783,
+          "max": 7.893656000000001,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 20.199275999999998,
+          "min": 20.168757999999997,
+          "max": 20.245392000000002,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.370581,
+          "min": 0.36815600000000004,
+          "max": 0.372835,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 408.951168,
+          "min": 404.585107,
+          "max": 417.74510599999996,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 1161.711405,
+          "min": 1157.30384,
+          "max": 1163.22143,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 438.814998,
+          "min": 434.442275,
+          "max": 447.80565900000005,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 180.284756,
+          "min": 178.67395,
+          "max": 194.63638,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 294.539914,
+          "min": 293.37494200000003,
+          "max": 296.333646,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 3.47992,
+          "min": 3.064334,
+          "max": 3.56962,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 518.084512,
+          "min": 489.04130899999996,
+          "max": 542.161649,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 8.151583,
+          "min": 8.099836,
+          "max": 8.189185,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 25.349434,
+          "min": 22.618308,
+          "max": 25.392055999999993,
+          "count": 9
+        },
+        "prove|falcon_integer:native_prefix": {
+          "median": 28.319541,
+          "min": 28.085738999999997,
+          "max": 28.783578000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 22.158391000000005,
+          "min": 20.922041000000004,
+          "max": 23.563655999999998,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 45.31085,
+          "min": 44.255756,
+          "max": 45.411211,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 103.55281099999999,
+          "min": 103.212698,
+          "max": 116.685769,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.060314,
+          "min": 0.059953,
+          "max": 0.060615,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.38074,
+          "min": 0.378115,
+          "max": 0.382964,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 22.927273000000003,
+          "min": 22.732195,
+          "max": 23.147741,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001412,
+          "min": 0.001333,
+          "max": 0.001583,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 2.336187,
+          "min": 2.321891,
+          "max": 2.352238,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 1.012845,
+          "min": 1.009399,
+          "max": 1.0143680000000002,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 1.201131,
+          "min": 1.029376,
+          "max": 1.296642,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.041678,
+          "min": 0.033222999999999996,
+          "max": 0.118985,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 30.870795,
+          "min": 30.652573,
+          "max": 31.263396999999998,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.320256,
+          "min": 0.294377,
+          "max": 0.548276,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 195.217303,
+          "min": 194.91855599999994,
+          "max": 196.13893099999999,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 225.713808,
+          "min": 225.441093,
+          "max": 226.137079,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 365.624601,
+          "min": 365.187253,
+          "max": 367.181144,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 602.1996469999999,
+          "min": 601.293094,
+          "max": 603.6039930000001,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 226.06868999999998,
+          "min": 225.79702600000002,
+          "max": 226.49215999999998,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 236.24852700000002,
+          "min": 235.817152,
+          "max": 236.64065100000002,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 87.77631800000002,
+          "min": 60.373684999999995,
+          "max": 111.398367,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 41.034373,
+          "min": 40.380718,
+          "max": 41.146897,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 116.089647,
+          "min": 115.395379,
+          "max": 116.335873,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 115.92220999999999,
+          "min": 115.3326,
+          "max": 116.264819,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 206.745912,
+          "min": 179.03035,
+          "max": 231.24344499999998,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 194.672428,
+          "min": 194.425702,
+          "max": 195.10538,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 27.260032000000027,
+          "min": 23.838464000000002,
+          "max": 27.412734000000007,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 63.31291,
+          "min": 63.172203999999994,
+          "max": 63.544160000000005,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.059533,
+          "min": 0.059052,
+          "max": 0.059904,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001492,
+          "min": 0.001222,
+          "max": 0.001853,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 1.101533,
+          "min": 1.098768,
+          "max": 1.121991,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.312341,
+          "min": 0.28614100000000003,
+          "max": 0.5362239999999999,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 0.93584,
+          "min": 0.916963,
+          "max": 1.165113,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.0019939999999999997,
+          "min": 0.0017430000000000002,
+          "max": 0.002314,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.07393000000000001,
+          "min": 0.073158,
+          "max": 0.076044,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 364.266482,
+          "min": 362.091532,
+          "max": 367.820062,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 2613.907315,
+          "min": 2574.820824,
+          "max": 2642.383601,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 2976.960873,
+          "min": 2936.912356,
+          "max": 3010.2036630000002,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 63.311448000000006,
+          "min": 63.170792000000006,
+          "max": 63.542416,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.15752212660662063,
+        "min": 0.15380913878143615,
+        "max": 0.159816342225585,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.16892345240651888,
+        "min": 0.16515044402896292,
+        "max": 0.1713165789889532,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0065241395995024
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 81.481936,
+          "min": 79.72030600000001,
+          "max": 82.87509999999999,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 569.563214,
+          "min": 559.995461,
+          "max": 574.190414,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 650.958887,
+          "min": 640.996148,
+          "max": 655.948292,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 38.404691,
+          "min": 37.757908,
+          "max": 39.500422,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2778464,
+          "min": 2416968,
+          "max": 2858560,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 80.936435,
+          "prove_ms": 569.961858,
+          "total_prover_ms": 650.578899,
+          "verify_ms": 38.530679,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2778464
+        },
+        "43": {
+          "witness_commit_ms": 81.924474,
+          "prove_ms": 570.216238,
+          "total_prover_ms": 652.600532,
+          "verify_ms": 38.253876,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2782032
+        },
+        "44": {
+          "witness_commit_ms": 81.481936,
+          "prove_ms": 567.2048149999999,
+          "total_prover_ms": 648.9440089999999,
+          "verify_ms": 38.404691,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2777820
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 81.981631,
+          "min": 80.796501,
+          "max": 84.240022,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 2.064705,
+          "min": 2.040188,
+          "max": 2.087748,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 21.676439,
+          "min": 20.774032000000002,
+          "max": 22.403042000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 2.6371670000000003,
+          "min": 2.5643089999999997,
+          "max": 3.5803100000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.7553380000000001,
+          "min": 0.653546,
+          "max": 2.385501,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 81.64157900000001,
+          "min": 80.440858,
+          "max": 83.579353,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 44.686259,
+          "min": 44.277986,
+          "max": 45.706608,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 8.648354000000001,
+          "min": 8.435641,
+          "max": 8.878860000000001,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 177.588828,
+          "min": 176.986369,
+          "max": 182.207933,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 3.825324,
+          "min": 3.790868,
+          "max": 3.9113459999999995,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 1.964725,
+          "min": 1.952442,
+          "max": 1.981296,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 20.881636,
+          "min": 19.929766,
+          "max": 21.422348,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 581.34921,
+          "min": 576.2126979999999,
+          "max": 592.178077,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 1.308094,
+          "min": 0.97308,
+          "max": 1.357787,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 3.546817,
+          "min": 3.519696,
+          "max": 4.102006,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.061727,
+          "min": 0.060865,
+          "max": 0.064472,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 147.55723,
+          "min": 144.220501,
+          "max": 148.87904,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 213.49916199999998,
+          "min": 211.995678,
+          "max": 218.186105,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 154.462518,
+          "min": 150.660809,
+          "max": 155.380173,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 40.490945,
+          "min": 39.751117,
+          "max": 42.25435,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 81.8385,
+          "min": 81.486586,
+          "max": 83.059229,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.743077,
+          "min": 2.692361,
+          "max": 2.792129,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 74.39799099999999,
+          "min": 70.77629300000001,
+          "max": 77.50143,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 5.51104,
+          "min": 5.485251000000002,
+          "max": 5.583198,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 9.7915,
+          "min": 9.642294,
+          "max": 10.308161,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 15.294448999999998,
+          "min": 15.060149000000001,
+          "max": 15.427510000000002,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 7.205235,
+          "min": 6.704648,
+          "max": 7.445368,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 15.1882,
+          "min": 15.049257,
+          "max": 17.063506,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.06312000000000001,
+          "min": 0.062578,
+          "max": 0.07422000000000001,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.38681099999999996,
+          "min": 0.383655,
+          "max": 0.57091,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 3.528362,
+          "min": 3.1023460000000003,
+          "max": 3.625686,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001402,
+          "min": 0.001252,
+          "max": 0.001573,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 0.480599,
+          "min": 0.37868599999999997,
+          "max": 0.487332,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 1.033224,
+          "min": 1.0279740000000002,
+          "max": 1.038684,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 0.167767,
+          "min": 0.162487,
+          "max": 0.210628,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.032161,
+          "min": 0.031068999999999996,
+          "max": 0.048332,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 7.088153,
+          "min": 6.773438,
+          "max": 7.751087,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.313943,
+          "min": 0.28888600000000003,
+          "max": 0.5428959999999999,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 27.512596000000002,
+          "min": 27.152071000000007,
+          "max": 27.788296999999993,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 39.531902,
+          "min": 39.263284000000006,
+          "max": 42.349239,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 64.017953,
+          "min": 63.717406000000004,
+          "max": 64.867981,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 100.7069,
+          "min": 100.28425,
+          "max": 102.531039,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 39.899547,
+          "min": 39.630117999999996,
+          "max": 42.719018999999996,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 36.634253,
+          "min": 36.438403,
+          "max": 37.609577,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 12.134555999999993,
+          "min": 8.611994999999999,
+          "max": 15.178147999999993,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 5.390002,
+          "min": 5.315391,
+          "max": 5.446769,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 15.058464,
+          "min": 14.956562,
+          "max": 15.242372000000001,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 14.995005,
+          "min": 14.874857,
+          "max": 15.175235,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 33.590197,
+          "min": 30.059731,
+          "max": 36.646416,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 25.757896,
+          "min": 25.619254,
+          "max": 25.834329999999998,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 6.370517000000007,
+          "min": 5.913749000000005,
+          "max": 6.614881000000001,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 39.16067,
+          "min": 38.658691000000005,
+          "max": 39.391767,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.060674,
+          "min": 0.059803,
+          "max": 0.072908,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001533,
+          "min": 0.001322,
+          "max": 0.001803,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 1.131259,
+          "min": 1.1197469999999998,
+          "max": 1.1377410000000001,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.322971,
+          "min": 0.294196,
+          "max": 0.55017,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 1.0113329999999998,
+          "min": 0.938836,
+          "max": 1.211822,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.001894,
+          "min": 0.0017230000000000001,
+          "max": 0.001984,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.076314,
+          "min": 0.074582,
+          "max": 0.083618,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 81.97799499999999,
+          "min": 80.79299400000001,
+          "max": 84.23654499999999,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 581.346335,
+          "min": 576.209912,
+          "max": 592.173198,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 663.3243299999999,
+          "min": 657.531556,
+          "max": 672.966192,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 39.158757,
+          "min": 38.657078,
+          "max": 39.389924,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.2524293120290754,
+        "min": 0.2489390318150849,
+        "max": 0.25502020393841823,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.26338783565720253,
+        "min": 0.2600556485720253,
+        "max": 0.26701005803633243,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.020687995134461
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 71.57386100000001,
+          "min": 70.54799100000001,
+          "max": 77.895325,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 445.79604,
+          "min": 439.975603,
+          "max": 452.912525,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 517.914139,
+          "min": 511.202879,
+          "max": 523.887924,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 37.522672,
+          "min": 36.729072,
+          "max": 38.423595999999996,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2794132,
+          "min": 2425108,
+          "max": 2880156,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 71.938981,
+          "prove_ms": 447.262693,
+          "total_prover_ms": 519.201674,
+          "verify_ms": 37.153726,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2794132
+        },
+        "43": {
+          "witness_commit_ms": 71.283862,
+          "prove_ms": 444.415689,
+          "total_prover_ms": 516.579435,
+          "verify_ms": 37.522672,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2793476
+        },
+        "44": {
+          "witness_commit_ms": 71.422154,
+          "prove_ms": 444.833578,
+          "total_prover_ms": 516.407439,
+          "verify_ms": 37.529094,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2798280
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 71.416303,
+          "min": 70.26717000000001,
+          "max": 75.652363,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 1.171415,
+          "min": 1.1527,
+          "max": 1.191173,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 22.357015,
+          "min": 21.817846,
+          "max": 23.229966,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 2.093238,
+          "min": 2.0517790000000002,
+          "max": 3.1335550000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.878441,
+          "min": 0.7609589999999999,
+          "max": 2.6492500000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 71.05563099999999,
+          "min": 69.94270700000001,
+          "max": 74.967989,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 36.154336,
+          "min": 35.637538000000006,
+          "max": 36.632439000000005,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 7.926709000000001,
+          "min": 7.6365,
+          "max": 8.113642,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 103.051453,
+          "min": 99.261927,
+          "max": 104.710079,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_target": {
+          "median": 2.0518099999999997,
+          "min": 2.01469,
+          "max": 2.180253,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_template": {
+          "median": 2.322101,
+          "min": 2.293908,
+          "max": 2.4466560000000004,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 17.366499,
+          "min": 16.652179,
+          "max": 17.847579,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 458.65517500000004,
+          "min": 450.73089999999996,
+          "max": 462.541854,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.779714,
+          "min": 0.669206,
+          "max": 0.8624909999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 3.411892,
+          "min": 3.3226229999999997,
+          "max": 3.65408,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.059783,
+          "min": 0.049394,
+          "max": 0.08532100000000001,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 134.177701,
+          "min": 133.055889,
+          "max": 141.104198,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 132.274322,
+          "min": 128.067026,
+          "max": 133.941274,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 139.949555,
+          "min": 138.903536,
+          "max": 147.064819,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 34.113847,
+          "min": 33.384919,
+          "max": 35.97687,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 83.85002499999999,
+          "min": 82.907502,
+          "max": 85.31775900000001,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.891067,
+          "min": 2.832446,
+          "max": 2.9398589999999998,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 49.210333,
+          "min": 47.2732,
+          "max": 51.031747,
+          "count": 9
+        },
+        "prove|falcon_integer:coefficients": {
+          "median": 3.4190069999999997,
+          "min": 3.369591999999999,
+          "max": 3.5293249999999996,
+          "count": 9
+        },
+        "prove|falcon_integer:fold": {
+          "median": 7.796592000000002,
+          "min": 7.690263000000002,
+          "max": 8.131362999999999,
+          "count": 9
+        },
+        "prove|falcon_joint:dense": {
+          "median": 16.191679999999998,
+          "min": 15.891971000000002,
+          "max": 16.578255999999996,
+          "count": 9
+        },
+        "prove|falcon_joint:packed_setup": {
+          "median": 4.606991000000001,
+          "min": 4.087599,
+          "max": 4.843208,
+          "count": 9
+        },
+        "prove|falcon_joint:prepare": {
+          "median": 10.348088,
+          "min": 10.267415,
+          "max": 11.452406,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:beta_powers": {
+          "median": 0.06321900000000001,
+          "min": 0.061896999999999994,
+          "max": 0.08257600000000001,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:bit_query": {
+          "median": 0.448468,
+          "min": 0.44460099999999997,
+          "max": 0.601227,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:integer_lift": {
+          "median": 2.1764259999999997,
+          "min": 1.827766,
+          "max": 2.351868,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:lift_read_off": {
+          "median": 0.001583,
+          "min": 0.001283,
+          "max": 0.0031360000000000003,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:operand_evaluations": {
+          "median": 0.26989,
+          "min": 0.214165,
+          "max": 0.28509999999999996,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:outer_sumcheck": {
+          "median": 1.101092,
+          "min": 1.0427520000000001,
+          "max": 1.1870749999999999,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:project": {
+          "median": 0.163178,
+          "min": 0.15360100000000002,
+          "max": 0.312461,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:projection_grinding": {
+          "median": 0.048111,
+          "min": 0.039645,
+          "max": 0.054913000000000003,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 5.685029999999999,
+          "min": 5.450537,
+          "max": 6.25657,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:sample_prime": {
+          "median": 0.310717,
+          "min": 0.28360599999999997,
+          "max": 0.532687,
+          "count": 9
+        },
+        "prove|inner_overlay:fold_tail": {
+          "median": 17.251512999999992,
+          "min": 16.883848,
+          "max": 18.439391000000008,
+          "count": 9
+        },
+        "prove|inner_overlay:folded_coefficients_and_first_tail": {
+          "median": 22.267907,
+          "min": 20.687499000000003,
+          "max": 22.818399,
+          "count": 9
+        },
+        "prove|inner_overlay:integer_prefix": {
+          "median": 32.671209,
+          "min": 32.455722,
+          "max": 33.453038,
+          "count": 9
+        },
+        "prove|inner_overlay:prefix_accumulators": {
+          "median": 52.695614,
+          "min": 51.250992000000004,
+          "max": 53.492811,
+          "count": 9
+        },
+        "prove|inner_overlay:prepare_tail": {
+          "median": 22.668274,
+          "min": 21.069761999999997,
+          "max": 23.228263,
+          "count": 9
+        },
+        "prove|inner_overlay:ring_prefix": {
+          "median": 19.969541,
+          "min": 18.743853,
+          "max": 20.194907,
+          "count": 9
+        },
+        "prove|lig:grind_pow": {
+          "median": 7.140320999999999,
+          "min": 5.336990000000002,
+          "max": 8.686173000000002,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 3.609576,
+          "min": 3.546145,
+          "max": 3.9263939999999997,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 7.718455,
+          "min": 7.648823,
+          "max": 8.450349,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 7.635739,
+          "min": 7.576086,
+          "max": 8.377061,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 27.905988,
+          "min": 26.07164,
+          "max": 29.824977,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 13.503304,
+          "min": 13.465111,
+          "max": 13.920923,
+          "count": 9
+        },
+        "prove|spartan:grinding": {
+          "median": 10.129235999999983,
+          "min": 9.756606,
+          "max": 14.916311999999985,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 37.994795999999994,
+          "min": 37.327833999999996,
+          "max": 38.295804000000004,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:beta_powers": {
+          "median": 0.060274,
+          "min": 0.059813,
+          "max": 0.061096,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:lift_read_off": {
+          "median": 0.001463,
+          "min": 0.001212,
+          "max": 0.001503,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:project_endpoint": {
+          "median": 1.118265,
+          "min": 1.112254,
+          "max": 1.1346559999999999,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:sample_prime": {
+          "median": 0.31895300000000004,
+          "min": 0.28976799999999997,
+          "max": 0.550171,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify": {
+          "median": 0.969934,
+          "min": 0.934257,
+          "max": 1.191874,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_projection_grinding": {
+          "median": 0.001874,
+          "min": 0.0017430000000000002,
+          "max": 0.002295,
+          "count": 9
+        },
+        "verify|falcon_shared_ring:verify_sumcheck": {
+          "median": 0.07530200000000001,
+          "min": 0.07391,
+          "max": 0.075883,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 71.41278700000001,
+          "min": 70.26410399999999,
+          "max": 75.648987,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 458.64883299999997,
+          "min": 450.72810499999997,
+          "max": 462.537395,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 530.367308,
+          "min": 520.992209,
+          "max": 538.050395,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 37.992772,
+          "min": 37.324729,
+          "max": 38.293922,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.29257283786603167,
+        "min": 0.29017580543353366,
+        "max": 0.3050654920560531,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.30505334532341816,
+        "min": 0.3026581506430015,
+        "max": 0.3179522792962502,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0288311062610604
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "job": {
+    "id": "arithmetic-n512-t1-s43",
+    "variant": "arithmetic",
+    "threads": 1,
+    "seed": 43
+  },
+  "phase": "prewarm",
+  "degree": 512,
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v9",
+      "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+      "source_root": "a976817e01a391a7327b28f7a81a9bcb51975156632394643434c790e3dbd516",
+      "proof_debug_digest": "5ee7855cd8c8022ce8f588f666f1b6e1377cbd52762a79c5447cea4b8b30bb03",
+      "total_prover_ms": 143.73871,
+      "prove_ms": 133.64505400000002,
+      "witness_commit_ms": 10.093446,
+      "verify_ms": 30.202862,
+      "process_peak_rss_kib": 78668,
+      "proof_payload_bytes": 256112
+    }
+  ],
+  "stdout_sha256": "94986c4aec9a856cad9ccfed878b2798c17ae497fcd85b44326c2805aceaba1f",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "verified": true
+}

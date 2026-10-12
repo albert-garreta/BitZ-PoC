@@ -1,0 +1,151 @@
+Falcon performance: pushed falcon-poc ee79186745962e3e285fc5090dae8a95545dda43
+
+Batch: 1,024 distinct original-Falcon signatures. Security target: 128 bits. All times are milliseconds per batch.
+CPU: AMD Ryzen 9 9950X3D. Rust 1.98.1. Release, LTO, codegen-units=1, target-cpu=native. Features: falcon-hybrid (default parallel); no bench-internals.
+Workers: 1, 8, 16 physical cores, individually pinned. Worker order [6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9]. Main and serial auxiliary Flock work on CPU 6.
+1/8 workers use the 96 MiB L3 cluster; 16 workers span that cluster and the 32 MiB L3 cluster. SMT siblings unused. Governor: powersave / amd-pstate-epp. Host not exclusively reserved.
+
+Headline latency: median of 21 samples (7 per seed 42/43/44), after 2 warmups per process. Configurations shuffled; one benchmark process at a time; builds finished before timing.
+Total prover = witness construction + commitment + proof; verification listed separately. Public input setup/decoding, fixture generation, native reference verification and proof diagnostic hashing excluded from these timers.
+Arithmetic proves the algebraic relation with public h and t, using the default v9 word binder. Full Falcon also proves SHAKE/Keccak and hash-to-point constraints.
+
+GKR = BitZ weighted forest proving inside the integer bridge, including its round grinding. It excludes integer column folds, column packing, power tables and the final PCS opening.
+GKR and other stage times: medians of 9 lightweight-instrumentation samples (3 per seed), after 1 warmup. Only the benchmark tracing subscriber filter differs; all prover/verifier/kernel sources are unchanged. The exact observer patch and binary hashes are saved.
+Full diagnostic tracing inflated short arithmetic timings, so its output is preserved separately in summary-detailed.json and is NOT used for the GKR headline column.
+Lightly traced proof-time medians / untraced medians ranged 0.988 to 1.017. This calibration includes run-to-run variation, not just instrumentation cost.
+All stage durations are inclusive; nested stages must not be added to their parents.
+
+Validation: 618 proofs verified, with identical complete proof diagnostic digests, source roots and payload sizes across worker counts and instrumentation for each input/variant. Inputs matched across arithmetic/full variants.
+
+Variant       N    T    Witness+commit      Proof      Total     Verify        GKR
+arithmetic  512    1             8.944    132.262    141.213     30.445     50.891
+arithmetic  512    8             1.926     32.115     34.053     10.422     11.388
+arithmetic  512   16             2.402     32.694     35.088     11.301     12.032
+arithmetic 1024    1            17.052    258.876    275.872     59.737     98.592
+arithmetic 1024    8             3.566     61.188     64.711     19.853     19.674
+arithmetic 1024   16             3.809     57.616     61.520     18.563     21.640
+full        512    1           304.309   1625.822   1930.350     33.930    203.348
+full        512    8            66.438    314.061    381.932     20.813     55.235
+full        512   16            55.640    247.546    304.219     20.086     50.443
+full       1024    1           362.641   2596.964   2959.518     63.258    403.218
+full       1024    8            81.482    569.563    650.959     38.405    140.249
+full       1024   16            71.574    445.796    517.914     37.523    128.289
+
+8 -> 16 workers (negative percentage = less time):
+arithmetic N=512: total +3.04%; GKR +5.65%.
+arithmetic N=1024: total -4.93%; GKR +9.99%.
+full N=512: total -20.35%; GKR -8.68%.
+full N=1024: total -20.44%; GKR -8.53%.
+
+Major proving stages by cell (non-overlapping top-level stages; GKR included within bridge):
+arithmetic N=512 T=1:
+  falcon_algebraic:bitz: 54.731
+  falcon_algebraic:arithmetic: 40.364
+  falcon_algebraic:ring: 19.462
+  falcon_algebraic:pcs: 11.570
+arithmetic N=512 T=8:
+  falcon_algebraic:bitz: 12.277
+  falcon_algebraic:arithmetic: 8.394
+  falcon_algebraic:ring: 5.219
+  falcon_algebraic:pcs: 3.442
+arithmetic N=512 T=16:
+  falcon_algebraic:bitz: 12.924
+  falcon_algebraic:arithmetic: 8.042
+  falcon_algebraic:ring: 4.915
+  falcon_algebraic:pcs: 3.794
+arithmetic N=1024 T=1:
+  falcon_algebraic:bitz: 105.874
+  falcon_algebraic:arithmetic: 78.840
+  falcon_algebraic:ring: 40.135
+  falcon_algebraic:pcs: 18.635
+arithmetic N=1024 T=8:
+  falcon_algebraic:bitz: 21.576
+  falcon_algebraic:arithmetic: 17.744
+  falcon_algebraic:ring: 11.199
+  falcon_algebraic:pcs: 4.308
+arithmetic N=1024 T=16:
+  falcon_algebraic:bitz: 23.364
+  falcon_algebraic:arithmetic: 15.162
+  falcon_algebraic:ring: 9.658
+  falcon_algebraic:pcs: 4.425
+full N=512 T=1:
+  falcon_hybrid:arithmetic_prefix: 625.950
+  falcon_hybrid:shared_opening: 435.816
+  falcon_hybrid:binary_bridge: 217.901
+  falcon_hybrid:keccak_prefix: 192.668
+  falcon_hybrid:joint_sumcheck: 142.591
+  falcon_hybrid:link_coefficients: 2.103
+full N=512 T=8:
+  falcon_hybrid:arithmetic_prefix: 97.861
+  falcon_hybrid:shared_opening: 60.751
+  falcon_hybrid:binary_bridge: 58.499
+  falcon_hybrid:keccak_prefix: 52.364
+  falcon_hybrid:joint_sumcheck: 29.183
+  falcon_hybrid:link_coefficients: 1.732
+full N=512 T=16:
+  falcon_hybrid:arithmetic_prefix: 60.934
+  falcon_hybrid:binary_bridge: 53.423
+  falcon_hybrid:keccak_prefix: 52.706
+  falcon_hybrid:shared_opening: 40.059
+  falcon_hybrid:joint_sumcheck: 24.002
+  falcon_hybrid:link_coefficients: 1.823
+full N=1024 T=1:
+  falcon_hybrid:arithmetic_prefix: 1161.527
+  falcon_hybrid:shared_opening: 514.851
+  falcon_hybrid:binary_bridge: 432.889
+  falcon_hybrid:keccak_prefix: 297.292
+  falcon_hybrid:joint_sumcheck: 179.487
+  falcon_hybrid:link_coefficients: 3.438
+full N=1024 T=8:
+  falcon_hybrid:arithmetic_prefix: 210.248
+  falcon_hybrid:binary_bridge: 146.944
+  falcon_hybrid:keccak_prefix: 79.592
+  falcon_hybrid:shared_opening: 71.694
+  falcon_hybrid:joint_sumcheck: 39.380
+  falcon_hybrid:link_coefficients: 2.742
+full N=1024 T=16:
+  falcon_hybrid:binary_bridge: 134.217
+  falcon_hybrid:arithmetic_prefix: 128.877
+  falcon_hybrid:keccak_prefix: 80.741
+  falcon_hybrid:shared_opening: 46.574
+  falcon_hybrid:joint_sumcheck: 32.372
+  falcon_hybrid:link_coefficients: 2.884
+
+At 16 workers, finer bottleneck detail:
+arithmetic N=512:
+  prove|falcon_bridge:wfbitz_forest: 12.032
+  prove|falcon_algebraic:binding: 5.822
+  prove|falcon_algebraic:integer_outer: 2.105
+  prove|falcon_algebraic_ring:coordinates: 2.901
+  prove|falcon_algebraic_ring:collapse: 1.206
+  commit|shared_source:encode: 0.929
+arithmetic N=1024:
+  prove|falcon_bridge:wfbitz_forest: 21.640
+  prove|falcon_algebraic:binding: 11.884
+  prove|falcon_algebraic:integer_outer: 3.237
+  prove|falcon_algebraic_ring:coordinates: 5.998
+  prove|falcon_algebraic_ring:collapse: 2.245
+  commit|shared_source:encode: 1.364
+full N=512:
+  prove|falcon_bridge:wfbitz_forest: 50.443
+  prove|falcon_arithmetic:binding_inner: 44.652
+  prove|falcon_arithmetic:integer_outer: 8.900
+  prove|falcon_shared_ring:prove: 3.420
+  commit|shared_source:encode: 31.195
+  commit|falcon_hybrid:shake_witness: 14.751
+full N=1024:
+  prove|falcon_bridge:wfbitz_forest: 128.289
+  prove|falcon_arithmetic:binding_inner: 101.614
+  prove|falcon_arithmetic:integer_outer: 15.678
+  prove|falcon_shared_ring:prove: 5.696
+  commit|shared_source:encode: 36.006
+  commit|falcon_hybrid:shake_witness: 22.507
+
+Reading the results:
+Arithmetic: GKR is the largest measured proving stage at 8/16 workers and stops scaling past 8 on this CPU. The arithmetic norm/word binder comes next, followed by ring reduction. 16 workers help N1024 overall by accelerating other stages; N512 is slightly faster at 8.
+Full: arithmetic-prefix binding, the BitZ bridge/GKR, and Keccak dominate proof time. Shared PCS opening remains material. Witness/commit is also significant; source encoding is the largest measured part of that phase.
+Optimization implications are hypotheses: improve GKR scheduling/cache behavior beyond 8 cores; focus full arithmetic work on the binding inner pass; profile Keccak before selecting a kernel change. These measurements do not establish an instruction-level cause.
+
+Artifacts: manifest.json, light-build.json, final-validation.json, performance.csv, stages.csv, summary.json, profile-trials.json, raw logs/commands under latency/ and profile-light/. Detailed intrusive profiles are under profile/.
+Reproduce headline binaries from the recorded commit using the recorded build flags, then run the commands saved per cell. Reproduce minimal profiles by applying light-profile-subscriber.patch only for the diagnostic build.
+No production source changes were retained. Benchmarks were run locally against the revision recorded in manifest.json.

@@ -1,0 +1,26 @@
+{
+  "0": {
+    "cache/index3/size": "98304K",
+    "cache/index3/shared_cpu_list": "0-7,16-23",
+    "cpufreq/scaling_governor": "powersave",
+    "cpufreq/scaling_driver": "amd-pstate-epp"
+  },
+  "6": {
+    "cache/index3/size": "98304K",
+    "cache/index3/shared_cpu_list": "0-7,16-23",
+    "cpufreq/scaling_governor": "powersave",
+    "cpufreq/scaling_driver": "amd-pstate-epp"
+  },
+  "8": {
+    "cache/index3/size": "32768K",
+    "cache/index3/shared_cpu_list": "8-15,24-31",
+    "cpufreq/scaling_governor": "powersave",
+    "cpufreq/scaling_driver": "amd-pstate-epp"
+  },
+  "14": {
+    "cache/index3/size": "32768K",
+    "cache/index3/shared_cpu_list": "8-15,24-31",
+    "cpufreq/scaling_governor": "powersave",
+    "cpufreq/scaling_driver": "amd-pstate-epp"
+  }
+}

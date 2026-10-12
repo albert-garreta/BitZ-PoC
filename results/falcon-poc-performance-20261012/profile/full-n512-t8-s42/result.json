@@ -1,0 +1,67 @@
+{
+  "job": {
+    "id": "full-n512-t8-s42",
+    "variant": "full",
+    "threads": 8,
+    "seed": 42
+  },
+  "phase": "profile",
+  "degree": 512,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "source_root": "cc44de9436a29cf7ccf8b242d72140670a07cc0cc6a5f0502954cf83d97e0776",
+      "proof_debug_digest": "3320982793613ec072de11580540ac07e81b8fc9c22f093fdc8df702fd30a122",
+      "total_prover_ms": 429.21259,
+      "prove_ms": 355.068269,
+      "witness_commit_ms": 74.144321,
+      "verify_ms": 21.346265,
+      "process_peak_rss_kib": 1375672,
+      "proof_payload_bytes": 697418
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "source_root": "cc44de9436a29cf7ccf8b242d72140670a07cc0cc6a5f0502954cf83d97e0776",
+      "proof_debug_digest": "3320982793613ec072de11580540ac07e81b8fc9c22f093fdc8df702fd30a122",
+      "total_prover_ms": 394.373542,
+      "prove_ms": 327.979716,
+      "witness_commit_ms": 66.393826,
+      "verify_ms": 20.741841,
+      "process_peak_rss_kib": 1745892,
+      "proof_payload_bytes": 697418
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "source_root": "cc44de9436a29cf7ccf8b242d72140670a07cc0cc6a5f0502954cf83d97e0776",
+      "proof_debug_digest": "3320982793613ec072de11580540ac07e81b8fc9c22f093fdc8df702fd30a122",
+      "total_prover_ms": 391.001686,
+      "prove_ms": 323.96784,
+      "witness_commit_ms": 67.033846,
+      "verify_ms": 20.853553,
+      "process_peak_rss_kib": 1966864,
+      "proof_payload_bytes": 697418
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "source_root": "cc44de9436a29cf7ccf8b242d72140670a07cc0cc6a5f0502954cf83d97e0776",
+      "proof_debug_digest": "3320982793613ec072de11580540ac07e81b8fc9c22f093fdc8df702fd30a122",
+      "total_prover_ms": 395.32765700000004,
+      "prove_ms": 327.80922400000003,
+      "witness_commit_ms": 67.518433,
+      "verify_ms": 20.820670999999997,
+      "process_peak_rss_kib": 2139884,
+      "proof_payload_bytes": 697418
+    }
+  ],
+  "stdout_sha256": "aa06bfa2d60df0c7fc6101189444acd2ae79f58c41dd42df0a87fcd733e861d4",
+  "stderr_sha256": "0456e0ea4b10521370cecc0a875b69e3517cd1a071caeb35ad8fd54b5618bc69",
+  "verified": true
+}

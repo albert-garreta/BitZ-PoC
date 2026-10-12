@@ -1,0 +1,73 @@
+RUN full-n512-t8-s44
+OK full-n512-t8-s44; verified=4
+RUN full-n512-t16-s42
+OK full-n512-t16-s42; verified=8
+RUN arithmetic-n512-t1-s42
+OK arithmetic-n512-t1-s42; verified=12
+RUN full-n1024-t1-s42
+OK full-n1024-t1-s42; verified=16
+RUN arithmetic-n512-t8-s42
+OK arithmetic-n512-t8-s42; verified=20
+RUN arithmetic-n512-t1-s44
+OK arithmetic-n512-t1-s44; verified=24
+RUN arithmetic-n1024-t16-s42
+OK arithmetic-n1024-t16-s42; verified=28
+RUN full-n512-t1-s43
+OK full-n512-t1-s43; verified=32
+RUN arithmetic-n512-t16-s42
+OK arithmetic-n512-t16-s42; verified=36
+RUN full-n1024-t8-s43
+OK full-n1024-t8-s43; verified=40
+RUN arithmetic-n1024-t8-s42
+OK arithmetic-n1024-t8-s42; verified=44
+RUN full-n512-t1-s42
+OK full-n512-t1-s42; verified=48
+RUN full-n1024-t1-s43
+OK full-n1024-t1-s43; verified=52
+RUN arithmetic-n512-t8-s44
+OK arithmetic-n512-t8-s44; verified=56
+RUN full-n512-t16-s44
+OK full-n512-t16-s44; verified=60
+RUN full-n1024-t8-s44
+OK full-n1024-t8-s44; verified=64
+RUN arithmetic-n512-t1-s43
+OK arithmetic-n512-t1-s43; verified=68
+RUN arithmetic-n512-t16-s43
+OK arithmetic-n512-t16-s43; verified=72
+RUN arithmetic-n512-t16-s44
+OK arithmetic-n512-t16-s44; verified=76
+RUN full-n512-t8-s43
+OK full-n512-t8-s43; verified=80
+RUN arithmetic-n1024-t8-s44
+OK arithmetic-n1024-t8-s44; verified=84
+RUN full-n1024-t16-s42
+OK full-n1024-t16-s42; verified=88
+RUN arithmetic-n1024-t8-s43
+OK arithmetic-n1024-t8-s43; verified=92
+RUN arithmetic-n1024-t16-s44
+OK arithmetic-n1024-t16-s44; verified=96
+RUN arithmetic-n512-t8-s43
+OK arithmetic-n512-t8-s43; verified=100
+RUN full-n512-t16-s43
+OK full-n512-t16-s43; verified=104
+RUN full-n1024-t1-s44
+OK full-n1024-t1-s44; verified=108
+RUN arithmetic-n1024-t16-s43
+OK arithmetic-n1024-t16-s43; verified=112
+RUN arithmetic-n1024-t1-s43
+OK arithmetic-n1024-t1-s43; verified=116
+RUN full-n1024-t16-s44
+OK full-n1024-t16-s44; verified=120
+RUN full-n512-t1-s44
+OK full-n512-t1-s44; verified=124
+RUN full-n512-t8-s42
+OK full-n512-t8-s42; verified=128
+RUN full-n1024-t8-s42
+OK full-n1024-t8-s42; verified=132
+RUN arithmetic-n1024-t1-s42
+OK arithmetic-n1024-t1-s42; verified=136
+RUN arithmetic-n1024-t1-s44
+OK arithmetic-n1024-t1-s44; verified=140
+RUN full-n1024-t16-s43
+OK full-n1024-t16-s43; verified=144
+ALL COMPLETE

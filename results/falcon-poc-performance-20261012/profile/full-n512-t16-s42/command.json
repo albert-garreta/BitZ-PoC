@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-binaries-20261012/falcon_hybrid",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "16",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012",
+    "BITZ_FALCON_STAGE_TIMINGS": "1"
+  },
+  "cwd": "/tmp/bitz-falcon-poc-push-20261012",
+  "binary": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-binaries-20261012/falcon_hybrid",
+    "sha256": "09589253b26ad9744933dfe48925e4ff35ca75d0274216ee78aa0a07350e3d44"
+  }
+}

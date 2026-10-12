@@ -1,0 +1,17 @@
+{
+  "revision": "ee79186745962e3e285fc5090dae8a95545dda43",
+  "binaries": {
+    "arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-profile-light-binaries-20261012/falcon_algebraic",
+      "sha256": "0180d8d5197e4ce3bef90f5acc078059841d98b51057ed161c219747810c7b58"
+    },
+    "full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-profile-light-binaries-20261012/falcon_hybrid",
+      "sha256": "5ab6a3973278e090127546fd4d6e25c69427bef3b77a2d8091529614d5936512"
+    }
+  },
+  "observer_patch": "light-profile-subscriber.patch",
+  "observer_patch_sha256": "bad3e9b1588aa24c322bfd35d40d64d7d113a14d5f1cb6f88ba405734d828c8e",
+  "compiler_flags": "--release --features falcon-hybrid; RUSTFLAGS=-C target-cpu=native",
+  "scope": "Only benchmark StageTimings subscriber filter changed; prover, verifier, all kernels and transcript code unchanged."
+}

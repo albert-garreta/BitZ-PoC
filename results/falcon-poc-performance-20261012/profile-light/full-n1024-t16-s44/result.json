@@ -1,0 +1,67 @@
+{
+  "job": {
+    "id": "full-n1024-t16-s44",
+    "variant": "full",
+    "threads": 16,
+    "seed": 44
+  },
+  "phase": "profile-light",
+  "degree": 1024,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "9fc437728895433469b865efe80c827f4595620680f63597f340cd196d0c876d",
+      "proof_debug_digest": "50eb07102447333157573b664503ef7f269013a6ed0537ab210b1be5a385e703",
+      "total_prover_ms": 589.735006,
+      "prove_ms": 459.423803,
+      "witness_commit_ms": 130.31120299999998,
+      "verify_ms": 38.171391,
+      "process_peak_rss_kib": 1854624,
+      "proof_payload_bytes": 969538
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "9fc437728895433469b865efe80c827f4595620680f63597f340cd196d0c876d",
+      "proof_debug_digest": "50eb07102447333157573b664503ef7f269013a6ed0537ab210b1be5a385e703",
+      "total_prover_ms": 542.287085,
+      "prove_ms": 466.680135,
+      "witness_commit_ms": 75.60695000000001,
+      "verify_ms": 37.668358999999995,
+      "process_peak_rss_kib": 2148468,
+      "proof_payload_bytes": 969538
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "9fc437728895433469b865efe80c827f4595620680f63597f340cd196d0c876d",
+      "proof_debug_digest": "50eb07102447333157573b664503ef7f269013a6ed0537ab210b1be5a385e703",
+      "total_prover_ms": 508.14831000000004,
+      "prove_ms": 436.727506,
+      "witness_commit_ms": 71.420804,
+      "verify_ms": 36.992532000000004,
+      "process_peak_rss_kib": 2427664,
+      "proof_payload_bytes": 969538
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "9fc437728895433469b865efe80c827f4595620680f63597f340cd196d0c876d",
+      "proof_debug_digest": "50eb07102447333157573b664503ef7f269013a6ed0537ab210b1be5a385e703",
+      "total_prover_ms": 510.80306,
+      "prove_ms": 439.35807,
+      "witness_commit_ms": 71.44499,
+      "verify_ms": 37.697215,
+      "process_peak_rss_kib": 2579784,
+      "proof_payload_bytes": 969538
+    }
+  ],
+  "stdout_sha256": "0c4aa5f2c26e50bfa076e564eecaa38d4652e356ab8748014b59e8c35e80f846",
+  "stderr_sha256": "57a15104dbdf493805fb3e902a1aa5d32eaf09ca457c941347cbef8ba09a177c",
+  "verified": true
+}

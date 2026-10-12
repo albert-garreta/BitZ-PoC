@@ -1,0 +1,67 @@
+{
+  "job": {
+    "id": "full-n512-t16-s43",
+    "variant": "full",
+    "threads": 16,
+    "seed": 43
+  },
+  "phase": "profile",
+  "degree": 512,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+      "source_root": "9b18a4c07ebf61be89798f8d2db17806aa3fef030c9ecbd3627a2f4333c629ed",
+      "proof_debug_digest": "3279909671357f8b42ca8aeba13cb537df98ba5dfdecd56244eee4269ff9760c",
+      "total_prover_ms": 352.737692,
+      "prove_ms": 283.250677,
+      "witness_commit_ms": 69.487015,
+      "verify_ms": 20.518359,
+      "process_peak_rss_kib": 1458824,
+      "proof_payload_bytes": 700010
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+      "source_root": "9b18a4c07ebf61be89798f8d2db17806aa3fef030c9ecbd3627a2f4333c629ed",
+      "proof_debug_digest": "3279909671357f8b42ca8aeba13cb537df98ba5dfdecd56244eee4269ff9760c",
+      "total_prover_ms": 318.325522,
+      "prove_ms": 261.62223,
+      "witness_commit_ms": 56.703292000000005,
+      "verify_ms": 20.39722,
+      "process_peak_rss_kib": 1751016,
+      "proof_payload_bytes": 700010
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+      "source_root": "9b18a4c07ebf61be89798f8d2db17806aa3fef030c9ecbd3627a2f4333c629ed",
+      "proof_debug_digest": "3279909671357f8b42ca8aeba13cb537df98ba5dfdecd56244eee4269ff9760c",
+      "total_prover_ms": 317.48381,
+      "prove_ms": 261.581112,
+      "witness_commit_ms": 55.902698,
+      "verify_ms": 19.989659,
+      "process_peak_rss_kib": 1973172,
+      "proof_payload_bytes": 700010
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+      "source_root": "9b18a4c07ebf61be89798f8d2db17806aa3fef030c9ecbd3627a2f4333c629ed",
+      "proof_debug_digest": "3279909671357f8b42ca8aeba13cb537df98ba5dfdecd56244eee4269ff9760c",
+      "total_prover_ms": 318.508558,
+      "prove_ms": 262.947566,
+      "witness_commit_ms": 55.560992,
+      "verify_ms": 20.158368,
+      "process_peak_rss_kib": 2146316,
+      "proof_payload_bytes": 700010
+    }
+  ],
+  "stdout_sha256": "0dab1646e8b0d8fd8841d540eed3804d10e88e2223d38f07ee9811fd703435d1",
+  "stderr_sha256": "7f9151a33f5e0e050da871abdc27c6df0efe606382e689500b8147dbc4910038",
+  "verified": true
+}

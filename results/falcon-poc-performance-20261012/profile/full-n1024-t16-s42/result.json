@@ -1,0 +1,67 @@
+{
+  "job": {
+    "id": "full-n1024-t16-s42",
+    "variant": "full",
+    "threads": 16,
+    "seed": 42
+  },
+  "phase": "profile",
+  "degree": 1024,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+      "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+      "total_prover_ms": 599.426864,
+      "prove_ms": 479.819014,
+      "witness_commit_ms": 119.60785,
+      "verify_ms": 38.635327,
+      "process_peak_rss_kib": 1854960,
+      "proof_payload_bytes": 967234
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+      "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+      "total_prover_ms": 530.772293,
+      "prove_ms": 456.704906,
+      "witness_commit_ms": 74.067387,
+      "verify_ms": 38.026695,
+      "process_peak_rss_kib": 2151816,
+      "proof_payload_bytes": 967234
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+      "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+      "total_prover_ms": 524.524499,
+      "prove_ms": 453.448008,
+      "witness_commit_ms": 71.076491,
+      "verify_ms": 38.053616,
+      "process_peak_rss_kib": 2433620,
+      "proof_payload_bytes": 967234
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon/shared-prime/non-zk/v7",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+      "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+      "total_prover_ms": 526.531042,
+      "prove_ms": 455.341789,
+      "witness_commit_ms": 71.189253,
+      "verify_ms": 37.736838,
+      "process_peak_rss_kib": 2589792,
+      "proof_payload_bytes": 967234
+    }
+  ],
+  "stdout_sha256": "0ba63d293504bc20132dd0a3cd8dca54c464095333bedcfcb0d273e38ed3c8cd",
+  "stderr_sha256": "ab63fad4698238f82018b9933b8f8a28b9b953e65f14349e1402d4945f74cb6a",
+  "verified": true
+}

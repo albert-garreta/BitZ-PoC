@@ -1,0 +1,12 @@
+{
+  "verified_proofs": 618,
+  "raw_log_hashes_verified": true,
+  "complete_proof_identities_equal_across_workers_and_instrumentation": true,
+  "equal_input_digests_across_arithmetic_and_full": true,
+  "latency_samples_per_cell": 21,
+  "light_profile_samples_per_cell": 9,
+  "light_profile_proof_latency_ratio_range": [
+    0.9881615628789301,
+    1.0174356033735819
+  ]
+}

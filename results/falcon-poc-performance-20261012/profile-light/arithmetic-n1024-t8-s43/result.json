@@ -1,0 +1,67 @@
+{
+  "job": {
+    "id": "arithmetic-n1024-t8-s43",
+    "variant": "arithmetic",
+    "threads": 8,
+    "seed": 43
+  },
+  "phase": "profile-light",
+  "degree": 1024,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 67.13670300000001,
+      "prove_ms": 61.993237,
+      "witness_commit_ms": 5.143406,
+      "verify_ms": 18.843222,
+      "process_peak_rss_kib": 156292,
+      "proof_payload_bytes": 321304
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 63.70334,
+      "prove_ms": 59.988416,
+      "witness_commit_ms": 3.714864,
+      "verify_ms": 19.992896,
+      "process_peak_rss_kib": 186504,
+      "proof_payload_bytes": 321304
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 64.657545,
+      "prove_ms": 60.95874,
+      "witness_commit_ms": 3.698674,
+      "verify_ms": 19.984611,
+      "process_peak_rss_kib": 187264,
+      "proof_payload_bytes": 321304
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 63.997977999999996,
+      "prove_ms": 60.278374,
+      "witness_commit_ms": 3.719544,
+      "verify_ms": 20.471640999999998,
+      "process_peak_rss_kib": 187336,
+      "proof_payload_bytes": 321304
+    }
+  ],
+  "stdout_sha256": "7eccc10f7e683210fdd54641e0daf19d7124dc86a6538b481c313e6a4c17baa5",
+  "stderr_sha256": "d650f2294d7b85c0201f2d03386fd7a9c9079852e7d9f67e2b5320269ca71141",
+  "verified": true
+}

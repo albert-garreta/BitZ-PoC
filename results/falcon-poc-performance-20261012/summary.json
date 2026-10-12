@@ -1,0 +1,3402 @@
+{
+  "profile_directory": "profile-light",
+  "definition": "Median across 21 untraced trials per cell; stages are inclusive diagnostic medians across 9 traced trials. Warmups excluded.",
+  "rows": [
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 8.944043,
+          "min": 8.925297,
+          "max": 9.114034,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 132.261538,
+          "min": 130.882389,
+          "max": 133.75816700000001,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 141.213335,
+          "min": 139.82744399999999,
+          "max": 142.68745199999998,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 30.445139,
+          "min": 30.37637,
+          "max": 30.516554000000003,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 93680,
+          "min": 93600,
+          "max": 93716,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 8.940215,
+          "prove_ms": 132.98832199999998,
+          "total_prover_ms": 141.921564,
+          "verify_ms": 30.445139,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 93600
+        },
+        "43": {
+          "witness_commit_ms": 8.944103,
+          "prove_ms": 131.121151,
+          "total_prover_ms": 140.086714,
+          "verify_ms": 30.426344,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 93716
+        },
+        "44": {
+          "witness_commit_ms": 8.946496999999999,
+          "prove_ms": 132.16857100000001,
+          "total_prover_ms": 141.117743,
+          "verify_ms": 30.449106999999998,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 93680
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 8.997414000000001,
+          "min": 8.946788000000002,
+          "max": 9.237989,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 4.064335,
+          "min": 4.028628,
+          "max": 4.222504,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 3.106664,
+          "min": 3.097477,
+          "max": 3.122565,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.54489,
+          "min": 0.538699,
+          "max": 0.6424449999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 40.363847,
+          "min": 39.988056,
+          "max": 40.554747,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 30.64085,
+          "min": 30.084939000000002,
+          "max": 30.752492,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 6.157534,
+          "min": 6.079947,
+          "max": 6.202038,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 54.730814,
+          "min": 54.264542,
+          "max": 55.56946,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 9.777629,
+          "min": 9.680426,
+          "max": 9.871096,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 11.570449,
+          "min": 10.259,
+          "max": 12.575681,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 132.366681,
+          "min": 131.47508399999998,
+          "max": 134.464568,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 19.461812,
+          "min": 19.396608,
+          "max": 19.590064,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 8.975452,
+          "min": 8.875793999999999,
+          "max": 9.353267,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.810563,
+          "min": 0.783031,
+          "max": 0.815592,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 14.142422999999999,
+          "min": 14.078291,
+          "max": 14.196445,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 4.063013,
+          "min": 4.045781,
+          "max": 4.165367,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.757923,
+          "min": 0.7453,
+          "max": 0.806725,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 2.3934260000000003,
+          "min": 2.383457,
+          "max": 2.405208,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.389517,
+          "min": 0.35999,
+          "max": 0.39450599999999997,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 50.890882,
+          "min": 50.363576,
+          "max": 51.668752999999995,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.644619,
+          "min": 0.642315,
+          "max": 0.6543779999999999,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.904722,
+          "min": 1.8991209999999998,
+          "max": 1.928887,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 1.8653170000000001,
+          "min": 1.86148,
+          "max": 1.878161,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 6.993825,
+          "min": 5.666836,
+          "max": 8.002172,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 2.608042,
+          "min": 2.595949,
+          "max": 2.645913,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 6.119251,
+          "min": 6.085056,
+          "max": 6.196367,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 30.478763999999998,
+          "min": 30.438237,
+          "max": 30.816343,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 14.172248999999999,
+          "min": 14.143685,
+          "max": 14.200852999999999,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 3.21544,
+          "min": 3.210892,
+          "max": 3.514255,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 9.009827,
+          "min": 8.959121,
+          "max": 9.250363,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 132.379054,
+          "min": 131.487519,
+          "max": 134.47696100000002,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 141.359806,
+          "min": 140.49740599999998,
+          "max": 143.71893699999998,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 30.49265,
+          "min": 30.451923999999998,
+          "max": 30.833345,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.383438938912496,
+        "min": 0.37900223833243635,
+        "max": 0.3891103412414194,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.41238601085637006,
+        "min": 0.40835827225780197,
+        "max": 0.41822336505322333,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0008885122748232
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 1.926303,
+          "min": 1.763415,
+          "max": 1.990764,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 32.115238,
+          "min": 31.943212999999997,
+          "max": 32.809721,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 34.053202,
+          "min": 33.857492,
+          "max": 34.737165,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 10.422007,
+          "min": 10.284638000000001,
+          "max": 10.863952,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 96796,
+          "min": 96024,
+          "max": 97384,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 1.913489,
+          "prove_ms": 32.080512,
+          "total_prover_ms": 33.998489,
+          "verify_ms": 10.344942,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 96200
+        },
+        "43": {
+          "witness_commit_ms": 1.914139,
+          "prove_ms": 32.05851,
+          "total_prover_ms": 33.991555,
+          "verify_ms": 10.486609,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 96816
+        },
+        "44": {
+          "witness_commit_ms": 1.934087,
+          "prove_ms": 32.466853,
+          "total_prover_ms": 34.339924,
+          "verify_ms": 10.403001999999999,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 97224
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 1.9237080000000002,
+          "min": 1.883261,
+          "max": 2.0371819999999996,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 0.974283,
+          "min": 0.902537,
+          "max": 1.080964,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.39006799999999997,
+          "min": 0.371212,
+          "max": 0.401749,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.10689299999999999,
+          "min": 0.103806,
+          "max": 0.113184,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 8.393642999999999,
+          "min": 8.356451000000002,
+          "max": 8.864121,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 6.210805,
+          "min": 6.163445,
+          "max": 6.687075,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 1.167377,
+          "min": 1.129076,
+          "max": 1.201201,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 12.276985,
+          "min": 11.989892000000001,
+          "max": 12.893632,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 2.150897,
+          "min": 2.128746,
+          "max": 2.195702,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 3.441868,
+          "min": 3.280093,
+          "max": 3.573217,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 32.451445,
+          "min": 29.785825,
+          "max": 33.076517,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 5.219088999999999,
+          "min": 2.927606,
+          "max": 5.311693999999999,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 2.650372,
+          "min": 2.5931539999999997,
+          "max": 3.046591,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.154622,
+          "min": 0.112493,
+          "max": 0.181012,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 1.8942620000000001,
+          "min": 1.767923,
+          "max": 1.9644350000000002,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 2.688163,
+          "min": 0.5666910000000001,
+          "max": 2.758617,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.113384,
+          "min": 0.11087999999999999,
+          "max": 0.13891199999999998,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.385859,
+          "min": 0.379979,
+          "max": 0.400417,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.059903,
+          "min": 0.0579,
+          "max": 0.060655,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 11.387863999999999,
+          "min": 11.108055,
+          "max": 11.993478999999999,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.11016899999999999,
+          "min": 0.10529899999999999,
+          "max": 0.111721,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 0.979372,
+          "min": 0.974693,
+          "max": 0.9873970000000001,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.944426,
+          "min": 0.940008,
+          "max": 0.9500959999999999,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 1.986407,
+          "min": 1.825552,
+          "max": 2.128304,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.422379,
+          "min": 0.41576599999999997,
+          "max": 0.427468,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 1.1332829999999998,
+          "min": 1.120879,
+          "max": 1.143593,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 10.733557,
+          "min": 10.200068,
+          "max": 10.961057,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 2.0103619999999998,
+          "min": 1.8884509999999999,
+          "max": 2.270453,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 1.5259049999999998,
+          "min": 1.469839,
+          "max": 1.95143,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 1.936312,
+          "min": 1.895735,
+          "max": 2.0495959999999998,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 32.464429,
+          "min": 29.798378,
+          "max": 33.08895,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 34.360244,
+          "min": 31.748375000000003,
+          "max": 35.025392000000004,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 10.747322,
+          "min": 10.216569999999999,
+          "max": 10.980324,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3509670448896082,
+        "min": 0.3440492786668813,
+        "max": 0.37660665078569744,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.3783614059560388,
+        "min": 0.37082252822741624,
+        "max": 0.406295493816407,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0108730628121145
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 2.402272,
+          "min": 2.313875,
+          "max": 2.571693,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 32.694032,
+          "min": 31.849175,
+          "max": 33.722016,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 35.088439,
+          "min": 34.275662999999994,
+          "max": 36.128597,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 11.30108,
+          "min": 10.695173,
+          "max": 11.747584,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 256368,
+          "min": 256112,
+          "max": 256848,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 99620,
+          "min": 97920,
+          "max": 100120,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 2.401902,
+          "prove_ms": 32.274849,
+          "total_prover_ms": 34.595187,
+          "verify_ms": 11.30108,
+          "proof_payload_bytes": 256368,
+          "process_peak_rss_kib": 100120
+        },
+        "43": {
+          "witness_commit_ms": 2.402272,
+          "prove_ms": 32.694032,
+          "total_prover_ms": 35.088439,
+          "verify_ms": 10.978760000000001,
+          "proof_payload_bytes": 256112,
+          "process_peak_rss_kib": 99144
+        },
+        "44": {
+          "witness_commit_ms": 2.4064910000000004,
+          "prove_ms": 33.615094,
+          "total_prover_ms": 35.984183,
+          "verify_ms": 11.427147999999999,
+          "proof_payload_bytes": 256848,
+          "process_peak_rss_kib": 99620
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 2.404116,
+          "min": 2.30592,
+          "max": 2.461735,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 0.762692,
+          "min": 0.7182780000000001,
+          "max": 0.785946,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.929388,
+          "min": 0.920631,
+          "max": 0.986425,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.167988,
+          "min": 0.154022,
+          "max": 0.180432,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 8.041757,
+          "min": 7.776605,
+          "max": 8.126647,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 5.821949,
+          "min": 5.669731,
+          "max": 5.983805,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 1.461213,
+          "min": 1.340946,
+          "max": 1.524603,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 12.923608,
+          "min": 12.527959,
+          "max": 13.468739000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 2.10511,
+          "min": 2.04131,
+          "max": 2.211231,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 3.7942039999999997,
+          "min": 3.676061,
+          "max": 3.840662,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 32.984742999999995,
+          "min": 32.524523,
+          "max": 34.409216,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 4.9146529999999995,
+          "min": 4.831817,
+          "max": 5.056401,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 2.463148,
+          "min": 2.405178,
+          "max": 2.6396919999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.29937600000000003,
+          "min": 0.265362,
+          "max": 0.384196,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 1.205549,
+          "min": 1.1581700000000001,
+          "max": 1.429513,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 2.9010160000000003,
+          "min": 2.8431260000000003,
+          "max": 2.9378249999999997,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.109156,
+          "min": 0.102834,
+          "max": 0.116962,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.404495,
+          "min": 0.397141,
+          "max": 0.420836,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.048421000000000006,
+          "min": 0.046278,
+          "max": 0.054363,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 12.031732,
+          "min": 11.605686,
+          "max": 12.561353,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.11108,
+          "min": 0.106131,
+          "max": 0.114276,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 0.997216,
+          "min": 0.995443,
+          "max": 1.0102,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.952672,
+          "min": 0.9481729999999999,
+          "max": 0.962951,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 2.39055,
+          "min": 2.285422,
+          "max": 2.445324,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.344051,
+          "min": 0.337929,
+          "max": 0.35602300000000003,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 1.227952,
+          "min": 1.1900700000000002,
+          "max": 1.249533,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 11.323232,
+          "min": 10.898589,
+          "max": 11.568805999999999,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 1.336738,
+          "min": 1.190151,
+          "max": 1.509234,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 2.216932,
+          "min": 2.199128,
+          "max": 2.464931,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 2.416709,
+          "min": 2.318474,
+          "max": 2.4743690000000003,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 32.997137,
+          "min": 32.536836,
+          "max": 34.42147,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 35.414006,
+          "min": 34.944659,
+          "max": 36.892292,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 11.337218,
+          "min": 10.912666,
+          "max": 11.58642,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.36253502688269124,
+        "min": 0.35171796874377315,
+        "max": 0.3714564967725881,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.39116526577469385,
+        "min": 0.37966806029262473,
+        "max": 0.39897463927432303,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0092709580757737
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 17.052014,
+          "min": 16.969477,
+          "max": 17.395324,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 258.876437,
+          "min": 257.180741,
+          "max": 261.426619,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 275.872486,
+          "min": 274.165438,
+          "max": 278.53366800000003,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 59.736508,
+          "min": 59.331662,
+          "max": 62.027309,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 206584,
+          "min": 206516,
+          "max": 206876,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 17.061893,
+          "prove_ms": 259.26781700000004,
+          "total_prover_ms": 276.31231699999995,
+          "verify_ms": 59.797011999999995,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 206584
+        },
+        "43": {
+          "witness_commit_ms": 17.077492,
+          "prove_ms": 260.19028199999997,
+          "total_prover_ms": 277.586036,
+          "verify_ms": 59.736508,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 206516
+        },
+        "44": {
+          "witness_commit_ms": 17.012049,
+          "prove_ms": 257.52612400000004,
+          "total_prover_ms": 274.623133,
+          "verify_ms": 59.689058,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 206876
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 17.109994,
+          "min": 16.920056,
+          "max": 17.216195,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 8.871956,
+          "min": 8.616564,
+          "max": 8.887084999999999,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 4.386475,
+          "min": 4.376406,
+          "max": 4.4122140000000005,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 1.301911,
+          "min": 1.294748,
+          "max": 1.311931,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 78.840334,
+          "min": 78.485473,
+          "max": 79.252875,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 61.39223,
+          "min": 61.050042999999995,
+          "max": 61.764634,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 12.461164,
+          "min": 12.421479,
+          "max": 12.487974000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 105.873653,
+          "min": 104.198626,
+          "max": 108.20920000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 17.442353,
+          "min": 17.401094999999998,
+          "max": 17.555135999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 18.635008000000003,
+          "min": 18.066032,
+          "max": 19.564817,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 257.78271800000005,
+          "min": 254.676273,
+          "max": 260.576981,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 40.135254,
+          "min": 40.058109,
+          "max": 40.243638999999995,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 18.915689,
+          "min": 18.716422,
+          "max": 19.203684,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 1.565199,
+          "min": 1.5359740000000002,
+          "max": 1.649409,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 28.806311,
+          "min": 28.731240000000003,
+          "max": 28.905008,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 9.009827999999999,
+          "min": 8.928583999999999,
+          "max": 9.070773,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 1.6697870000000001,
+          "min": 1.6525349999999999,
+          "max": 1.695917,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 4.784267,
+          "min": 4.7565539999999995,
+          "max": 4.877504,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.365361,
+          "min": 0.36186399999999996,
+          "max": 0.374268,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 98.591793,
+          "min": 96.949217,
+          "max": 100.835637,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 1.2686590000000002,
+          "min": 1.25816,
+          "max": 1.29552,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 3.750241,
+          "min": 3.734542,
+          "max": 3.79729,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 3.694616,
+          "min": 3.678596,
+          "max": 3.741996,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 9.660368,
+          "min": 9.108183,
+          "max": 10.559237000000001,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 5.169686,
+          "min": 5.151241,
+          "max": 5.204281,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 12.42751,
+          "min": 12.380963,
+          "max": 12.674868,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 62.083909,
+          "min": 59.637452,
+          "max": 62.329904,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 29.112280000000002,
+          "min": 28.873258999999997,
+          "max": 29.279577,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 9.338128,
+          "min": 7.247725,
+          "max": 9.749156,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 17.122829,
+          "min": 16.932388,
+          "max": 17.228709,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 257.795612,
+          "min": 254.68913799999999,
+          "max": 260.589676,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 274.98704000000004,
+          "min": 271.812027,
+          "max": 277.818445,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 62.105188,
+          "min": 59.651959999999995,
+          "max": 62.352947,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3822170589074476,
+        "min": 0.37998360111730684,
+        "max": 0.3882773794643454,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.41044710755435465,
+        "min": 0.4084372495117257,
+        "max": 0.4166699974328842,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.99582493867528
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 3.565773,
+          "min": 3.318064,
+          "max": 3.7517739999999997,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 61.187742,
+          "min": 59.171539,
+          "max": 61.994497,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 64.71144500000001,
+          "min": 62.777999,
+          "max": 65.57078,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 19.85303,
+          "min": 18.616353,
+          "max": 20.264939,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 187460,
+          "min": 186984,
+          "max": 188064,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 3.515016,
+          "prove_ms": 61.255209,
+          "total_prover_ms": 64.71144500000001,
+          "verify_ms": 19.904227,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 187936
+        },
+        "43": {
+          "witness_commit_ms": 3.671292,
+          "prove_ms": 61.226224,
+          "total_prover_ms": 64.91022000000001,
+          "verify_ms": 19.977486,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 187372
+        },
+        "44": {
+          "witness_commit_ms": 3.565773,
+          "prove_ms": 59.798254,
+          "total_prover_ms": 63.337477,
+          "verify_ms": 19.847611,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 187392
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 3.648659,
+          "min": 3.6259970000000004,
+          "max": 3.7743070000000003,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 1.886968,
+          "min": 1.701247,
+          "max": 1.945088,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 0.7098220000000001,
+          "min": 0.686648,
+          "max": 0.936621,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.19095099999999998,
+          "min": 0.18330700000000003,
+          "max": 0.216669,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 17.743572,
+          "min": 17.556038,
+          "max": 17.981172,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 14.052923,
+          "min": 13.785969,
+          "max": 14.301082999999998,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 2.456756,
+          "min": 2.4316780000000002,
+          "max": 2.486272,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 21.575919,
+          "min": 20.971114999999998,
+          "max": 22.214106,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 3.652837,
+          "min": 3.638611,
+          "max": 3.7380389999999997,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 4.307876,
+          "min": 4.235258000000001,
+          "max": 4.494669,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 60.520331,
+          "min": 59.975131,
+          "max": 61.551983,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 11.199007,
+          "min": 10.764315,
+          "max": 11.341086,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 6.484943,
+          "min": 6.28789,
+          "max": 6.683909,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.28889600000000004,
+          "min": 0.218583,
+          "max": 0.34353,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 3.8670929999999997,
+          "min": 3.8088520000000003,
+          "max": 3.9608600000000003,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 6.267049999999999,
+          "min": 5.963187,
+          "max": 6.474422,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.239573,
+          "min": 0.220336,
+          "max": 0.265483,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 1.067759,
+          "min": 0.921773,
+          "max": 1.160024,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.06318,
+          "min": 0.059833000000000004,
+          "max": 0.07959999999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 19.674163,
+          "min": 19.133982,
+          "max": 20.514091,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.192494,
+          "min": 0.18956800000000001,
+          "max": 0.19508899999999998,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 0.9965040000000001,
+          "min": 0.9904619999999998,
+          "max": 1.184229,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.9592729999999999,
+          "min": 0.9519799999999999,
+          "max": 1.146598,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 2.466153,
+          "min": 2.394598,
+          "max": 2.6106369999999997,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.7874289999999999,
+          "min": 0.7823990000000001,
+          "max": 0.796767,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 2.378949,
+          "min": 2.3692499999999996,
+          "max": 2.452738,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 20.009807000000002,
+          "min": 19.838574,
+          "max": 20.582701,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 3.9676620000000002,
+          "min": 3.819973,
+          "max": 4.201465,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 5.341259999999999,
+          "min": 5.177239999999999,
+          "max": 5.363411999999999,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 3.661213,
+          "min": 3.6385810000000003,
+          "max": 3.7872320000000004,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 60.533296,
+          "min": 59.988416,
+          "max": 61.564755999999996,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 64.175934,
+          "min": 63.660911,
+          "max": 65.352049,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 20.025317,
+          "min": 19.853622,
+          "max": 20.604633,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.3257433957151074,
+        "min": 0.31742697638128065,
+        "max": 0.33640658975506593,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.35493832824863364,
+        "min": 0.34790445740955117,
+        "max": 0.3642848052062141,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.9893042956218256
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 3.8089220000000004,
+          "min": 3.531257,
+          "max": 4.145118,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 57.615556999999995,
+          "min": 56.451946,
+          "max": 58.671413,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 61.519529000000006,
+          "min": 60.300303,
+          "max": 62.567751,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 18.563202,
+          "min": 17.22964,
+          "max": 19.245151,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 321304,
+          "min": 321272,
+          "max": 321432,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 191264,
+          "min": 189584,
+          "max": 192244,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 3.896217,
+          "prove_ms": 58.335818999999994,
+          "total_prover_ms": 62.084227,
+          "verify_ms": 18.766807,
+          "proof_payload_bytes": 321272,
+          "process_peak_rss_kib": 191088
+        },
+        "43": {
+          "witness_commit_ms": 3.795166,
+          "prove_ms": 57.623321999999995,
+          "total_prover_ms": 61.571117,
+          "verify_ms": 18.5623,
+          "proof_payload_bytes": 321304,
+          "process_peak_rss_kib": 191392
+        },
+        "44": {
+          "witness_commit_ms": 3.900896,
+          "prove_ms": 57.230318000000004,
+          "total_prover_ms": 61.051554,
+          "verify_ms": 18.502066000000003,
+          "proof_payload_bytes": 321432,
+          "process_peak_rss_kib": 191264
+        }
+      },
+      "stages": {
+        "commit|falcon_algebraic:commit": {
+          "median": 3.93459,
+          "min": 3.580781,
+          "max": 4.078232,
+          "count": 9
+        },
+        "commit|falcon_algebraic:witness": {
+          "median": 1.330155,
+          "min": 1.186673,
+          "max": 1.4610319999999999,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 1.3638890000000001,
+          "min": 1.336758,
+          "max": 1.553898,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 0.250133,
+          "min": 0.240265,
+          "max": 0.26517100000000005,
+          "count": 9
+        },
+        "prove|falcon_algebraic:arithmetic": {
+          "median": 15.162141,
+          "min": 14.938448,
+          "max": 15.435297,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding": {
+          "median": 11.883872,
+          "min": 11.619212000000001,
+          "max": 12.156457000000001,
+          "count": 9
+        },
+        "prove|falcon_algebraic:binding_construction": {
+          "median": 2.714864,
+          "min": 2.678495,
+          "max": 2.82909,
+          "count": 9
+        },
+        "prove|falcon_algebraic:bitz": {
+          "median": 23.363669,
+          "min": 23.068822,
+          "max": 24.348161,
+          "count": 9
+        },
+        "prove|falcon_algebraic:integer_outer": {
+          "median": 3.23653,
+          "min": 3.1920059999999997,
+          "max": 3.28973,
+          "count": 9
+        },
+        "prove|falcon_algebraic:pcs": {
+          "median": 4.425048,
+          "min": 4.329206,
+          "max": 4.484821,
+          "count": 9
+        },
+        "prove|falcon_algebraic:prove": {
+          "median": 58.607715,
+          "min": 58.015235,
+          "max": 59.808896,
+          "count": 9
+        },
+        "prove|falcon_algebraic:ring": {
+          "median": 9.657712,
+          "min": 9.500445,
+          "max": 9.790864,
+          "count": 9
+        },
+        "prove|falcon_algebraic:word_first_fold": {
+          "median": 5.417784999999999,
+          "min": 5.1378960000000005,
+          "max": 5.621259,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:carries": {
+          "median": 0.6020179999999999,
+          "min": 0.5620430000000001,
+          "max": 0.673293,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:collapse": {
+          "median": 2.244945,
+          "min": 2.1761150000000002,
+          "max": 2.296613,
+          "count": 9
+        },
+        "prove|falcon_algebraic_ring:coordinates": {
+          "median": 5.998243,
+          "min": 5.918522,
+          "max": 6.188552,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.195059,
+          "min": 0.186864,
+          "max": 0.212452,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 0.976407,
+          "min": 0.842082,
+          "max": 1.031321,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.052189,
+          "min": 0.04752,
+          "max": 0.056887,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 21.63997,
+          "min": 21.384818,
+          "max": 22.571081,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 0.154202,
+          "min": 0.145986,
+          "max": 0.159311,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 1.006012,
+          "min": 1.001704,
+          "max": 1.0127350000000002,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 0.960877,
+          "min": 0.955778,
+          "max": 0.962561,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 2.886979,
+          "min": 2.786489,
+          "max": 2.940901,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 0.483073,
+          "min": 0.478034,
+          "max": 0.485829,
+          "count": 9
+        },
+        "verify|falcon_algebraic:binding_construction": {
+          "median": 2.3173019999999998,
+          "min": 2.249404,
+          "max": 2.674798,
+          "count": 9
+        },
+        "verify|falcon_algebraic:verify": {
+          "median": 19.471780000000003,
+          "min": 18.489674,
+          "max": 19.750698,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:collapse": {
+          "median": 2.327171,
+          "min": 2.192516,
+          "max": 2.381443,
+          "count": 9
+        },
+        "verify|falcon_algebraic_ring:coordinates": {
+          "median": 5.450467,
+          "min": 5.420631,
+          "max": 5.48391,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 3.9471640000000003,
+          "min": 3.593355,
+          "max": 4.090796,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 58.620118999999995,
+          "min": 58.028029000000004,
+          "max": 59.821310000000004,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 62.430935,
+          "min": 61.653204,
+          "max": 63.89183700000001,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 19.486549,
+          "min": 18.504412000000002,
+          "max": 19.765065,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.36915602303707373,
+        "min": 0.3609337449796491,
+        "max": 0.37748545416842805,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.3967379673568329,
+        "min": 0.3910283141388141,
+        "max": 0.40720586724450675,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0174356033735819
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 304.30946800000004,
+          "min": 303.78777099999996,
+          "max": 305.901218,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 1625.822426,
+          "min": 1618.545696,
+          "max": 1636.288336,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 1930.349896,
+          "min": 1924.301008,
+          "max": 1940.5396730000002,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 33.929759,
+          "min": 33.801316,
+          "max": 34.133894999999995,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2358864,
+          "min": 1957240,
+          "max": 2457632,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 304.30946800000004,
+          "prove_ms": 1625.904671,
+          "total_prover_ms": 1930.621018,
+          "verify_ms": 33.858985000000004,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2358864
+        },
+        "43": {
+          "witness_commit_ms": 304.285152,
+          "prove_ms": 1623.927713,
+          "total_prover_ms": 1928.275824,
+          "verify_ms": 34.060957,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2359140
+        },
+        "44": {
+          "witness_commit_ms": 304.339875,
+          "prove_ms": 1623.9165209999999,
+          "total_prover_ms": 1929.1780989999997,
+          "verify_ms": 33.929759,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2358704
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 305.008761,
+          "min": 304.27101600000003,
+          "max": 309.09675,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 7.831499000000001,
+          "min": 7.804598,
+          "max": 7.871895,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 34.290262,
+          "min": 33.935610999999994,
+          "max": 37.544556,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 7.968698,
+          "min": 7.917331,
+          "max": 8.380267,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.323842,
+          "min": 0.320767,
+          "max": 1.1439130000000002,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 304.811838,
+          "min": 304.081658,
+          "max": 308.713937,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 206.915851,
+          "min": 206.648816,
+          "max": 207.841942,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 46.681353,
+          "min": 46.548211,
+          "max": 47.154207,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 554.422783,
+          "min": 553.099912,
+          "max": 555.751436,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 32.366174,
+          "min": 31.794783,
+          "max": 33.791258,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 1632.927858,
+          "min": 1622.889716,
+          "max": 1642.3128949999998,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 3.468359,
+          "min": 3.4002,
+          "max": 3.493226,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 9.918626,
+          "min": 9.886875999999999,
+          "max": 9.987464999999998,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.370871,
+          "min": 0.362315,
+          "max": 0.374188,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 203.347794,
+          "min": 202.30506200000002,
+          "max": 218.49042699999998,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 625.950429,
+          "min": 624.129857,
+          "max": 628.73258,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 217.901344,
+          "min": 217.022352,
+          "max": 233.134399,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 142.590835,
+          "min": 141.548544,
+          "max": 152.174046,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 192.668479,
+          "min": 191.414528,
+          "max": 194.363315,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.102766,
+          "min": 1.830612,
+          "max": 2.301792,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 435.816463,
+          "min": 434.070632,
+          "max": 437.966739,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 16.967776,
+          "min": 16.698286,
+          "max": 17.345890999999998,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 42.013116000000004,
+          "min": 41.84106,
+          "max": 43.270663,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 117.536447,
+          "min": 117.343953,
+          "max": 118.505329,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 117.427251,
+          "min": 117.244986,
+          "max": 118.39528100000001,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 211.021344,
+          "min": 209.366044,
+          "max": 212.500801,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 107.202996,
+          "min": 107.073402,
+          "max": 107.382687,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 33.773775,
+          "min": 33.698032000000005,
+          "max": 33.956390000000006,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 305.006486,
+          "min": 304.26840100000004,
+          "max": 309.094446,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 1632.922508,
+          "min": 1622.886019,
+          "max": 1642.3087669999998,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 1937.9818140000002,
+          "min": 1927.218171,
+          "max": 1949.5490879999998,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 33.770569,
+          "min": 33.695107,
+          "max": 33.954246,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.12465759124886516,
+        "min": 0.12436883869568169,
+        "max": 0.13311051703487847,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.1337261825286573,
+        "min": 0.13335821016192398,
+        "max": 0.14203203689791707,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0043670710198458
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 66.43841,
+          "min": 65.44395999999999,
+          "max": 69.814524,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 314.06084699999997,
+          "min": 310.182533,
+          "max": 321.118873,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 381.931906,
+          "min": 376.59588599999995,
+          "max": 387.61404,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 20.812665000000003,
+          "min": 20.546732000000002,
+          "max": 21.113213,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2369200,
+          "min": 1965096,
+          "max": 2469668,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 66.495167,
+          "prove_ms": 315.811878,
+          "total_prover_ms": 382.49074299999995,
+          "verify_ms": 20.812665000000003,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2369436
+        },
+        "43": {
+          "witness_commit_ms": 66.413353,
+          "prove_ms": 313.405388,
+          "total_prover_ms": 381.931906,
+          "verify_ms": 20.875444,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2368680
+        },
+        "44": {
+          "witness_commit_ms": 66.43841,
+          "prove_ms": 313.341066,
+          "total_prover_ms": 380.19086400000003,
+          "verify_ms": 20.699141,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2369200
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 66.863927,
+          "min": 66.24666,
+          "max": 73.723158,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 1.107334,
+          "min": 1.096774,
+          "max": 1.16325,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 15.660624000000002,
+          "min": 15.157963,
+          "max": 16.368823000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 1.405678,
+          "min": 1.375261,
+          "max": 1.478697,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.360903,
+          "min": 0.33252899999999996,
+          "max": 1.1994779999999998,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 66.678527,
+          "min": 66.057372,
+          "max": 73.530313,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 39.574735,
+          "min": 39.238459000000006,
+          "max": 45.517913,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 8.085269,
+          "min": 7.732972999999999,
+          "max": 8.897855,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 77.86259500000001,
+          "min": 77.54108699999999,
+          "max": 79.393421,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 10.221067,
+          "min": 9.956137,
+          "max": 10.610603999999999,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 312.85449700000004,
+          "min": 309.53487,
+          "max": 316.54360199999996,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.43914,
+          "min": 0.43199699999999996,
+          "max": 0.487412,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 1.8976590000000002,
+          "min": 1.621646,
+          "max": 2.118205,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.061827,
+          "min": 0.060775,
+          "max": 0.07435099999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 55.235378000000004,
+          "min": 54.299609,
+          "max": 57.403878999999996,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 97.860581,
+          "min": 96.652186,
+          "max": 99.213329,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 58.498678999999996,
+          "min": 57.577517,
+          "max": 60.525692,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 29.183335,
+          "min": 28.902765,
+          "max": 30.832763999999997,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 52.363507,
+          "min": 52.179349,
+          "max": 53.260434000000004,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 1.732285,
+          "min": 1.670328,
+          "max": 1.761491,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 60.750838,
+          "min": 60.434399,
+          "max": 61.513099000000004,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 4.11948,
+          "min": 3.92934,
+          "max": 4.553521,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 5.419118,
+          "min": 5.392918,
+          "max": 5.524126,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 15.162712,
+          "min": 15.121334000000001,
+          "max": 15.976040000000001,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 15.107908,
+          "min": 15.065328,
+          "max": 15.92284,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 31.052369,
+          "min": 30.870855,
+          "max": 31.844266000000005,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 14.370113,
+          "min": 14.260917,
+          "max": 14.446448,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 20.713849,
+          "min": 20.264951,
+          "max": 20.952710999999997,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 66.860772,
+          "min": 66.243764,
+          "max": 73.720142,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 312.84995799999996,
+          "min": 309.530481,
+          "max": 316.539515,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 380.045312,
+          "min": 376.593776,
+          "max": 390.259657,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 20.710002000000003,
+          "min": 20.262055,
+          "max": 20.949134,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.1766285389752234,
+        "min": 0.1745648912662144,
+        "max": 0.1813482244073066,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.18736014833199843,
+        "min": 0.18418217422303118,
+        "max": 0.19121054128107828,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.9961444127417767
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 55.639601,
+          "min": 54.195519,
+          "max": 61.409902,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 247.546443,
+          "min": 243.556839,
+          "max": 262.97035800000003,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 304.218837,
+          "min": 298.516233,
+          "max": 318.02502200000004,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 20.086081,
+          "min": 19.587569,
+          "max": 20.369907,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 697418,
+          "min": 696074,
+          "max": 700010,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2378152,
+          "min": 1970752,
+          "max": 2478880,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 56.103788,
+          "prove_ms": 248.864666,
+          "total_prover_ms": 306.27117699999997,
+          "verify_ms": 19.983838,
+          "proof_payload_bytes": 697418,
+          "process_peak_rss_kib": 2378532
+        },
+        "43": {
+          "witness_commit_ms": 54.959394,
+          "prove_ms": 247.546443,
+          "total_prover_ms": 303.663627,
+          "verify_ms": 20.149071,
+          "proof_payload_bytes": 700010,
+          "process_peak_rss_kib": 2378152
+        },
+        "44": {
+          "witness_commit_ms": 55.656482,
+          "prove_ms": 246.805512,
+          "total_prover_ms": 301.90677500000004,
+          "verify_ms": 20.04341,
+          "proof_payload_bytes": 696074,
+          "process_peak_rss_kib": 2378048
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 55.644681,
+          "min": 54.551565000000004,
+          "max": 61.391217999999995,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 0.7016770000000001,
+          "min": 0.6895239999999999,
+          "max": 0.740691,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 14.751014,
+          "min": 13.499156,
+          "max": 15.636448000000001,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 1.157689,
+          "min": 1.122893,
+          "max": 1.192145,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.40021700000000004,
+          "min": 0.382033,
+          "max": 1.222823,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 55.419686000000006,
+          "min": 54.347739,
+          "max": 61.167806,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 31.195489,
+          "min": 30.598219999999998,
+          "max": 35.829432000000004,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 6.839904,
+          "min": 6.652388999999999,
+          "max": 7.108392,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 44.651835,
+          "min": 44.179753000000005,
+          "max": 45.070054999999996,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 8.89991,
+          "min": 8.835868999999999,
+          "max": 9.776767000000001,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 244.623404,
+          "min": 242.539534,
+          "max": 246.28230100000002,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.323452,
+          "min": 0.313713,
+          "max": 0.335464,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 1.685347,
+          "min": 1.4198240000000002,
+          "max": 1.8334169999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.052098,
+          "min": 0.048841999999999997,
+          "max": 0.054934,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 50.443397000000004,
+          "min": 49.612015,
+          "max": 50.865665,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 60.934284,
+          "min": 60.281881000000006,
+          "max": 62.313142,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 53.423141,
+          "min": 52.365722000000005,
+          "max": 53.782541,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 24.002268,
+          "min": 23.615706,
+          "max": 24.677414000000002,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 52.705505,
+          "min": 52.194798,
+          "max": 53.421388,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 1.822647,
+          "min": 1.805253,
+          "max": 1.859947,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 40.058799,
+          "min": 39.848532,
+          "max": 40.712786,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 3.419887,
+          "min": 3.339435,
+          "max": 3.893393,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 3.230769,
+          "min": 3.1518100000000002,
+          "max": 3.6101560000000004,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 7.75247,
+          "min": 7.675814000000001,
+          "max": 7.880111,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 7.693769,
+          "min": 7.6175749999999995,
+          "max": 7.819557,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 24.596742000000003,
+          "min": 24.340587,
+          "max": 25.174734,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 7.643093,
+          "min": 7.616251,
+          "max": 7.7046600000000005,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 19.654876,
+          "min": 19.441092,
+          "max": 20.12185,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 55.642358,
+          "min": 54.549411,
+          "max": 61.388864,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 244.61588,
+          "min": 242.53242,
+          "max": 246.27562799999998,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 300.219114,
+          "min": 298.174778,
+          "max": 306.493057,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 19.652081,
+          "min": 19.438197000000002,
+          "max": 20.119083999999997,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.20594914502204123,
+        "min": 0.20323869021806318,
+        "max": 0.20888333888890456,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.21838353001783842,
+        "min": 0.21451942138619481,
+        "max": 0.22124620700193404,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.9881615628789301
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 1,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 362.64147,
+          "min": 361.499851,
+          "max": 363.8744,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 2596.964357,
+          "min": 2569.04382,
+          "max": 2629.505159,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 2959.5175489999997,
+          "min": 2931.809725,
+          "max": 2991.805493,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 63.258447999999994,
+          "min": 63.128792000000004,
+          "max": 63.47834300000001,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2768300,
+          "min": 2423224,
+          "max": 2835640,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 362.553192,
+          "prove_ms": 2596.964357,
+          "total_prover_ms": 2959.5175489999997,
+          "verify_ms": 63.20707,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2767984
+        },
+        "43": {
+          "witness_commit_ms": 362.172793,
+          "prove_ms": 2625.095511,
+          "total_prover_ms": 2987.656438,
+          "verify_ms": 63.364959,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2768300
+        },
+        "44": {
+          "witness_commit_ms": 362.754934,
+          "prove_ms": 2571.8436549999997,
+          "total_prover_ms": 2934.7749019999997,
+          "verify_ms": 63.255061,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2769448
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 363.204026,
+          "min": 362.079319,
+          "max": 368.968757,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 15.210362,
+          "min": 15.143616,
+          "max": 15.247142,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 55.012417,
+          "min": 54.192325,
+          "max": 58.767418,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 14.84428,
+          "min": 14.798824999999999,
+          "max": 15.085737,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 1.221099,
+          "min": 0.654657,
+          "max": 2.3179730000000003,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 362.855537,
+          "min": 361.728726,
+          "max": 368.616631,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 228.273737,
+          "min": 227.675997,
+          "max": 229.41789100000003,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 47.844903,
+          "min": 47.686183,
+          "max": 47.946124,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 1033.45179,
+          "min": 1031.414227,
+          "max": 1035.85825,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 63.149823999999995,
+          "min": 60.413329000000004,
+          "max": 64.814071,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 2600.903966,
+          "min": 2576.02969,
+          "max": 2641.493219,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 7.678159,
+          "min": 7.595192,
+          "max": 7.873328000000001,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 20.194627,
+          "min": 20.100659999999998,
+          "max": 20.334802999999997,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.367755,
+          "min": 0.36260600000000004,
+          "max": 0.374108,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 403.217981,
+          "min": 398.980527,
+          "max": 405.691057,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 1161.527327,
+          "min": 1159.1662119999999,
+          "max": 1164.773345,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 432.889047,
+          "min": 428.845021,
+          "max": 435.45514000000003,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 179.486593,
+          "min": 176.84487700000003,
+          "max": 191.681953,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 297.292399,
+          "min": 296.48985100000004,
+          "max": 300.83826400000004,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 3.4379910000000002,
+          "min": 3.016895,
+          "max": 3.521168,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 514.8513449999999,
+          "min": 487.080542,
+          "max": 540.323703,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 31.44411,
+          "min": 31.053872,
+          "max": 31.483074,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 40.583141000000005,
+          "min": 40.263807,
+          "max": 41.501458,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 115.500518,
+          "min": 115.30262300000001,
+          "max": 116.65029200000001,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 115.383135,
+          "min": 115.253299,
+          "max": 116.49731200000001,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 204.815168,
+          "min": 177.100801,
+          "max": 229.28,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 194.541291,
+          "min": 194.25503899999998,
+          "max": 194.98548,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 63.633809,
+          "min": 63.498372999999994,
+          "max": 63.800564,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 363.20097,
+          "min": 362.07643299999995,
+          "max": 368.966402,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 2600.898095,
+          "min": 2576.023438,
+          "max": 2641.4878379999996,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 2963.90097,
+          "min": 2939.4265100000002,
+          "max": 3008.7663979999998,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 63.630993999999994,
+          "min": 63.494566,
+          "max": 63.796898000000006,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.1537192693338571,
+        "min": 0.1520096941259778,
+        "max": 0.15740578652202203,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.16526467624953983,
+        "min": 0.16338792511960998,
+        "max": 0.16895407878502292,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 1.0015147447015964
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 8,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 81.481936,
+          "min": 79.72030600000001,
+          "max": 82.87509999999999,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 569.563214,
+          "min": 559.995461,
+          "max": 574.190414,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 650.958887,
+          "min": 640.996148,
+          "max": 655.948292,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 38.404691,
+          "min": 37.757908,
+          "max": 39.500422,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2778464,
+          "min": 2416968,
+          "max": 2858560,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 80.936435,
+          "prove_ms": 569.961858,
+          "total_prover_ms": 650.578899,
+          "verify_ms": 38.530679,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2778464
+        },
+        "43": {
+          "witness_commit_ms": 81.924474,
+          "prove_ms": 570.216238,
+          "total_prover_ms": 652.600532,
+          "verify_ms": 38.253876,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2782032
+        },
+        "44": {
+          "witness_commit_ms": 81.481936,
+          "prove_ms": 567.2048149999999,
+          "total_prover_ms": 648.9440089999999,
+          "verify_ms": 38.404691,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2777820
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 82.962379,
+          "min": 81.768281,
+          "max": 84.000832,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 2.063853,
+          "min": 2.042272,
+          "max": 2.075505,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 21.968512,
+          "min": 20.865105,
+          "max": 23.86106,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 2.576763,
+          "min": 2.5634170000000003,
+          "max": 2.691449,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 2.330707,
+          "min": 0.655219,
+          "max": 2.402733,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 82.618258,
+          "min": 81.43469,
+          "max": 83.661271,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 44.669628,
+          "min": 44.423513,
+          "max": 45.954308,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 8.636311000000001,
+          "min": 8.491868,
+          "max": 8.755265999999999,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 176.014077,
+          "min": 175.36399699999998,
+          "max": 178.233463,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 19.168968000000003,
+          "min": 18.729307000000002,
+          "max": 20.072907,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 566.965091,
+          "min": 561.093267,
+          "max": 573.042192,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 1.3009899999999999,
+          "min": 1.020941,
+          "max": 1.315056,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 3.587273,
+          "min": 3.546086,
+          "max": 4.182418999999999,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.064071,
+          "min": 0.060865,
+          "max": 0.104849,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 140.248676,
+          "min": 139.584649,
+          "max": 142.47339200000002,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 210.248362,
+          "min": 209.309938,
+          "max": 212.29509299999998,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 146.943705,
+          "min": 146.43643600000001,
+          "max": 148.964226,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 39.379786,
+          "min": 39.125315,
+          "max": 41.246024,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 79.592416,
+          "min": 78.676294,
+          "max": 82.189577,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.741985,
+          "min": 2.656313,
+          "max": 2.7708199999999996,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 71.694401,
+          "min": 67.717772,
+          "max": 75.854007,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 7.007110000000001,
+          "min": 6.693357,
+          "max": 7.295315,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 5.316865,
+          "min": 5.292167,
+          "max": 5.418807,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 15.015384,
+          "min": 14.92342,
+          "max": 15.138486,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 14.967623,
+          "min": 14.874497,
+          "max": 15.070998000000001,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 30.835008000000002,
+          "min": 26.9754,
+          "max": 35.051612000000006,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 25.672055,
+          "min": 25.576554,
+          "max": 25.803564,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 38.924134,
+          "min": 37.898835,
+          "max": 39.461861,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 82.95825099999999,
+          "min": 81.764343,
+          "max": 83.997045,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 566.958658,
+          "min": 561.087486,
+          "max": 573.036492,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 649.421823,
+          "min": 644.045737,
+          "max": 656.7200049999999,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 38.920648,
+          "min": 37.8956,
+          "max": 39.457502999999996,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.2485094154374775,
+        "min": 0.2443413429244573,
+        "max": 0.2518852290700712,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.2594289155077253,
+        "min": 0.25627386396885876,
+        "max": 0.2633606715087955,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.9954270993351055
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 16,
+      "samples": 21,
+      "latency": {
+        "witness_commit_ms": {
+          "median": 71.57386100000001,
+          "min": 70.54799100000001,
+          "max": 77.895325,
+          "count": 21
+        },
+        "prove_ms": {
+          "median": 445.79604,
+          "min": 439.975603,
+          "max": 452.912525,
+          "count": 21
+        },
+        "total_prover_ms": {
+          "median": 517.914139,
+          "min": 511.202879,
+          "max": 523.887924,
+          "count": 21
+        },
+        "verify_ms": {
+          "median": 37.522672,
+          "min": 36.729072,
+          "max": 38.423595999999996,
+          "count": 21
+        },
+        "proof_payload_bytes": {
+          "median": 968962,
+          "min": 967234,
+          "max": 969538,
+          "count": 21
+        },
+        "process_peak_rss_kib": {
+          "median": 2794132,
+          "min": 2425108,
+          "max": 2880156,
+          "count": 21
+        }
+      },
+      "seed_medians": {
+        "42": {
+          "witness_commit_ms": 71.938981,
+          "prove_ms": 447.262693,
+          "total_prover_ms": 519.201674,
+          "verify_ms": 37.153726,
+          "proof_payload_bytes": 967234,
+          "process_peak_rss_kib": 2794132
+        },
+        "43": {
+          "witness_commit_ms": 71.283862,
+          "prove_ms": 444.415689,
+          "total_prover_ms": 516.579435,
+          "verify_ms": 37.522672,
+          "proof_payload_bytes": 968962,
+          "process_peak_rss_kib": 2793476
+        },
+        "44": {
+          "witness_commit_ms": 71.422154,
+          "prove_ms": 444.833578,
+          "total_prover_ms": 516.407439,
+          "verify_ms": 37.529094,
+          "proof_payload_bytes": 969538,
+          "process_peak_rss_kib": 2798280
+        }
+      },
+      "stages": {
+        "commit|falcon_bench:commit": {
+          "median": 71.457303,
+          "min": 70.142026,
+          "max": 79.922691,
+          "count": 9
+        },
+        "commit|falcon_hybrid:arithmetic_witness": {
+          "median": 1.167668,
+          "min": 1.1575389999999999,
+          "max": 1.212243,
+          "count": 9
+        },
+        "commit|falcon_hybrid:shake_witness": {
+          "median": 22.506739,
+          "min": 21.894752,
+          "max": 23.254323,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_construction": {
+          "median": 2.19978,
+          "min": 2.023517,
+          "max": 3.015994,
+          "count": 9
+        },
+        "commit|falcon_hybrid:source_packing": {
+          "median": 0.87825,
+          "min": 0.844998,
+          "max": 2.579498,
+          "count": 9
+        },
+        "commit|falcon_hybrid:witness_commit": {
+          "median": 71.110888,
+          "min": 69.796783,
+          "max": 79.210404,
+          "count": 9
+        },
+        "commit|shared_source:encode": {
+          "median": 36.005876,
+          "min": 35.63787,
+          "max": 40.75159,
+          "count": 9
+        },
+        "commit|shared_source:merkle": {
+          "median": 7.957758,
+          "min": 7.696052999999999,
+          "max": 8.268797,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:binding_inner": {
+          "median": 101.614379,
+          "min": 99.16461699999999,
+          "max": 108.66124400000001,
+          "count": 9
+        },
+        "prove|falcon_arithmetic:integer_outer": {
+          "median": 15.677615,
+          "min": 15.004303,
+          "max": 16.318868000000002,
+          "count": 9
+        },
+        "prove|falcon_bench:prove": {
+          "median": 443.356632,
+          "min": 436.73493,
+          "max": 466.68647699999997,
+          "count": 9
+        },
+        "prove|falcon_bridge:column_packing": {
+          "median": 0.786848,
+          "min": 0.7267140000000001,
+          "max": 0.850037,
+          "count": 9
+        },
+        "prove|falcon_bridge:integer_folds": {
+          "median": 3.5857509999999997,
+          "min": 3.403085,
+          "max": 5.038218,
+          "count": 9
+        },
+        "prove|falcon_bridge:power_tables": {
+          "median": 0.07374,
+          "min": 0.051758,
+          "max": 0.087996,
+          "count": 9
+        },
+        "prove|falcon_bridge:wfbitz_forest": {
+          "median": 128.28924999999998,
+          "min": 126.07377100000001,
+          "max": 133.363315,
+          "count": 9
+        },
+        "prove|falcon_hybrid:arithmetic_prefix": {
+          "median": 128.877393,
+          "min": 126.91760699999999,
+          "max": 139.345156,
+          "count": 9
+        },
+        "prove|falcon_hybrid:binary_bridge": {
+          "median": 134.216659,
+          "min": 131.854142,
+          "max": 140.798835,
+          "count": 9
+        },
+        "prove|falcon_hybrid:joint_sumcheck": {
+          "median": 32.372064,
+          "min": 31.866298,
+          "max": 34.355776,
+          "count": 9
+        },
+        "prove|falcon_hybrid:keccak_prefix": {
+          "median": 80.740578,
+          "min": 80.027249,
+          "max": 84.473927,
+          "count": 9
+        },
+        "prove|falcon_hybrid:link_coefficients": {
+          "median": 2.884053,
+          "min": 2.849058,
+          "max": 2.974936,
+          "count": 9
+        },
+        "prove|falcon_hybrid:shared_opening": {
+          "median": 46.57378,
+          "min": 45.110433,
+          "max": 58.949040000000004,
+          "count": 9
+        },
+        "prove|falcon_shared_ring:prove": {
+          "median": 5.695831,
+          "min": 5.131403,
+          "max": 9.575897,
+          "count": 9
+        },
+        "prove|op:deferred_first_fold": {
+          "median": 3.6068,
+          "min": 3.548911,
+          "max": 4.039568,
+          "count": 9
+        },
+        "prove|op:extra_bases": {
+          "median": 7.6944989999999995,
+          "min": 7.63635,
+          "max": 10.165653,
+          "count": 9
+        },
+        "prove|op:initial_messages": {
+          "median": 7.627822999999999,
+          "min": 7.577779,
+          "max": 10.092424,
+          "count": 9
+        },
+        "prove|op:ligerito": {
+          "median": 25.397185999999998,
+          "min": 23.86094,
+          "max": 34.742968,
+          "count": 9
+        },
+        "prove|op:ring_switch": {
+          "median": 13.444473,
+          "min": 13.419476,
+          "max": 13.954227,
+          "count": 9
+        },
+        "verify|falcon_bench:verify": {
+          "median": 38.159318,
+          "min": 36.996638999999995,
+          "max": 38.436272,
+          "count": 9
+        }
+      },
+      "profile_samples": 9,
+      "profile_latency": {
+        "witness_commit_ms": {
+          "median": 71.453816,
+          "min": 70.138279,
+          "max": 79.918873,
+          "count": 9
+        },
+        "prove_ms": {
+          "median": 443.349719,
+          "min": 436.727506,
+          "max": 466.680135,
+          "count": 9
+        },
+        "total_prover_ms": {
+          "median": 514.093803,
+          "min": 508.14831000000004,
+          "max": 542.287085,
+          "count": 9
+        },
+        "verify_ms": {
+          "median": 38.155491,
+          "min": 36.992532000000004,
+          "max": 38.432143,
+          "count": 9
+        }
+      },
+      "gkr_fraction_of_proof": {
+        "median": 0.28825385559952277,
+        "min": 0.27633303268843873,
+        "max": 0.29629556568049337,
+        "count": 9
+      },
+      "bridge_fraction_of_proof": {
+        "median": 0.30176564186018023,
+        "min": 0.2892807361513256,
+        "max": 0.3128151880708683,
+        "count": 9
+      },
+      "profile_prove_overhead_ratio": 0.994512465835273
+    }
+  ]
+}

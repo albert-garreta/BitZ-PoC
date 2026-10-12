@@ -1,0 +1,8 @@
+{
+  "verified_proofs": 474,
+  "expected_proofs": 474,
+  "complete_proof_identities_equal_across_workers_and_trace_modes": true,
+  "input_digests_equal_across_arithmetic_and_full": true,
+  "source_revision": "ee79186745962e3e285fc5090dae8a95545dda43",
+  "source_clean": true
+}

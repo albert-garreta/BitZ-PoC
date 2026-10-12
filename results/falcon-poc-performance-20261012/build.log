@@ -1,0 +1,6 @@
+   Compiling field v0.1.0 (/tmp/bitz-falcon-poc-push-20261012/vendor/field)
+   Compiling flock-core v0.1.0 (/tmp/bitz-falcon-poc-push-20261012/vendor/flock-mod/crates/flock-core)
+   Compiling circuit v0.1.0 (/tmp/bitz-falcon-poc-push-20261012/crates/circuit)
+   Compiling flock-prover v0.1.0 (/tmp/bitz-falcon-poc-push-20261012/vendor/flock-mod/crates/flock-prover)
+   Compiling bitz v0.1.0 (/tmp/bitz-falcon-poc-push-20261012)
+    Finished `release` profile [optimized] target(s) in 2m 46s

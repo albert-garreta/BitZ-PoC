@@ -1,0 +1,157 @@
+RUN prewarm/arithmetic-n512-t1-s42
+OK  prewarm/arithmetic-n512-t1-s42; verified=1
+RUN prewarm/arithmetic-n512-t1-s43
+OK  prewarm/arithmetic-n512-t1-s43; verified=2
+RUN prewarm/arithmetic-n512-t1-s44
+OK  prewarm/arithmetic-n512-t1-s44; verified=3
+RUN prewarm/arithmetic-n1024-t1-s42
+OK  prewarm/arithmetic-n1024-t1-s42; verified=4
+RUN prewarm/arithmetic-n1024-t1-s43
+OK  prewarm/arithmetic-n1024-t1-s43; verified=5
+RUN prewarm/arithmetic-n1024-t1-s44
+OK  prewarm/arithmetic-n1024-t1-s44; verified=6
+RUN latency/arithmetic-n1024-t16-s42
+OK  latency/arithmetic-n1024-t16-s42; verified=15
+RUN latency/full-n512-t8-s44
+OK  latency/full-n512-t8-s44; verified=24
+RUN latency/arithmetic-n1024-t1-s42
+OK  latency/arithmetic-n1024-t1-s42; verified=33
+RUN latency/full-n1024-t8-s44
+OK  latency/full-n1024-t8-s44; verified=42
+RUN latency/full-n1024-t16-s42
+OK  latency/full-n1024-t16-s42; verified=51
+RUN latency/arithmetic-n1024-t8-s44
+OK  latency/arithmetic-n1024-t8-s44; verified=60
+RUN latency/full-n512-t1-s42
+OK  latency/full-n512-t1-s42; verified=69
+RUN latency/arithmetic-n512-t8-s43
+OK  latency/arithmetic-n512-t8-s43; verified=78
+RUN latency/full-n1024-t1-s44
+OK  latency/full-n1024-t1-s44; verified=87
+RUN latency/arithmetic-n1024-t8-s43
+OK  latency/arithmetic-n1024-t8-s43; verified=96
+RUN latency/full-n1024-t1-s42
+OK  latency/full-n1024-t1-s42; verified=105
+RUN latency/arithmetic-n512-t16-s44
+OK  latency/arithmetic-n512-t16-s44; verified=114
+RUN latency/arithmetic-n1024-t1-s44
+OK  latency/arithmetic-n1024-t1-s44; verified=123
+RUN latency/full-n512-t8-s43
+OK  latency/full-n512-t8-s43; verified=132
+RUN latency/arithmetic-n512-t16-s42
+OK  latency/arithmetic-n512-t16-s42; verified=141
+RUN latency/arithmetic-n1024-t1-s43
+OK  latency/arithmetic-n1024-t1-s43; verified=150
+RUN latency/full-n512-t16-s43
+OK  latency/full-n512-t16-s43; verified=159
+RUN latency/full-n512-t1-s44
+OK  latency/full-n512-t1-s44; verified=168
+RUN latency/full-n512-t1-s43
+OK  latency/full-n512-t1-s43; verified=177
+RUN latency/full-n1024-t8-s42
+OK  latency/full-n1024-t8-s42; verified=186
+RUN latency/full-n1024-t1-s43
+OK  latency/full-n1024-t1-s43; verified=195
+RUN latency/arithmetic-n512-t8-s44
+OK  latency/arithmetic-n512-t8-s44; verified=204
+RUN latency/arithmetic-n512-t1-s43
+OK  latency/arithmetic-n512-t1-s43; verified=213
+RUN latency/arithmetic-n1024-t8-s42
+OK  latency/arithmetic-n1024-t8-s42; verified=222
+RUN latency/arithmetic-n512-t16-s43
+OK  latency/arithmetic-n512-t16-s43; verified=231
+RUN latency/full-n1024-t8-s43
+OK  latency/full-n1024-t8-s43; verified=240
+RUN latency/full-n512-t8-s42
+OK  latency/full-n512-t8-s42; verified=249
+RUN latency/arithmetic-n1024-t16-s43
+OK  latency/arithmetic-n1024-t16-s43; verified=258
+RUN latency/full-n512-t16-s42
+OK  latency/full-n512-t16-s42; verified=267
+RUN latency/full-n1024-t16-s44
+OK  latency/full-n1024-t16-s44; verified=276
+RUN latency/arithmetic-n1024-t16-s44
+OK  latency/arithmetic-n1024-t16-s44; verified=285
+RUN latency/arithmetic-n512-t1-s44
+OK  latency/arithmetic-n512-t1-s44; verified=294
+RUN latency/full-n1024-t16-s43
+OK  latency/full-n1024-t16-s43; verified=303
+RUN latency/arithmetic-n512-t8-s42
+OK  latency/arithmetic-n512-t8-s42; verified=312
+RUN latency/arithmetic-n512-t1-s42
+OK  latency/arithmetic-n512-t1-s42; verified=321
+RUN latency/full-n512-t16-s44
+OK  latency/full-n512-t16-s44; verified=330
+RUN profile/arithmetic-n512-t16-s44
+OK  profile/arithmetic-n512-t16-s44; verified=334
+RUN profile/full-n1024-t16-s43
+OK  profile/full-n1024-t16-s43; verified=338
+RUN profile/arithmetic-n1024-t1-s43
+OK  profile/arithmetic-n1024-t1-s43; verified=342
+RUN profile/arithmetic-n512-t8-s43
+OK  profile/arithmetic-n512-t8-s43; verified=346
+RUN profile/full-n512-t16-s43
+OK  profile/full-n512-t16-s43; verified=350
+RUN profile/full-n1024-t8-s43
+OK  profile/full-n1024-t8-s43; verified=354
+RUN profile/arithmetic-n512-t8-s44
+OK  profile/arithmetic-n512-t8-s44; verified=358
+RUN profile/arithmetic-n1024-t8-s44
+OK  profile/arithmetic-n1024-t8-s44; verified=362
+RUN profile/full-n1024-t16-s42
+OK  profile/full-n1024-t16-s42; verified=366
+RUN profile/full-n1024-t8-s44
+OK  profile/full-n1024-t8-s44; verified=370
+RUN profile/arithmetic-n1024-t1-s44
+OK  profile/arithmetic-n1024-t1-s44; verified=374
+RUN profile/arithmetic-n1024-t16-s42
+OK  profile/arithmetic-n1024-t16-s42; verified=378
+RUN profile/arithmetic-n1024-t16-s43
+OK  profile/arithmetic-n1024-t16-s43; verified=382
+RUN profile/full-n512-t8-s42
+OK  profile/full-n512-t8-s42; verified=386
+RUN profile/arithmetic-n1024-t1-s42
+OK  profile/arithmetic-n1024-t1-s42; verified=390
+RUN profile/full-n512-t16-s44
+OK  profile/full-n512-t16-s44; verified=394
+RUN profile/arithmetic-n512-t8-s42
+OK  profile/arithmetic-n512-t8-s42; verified=398
+RUN profile/arithmetic-n1024-t16-s44
+OK  profile/arithmetic-n1024-t16-s44; verified=402
+RUN profile/full-n1024-t1-s42
+OK  profile/full-n1024-t1-s42; verified=406
+RUN profile/full-n512-t16-s42
+OK  profile/full-n512-t16-s42; verified=410
+RUN profile/arithmetic-n512-t1-s42
+OK  profile/arithmetic-n512-t1-s42; verified=414
+RUN profile/arithmetic-n512-t1-s44
+OK  profile/arithmetic-n512-t1-s44; verified=418
+RUN profile/full-n512-t1-s42
+OK  profile/full-n512-t1-s42; verified=422
+RUN profile/arithmetic-n512-t16-s43
+OK  profile/arithmetic-n512-t16-s43; verified=426
+RUN profile/full-n512-t8-s44
+OK  profile/full-n512-t8-s44; verified=430
+RUN profile/arithmetic-n512-t1-s43
+OK  profile/arithmetic-n512-t1-s43; verified=434
+RUN profile/full-n1024-t1-s43
+OK  profile/full-n1024-t1-s43; verified=438
+RUN profile/full-n512-t8-s43
+OK  profile/full-n512-t8-s43; verified=442
+RUN profile/full-n1024-t16-s44
+OK  profile/full-n1024-t16-s44; verified=446
+RUN profile/full-n512-t1-s43
+OK  profile/full-n512-t1-s43; verified=450
+RUN profile/arithmetic-n1024-t8-s43
+OK  profile/arithmetic-n1024-t8-s43; verified=454
+RUN profile/arithmetic-n512-t16-s42
+OK  profile/arithmetic-n512-t16-s42; verified=458
+RUN profile/full-n1024-t8-s42
+OK  profile/full-n1024-t8-s42; verified=462
+RUN profile/full-n512-t1-s44
+OK  profile/full-n512-t1-s44; verified=466
+RUN profile/arithmetic-n1024-t8-s42
+OK  profile/arithmetic-n1024-t8-s42; verified=470
+RUN profile/full-n1024-t1-s44
+OK  profile/full-n1024-t1-s44; verified=474
+ALL COMPLETE
