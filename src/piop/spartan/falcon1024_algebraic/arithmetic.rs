@@ -1,8 +1,9 @@
 //! Exact integer norms and authentication against the one committed bit source.
 //!
 //! The native ring reduction, norm endpoint, and slack are joined only after all
-//! their claimed values are fixed. The resulting linear form is streamed into
-//! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
+//! their claimed values are fixed. Production word binding merges two or three
+//! lane evaluations into one weighted BitZ opening. Explicit bit binding retains
+//! the streamed degree-two sumcheck over the committed bit source.
 
 use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
 use rayon::prelude::*;
@@ -76,7 +77,7 @@ pub(super) struct Proof {
     pub norm: NormProof,
     pub merge_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
-    pub binding_terminal: [F; 2],
+    pub binding_terminal: Vec<F>,
     pub binding_nonces: Vec<u64>,
     pub terminal_merge_nonce: Option<u64>,
 }
@@ -105,7 +106,7 @@ impl Proof {
         16 * (2
             + 4 * self.norm.sumcheck.round_polynomials.len()
             + 3 * self.binding.round_polynomials.len()
-            + 2)
+            + self.binding_terminal.len())
             + 8 * (usize::from(self.norm.instance_nonce.is_some())
                 + self.norm.grinding_nonces.len()
                 + usize::from(self.merge_nonce.is_some())
@@ -150,17 +151,25 @@ pub(super) fn prove(
     let eta = sample(transcript, field)?;
     let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
     if schedule.word_binding {
-        let output = word_binding::prove(transcript, form, target, source, schedule)?;
+        let (proof, row_weights, claim) = word_binding::prove(
+            transcript,
+            layout,
+            source,
+            form,
+            target,
+            norm,
+            merge_nonce,
+            schedule,
+            field,
+        )?;
         return Ok((
-            Proof {
-                norm,
-                merge_nonce,
-                binding: output.proof,
-                binding_terminal: output.terminal,
-                binding_nonces: output.nonces,
-                terminal_merge_nonce: output.merge_nonce,
+            proof,
+            BridgeClaim {
+                column_point: claim.column_point(layout).to_vec(),
+                row_weights,
+                modulus: claim.modulus,
+                value: claim.value,
             },
-            output.claim,
         ));
     }
     form.options = arithmetic_binding_options(layout.batch(), schedule.binding_bits == 0);
@@ -207,7 +216,7 @@ pub(super) fn prove(
             norm,
             merge_nonce,
             binding: output.proof,
-            binding_terminal,
+            binding_terminal: binding_terminal.to_vec(),
             binding_nonces,
             terminal_merge_nonce: None,
         },
@@ -230,7 +239,17 @@ pub(super) fn verify(
     let eta = sample(transcript, field)?;
     let (form, target) = BindingForm::new(layout, ring, &norm, eta, field)?;
     if schedule.word_binding {
-        return word_binding::verify(transcript, &form, target, proof, schedule);
+        let claim =
+            word_binding::verify(transcript, layout, &form, target, proof, schedule, field)?;
+        return Ok(BridgeClaim {
+            column_point: claim.column_point(layout).to_vec(),
+            row_weights: claim.row_weights(layout, field)?,
+            modulus: claim.modulus,
+            value: claim.value,
+        });
+    }
+    if proof.binding_terminal.len() != 2 {
+        return Err(failure("bit binding terminal count"));
     }
     if proof.terminal_merge_nonce.is_some() {
         return Err(failure("unexpected bit binding terminal merge nonce"));
@@ -442,8 +461,8 @@ fn binding_workers() -> usize {
     rayon::current_num_threads()
 }
 
-/// Keep unqualified worker counts and trimmed small batches on the original
-/// strategy. Larger domains reuse cached decoders and streamed byte buckets.
+/// Factor equality weights and parallelize coefficient preparation at qualified
+/// worker counts. Keep trimmed small batches on the original strategy.
 pub(super) fn optimized_binding(batch: usize) -> bool {
     #[cfg(feature = "bench-internals")]
     match std::env::var("BITZ_ARITHMETIC_BINDING_STRATEGY") {
@@ -459,8 +478,8 @@ pub(super) fn optimized_binding(batch: usize) -> bool {
             panic!("BITZ_ARITHMETIC_BINDING_STRATEGY must be valid Unicode")
         }
     }
-    (matches!(binding_workers(), 1 | 8) && batch > SMALL_BATCH_MAX)
-        || (N == 512 && batch == 1024 && matches!(binding_workers(), 2 | 4 | 16))
+    (matches!(binding_workers(), 1 | 8 | 16) && batch > SMALL_BATCH_MAX)
+        || (N == 512 && batch == 1024 && matches!(binding_workers(), 2 | 4))
 }
 
 fn binding_strategy(batch: usize, kernel: BindingKernel) -> BindingStrategy {
@@ -1278,7 +1297,7 @@ mod tests {
     use super::*;
     use crate::piop::spartan::falcon_bit_layout::slack_bit;
     use crate::transcript::Blake3Transcript;
-    use field::{IntegerEmbedding, Uint};
+    use field::Uint;
 
     fn field() -> Cfg {
         F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap()
@@ -1290,7 +1309,7 @@ mod tests {
             norm_round_bits: 0,
             merge_bits: 0,
             binding_bits: 0,
-            word_binding: false,
+            word_binding: true,
             terminal_merge_bits: 0,
         }
     }
@@ -1341,16 +1360,10 @@ mod tests {
         }
     }
 
-    fn open_source(source: &Source, claim: &BridgeClaim, field: &Cfg) -> F {
-        eq_table(&claim.column_point, field)
+    fn open_source(source: &Source, point: &[F], field: &Cfg) -> F {
+        eq_table(point, field)
             .unwrap()
             .into_iter()
-            .flat_map(|column| {
-                claim
-                    .row_weights
-                    .iter()
-                    .map(move |row| field.mul(&column, &field.from_integer(row)))
-            })
             .enumerate()
             .filter(|(i, _)| source.bit(*i))
             .fold(field.zero(), |sum, (_, weight)| field.add(&sum, &weight))
@@ -1384,7 +1397,8 @@ mod tests {
 
     #[test]
     fn factored_construction_and_batched_evaluation_match_legacy() {
-        let pools: Vec<_> = [1, 4, 8, 16]
+        #[cfg(feature = "parallel")]
+        let pools: Vec<_> = [1, 8, 16]
             .into_iter()
             .map(|threads| {
                 rayon::ThreadPoolBuilder::new()
@@ -1397,7 +1411,7 @@ mod tests {
         // to the modulus where a short Montgomery reduction would be invalid.
         for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
             let field = F::make_cfg(&Uint::from(modulus)).unwrap();
-            for batch in [1, 3, 8, 9, 16] {
+            for batch in [1, 3, 8, 9, 16, 17] {
                 let layout = Layout::new(batch).unwrap();
                 let ring = PreparedClaim {
                     weights_s1: (0..batch * N)
@@ -1469,6 +1483,7 @@ mod tests {
                         }
                     };
                     check(false);
+                    #[cfg(feature = "parallel")]
                     for pool in &pools {
                         pool.install(|| check(true));
                     }
@@ -1950,8 +1965,29 @@ mod tests {
             )
             .unwrap();
             assert_eq!(claim, verified);
-            assert_eq!(claim.value, open_source(&source, &claim, &field));
-            assert_eq!(claim.row_weights.len(), 1 << layout.row_vars());
+            let cols = eq_table(&claim.column_point, &field).unwrap();
+            let rows = &claim.row_weights;
+            let opened = rows
+                .iter()
+                .enumerate()
+                .fold(field.zero(), |sum, (row, &weight)| {
+                    cols.iter().enumerate().fold(sum, |sum, (col, col_weight)| {
+                        if !source.bit((col << layout.row_vars()) + row) {
+                            return sum;
+                        }
+                        field.add(&sum, &field.mul(&unsigned(weight, &field), col_weight))
+                    })
+                });
+            assert_eq!(claim.value, opened);
+            assert_eq!(
+                proof.binding.round_polynomials.len(),
+                source_rounds(&layout) - 4
+            );
+            assert_eq!(
+                proof.binding_terminal.len(),
+                if batch.is_power_of_two() { 2 } else { 3 }
+            );
+            assert_eq!(rows.len(), 1 << layout.row_vars());
         }
     }
 
@@ -2125,7 +2161,13 @@ mod tests {
                 self.0.fill_sampling_bytes(output);
             }
             fn absorb_inner(&mut self, value: &[u8]) {
-                if value.starts_with(b"bitz/falcon1024-algebraic/") && value.ends_with(b"/v2") {
+                if value == b"bitz/falcon-algebraic/word-binding/v1" {
+                    // The word binder replaced this bit-domain frame. Exercise
+                    // the current frame even when all grinding is disabled.
+                    self.0.absorb_inner(BINDING_DOMAIN);
+                } else if value.starts_with(b"bitz/falcon1024-algebraic/")
+                    && value.ends_with(b"/v2")
+                {
                     let mut legacy = value.to_vec();
                     *legacy.last_mut().unwrap() = b'1';
                     self.0.absorb_inner(&legacy);
@@ -2177,6 +2219,10 @@ mod tests {
 
     #[test]
     fn grinded_messages_roundtrip_and_require_all_nonces() {
+        use crate::piop::spartan::grinding::{
+            derive_grinding_seed_in_domain, grinding_nonce_is_valid,
+        };
+
         let field = field();
         let layout = Layout::new(3).unwrap();
         let data = data(3);
@@ -2187,8 +2233,8 @@ mod tests {
             norm_round_bits: 2,
             merge_bits: 2,
             binding_bits: 2,
-            word_binding: false,
-            terminal_merge_bits: 0,
+            word_binding: true,
+            terminal_merge_bits: 2,
         };
         let (mut proof, claim) = prove(
             &mut Blake3Transcript::new(),
@@ -2212,6 +2258,54 @@ mod tests {
             .unwrap(),
             claim
         );
+        let terminal_nonce = proof
+            .terminal_merge_nonce
+            .expect("terminal merge is grinded");
+        let mut missing = proof.clone();
+        missing.terminal_merge_nonce = None;
+        let mut terminal_transcript = Blake3Transcript::new();
+        assert!(
+            verify(
+                &mut terminal_transcript,
+                &layout,
+                &field,
+                &ring,
+                &missing,
+                &schedule,
+            )
+            .is_err()
+        );
+        // Missing-nonce validation stops immediately before the terminal
+        // grinding frame. Check the exact seed before choosing a bad nonce;
+        // incrementing a valid nonce could accidentally find another valid one.
+        let seed = derive_grinding_seed_in_domain(
+            &mut terminal_transcript,
+            b"bitz/falcon-algebraic/grinding/word-terminals/v1",
+            0,
+            schedule.terminal_merge_bits,
+        )
+        .unwrap();
+        assert!(
+            grinding_nonce_is_valid(&seed, terminal_nonce, schedule.terminal_merge_bits).unwrap()
+        );
+        let invalid_nonce = (0..256)
+            .find(|&nonce| {
+                !grinding_nonce_is_valid(&seed, nonce, schedule.terminal_merge_bits).unwrap()
+            })
+            .expect("fixture has an invalid terminal nonce");
+        let mut altered = proof.clone();
+        altered.terminal_merge_nonce = Some(invalid_nonce);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &altered,
+                &schedule,
+            )
+            .is_err()
+        );
         proof.norm.grinding_nonces.pop();
         assert!(
             verify(
@@ -2221,6 +2315,51 @@ mod tests {
                 &ring,
                 &proof,
                 &schedule
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn terminal_merge_rejects_nonce_when_grinding_is_disabled() {
+        let field = field();
+        let layout = Layout::new(3).unwrap();
+        let data = data(3);
+        let source = Source::new(layout, &data);
+        let ring = ring(&data, &field);
+        let schedule = schedule();
+        let (mut proof, claim) = prove(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &data,
+            &source,
+            &field,
+            &ring,
+            &schedule,
+        )
+        .unwrap();
+        assert_eq!(proof.terminal_merge_nonce, None);
+        assert_eq!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule,
+            )
+            .unwrap(),
+            claim
+        );
+        proof.terminal_merge_nonce = Some(0);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule,
             )
             .is_err()
         );

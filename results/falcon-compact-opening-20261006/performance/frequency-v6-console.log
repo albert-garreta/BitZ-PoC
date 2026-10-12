@@ -1,0 +1,12 @@
+[bench_gate] falcon-v6-frequency-diagnostic: idle 100% (streak 1/4)
+[bench_gate] falcon-v6-frequency-diagnostic: idle 100% (streak 2/4)
+[bench_gate] falcon-v6-frequency-diagnostic: idle 99% (streak 3/4)
+[bench_gate] falcon-v6-frequency-diagnostic: idle 100% (streak 4/4)
+[bench_gate] 1-baseline: idle 100% (streak 1/1)
+DONE 1-baseline {'total_prover_ms': 37.233943, 'proof_verify_ms': 13.939616000000001, 'witness_commit_ms': 0.841584, 'proof_prove_ms': 36.392359}
+[bench_gate] 2-candidate: idle 100% (streak 1/1)
+DONE 2-candidate {'total_prover_ms': 34.314042, 'proof_verify_ms': 12.868056, 'witness_commit_ms': 0.825604, 'proof_prove_ms': 33.488438}
+[bench_gate] 3-candidate: idle 99% (streak 1/1)
+DONE 3-candidate {'total_prover_ms': 30.720153, 'proof_verify_ms': 12.638592000000001, 'witness_commit_ms': 0.684707, 'proof_prove_ms': 30.050685}
+[bench_gate] 4-baseline: idle 99% (streak 1/1)
+DONE 4-baseline {'total_prover_ms': 31.213869, 'proof_verify_ms': 12.759741, 'witness_commit_ms': 0.684166, 'proof_prove_ms': 30.494787}

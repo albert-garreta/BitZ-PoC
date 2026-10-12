@@ -1,0 +1,126 @@
+[
+  {
+    "degree": 512,
+    "batch": 1024,
+    "security": 100,
+    "threads": 1,
+    "prove_ms": {
+      "r7": 168.83155349999998,
+      "word": 148.797989,
+      "change_percent": -11.86600732190739
+    },
+    "total_prover_ms": {
+      "r7": 205.3194565,
+      "word": 185.061167,
+      "change_percent": -9.86671689343771
+    },
+    "verify_ms": {
+      "r7": 42.1138555,
+      "word": 42.511803,
+      "change_percent": 0.9449324819001736
+    },
+    "process_peak_rss_kib": {
+      "r7": 128236.0,
+      "word": 124304.0,
+      "change_percent": -3.0662216538257625
+    },
+    "proof_payload_bytes": {
+      "r7": 217520.0,
+      "word": 217008.0,
+      "change_percent": -0.23538065465245062
+    }
+  },
+  {
+    "degree": 1024,
+    "batch": 1024,
+    "security": 100,
+    "threads": 1,
+    "prove_ms": {
+      "r7": 328.27619500000003,
+      "word": 292.73186599999997,
+      "change_percent": -10.82756823107447
+    },
+    "total_prover_ms": {
+      "r7": 429.729514,
+      "word": 394.4550605,
+      "change_percent": -8.208524746568834
+    },
+    "verify_ms": {
+      "r7": 87.78224900000001,
+      "word": 88.1136215,
+      "change_percent": 0.3774937459166461
+    },
+    "process_peak_rss_kib": {
+      "r7": 207998.0,
+      "word": 207554.0,
+      "change_percent": -0.21346359099606582
+    },
+    "proof_payload_bytes": {
+      "r7": 276480.0,
+      "word": 276320.0,
+      "change_percent": -0.057870370370372015
+    }
+  },
+  {
+    "degree": 512,
+    "batch": 1024,
+    "security": 128,
+    "threads": 8,
+    "prove_ms": {
+      "r7": 43.3099325,
+      "word": 44.7366765,
+      "change_percent": 3.294265120362394
+    },
+    "total_prover_ms": {
+      "r7": 48.890544,
+      "word": 50.2331935,
+      "change_percent": 2.7462355501710167
+    },
+    "verify_ms": {
+      "r7": 20.171295,
+      "word": 20.346385500000004,
+      "change_percent": 0.8680181416215627
+    },
+    "process_peak_rss_kib": {
+      "r7": 128894.0,
+      "word": 129006.0,
+      "change_percent": 0.08689310596303734
+    },
+    "proof_payload_bytes": {
+      "r7": 257352.0,
+      "word": 257424.0,
+      "change_percent": 0.027977245173915755
+    }
+  },
+  {
+    "degree": 1024,
+    "batch": 1024,
+    "security": 128,
+    "threads": 8,
+    "prove_ms": {
+      "r7": 79.22753750000001,
+      "word": 83.013995,
+      "change_percent": 4.779218967899879
+    },
+    "total_prover_ms": {
+      "r7": 94.33668750000001,
+      "word": 97.732576,
+      "change_percent": 3.5997538073403224
+    },
+    "verify_ms": {
+      "r7": 37.58088599999999,
+      "word": 37.935417,
+      "change_percent": 0.9433811645633172
+    },
+    "process_peak_rss_kib": {
+      "r7": 213164.0,
+      "word": 213180.0,
+      "change_percent": 0.007505957854037071
+    },
+    "proof_payload_bytes": {
+      "r7": 321360.0,
+      "word": 321624.0,
+      "change_percent": 0.08215085884988316
+    }
+  }
+]

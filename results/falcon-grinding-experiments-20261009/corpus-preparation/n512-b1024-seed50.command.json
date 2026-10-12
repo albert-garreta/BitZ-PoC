@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "4",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/binaries/falcon_algebraic",
+    "--threads",
+    "1",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1",
+    "--security",
+    "128",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--seed",
+    "50"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "BITZ_FALCON_MAIN_CPU": "4",
+    "BITZ_FALCON_WORKER_CPUS": "4",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007"
+  },
+  "purpose": "correctness-only corpus preparation; all timings excluded from performance analysis"
+}

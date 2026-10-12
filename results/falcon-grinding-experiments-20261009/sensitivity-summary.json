@@ -1,0 +1,43 @@
+[
+  {
+    "reference": "baseline",
+    "variant": "full",
+    "degree": 1024,
+    "profile": "weighted_external",
+    "excluded_seeds": [
+      50,
+      53
+    ],
+    "seeds": 8,
+    "total_paired_ratio": 0.9959834725299954,
+    "total_ratio_ci95_low": 0.9899138232631634,
+    "total_ratio_ci95_high": 1.0017577423590516
+  },
+  {
+    "reference": "original",
+    "variant": "full",
+    "degree": 1024,
+    "profile": "weighted_external",
+    "excluded_seeds": [
+      50,
+      53
+    ],
+    "seeds": 8,
+    "total_paired_ratio": 0.9987263657078814,
+    "total_ratio_ci95_low": 0.993171480777027,
+    "total_ratio_ci95_high": 1.0049036029151013
+  },
+  {
+    "reference": "original",
+    "variant": "arithmetic",
+    "degree": 1024,
+    "profile": "weighted_queries120",
+    "excluded_seeds": [
+      54
+    ],
+    "seeds": 9,
+    "total_paired_ratio": 1.0006667480902018,
+    "total_ratio_ci95_low": 0.9962572328889358,
+    "total_ratio_ci95_high": 1.0042280318999461
+  }
+]

@@ -1,0 +1,112 @@
+[
+  {
+    "elapsed_s": 1.0011033659684472,
+    "tasks": [
+      {
+        "tid": 48,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 49,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 50,
+        "name": "falcon_algebrai",
+        "cpus": "7"
+      },
+      {
+        "tid": 51,
+        "name": "falcon_algebrai",
+        "cpus": "4"
+      },
+      {
+        "tid": 52,
+        "name": "falcon_algebrai",
+        "cpus": "5"
+      },
+      {
+        "tid": 53,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 54,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 55,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 56,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 2.0016761280130595,
+    "tasks": [
+      {
+        "tid": 48,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 49,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 50,
+        "name": "falcon_algebrai",
+        "cpus": "7"
+      },
+      {
+        "tid": 51,
+        "name": "falcon_algebrai",
+        "cpus": "4"
+      },
+      {
+        "tid": 52,
+        "name": "falcon_algebrai",
+        "cpus": "5"
+      },
+      {
+        "tid": 53,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 54,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 55,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 56,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 3.0021879349951632,
+    "tasks": [
+      {
+        "tid": 48,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  }
+]

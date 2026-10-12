@@ -1,0 +1,59 @@
+{
+  "status": "complete",
+  "qualifying": false,
+  "environment_overrides": {
+    "LIG_VERIFY_TRACE": "1"
+  },
+  "warmup": 1,
+  "measured": 5,
+  "records": {
+    "baseline": {
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/baseline-9a401286",
+        "--protocol",
+        "native",
+        "--security",
+        "100",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5"
+      ],
+      "binary_sha256": "2753f4b6afdc0ccbc73da9924411509faa6ede32a7502938c88d5b9f657c4efc",
+      "started_at": 1791326392.0988276,
+      "finished_at": 1791326392.3632915,
+      "stdout_sha256": "e0822e7a2776b995de3328135bd200747251d6f413f6f39aebcc2425470be137",
+      "stderr_sha256": "e69b1734f55d2d862e194a9242eddd64747ccd5bc842f8931823160f386fc59b"
+    },
+    "candidate": {
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/candidate-v1",
+        "--protocol",
+        "native",
+        "--security",
+        "100",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5"
+      ],
+      "binary_sha256": "89475521d001428ea63939fab268f498658bce83f460444c2765f4f7f173f2bd",
+      "started_at": 1791326392.3802207,
+      "finished_at": 1791326392.6443245,
+      "stdout_sha256": "c1a1ffd23d8a9716e51f270ce92ab2ede5cf133902e497c599d52e090ac7b166",
+      "stderr_sha256": "94e4f6aee28237dc370745bd765baad75902c0b5face8575f59228e42baa73c3"
+    }
+  }
+}

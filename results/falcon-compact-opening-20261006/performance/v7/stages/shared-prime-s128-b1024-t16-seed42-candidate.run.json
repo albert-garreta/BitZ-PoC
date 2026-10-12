@@ -1,0 +1,33 @@
+{
+  "status": "validated",
+  "command": [
+    "/tmp/falcon-compact-opening-binaries/candidate-v7",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "label": "candidate",
+  "pair_index": 0,
+  "order": [
+    "baseline",
+    "candidate"
+  ],
+  "binary_sha256": "f784b4cdf4a26b657f5390da67c3c0bbb46aa92bb0418cd001b39f486a4c0677",
+  "started_at": 1791335908.4619355,
+  "swap_before_gib": 0.22822189331054688,
+  "stdout_sha256": "9a7a4d13c6b5506e94c97900b90e2b97cbd49a8096189ea387d68a8c0d4ec9be",
+  "stderr_sha256": "f218e62dc6f75b1bf67155a70931d81a0da89944419e20a9b2feddf98082744c",
+  "elapsed_seconds": 2.515618520992575,
+  "swap_after_gib": 0.22822189331054688
+}

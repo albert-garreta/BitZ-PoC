@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "python3",
+    "results/falcon-speed-integration-20261012/qualify.py",
+    "--baseline-arithmetic",
+    "/tmp/bitz-falcon-speed-binaries-20261012/baseline-arithmetic",
+    "--candidate-arithmetic",
+    "/tmp/bitz-falcon-speed-binaries-20261012/candidate-arithmetic",
+    "--baseline-full",
+    "/tmp/bitz-falcon-speed-binaries-20261012/baseline-full",
+    "--candidate-full",
+    "/tmp/bitz-falcon-speed-binaries-20261012/candidate-full",
+    "--output",
+    "results/falcon-speed-integration-20261012/qualification-16workers",
+    "--threads",
+    "16",
+    "--cpus",
+    "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "--review-percent",
+    "1"
+  ],
+  "started_unix": 1791818660.3313587,
+  "placement": "One worker per physical core across both CCDs; main and auxiliary workers pinned to CPU 6 to match the previous campaign policy.",
+  "finished_unix": 1791818887.7656922,
+  "returncode": 0
+}

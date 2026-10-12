@@ -1,0 +1,6 @@
+{
+  "reason": "Repeated short-process sibling-CPU bursts exceeded the predeclared 2% threshold. Extend every screening configuration equally from3to7 measured repeats; keep same2% rejection threshold, same3independentseeds, and interleaved ordering. Previousattemptretainedbutexcluded.",
+  "original_phase": "screen-short-superseded",
+  "new_phase": "screen",
+  "measured_repeats": 7
+}

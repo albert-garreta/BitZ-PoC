@@ -1,0 +1,3183 @@
+[
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "baseline_modeled_hashes": 2636800,
+    "baseline_security_bits": 128.09331125897418,
+    "baseline_schedule": [
+      {
+        "name": "bridge",
+        "raw": 727,
+        "sites": 247,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "joint",
+        "raw": 50,
+        "sites": 25,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "opening",
+        "raw": 256,
+        "sites": 26,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "fold/0/0",
+        "raw": 8188.999999999963,
+        "sites": 1,
+        "minimum": 16,
+        "bits": 17
+      },
+      {
+        "name": "fold/0/1",
+        "raw": 8188.999999999963,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 17
+      },
+      {
+        "name": "fold/0/2",
+        "raw": 8188.999999999963,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 17
+      },
+      {
+        "name": "fold/0/3",
+        "raw": 8188.999999999963,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 17
+      },
+      {
+        "name": "queries/0",
+        "raw": 9.908926514486753,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "introduce/0",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 9
+      },
+      {
+        "name": "fold/1/0",
+        "raw": 3070.999999999993,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 16
+      },
+      {
+        "name": "fold/1/1",
+        "raw": 3070.999999999993,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 16
+      },
+      {
+        "name": "fold/1/2",
+        "raw": 3070.999999999993,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 17
+      },
+      {
+        "name": "queries/1",
+        "raw": 8.650853371305306,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "introduce/1",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/2/0",
+        "raw": 895.57142857143,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 16
+      },
+      {
+        "name": "fold/2/1",
+        "raw": 895.57142857143,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 16
+      },
+      {
+        "name": "fold/2/2",
+        "raw": 895.57142857143,
+        "sites": 1,
+        "minimum": 10,
+        "bits": 16
+      },
+      {
+        "name": "queries/2",
+        "raw": 8.565315490973719,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "introduce/2",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/3/0",
+        "raw": 239.79999999999993,
+        "sites": 1,
+        "minimum": 10,
+        "bits": 15
+      },
+      {
+        "name": "fold/3/1",
+        "raw": 239.79999999999993,
+        "sites": 1,
+        "minimum": 9,
+        "bits": 15
+      },
+      {
+        "name": "fold/3/2",
+        "raw": 239.79999999999993,
+        "sites": 1,
+        "minimum": 8,
+        "bits": 15
+      },
+      {
+        "name": "queries/3",
+        "raw": 9.946151000667165,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "projection",
+        "raw": 80,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "norm",
+        "raw": 80,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "outer",
+        "raw": 480,
+        "sites": 20,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "merge",
+        "raw": 24,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 9
+      },
+      {
+        "name": "binding",
+        "raw": 384,
+        "sites": 24,
+        "minimum": 0,
+        "bits": 13
+      }
+    ],
+    "candidates": [
+      {
+        "name": "pairwise swaps",
+        "modeled_hashes": 2636288,
+        "reduction_pct": 0.01941747572815622,
+        "security_bits": 128.09406296358208,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 727,
+            "sites": 247,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "joint",
+            "raw": 50,
+            "sites": 25,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 26,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.908926514486753,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 10
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 16
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 16
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 17
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.650853371305306,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 10
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 16
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 16
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 16
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.565315490973719,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 8,
+            "bits": 15
+          },
+          {
+            "name": "queries/3",
+            "raw": 9.946151000667165,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          }
+        ]
+      },
+      {
+        "name": "prime groups included",
+        "modeled_hashes": 2615808,
+        "reduction_pct": 0.7961165048543717,
+        "security_bits": 128.09329783923647,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 727,
+            "sites": 247,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "joint",
+            "raw": 50,
+            "sites": 25,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 26,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 17
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 8188.999999999963,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.908926514486753,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 9
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 3070.999999999993,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 17
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.650853371305306,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 15
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 16
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 895.57142857143,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 16
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.565315490973719,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 239.79999999999993,
+            "sites": 1,
+            "minimum": 8,
+            "bits": 15
+          },
+          {
+            "name": "queries/3",
+            "raw": 9.946151000667165,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "projection",
+            "raw": 80,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "norm",
+            "raw": 80,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "outer",
+            "raw": 480,
+            "sites": 20,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "merge",
+            "raw": 24,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "binding",
+            "raw": 384,
+            "sites": 24,
+            "minimum": 0,
+            "bits": 11
+          }
+        ]
+      }
+    ],
+    "geometry_candidates": [
+      {
+        "rate": 1,
+        "initial_k": 3,
+        "modeled_hashes": 2876416,
+        "security_bits": 128.09377549356327
+      },
+      {
+        "rate": 1,
+        "initial_k": 4,
+        "modeled_hashes": 2271744,
+        "security_bits": 128.09331125897418
+      },
+      {
+        "rate": 1,
+        "initial_k": 5,
+        "modeled_hashes": 2009088,
+        "security_bits": 128.0933527674427
+      },
+      {
+        "rate": 1,
+        "initial_k": 6,
+        "modeled_hashes": 1403392,
+        "security_bits": 128.09325839273853
+      },
+      {
+        "rate": 2,
+        "initial_k": 3,
+        "modeled_hashes": 5500928,
+        "security_bits": 128.09340760383967
+      },
+      {
+        "rate": 2,
+        "initial_k": 4,
+        "modeled_hashes": 4043776,
+        "security_bits": 128.09358961593767
+      },
+      {
+        "rate": 2,
+        "initial_k": 5,
+        "modeled_hashes": 3084288,
+        "security_bits": 128.09312093676297
+      },
+      {
+        "rate": 2,
+        "initial_k": 6,
+        "modeled_hashes": 2398208,
+        "security_bits": 128.09364500201835
+      }
+    ]
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "baseline_modeled_hashes": 3916288,
+    "baseline_security_bits": 128.0932452339251,
+    "baseline_schedule": [
+      {
+        "name": "bridge",
+        "raw": 767,
+        "sites": 260,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "joint",
+        "raw": 52,
+        "sites": 26,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "opening",
+        "raw": 256,
+        "sites": 27,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/0/0",
+        "raw": 16380.999999999956,
+        "sites": 1,
+        "minimum": 17,
+        "bits": 18
+      },
+      {
+        "name": "fold/0/1",
+        "raw": 16380.999999999956,
+        "sites": 1,
+        "minimum": 16,
+        "bits": 18
+      },
+      {
+        "name": "fold/0/2",
+        "raw": 16380.999999999956,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 18
+      },
+      {
+        "name": "fold/0/3",
+        "raw": 16380.999999999956,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 18
+      },
+      {
+        "name": "queries/0",
+        "raw": 9.875286645506979,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "introduce/0",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/1/0",
+        "raw": 6143.000000000015,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 17
+      },
+      {
+        "name": "fold/1/1",
+        "raw": 6143.000000000015,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 17
+      },
+      {
+        "name": "fold/1/2",
+        "raw": 6143.000000000015,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 17
+      },
+      {
+        "name": "queries/1",
+        "raw": 8.966539505297424,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "introduce/1",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/2/0",
+        "raw": 1791.571428571428,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 17
+      },
+      {
+        "name": "fold/2/1",
+        "raw": 1791.571428571428,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 17
+      },
+      {
+        "name": "fold/2/2",
+        "raw": 1791.571428571428,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 17
+      },
+      {
+        "name": "queries/2",
+        "raw": 8.796028703165724,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "introduce/2",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/3/0",
+        "raw": 479.7999999999999,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 16
+      },
+      {
+        "name": "fold/3/1",
+        "raw": 479.7999999999999,
+        "sites": 1,
+        "minimum": 10,
+        "bits": 16
+      },
+      {
+        "name": "fold/3/2",
+        "raw": 479.7999999999999,
+        "sites": 1,
+        "minimum": 9,
+        "bits": 16
+      },
+      {
+        "name": "queries/3",
+        "raw": 8.76911308346687,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "introduce/3",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "fold/4/0",
+        "raw": 495.90322580645,
+        "sites": 1,
+        "minimum": 9,
+        "bits": 16
+      },
+      {
+        "name": "queries/4",
+        "raw": 9.568412460014594,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "projection",
+        "raw": 80,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "norm",
+        "raw": 80,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 11
+      },
+      {
+        "name": "outer",
+        "raw": 504,
+        "sites": 21,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "merge",
+        "raw": 24,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 9
+      },
+      {
+        "name": "binding",
+        "raw": 400,
+        "sites": 25,
+        "minimum": 0,
+        "bits": 13
+      }
+    ],
+    "candidates": [
+      {
+        "name": "pairwise swaps",
+        "modeled_hashes": 3916288,
+        "reduction_pct": 0.0,
+        "security_bits": 128.0932452339251,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 767,
+            "sites": 260,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "joint",
+            "raw": 52,
+            "sites": 26,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 27,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 18
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.875286645506979,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.966539505297424,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 17
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 17
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.796028703165724,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 16
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 16
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 16
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.76911308346687,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 495.90322580645,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 16
+          },
+          {
+            "name": "queries/4",
+            "raw": 9.568412460014594,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          }
+        ]
+      },
+      {
+        "name": "prime groups included",
+        "modeled_hashes": 3531776,
+        "reduction_pct": 9.818276898941036,
+        "security_bits": 128.09317680865942,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 767,
+            "sites": 260,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "joint",
+            "raw": 52,
+            "sites": 26,
+            "minimum": 0,
+            "bits": 10
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 27,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 18
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 16380.999999999956,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 18
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.875286645506979,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 10
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 17
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 6143.000000000015,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.966539505297424,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 16
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 16
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 1791.571428571428,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 16
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.796028703165724,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 15
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 479.7999999999999,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 15
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.76911308346687,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 11
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 495.90322580645,
+            "sites": 1,
+            "minimum": 9,
+            "bits": 15
+          },
+          {
+            "name": "queries/4",
+            "raw": 9.568412460014594,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "projection",
+            "raw": 80,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "norm",
+            "raw": 80,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "outer",
+            "raw": 504,
+            "sites": 21,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "merge",
+            "raw": 24,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "binding",
+            "raw": 400,
+            "sites": 25,
+            "minimum": 0,
+            "bits": 13
+          }
+        ]
+      }
+    ],
+    "geometry_candidates": [
+      {
+        "rate": 1,
+        "initial_k": 3,
+        "modeled_hashes": 4589568,
+        "security_bits": 128.09317807220884
+      },
+      {
+        "rate": 1,
+        "initial_k": 4,
+        "modeled_hashes": 3534848,
+        "security_bits": 128.0932452339251
+      },
+      {
+        "rate": 1,
+        "initial_k": 5,
+        "modeled_hashes": 2703360,
+        "security_bits": 128.09332300134707
+      },
+      {
+        "rate": 1,
+        "initial_k": 6,
+        "modeled_hashes": 2183168,
+        "security_bits": 128.09333867631597
+      },
+      {
+        "rate": 2,
+        "initial_k": 3,
+        "modeled_hashes": 9275392,
+        "security_bits": 128.09323277308994
+      },
+      {
+        "rate": 2,
+        "initial_k": 4,
+        "modeled_hashes": 7274496,
+        "security_bits": 128.09339849527228
+      },
+      {
+        "rate": 2,
+        "initial_k": 5,
+        "modeled_hashes": 5023744,
+        "security_bits": 128.09374548444197
+      },
+      {
+        "rate": 2,
+        "initial_k": 6,
+        "modeled_hashes": 3740160,
+        "security_bits": 128.09346558157915
+      }
+    ]
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "baseline_modeled_hashes": 34410752,
+    "baseline_security_bits": 128.09311176920565,
+    "baseline_schedule": [
+      {
+        "name": "bridge",
+        "raw": 807,
+        "sites": 273,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "links",
+        "raw": 256,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 16
+      },
+      {
+        "name": "joint",
+        "raw": 60,
+        "sites": 30,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "opening",
+        "raw": 256,
+        "sites": 31,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "keccak/0",
+        "raw": 372,
+        "sites": 37,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "keccak/1",
+        "raw": 364,
+        "sites": 35,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "keccak/2",
+        "raw": 360,
+        "sites": 34,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "fold/0/0",
+        "raw": 262141.0000000015,
+        "sites": 1,
+        "minimum": 21,
+        "bits": 22
+      },
+      {
+        "name": "fold/0/1",
+        "raw": 262141.0000000015,
+        "sites": 1,
+        "minimum": 20,
+        "bits": 22
+      },
+      {
+        "name": "fold/0/2",
+        "raw": 262141.0000000015,
+        "sites": 1,
+        "minimum": 19,
+        "bits": 22
+      },
+      {
+        "name": "fold/0/3",
+        "raw": 262141.0000000015,
+        "sites": 1,
+        "minimum": 18,
+        "bits": 22
+      },
+      {
+        "name": "queries/0",
+        "raw": 9.844877356825565,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "introduce/0",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/1/0",
+        "raw": 98302.99999999993,
+        "sites": 1,
+        "minimum": 19,
+        "bits": 21
+      },
+      {
+        "name": "fold/1/1",
+        "raw": 98302.99999999993,
+        "sites": 1,
+        "minimum": 18,
+        "bits": 21
+      },
+      {
+        "name": "fold/1/2",
+        "raw": 98302.99999999993,
+        "sites": 1,
+        "minimum": 17,
+        "bits": 21
+      },
+      {
+        "name": "queries/1",
+        "raw": 8.901917150266387,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "introduce/1",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/2/0",
+        "raw": 28671.571428571446,
+        "sites": 1,
+        "minimum": 17,
+        "bits": 19
+      },
+      {
+        "name": "fold/2/1",
+        "raw": 28671.571428571446,
+        "sites": 1,
+        "minimum": 16,
+        "bits": 20
+      },
+      {
+        "name": "fold/2/2",
+        "raw": 28671.571428571446,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 20
+      },
+      {
+        "name": "queries/2",
+        "raw": 8.641344775029102,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "introduce/2",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/3/0",
+        "raw": 7679.8000000000275,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 19
+      },
+      {
+        "name": "fold/3/1",
+        "raw": 7679.8000000000275,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 19
+      },
+      {
+        "name": "fold/3/2",
+        "raw": 7679.8000000000275,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 19
+      },
+      {
+        "name": "queries/3",
+        "raw": 8.66297833760857,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "introduce/3",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/4/0",
+        "raw": 1983.9032258064533,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 17
+      },
+      {
+        "name": "fold/4/1",
+        "raw": 1983.9032258064533,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 18
+      },
+      {
+        "name": "fold/4/2",
+        "raw": 1983.9032258064533,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 18
+      },
+      {
+        "name": "queries/4",
+        "raw": 8.606497840790725,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "introduce/4",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/5/0",
+        "raw": 1007.9523809523831,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 17
+      },
+      {
+        "name": "fold/5/1",
+        "raw": 1007.9523809523831,
+        "sites": 1,
+        "minimum": 10,
+        "bits": 17
+      },
+      {
+        "name": "queries/5",
+        "raw": 9.711920830313124,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "per-signature norm identity",
+        "raw": 80.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "integer relation batching",
+        "raw": 8.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 8
+      },
+      {
+        "name": "HashToPoint initial row point",
+        "raw": 160.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "combined integer outer sumcheck",
+        "raw": 480.0,
+        "sites": 20,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "integer polynomial projection",
+        "raw": 160.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "linear constraints and terminal batching",
+        "raw": 8408.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 19
+      },
+      {
+        "name": "prime source sumcheck",
+        "raw": 416.0,
+        "sites": 26,
+        "minimum": 0,
+        "bits": 14
+      }
+    ],
+    "candidates": [
+      {
+        "name": "pairwise swaps",
+        "modeled_hashes": 34410752,
+        "reduction_pct": 0.0,
+        "security_bits": 128.09311176920565,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 807,
+            "sites": 273,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "links",
+            "raw": 256,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 16
+          },
+          {
+            "name": "joint",
+            "raw": 60,
+            "sites": 30,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 31,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/0",
+            "raw": 372,
+            "sites": 37,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/1",
+            "raw": 364,
+            "sites": 35,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/2",
+            "raw": 360,
+            "sites": 34,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 21,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 22
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.844877356825565,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 21
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 21
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 21
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.901917150266387,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 19
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 20
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 20
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.641344775029102,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 19
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 19
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 19
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.66297833760857,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 17
+          },
+          {
+            "name": "fold/4/1",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 18
+          },
+          {
+            "name": "fold/4/2",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 18
+          },
+          {
+            "name": "queries/4",
+            "raw": 8.606497840790725,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/4",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/5/0",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 17
+          },
+          {
+            "name": "fold/5/1",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 17
+          },
+          {
+            "name": "queries/5",
+            "raw": 9.711920830313124,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          }
+        ]
+      },
+      {
+        "name": "prime groups included",
+        "modeled_hashes": 31449088,
+        "reduction_pct": 8.606798247245518,
+        "security_bits": 128.09310950050474,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 807,
+            "sites": 273,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "links",
+            "raw": 256,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 17
+          },
+          {
+            "name": "joint",
+            "raw": 60,
+            "sites": 30,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 31,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/0",
+            "raw": 372,
+            "sites": 37,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/1",
+            "raw": 364,
+            "sites": 35,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/2",
+            "raw": 360,
+            "sites": 34,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 21,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 21
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 262141.0000000015,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 21
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.844877356825565,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 21
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 21
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 98302.99999999993,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 21
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.901917150266387,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 20
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 20
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 28671.571428571446,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 20
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.641344775029102,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 19
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 19
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 7679.8000000000275,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 19
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.66297833760857,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 18
+          },
+          {
+            "name": "fold/4/1",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 18
+          },
+          {
+            "name": "fold/4/2",
+            "raw": 1983.9032258064533,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 18
+          },
+          {
+            "name": "queries/4",
+            "raw": 8.606497840790725,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/4",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/5/0",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 17
+          },
+          {
+            "name": "fold/5/1",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 17
+          },
+          {
+            "name": "queries/5",
+            "raw": 9.711920830313124,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "per-signature norm identity",
+            "raw": 80.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 16
+          },
+          {
+            "name": "integer relation batching",
+            "raw": 8.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "HashToPoint initial row point",
+            "raw": 160.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 16
+          },
+          {
+            "name": "combined integer outer sumcheck",
+            "raw": 480.0,
+            "sites": 20,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "integer polynomial projection",
+            "raw": 160.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 16
+          },
+          {
+            "name": "linear constraints and terminal batching",
+            "raw": 8408.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 19
+          },
+          {
+            "name": "prime source sumcheck",
+            "raw": 416.0,
+            "sites": 26,
+            "minimum": 0,
+            "bits": 14
+          }
+        ]
+      }
+    ],
+    "geometry_candidates": [
+      {
+        "rate": 1,
+        "initial_k": 3,
+        "modeled_hashes": 45998080,
+        "security_bits": 128.0932217986595
+      },
+      {
+        "rate": 1,
+        "initial_k": 4,
+        "modeled_hashes": 33103872,
+        "security_bits": 128.09311176920565
+      },
+      {
+        "rate": 1,
+        "initial_k": 5,
+        "modeled_hashes": 22147072,
+        "security_bits": 128.0931851346467
+      },
+      {
+        "rate": 1,
+        "initial_k": 6,
+        "modeled_hashes": 15964160,
+        "security_bits": 128.09344530227546
+      },
+      {
+        "rate": 2,
+        "initial_k": 3,
+        "modeled_hashes": 103383040,
+        "security_bits": 128.09325346980032
+      },
+      {
+        "rate": 2,
+        "initial_k": 4,
+        "modeled_hashes": 70139904,
+        "security_bits": 128.09317199976522
+      },
+      {
+        "rate": 2,
+        "initial_k": 5,
+        "modeled_hashes": 51445760,
+        "security_bits": 128.09328353758158
+      },
+      {
+        "rate": 2,
+        "initial_k": 6,
+        "modeled_hashes": 38578176,
+        "security_bits": 128.0932580444911
+      }
+    ]
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "baseline_modeled_hashes": 59003136,
+    "baseline_security_bits": 128.0931479114912,
+    "baseline_schedule": [
+      {
+        "name": "bridge",
+        "raw": 847,
+        "sites": 286,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "links",
+        "raw": 256,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 17
+      },
+      {
+        "name": "joint",
+        "raw": 62,
+        "sites": 31,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "opening",
+        "raw": 256,
+        "sites": 32,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "keccak/0",
+        "raw": 376,
+        "sites": 38,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "keccak/1",
+        "raw": 368,
+        "sites": 36,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "fold/0/0",
+        "raw": 524284.99999999785,
+        "sites": 1,
+        "minimum": 22,
+        "bits": 23
+      },
+      {
+        "name": "fold/0/1",
+        "raw": 524284.99999999785,
+        "sites": 1,
+        "minimum": 21,
+        "bits": 23
+      },
+      {
+        "name": "fold/0/2",
+        "raw": 524284.99999999785,
+        "sites": 1,
+        "minimum": 20,
+        "bits": 22
+      },
+      {
+        "name": "fold/0/3",
+        "raw": 524284.99999999785,
+        "sites": 1,
+        "minimum": 19,
+        "bits": 22
+      },
+      {
+        "name": "queries/0",
+        "raw": 9.843882057271411,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "introduce/0",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/1/0",
+        "raw": 196606.99999999948,
+        "sites": 1,
+        "minimum": 20,
+        "bits": 22
+      },
+      {
+        "name": "fold/1/1",
+        "raw": 196606.99999999948,
+        "sites": 1,
+        "minimum": 19,
+        "bits": 22
+      },
+      {
+        "name": "fold/1/2",
+        "raw": 196606.99999999948,
+        "sites": 1,
+        "minimum": 18,
+        "bits": 22
+      },
+      {
+        "name": "queries/1",
+        "raw": 8.899838747687886,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "introduce/1",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/2/0",
+        "raw": 57343.571428571355,
+        "sites": 1,
+        "minimum": 18,
+        "bits": 21
+      },
+      {
+        "name": "fold/2/1",
+        "raw": 57343.571428571355,
+        "sites": 1,
+        "minimum": 17,
+        "bits": 21
+      },
+      {
+        "name": "fold/2/2",
+        "raw": 57343.571428571355,
+        "sites": 1,
+        "minimum": 16,
+        "bits": 21
+      },
+      {
+        "name": "queries/2",
+        "raw": 8.636738927308198,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "introduce/2",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/3/0",
+        "raw": 15359.799999999981,
+        "sites": 1,
+        "minimum": 16,
+        "bits": 20
+      },
+      {
+        "name": "fold/3/1",
+        "raw": 15359.799999999981,
+        "sites": 1,
+        "minimum": 15,
+        "bits": 20
+      },
+      {
+        "name": "fold/3/2",
+        "raw": 15359.799999999981,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 20
+      },
+      {
+        "name": "queries/3",
+        "raw": 8.646019922756421,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "introduce/3",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/4/0",
+        "raw": 3967.9032258064412,
+        "sites": 1,
+        "minimum": 14,
+        "bits": 19
+      },
+      {
+        "name": "fold/4/1",
+        "raw": 3967.9032258064412,
+        "sites": 1,
+        "minimum": 13,
+        "bits": 19
+      },
+      {
+        "name": "fold/4/2",
+        "raw": 3967.9032258064412,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 19
+      },
+      {
+        "name": "queries/4",
+        "raw": 8.549405222360917,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "introduce/4",
+        "raw": 1.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "fold/5/0",
+        "raw": 1007.9523809523831,
+        "sites": 1,
+        "minimum": 12,
+        "bits": 18
+      },
+      {
+        "name": "fold/5/1",
+        "raw": 1007.9523809523831,
+        "sites": 1,
+        "minimum": 11,
+        "bits": 18
+      },
+      {
+        "name": "fold/5/2",
+        "raw": 1007.9523809523831,
+        "sites": 1,
+        "minimum": 10,
+        "bits": 18
+      },
+      {
+        "name": "queries/5",
+        "raw": 9.711920830313124,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 15
+      },
+      {
+        "name": "per-signature norm identity",
+        "raw": 80.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 12
+      },
+      {
+        "name": "integer relation batching",
+        "raw": 8.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 8
+      },
+      {
+        "name": "HashToPoint initial row point",
+        "raw": 168.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 13
+      },
+      {
+        "name": "combined integer outer sumcheck",
+        "raw": 504.0,
+        "sites": 21,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "integer polynomial projection",
+        "raw": 160.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 14
+      },
+      {
+        "name": "linear constraints and terminal batching",
+        "raw": 8416.0,
+        "sites": 1,
+        "minimum": 0,
+        "bits": 19
+      },
+      {
+        "name": "prime source sumcheck",
+        "raw": 432.0,
+        "sites": 27,
+        "minimum": 0,
+        "bits": 14
+      }
+    ],
+    "candidates": [
+      {
+        "name": "pairwise swaps",
+        "modeled_hashes": 58978560,
+        "reduction_pct": 0.04165202337720331,
+        "security_bits": 128.09326086453845,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 847,
+            "sites": 286,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "links",
+            "raw": 256,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 17
+          },
+          {
+            "name": "joint",
+            "raw": 62,
+            "sites": 31,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 32,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "keccak/0",
+            "raw": 376,
+            "sites": 38,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "keccak/1",
+            "raw": 368,
+            "sites": 36,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 22,
+            "bits": 23
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 21,
+            "bits": 23
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 22
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.843882057271411,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 22
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 22
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.899838747687886,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 21
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 21
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 21
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.636738927308198,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 20
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 20
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 20
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.646019922756421,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 19
+          },
+          {
+            "name": "fold/4/1",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 19
+          },
+          {
+            "name": "fold/4/2",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 19
+          },
+          {
+            "name": "queries/4",
+            "raw": 8.549405222360917,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "introduce/4",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/5/0",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 18
+          },
+          {
+            "name": "fold/5/1",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 18
+          },
+          {
+            "name": "fold/5/2",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 18
+          },
+          {
+            "name": "queries/5",
+            "raw": 9.711920830313124,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          }
+        ]
+      },
+      {
+        "name": "prime groups included",
+        "modeled_hashes": 52875264,
+        "reduction_pct": 10.385671703958243,
+        "security_bits": 128.09323823903128,
+        "schedule": [
+          {
+            "name": "bridge",
+            "raw": 847,
+            "sites": 286,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "links",
+            "raw": 256,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 17
+          },
+          {
+            "name": "joint",
+            "raw": 62,
+            "sites": 31,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "opening",
+            "raw": 256,
+            "sites": 32,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "keccak/0",
+            "raw": 376,
+            "sites": 38,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "keccak/1",
+            "raw": 368,
+            "sites": 36,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "fold/0/0",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 22,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/1",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 21,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/2",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/0/3",
+            "raw": 524284.99999999785,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 22
+          },
+          {
+            "name": "queries/0",
+            "raw": 9.843882057271411,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "introduce/0",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 12
+          },
+          {
+            "name": "fold/1/0",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 20,
+            "bits": 22
+          },
+          {
+            "name": "fold/1/1",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 19,
+            "bits": 22
+          },
+          {
+            "name": "fold/1/2",
+            "raw": 196606.99999999948,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 22
+          },
+          {
+            "name": "queries/1",
+            "raw": 8.899838747687886,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "introduce/1",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/2/0",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 18,
+            "bits": 21
+          },
+          {
+            "name": "fold/2/1",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 17,
+            "bits": 21
+          },
+          {
+            "name": "fold/2/2",
+            "raw": 57343.571428571355,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 21
+          },
+          {
+            "name": "queries/2",
+            "raw": 8.636738927308198,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "introduce/2",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/3/0",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 16,
+            "bits": 20
+          },
+          {
+            "name": "fold/3/1",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 15,
+            "bits": 20
+          },
+          {
+            "name": "fold/3/2",
+            "raw": 15359.799999999981,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 20
+          },
+          {
+            "name": "queries/3",
+            "raw": 8.646019922756421,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "introduce/3",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/4/0",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 14,
+            "bits": 19
+          },
+          {
+            "name": "fold/4/1",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 13,
+            "bits": 19
+          },
+          {
+            "name": "fold/4/2",
+            "raw": 3967.9032258064412,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 19
+          },
+          {
+            "name": "queries/4",
+            "raw": 8.549405222360917,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "introduce/4",
+            "raw": 1.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 13
+          },
+          {
+            "name": "fold/5/0",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 12,
+            "bits": 18
+          },
+          {
+            "name": "fold/5/1",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 11,
+            "bits": 18
+          },
+          {
+            "name": "fold/5/2",
+            "raw": 1007.9523809523831,
+            "sites": 1,
+            "minimum": 10,
+            "bits": 18
+          },
+          {
+            "name": "queries/5",
+            "raw": 9.711920830313124,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "per-signature norm identity",
+            "raw": 80.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 16
+          },
+          {
+            "name": "integer relation batching",
+            "raw": 8.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 14
+          },
+          {
+            "name": "HashToPoint initial row point",
+            "raw": 168.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 17
+          },
+          {
+            "name": "combined integer outer sumcheck",
+            "raw": 504.0,
+            "sites": 21,
+            "minimum": 0,
+            "bits": 15
+          },
+          {
+            "name": "integer polynomial projection",
+            "raw": 160.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 17
+          },
+          {
+            "name": "linear constraints and terminal batching",
+            "raw": 8416.0,
+            "sites": 1,
+            "minimum": 0,
+            "bits": 20
+          },
+          {
+            "name": "prime source sumcheck",
+            "raw": 432.0,
+            "sites": 27,
+            "minimum": 0,
+            "bits": 15
+          }
+        ]
+      }
+    ],
+    "geometry_candidates": [
+      {
+        "rate": 1,
+        "initial_k": 3,
+        "modeled_hashes": 82866176,
+        "security_bits": 128.09314501870048
+      },
+      {
+        "rate": 1,
+        "initial_k": 4,
+        "modeled_hashes": 57663488,
+        "security_bits": 128.0931479114912
+      },
+      {
+        "rate": 1,
+        "initial_k": 5,
+        "modeled_hashes": 39321600,
+        "security_bits": 128.09315358981652
+      },
+      {
+        "rate": 1,
+        "initial_k": 6,
+        "modeled_hashes": 26609664,
+        "security_bits": 128.09325420450392
+      },
+      {
+        "rate": 2,
+        "initial_k": 3,
+        "modeled_hashes": 197287936,
+        "security_bits": 128.09316381026593
+      },
+      {
+        "rate": 2,
+        "initial_k": 4,
+        "modeled_hashes": 129105920,
+        "security_bits": 128.09314401161777
+      },
+      {
+        "rate": 2,
+        "initial_k": 5,
+        "modeled_hashes": 92356608,
+        "security_bits": 128.09315640341111
+      },
+      {
+        "rate": 2,
+        "initial_k": 6,
+        "modeled_hashes": 68780032,
+        "security_bits": 128.09323375716284
+      }
+    ]
+  }
+]

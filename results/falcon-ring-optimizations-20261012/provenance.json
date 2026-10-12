@@ -1,0 +1,43 @@
+{
+  "baseline_revision": "b30f5e445e8c8e64cdf96eed642755ca1bb60f8a",
+  "build_flags": "-C target-cpu=native",
+  "profile": "release, lto=true, codegen-units=1",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "sources": {
+    "src/piop/spartan/falcon1024_algebraic/ring.rs": {
+      "baseline_sha256": "a1f1055d8b573b45144ffd7c777a9cdfc550fe2d719aa8a5bc32491986e17c47",
+      "candidate_sha256": "5829114d5e9fe32f7fdf683d0d3d95f878a7240de7bfe5ef9081ff1990048c49",
+      "main_still_matches_baseline": true
+    },
+    "src/piop/spartan/falcon1024_algebraic/source.rs": {
+      "baseline_sha256": "baecd31bd9d0ef5b45ccdcb952b344d41ff99c20051981f08f834b6ba7065a16",
+      "candidate_sha256": "31bd7800df5a62299e1621a7e8fd0a058f645630ff1e6bc950a6a88bb532aa78",
+      "main_still_matches_baseline": true
+    },
+    "src/piop/spartan/falcon_polynomial.rs": {
+      "baseline_sha256": "568b33ae45634353974a4c3cf81a67b54d155bf7b2aff38650d37ea069d9b4c3",
+      "candidate_sha256": "733256cd5bac531c867b874e203866f3bfb49cf41091397e89a5459b3c0472ef",
+      "main_still_matches_baseline": true
+    },
+    "vendor/field/src/q12289.rs": {
+      "baseline_sha256": "b634cd4f3622fa458997380e58dcf0d8706f152f0d1f74b5dcfdf723a9094049",
+      "candidate_sha256": "404d66dd77e51d82b78ca56c718e6c6b71b5a6fee64c9c918e19d86d9818dd0c",
+      "main_still_matches_baseline": true
+    },
+    "vendor/field/src/q12289/avx512.rs": {
+      "baseline_sha256": "86f0b2f25dfba29ef3ed5afdfb7aaa93ac63c60b542d0a127e230d630169e901",
+      "candidate_sha256": "80efde9d659224ac0d0b21c7f5f714d194c9b8f8d4ef8fdf386ececdc68ad327",
+      "main_still_matches_baseline": true
+    }
+  },
+  "binaries": {
+    "baseline-algebraic": "d45bf2d4393b34609b2eb055069b600d236a04b298ad4c6e75d92d978ad14da1",
+    "baseline-full": "15c8af287e15a94a994949601c1615bfd4ab8cecd4a93ec349a2dabd72cc79bd",
+    "collapse-algebraic": "ea9bf0373a59fc9486f34e174eb217607aa9cb47bb97d21752780241ff31fb8a",
+    "combined-algebraic": "aadd6ba850a3adc6d266f88734dbf6d34bd24be58576e52dc20548f57d74bd4e",
+    "final-algebraic": "8e42b024b278223f03a4eaa10cbcae438878aac40a51cac2da75870cac81704a",
+    "final-full": "4d84484c1230fb3042bdbf8b938193b9b3eea287dc1c57be998595006eeeb609"
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "binary": "baseline",
+    "fixed32_round_loop_start": "0x1804c0",
+    "loop_start_mod64": 0,
+    "loop_start_mod4096": 1216,
+    "loop_instructions": 189,
+    "bounds_branches": 16,
+    "loop_back_branches": 1,
+    "schedule_indices_loaded": 16,
+    "rounds_per_nonce_vector": 5,
+    "fixed32_vector_outer_start": "0x180375",
+    "fixed32_vector_outer_mod64": 53,
+    "worker8_loop_start": "0x17f100"
+  },
+  {
+    "binary": "candidate",
+    "fixed32_round_loop_start": "0x181550",
+    "loop_start_mod64": 16,
+    "loop_start_mod4096": 1360,
+    "loop_instructions": 189,
+    "bounds_branches": 16,
+    "loop_back_branches": 1,
+    "schedule_indices_loaded": 16,
+    "rounds_per_nonce_vector": 5,
+    "fixed32_vector_outer_start": "0x181405",
+    "fixed32_vector_outer_mod64": 5,
+    "worker8_loop_start": "0x180190"
+  }
+]

@@ -1,0 +1,167 @@
+[
+  {
+    "candidate_over_baseline": {
+      "process_peak_rss_kib": 0.9963459628210586,
+      "prove_ms": 1.006594095633376,
+      "total_prover_ms": 1.0081437992115339,
+      "verify_ms": 0.9901574460577501,
+      "witness_commit_ms": 1.0107071973531208
+    },
+    "cell": {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads": 16
+    },
+    "medians": {
+      "baseline": {
+        "process_peak_rss_kib": 225504,
+        "prove_ms": 67.06257000000001,
+        "total_prover_ms": 70.819526,
+        "verify_ms": 20.399177,
+        "witness_commit_ms": 3.825184
+      },
+      "candidate": {
+        "process_peak_rss_kib": 224680,
+        "prove_ms": 67.504787,
+        "total_prover_ms": 71.396266,
+        "verify_ms": 20.198397,
+        "witness_commit_ms": 3.866141
+      }
+    },
+    "seed": 45
+  },
+  {
+    "candidate_over_baseline": {
+      "process_peak_rss_kib": 1.0,
+      "prove_ms": 0.9991258574788984,
+      "total_prover_ms": 1.0026490159884742,
+      "verify_ms": 0.9929776119060948,
+      "witness_commit_ms": 1.0139766167134112
+    },
+    "cell": {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads": 16
+    },
+    "medians": {
+      "baseline": {
+        "process_peak_rss_kib": 225180,
+        "prove_ms": 66.739689,
+        "total_prover_ms": 70.566958,
+        "verify_ms": 21.163883000000002,
+        "witness_commit_ms": 3.827178
+      },
+      "candidate": {
+        "process_peak_rss_kib": 225180,
+        "prove_ms": 66.681349,
+        "total_prover_ms": 70.753891,
+        "verify_ms": 21.015262,
+        "witness_commit_ms": 3.8806689999999997
+      }
+    },
+    "seed": 46
+  },
+  {
+    "candidate_over_baseline": {
+      "process_peak_rss_kib": 0.9965124101547286,
+      "prove_ms": 0.9939793388692216,
+      "total_prover_ms": 0.9953634800540965,
+      "verify_ms": 0.9951564752480928,
+      "witness_commit_ms": 0.981971022071877
+    },
+    "cell": {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads": 16
+    },
+    "medians": {
+      "baseline": {
+        "process_peak_rss_kib": 225944,
+        "prove_ms": 66.596839,
+        "total_prover_ms": 70.33421700000001,
+        "verify_ms": 20.358108,
+        "witness_commit_ms": 3.885578
+      },
+      "candidate": {
+        "process_peak_rss_kib": 225156,
+        "prove_ms": 66.195882,
+        "total_prover_ms": 70.008111,
+        "verify_ms": 20.259503000000002,
+        "witness_commit_ms": 3.815525
+      }
+    },
+    "seed": 47
+  },
+  {
+    "candidate_over_baseline": {
+      "process_peak_rss_kib": 0.9992365192379397,
+      "prove_ms": 0.9974305944342927,
+      "total_prover_ms": 0.9974553101254949,
+      "verify_ms": 0.9984732674851694,
+      "witness_commit_ms": 1.0348246755098904
+    },
+    "cell": {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads": 16
+    },
+    "medians": {
+      "baseline": {
+        "process_peak_rss_kib": 225284,
+        "prove_ms": 66.565591,
+        "total_prover_ms": 70.484031,
+        "verify_ms": 20.822246,
+        "witness_commit_ms": 3.821457
+      },
+      "candidate": {
+        "process_peak_rss_kib": 225112,
+        "prove_ms": 66.394557,
+        "total_prover_ms": 70.304671,
+        "verify_ms": 20.790456,
+        "witness_commit_ms": 3.9545379999999994
+      }
+    },
+    "seed": 48
+  },
+  {
+    "candidate_over_baseline": {
+      "process_peak_rss_kib": 0.9968267475048308,
+      "prove_ms": 0.9963003678475615,
+      "total_prover_ms": 0.9965819882226462,
+      "verify_ms": 1.015647755144143,
+      "witness_commit_ms": 0.9816342625399002
+    },
+    "cell": {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads": 16
+    },
+    "medians": {
+      "baseline": {
+        "process_peak_rss_kib": 225636,
+        "prove_ms": 66.976929,
+        "total_prover_ms": 70.812512,
+        "verify_ms": 20.94032,
+        "witness_commit_ms": 3.873735
+      },
+      "candidate": {
+        "process_peak_rss_kib": 224920,
+        "prove_ms": 66.729139,
+        "total_prover_ms": 70.57047399999999,
+        "verify_ms": 21.267989,
+        "witness_commit_ms": 3.802591
+      }
+    },
+    "seed": 49
+  }
+]

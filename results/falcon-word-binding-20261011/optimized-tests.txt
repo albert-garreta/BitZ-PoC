@@ -1,0 +1,12 @@
+running 8 tests
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::parallel_sparse_source_scan_preserves_entries_and_padding_errors ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::word_binding::tests::parallel_sparse_source_scan_preserves_entries_and_padding_errors ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::raw_word_masks_and_bridge_cover_malformed_padding ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::word_kernels_match_dense_reference_at_boolean_challenges ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::word_proof_matches_dense_reference_rounds_and_terminals ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::word_binding::tests::raw_word_masks_and_bridge_cover_malformed_padding ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::word_binding::tests::word_proof_matches_dense_reference_rounds_and_terminals ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::word_binding::tests::word_kernels_match_dense_reference_at_boolean_challenges ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 828 filtered out; finished in 0.11s
+

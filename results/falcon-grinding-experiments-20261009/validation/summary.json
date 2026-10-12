@@ -1,0 +1,167 @@
+[
+  {
+    "case": "base-unit",
+    "filter": "hybrid::grinding_",
+    "result": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 796 filtered out; finished in 0.00s"
+  },
+  {
+    "case": "query-unit",
+    "filter": "experimental_queries",
+    "result": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 798 filtered out; finished in 0.00s"
+  },
+  {
+    "case": "baseline",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.13s"
+  },
+  {
+    "case": "baseline",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "baseline",
+    "filter": "hybrid_falcon_roundtrip_and_tampering",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.29s"
+  },
+  {
+    "case": "global",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.10s"
+  },
+  {
+    "case": "global",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.12s"
+  },
+  {
+    "case": "weighted",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.06s"
+  },
+  {
+    "case": "queries124",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.10s"
+  },
+  {
+    "case": "queries124",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "queries120",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.10s"
+  },
+  {
+    "case": "queries120",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "queries116",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.10s"
+  },
+  {
+    "case": "queries116",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted_queries120",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted_queries120",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.06s"
+  },
+  {
+    "case": "weighted-t1",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted-t1",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted_queries120-t1",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted_queries120-t1",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted-t2",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted-t2",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted_queries120-t2",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted_queries120-t2",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted-t4",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted-t4",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.06s"
+  },
+  {
+    "case": "weighted_queries120-t4",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted_queries120-t4",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.06s"
+  },
+  {
+    "case": "weighted-t16",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted-t16",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  },
+  {
+    "case": "weighted_queries120-t16",
+    "filter": "experimental_128",
+    "result": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s"
+  },
+  {
+    "case": "weighted_queries120-t16",
+    "filter": "experiment_prime",
+    "result": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s"
+  }
+]

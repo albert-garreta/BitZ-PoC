@@ -1,0 +1,10 @@
+{
+  "files": {
+    "benches/falcon_hybrid.rs": "adfbf06ee0caf8913171ebb6fe7bd1909e8d733de670184c7597e86c6e504b2d",
+    "benches/common/falcon_affinity.rs": "8adc931e13c1482d36a0f4f83e12d2f378456ec61a0c0be03e80480215764acc"
+  },
+  "patch_sha256": "f3f48b35108e6ec38b5e6cf5b3042ee553cded09f7151ccdbd17c3caf0f7945f",
+  "unchanged_original_files": 816,
+  "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+  "production_changed": false
+}

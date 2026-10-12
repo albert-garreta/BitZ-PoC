@@ -1,0 +1,8 @@
+
+running 1 test
+test preparation::public_power_tests::public_limb_power_abba_microbenchmark ... 8192_split_113_15: previous_ms=0.650197 current_ms=0.348355 ratio=0.535769 saved_ms=0.301841
+8192_full_128: previous_ms=0.334170 current_ms=0.327227 ratio=0.979224 saved_ms=0.006943
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 2.67s
+

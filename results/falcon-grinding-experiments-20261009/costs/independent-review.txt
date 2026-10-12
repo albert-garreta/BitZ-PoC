@@ -1,0 +1,72 @@
+Independent experiment review, 2026-10-09
+
+Scope: grinding_experiment.rs; campaign.py; allocation integration in full
+Falcon and the shared512/1024 algebraic protocol; query configuration changes.
+Reviewed source SHA256 values are in reviewed-source-hashes.json.
+Read-only code review using rust-reviewer protocol guidance. No production
+source changed, and no benchmark/test execution performed during this review.
+
+No unresolved correctness or security-budget finding in the reviewed paths.
+
+Two actionable campaign-validity findings were raised and then fixed by root:
+1. Cached result reuse originally ignored binary, cost curve and execution
+   arguments. Updated campaign.py:31-33 fingerprints binary/cost/source-hash
+   artifacts plus arguments/settings and asserts identical provenance.
+2. Sibling CPU load originally was merely recorded. Updated campaign.py:34-54
+   checks idle cores before running and applies a predeclared>=2% sibling-load
+   exclusion criterion identically to every profile, preserving discarded
+   attempts and retrying at most four times.
+
+Allocator invariants checked:
+- Input curves require exactly33 finite nonnegative values. Multipliers in
+  the reviewed Falcon configurations are finite positive boundary counts.
+- Pareto pruning keeps b only if every harder difficulty costs strictly more.
+  Every discarded b is therefore dominated by a retained harder/equal-cost
+  point. MAX_BITS32 always survives; minimum bounds are preserved.
+- Initial cheapest retained points can include extra free-security bits when
+  crossing a parallel-dispatch threshold. Remaining marginal denominators are
+  strictly positive. This is appropriate for the nonmonotone measured curves.
+- Rounding the original hash-model fallback upward to the next retained point
+  cannot increase its error and cannot increase its modeled cost. Choosing the
+  cheaper candidate/fallback therefore does not regress that modeled objective.
+- Pairwise exchanges retain minimum/cap bounds and require strictly decreasing
+  modeled work; they independently recompute the full composed-error sum before
+  acceptance, avoiding a cancellation-only incremental feasibility check.
+- Final composed error is rechecked. This is a heuristic optimizer with a safe
+  feasible fallback, not a demonstrated exact global optimum.
+
+Security/configuration checks:
+- Prime terms use the same raw numerators/field lower bounds as the ledger;
+  only their allocated difficulties move. Non-grinding sampling/ring terms
+  remain fixed. Allocation retains the same15/16*2^-128 composed-error budget.
+- New stored prime/projection difficulties are used for proving, verification,
+  ledger reporting and transcript configuration binding in the inspected paths.
+- Query configuration retains native target128 and fold grinding. Fewer raw
+  queries are compensated by native query grinding, and the global allocator
+  retains each native floor. Query work does not receive fold-error credit.
+- Exact-rational budget and transcript-replay rejection tests are present in
+  the experiment source; this review inspected them but did not execute them.
+- C(0)=0 is legitimate as a model of grinding disabled. Actual PCS zero-bit
+  wrapper timing is nonzero, but current128-bit groups need positive difficulty
+  to meet the composed budget. That modeling convention does not relax security.
+
+Recommendations for interpretation/confirmation:
+- Freeze the winner after the three-seed screen. Use disjoint fresh seeds for
+  confirmation and keep baseline/candidate order randomized and interleaved.
+- Treat input seed as the statistical replicate. Repeated trials have the
+  same nonces and characterize timing noise, not independent PoW variability.
+- For each seed take the median repeated timing, then compare paired seed-level
+  differences/ratios. Report a confidence interval obtained by resampling seeds,
+  and report across-seed means as well as medians: PoW has a geometric tail.
+- If the interval includes zero improvement, describe the result as unresolved
+  at this sample size; selecting the fastest screening profile alone is not
+  confirmation. Expected whole-proof gains are small relative to noise.
+- Weighted schedules depend on cost-thread class. Their thread-scaling table
+  measures schedule tuning plus parallelism; it is not one fixed protocol
+  schedule under varying worker counts. Each derived schedule remains bound.
+- Add a focused nonmonotone/flat-cost regression test before promoting this
+  allocator beyond the experiment. Its current test uses monotone curves and
+  does not exercise dispatch-threshold Pareto pruning or fallback rounding.
+- One-worker Spartan calibration has a documented cold-clock effect; obtain a
+  warmed curve before attributing a one-worker weighted-profile miss to the
+  allocator itself. End-to-end observed timings remain valid as measured.

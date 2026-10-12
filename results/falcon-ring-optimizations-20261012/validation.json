@@ -1,0 +1,61 @@
+{
+  "tests": {
+    "falcon-native-final-tests.log": 302,
+    "falcon-integration-tests.log": 24,
+    "falcon-portable-one-worker-tests.log": 121,
+    "field-native-final-tests.log": 19,
+    "field-portable-final-tests.log": 19,
+    "main-integration-tests.log": 121
+  },
+  "test_executions_passed": 606,
+  "serial_library_check": "passed",
+  "known_preexisting_test_build_issue": "--no-default-features --features falcon --lib cannot compile src/sumcheck/inner/packed/streaming.rs:3000, which references rayon without the parallel feature. The serial library check passes; generic-CPU one-worker algebraic tests and portable field tests pass.",
+  "main_overlay_sha256": {
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "501bf9f74b323567ef21a1fab9967ddf405ac186ff1261c81a6f5b67c74908d4",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "7c12b3fddeebff06b3fae8f504b12fda067ebc0972cc768aa02b9da1fb3d6370"
+  },
+  "campaigns": {
+    "confirmation-n1024-b3-s100-t8": {
+      "matched_pairs": 8,
+      "verified_proof_executions": 192
+    },
+    "confirmation-n1024-b3-s128-t16": {
+      "matched_pairs": 8,
+      "verified_proof_executions": 192
+    },
+    "confirmation-n512-b8-s100-t16": {
+      "matched_pairs": 8,
+      "verified_proof_executions": 192
+    },
+    "confirmation-n512-b8-s100-t8": {
+      "matched_pairs": 8,
+      "verified_proof_executions": 192
+    },
+    "confirmation-tiny-repeat": {
+      "matched_pairs": 8,
+      "verified_proof_executions": 320
+    },
+    "full-controls": {
+      "matched_pairs": 24,
+      "verified_proof_executions": 192
+    },
+    "qualification-final": {
+      "matched_pairs": 252,
+      "verified_proof_executions": 3528
+    },
+    "qualification-initial": {
+      "matched_pairs": 252,
+      "verified_proof_executions": 2016
+    }
+  },
+  "limitations": [
+    "Finite samples on AMD Ryzen 9 9950X3D; no universal zero-regression guarantee.",
+    "Ring traces include instrumentation overhead and are separate from untraced proof timings.",
+    "The performance baseline is b30f5e445. The concurrent main-thread sixteen-worker binder change was included in a separate correctness run, not these matched performance binaries."
+  ],
+  "matched_pairs": 568,
+  "verified_proof_executions": 6824,
+  "installed_source_matches_tested_candidate": true,
+  "main_overlay_matches_combined_test_snapshot": true,
+  "report_harness_check": "passed"
+}

@@ -1,0 +1,300 @@
+{
+  "qualification": false,
+  "observations": [
+    {
+      "process": "1-baseline",
+      "side": "baseline",
+      "trial": "warmup",
+      "sample": null,
+      "window_start_ns": 171863591683803,
+      "window_end_ns": 171863659330047,
+      "window_ms": 67.646244,
+      "total_prover_ms": 48.588973,
+      "witness_commit_ms": 1.27246,
+      "proof_verify_ms": 15.966274999999998,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.409895,
+      "mean16_reported_ghz": 3.6895119375,
+      "sample_read_duration_ms": [
+        0.192334
+      ]
+    },
+    {
+      "process": "1-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 1,
+      "window_start_ns": 171863659330047,
+      "window_end_ns": 171863716484115,
+      "window_ms": 57.154068,
+      "total_prover_ms": 38.057422,
+      "witness_commit_ms": 0.8479559999999999,
+      "proof_verify_ms": 16.145184999999998,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.407149,
+      "mean16_reported_ghz": 4.3793333125,
+      "sample_read_duration_ms": [
+        0.250856
+      ]
+    },
+    {
+      "process": "1-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 2,
+      "window_start_ns": 171863716484115,
+      "window_end_ns": 171863770074783,
+      "window_ms": 53.590668,
+      "total_prover_ms": 37.233943,
+      "witness_commit_ms": 0.841584,
+      "proof_verify_ms": 13.939616000000001,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.407391,
+      "mean16_reported_ghz": 4.376750375,
+      "sample_read_duration_ms": [
+        0.217031
+      ]
+    },
+    {
+      "process": "1-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 3,
+      "window_start_ns": 171863770074783,
+      "window_end_ns": 171863816726977,
+      "window_ms": 46.652194,
+      "total_prover_ms": 31.0617,
+      "witness_commit_ms": 0.678144,
+      "proof_verify_ms": 13.179356,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.43099,
+      "mean16_reported_ghz": 5.4502581875,
+      "sample_read_duration_ms": [
+        0.192004
+      ]
+    },
+    {
+      "process": "2-candidate",
+      "side": "candidate",
+      "trial": "warmup",
+      "sample": null,
+      "window_start_ns": 171864829522398,
+      "window_end_ns": 171864895167240,
+      "window_ms": 65.644842,
+      "total_prover_ms": 47.56559500000001,
+      "witness_commit_ms": 1.068434,
+      "proof_verify_ms": 15.25621,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.409498,
+      "mean16_reported_ghz": 3.6384839375,
+      "sample_read_duration_ms": [
+        0.195991
+      ]
+    },
+    {
+      "process": "2-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 1,
+      "window_start_ns": 171864895167240,
+      "window_end_ns": 171864950131691,
+      "window_ms": 54.964451,
+      "total_prover_ms": 36.999428,
+      "witness_commit_ms": 0.864477,
+      "proof_verify_ms": 15.315062000000001,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.407506,
+      "mean16_reported_ghz": 4.3795880625,
+      "sample_read_duration_ms": [
+        0.229304
+      ]
+    },
+    {
+      "process": "2-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 2,
+      "window_start_ns": 171864950131691,
+      "window_end_ns": 171864998456213,
+      "window_ms": 48.324522,
+      "total_prover_ms": 34.314042,
+      "witness_commit_ms": 0.825604,
+      "proof_verify_ms": 11.849196,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.806005,
+      "mean16_reported_ghz": 4.821588375,
+      "sample_read_duration_ms": [
+        0.268809
+      ]
+    },
+    {
+      "process": "2-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 3,
+      "window_start_ns": 171864998456213,
+      "window_end_ns": 171865044256834,
+      "window_ms": 45.800621,
+      "total_prover_ms": 30.775498000000002,
+      "witness_commit_ms": 0.68102,
+      "proof_verify_ms": 12.868056,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.397072,
+      "mean16_reported_ghz": 5.4279506875,
+      "sample_read_duration_ms": [
+        0.13707
+      ]
+    },
+    {
+      "process": "3-candidate",
+      "side": "candidate",
+      "trial": "warmup",
+      "sample": null,
+      "window_start_ns": 171866055206638,
+      "window_end_ns": 171866117434588,
+      "window_ms": 62.22795,
+      "total_prover_ms": 46.929410000000004,
+      "witness_commit_ms": 1.1065770000000001,
+      "proof_verify_ms": 13.127538,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 4.542805,
+      "mean16_reported_ghz": 4.0562965625,
+      "sample_read_duration_ms": [
+        0.189669
+      ]
+    },
+    {
+      "process": "3-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 1,
+      "window_start_ns": 171866117434588,
+      "window_end_ns": 171866163130971,
+      "window_ms": 45.696383,
+      "total_prover_ms": 30.987489,
+      "witness_commit_ms": 0.719312,
+      "proof_verify_ms": 12.658209,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.400834,
+      "mean16_reported_ghz": 5.42452025,
+      "sample_read_duration_ms": [
+        0.162939
+      ]
+    },
+    {
+      "process": "3-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 2,
+      "window_start_ns": 171866163130971,
+      "window_end_ns": 171866208418891,
+      "window_ms": 45.28792,
+      "total_prover_ms": 30.634021,
+      "witness_commit_ms": 0.684707,
+      "proof_verify_ms": 12.586584,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.447073,
+      "mean16_reported_ghz": 5.459621375,
+      "sample_read_duration_ms": [
+        0.243361
+      ]
+    },
+    {
+      "process": "3-candidate",
+      "side": "candidate",
+      "trial": "sample",
+      "sample": 3,
+      "window_start_ns": 171866208418891,
+      "window_end_ns": 171866253843400,
+      "window_ms": 45.424509,
+      "total_prover_ms": 30.720153,
+      "witness_commit_ms": 0.669468,
+      "proof_verify_ms": 12.638592000000001,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.401251,
+      "mean16_reported_ghz": 4.9626749375,
+      "sample_read_duration_ms": [
+        0.125999
+      ]
+    },
+    {
+      "process": "4-baseline",
+      "side": "baseline",
+      "trial": "warmup",
+      "sample": null,
+      "window_start_ns": 171867266661173,
+      "window_end_ns": 171867326959747,
+      "window_ms": 60.298574,
+      "total_prover_ms": 44.605758,
+      "witness_commit_ms": 1.080818,
+      "proof_verify_ms": 13.1073,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.513715,
+      "mean16_reported_ghz": 5.0803194375,
+      "sample_read_duration_ms": [
+        0.142931
+      ]
+    },
+    {
+      "process": "4-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 1,
+      "window_start_ns": 171867326959747,
+      "window_end_ns": 171867373506963,
+      "window_ms": 46.547216,
+      "total_prover_ms": 31.213869,
+      "witness_commit_ms": 0.719082,
+      "proof_verify_ms": 12.861133,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.414359,
+      "mean16_reported_ghz": 5.4380806875,
+      "sample_read_duration_ms": [
+        0.161365
+      ]
+    },
+    {
+      "process": "4-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 2,
+      "window_start_ns": 171867373506963,
+      "window_end_ns": 171867419977563,
+      "window_ms": 46.4706,
+      "total_prover_ms": 31.265136000000002,
+      "witness_commit_ms": 0.66518,
+      "proof_verify_ms": 12.759741,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.436089,
+      "mean16_reported_ghz": 5.3766899375,
+      "sample_read_duration_ms": [
+        0.134124
+      ]
+    },
+    {
+      "process": "4-baseline",
+      "side": "baseline",
+      "trial": "sample",
+      "sample": 3,
+      "window_start_ns": 171867419977563,
+      "window_end_ns": 171867466187359,
+      "window_ms": 46.209796,
+      "total_prover_ms": 31.170597,
+      "witness_commit_ms": 0.684166,
+      "proof_verify_ms": 12.567176,
+      "frequency_samples": 1,
+      "cpu0_reported_ghz": 5.356426,
+      "mean16_reported_ghz": 5.413434875,
+      "sample_read_duration_ms": [
+        0.193196
+      ]
+    }
+  ],
+  "correlations_cpu0_reported_frequency_measured_trials": {
+    "total_prover_ms": -0.9924326015852329,
+    "witness_commit_ms": -0.9666633721774606,
+    "proof_verify_ms": -0.7454464854127189
+  },
+  "measured_trials_with_frequency_samples": 12,
+  "limit": "Twelve measured trials from four processes and one seed. Driver-reported 20 Hz samples, one per whole-trial window, not hardware-counter effective frequency or exact prover-substage attribution. Association only."
+}

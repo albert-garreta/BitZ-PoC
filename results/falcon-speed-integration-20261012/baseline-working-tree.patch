@@ -1,0 +1,1652 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 25cb03d0d..204843a39 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -266,6 +266,10 @@ required-features = ["binius64-bench"]
+ name = "grind_probe"
+ required-features = ["parallel", "span-metrics"]
+ 
++[[example]]
++name = "falcon_size_breakdown"
++required-features = ["falcon-hybrid"]
++
+ [[example]]
+ name = "hybrid_probe"
+ required-features = ["span-metrics", "hybrid"]
+diff --git a/src/hybrid/integer_bridge.rs b/src/hybrid/integer_bridge.rs
+index fa65944a6..376e5055d 100644
+--- a/src/hybrid/integer_bridge.rs
++++ b/src/hybrid/integer_bridge.rs
+@@ -229,6 +229,8 @@ fn row_images(chunks: &[LargeNumber], comb: &FixedBasePow) -> Vec<Gf> {
+         .collect()
+ }
+ 
++/// Equality-row wrapper retained for existing bit-MLE openings. Callers supply
++/// their cached equality weights; the transcript is identical to the weighted API.
+ pub(crate) fn prove(
+     t: &mut impl Transcript,
+     p: &IntegerMatrixLayout,
+@@ -240,19 +242,91 @@ pub(crate) fn prove(
+     row_weights: &[u128],
+ ) -> Result<(Proof, BinaryClaim), FalconError> {
+     Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+-    if rows.len() != p.cols() || rows.iter().any(|column| column.len() != p.rows() / 64) {
+-        return Err(err("bridge source shape"));
+-    }
+-    if mode == BridgeMode::Unsplit {
+-        return prove_unsplit(t, p, rows, point, modulus, grinding_bits, row_weights);
+-    }
+-    if point.len() != p.row_vars + p.col_vars {
++    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
++    validate_point(point, p.row_vars + p.col_vars, &field)?;
++    prove_weighted_with_field(
++        t,
++        p,
++        rows,
++        mode,
++        &point[p.row_vars..],
++        &field,
++        grinding_bits,
++        row_weights,
++    )
++}
++
++fn validate_point(point: &[F], variables: usize, field: &Cfg) -> Result<(), FalconError> {
++    if point.len() != variables {
+         return Err(err("bridge point shape"));
+     }
+-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
++    let encoding = F::canonical_modulus_encoding(field);
++    for coordinate in point {
++        coordinate
++            .validate_element(&encoding)
++            .map_err(|_| err("bridge point element"))?;
++    }
++    Ok(())
++}
++
++fn validate_row_weights(
++    p: &IntegerMatrixLayout,
++    row_weights: &[u128],
++    modulus: u128,
++) -> Result<(), FalconError> {
+     if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+         return Err(err("bridge row weights"));
+     }
++    Ok(())
++}
++
++/// Authenticate `sum_{r,c} row_weights[r] * eq(c, column_point) * bits[r,c]`.
++/// The public weights may be any canonical prime-field coefficients. The caller
++/// must bind or derive the weights and column point in its enclosing transcript
++/// before invoking this reduction; the bridge preserves the legacy framing.
++pub(crate) fn prove_weighted(
++    t: &mut impl Transcript,
++    p: &IntegerMatrixLayout,
++    rows: &[Vec<u64>],
++    mode: BridgeMode,
++    column_point: &[F],
++    modulus: u128,
++    grinding_bits: u32,
++    row_weights: &[u128],
++) -> Result<(Proof, BinaryClaim), FalconError> {
++    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
++    prove_weighted_with_field(
++        t,
++        p,
++        rows,
++        mode,
++        column_point,
++        &field,
++        grinding_bits,
++        row_weights,
++    )
++}
++
++fn prove_weighted_with_field(
++    t: &mut impl Transcript,
++    p: &IntegerMatrixLayout,
++    rows: &[Vec<u64>],
++    mode: BridgeMode,
++    column_point: &[F],
++    field: &Cfg,
++    grinding_bits: u32,
++    row_weights: &[u128],
++) -> Result<(Proof, BinaryClaim), FalconError> {
++    Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
++    if rows.len() != p.cols() || rows.iter().any(|column| column.len() != p.rows() / 64) {
++        return Err(err("bridge source shape"));
++    }
++    let modulus = field.modulus_u128();
++    validate_point(column_point, p.col_vars, field)?;
++    validate_row_weights(p, row_weights, modulus)?;
++    if mode == BridgeMode::Unsplit {
++        return prove_unsplit(t, p, rows, modulus, grinding_bits, row_weights);
++    }
+     split_bounds(p, modulus)?;
+     let chunks = weight_limbs(row_weights, limb_width(p))?;
+     checked_split_weight_sum(&chunks)?;
+@@ -302,6 +376,7 @@ pub(crate) fn prove(
+     ))
+ }
+ 
++/// Equality-row wrapper for an opening at the full bit-domain point.
+ pub(crate) fn verify(
+     t: &mut impl Transcript,
+     p: &IntegerMatrixLayout,
+@@ -313,19 +388,86 @@ pub(crate) fn verify(
+     grinding_bits: u32,
+ ) -> Result<BinaryClaim, FalconError> {
+     Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
++    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
++    validate_point(point, p.row_vars + p.col_vars, &field)?;
++    let row_weights = weights(&point[..p.row_vars], &field);
++    verify_weighted_with_field(
++        t,
++        p,
++        mode,
++        &point[p.row_vars..],
++        value,
++        &field,
++        proof,
++        grinding_bits,
++        &row_weights,
++    )
++}
++
++/// Verify a public weighted-row opening, returning the claim that the enclosing
++/// binary PCS must authenticate. As in `prove_weighted`, the enclosing protocol
++/// binds or derives the public weights, point, and claimed value.
++pub(crate) fn verify_weighted(
++    t: &mut impl Transcript,
++    p: &IntegerMatrixLayout,
++    mode: BridgeMode,
++    column_point: &[F],
++    value: F,
++    modulus: u128,
++    proof: &Proof,
++    grinding_bits: u32,
++    row_weights: &[u128],
++) -> Result<BinaryClaim, FalconError> {
++    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
++    verify_weighted_with_field(
++        t,
++        p,
++        mode,
++        column_point,
++        value,
++        &field,
++        proof,
++        grinding_bits,
++        row_weights,
++    )
++}
++
++fn verify_weighted_with_field(
++    t: &mut impl Transcript,
++    p: &IntegerMatrixLayout,
++    mode: BridgeMode,
++    column_point: &[F],
++    value: F,
++    field: &Cfg,
++    proof: &Proof,
++    grinding_bits: u32,
++    row_weights: &[u128],
++) -> Result<BinaryClaim, FalconError> {
++    Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
++    let modulus = field.modulus_u128();
++    validate_point(column_point, p.col_vars, field)?;
++    value
++        .validate_element(&F::canonical_modulus_encoding(field))
++        .map_err(|_| err("bridge value element"))?;
++    validate_row_weights(p, row_weights, modulus)?;
+     if mode == BridgeMode::Unsplit {
+-        return verify_unsplit(t, p, point, value, modulus, proof, grinding_bits);
+-    }
+-    if point.len() != p.row_vars + p.col_vars {
+-        return Err(err("bridge point shape"));
++        return verify_unsplit(
++            t,
++            p,
++            column_point,
++            value,
++            field,
++            proof,
++            grinding_bits,
++            row_weights,
++        );
+     }
+     if proof.forest.len() != message_count(p) {
+         return Err(err("bridge forest message count"));
+     }
+-    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+     split_bounds(p, modulus)?;
+     let width = limb_width(p);
+-    let chunks = weight_limbs(&weights(&point[..p.row_vars], &field), width)?;
++    let chunks = weight_limbs(row_weights, width)?;
+     let ColumnSums::Split(sums) = &proof.sums else {
+         return Err(err("bridge chunk shape"));
+     };
+@@ -333,7 +475,7 @@ pub(crate) fn verify(
+     if sums.len() != p.cols() || sums.iter().any(|&sum| !sum.within(bound)) {
+         return Err(err("bridge integer fold magnitude"));
+     }
+-    let cols = weights(&point[p.row_vars..], &field);
++    let cols = weights(column_point, field);
+     let partial = sums
+         .iter()
+         .zip(&cols)
+@@ -456,19 +598,11 @@ fn prove_unsplit(
+     t: &mut impl Transcript,
+     p: &IntegerMatrixLayout,
+     rows: &[Vec<u64>],
+-    point: &[F],
+     modulus: u128,
+     grinding_bits: u32,
+     row_weights: &[u128],
+ ) -> Result<(Proof, BinaryClaim), FalconError> {
+     let shape = unsplit_shape(p, modulus)?;
+-    if point.len() != p.row_vars + p.col_vars {
+-        return Err(err("bridge point shape"));
+-    }
+-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+-        return Err(err("bridge row weights"));
+-    }
+     // All terms are nonnegative. Bounding their full sum also bounds every
+     // partial sum in the digit-table and parallel folding implementations.
+     checked_weight_sum(row_weights)?;
+@@ -510,16 +644,14 @@ fn prove_unsplit(
+ fn verify_unsplit(
+     t: &mut impl Transcript,
+     p: &IntegerMatrixLayout,
+-    point: &[F],
++    column_point: &[F],
+     value: F,
+-    modulus: u128,
++    field: &Cfg,
+     proof: &Proof,
+     grinding_bits: u32,
++    row_weights: &[u128],
+ ) -> Result<BinaryClaim, FalconError> {
+-    unsplit_shape(p, modulus)?;
+-    if point.len() != p.row_vars + p.col_vars {
+-        return Err(err("bridge point shape"));
+-    }
++    unsplit_shape(p, field.modulus_u128())?;
+     if proof.forest.len() != unsplit_message_count(p) {
+         return Err(err("bridge forest message count"));
+     }
+@@ -529,13 +661,11 @@ fn verify_unsplit(
+     if sums.len() != p.cols() {
+         return Err(err("unsplit bridge sum shape"));
+     }
+-    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+-    let row_weights = weights(&point[..p.row_vars], &field);
+-    let bound = checked_weight_sum(&row_weights)?;
++    let bound = checked_weight_sum(row_weights)?;
+     if sums.iter().any(|&sum| sum > bound) {
+         return Err(err("bridge integer fold magnitude"));
+     }
+-    let cols = weights(&point[p.row_vars..], &field);
++    let cols = weights(column_point, field);
+     let result = sums.iter().zip(&cols).fold(0, |acc, (&sum, &weight)| {
+         field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight))
+     });
+@@ -627,6 +757,277 @@ mod tests {
+ 
+     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+ 
++    fn weighted_test_source(p: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
++        (0..p.cols())
++            .map(|column| {
++                (0..p.rows() / 64)
++                    .map(|word| match column {
++                        0 => u64::MAX,
++                        1 => 0,
++                        2 => 0xaaaa_aaaa_aaaa_aaaa,
++                        _ => 1u64 << ((13 * word + column) % 64),
++                    })
++                    .collect()
++            })
++            .collect()
++    }
++
++    fn weighted_prime_value(
++        rows: &[Vec<u64>],
++        row_weights: &[u128],
++        column_point: &[F],
++        field: &Cfg,
++    ) -> F {
++        let cols = weights(column_point, field);
++        let value = rows.iter().zip(cols).fold(0, |acc, (bits, column)| {
++            let sum = row_weights
++                .iter()
++                .enumerate()
++                .fold(0, |sum, (row, &weight)| {
++                    if bits[row / 64] >> (row % 64) & 1 == 1 {
++                        field.add_u128(sum, weight)
++                    } else {
++                        sum
++                    }
++                });
++            field.add_u128(acc, field.mul_u128(sum, column))
++        });
++        F::from_with_cfg(Uint::from(value), field)
++    }
++
++    fn binary_claim_value(rows: &[Vec<u64>], claim: &BinaryClaim) -> Gf {
++        let cols = build_eq_x_r_vec(&claim.high_point, &()).unwrap();
++        rows.iter()
++            .zip(cols)
++            .fold(Gf::zero(), |acc, (bits, column)| {
++                let sum = claim
++                    .low
++                    .iter()
++                    .enumerate()
++                    .fold(Gf::zero(), |sum, (row, &weight)| {
++                        if bits[row / 64] >> (row % 64) & 1 == 1 {
++                            sum + weight
++                        } else {
++                            sum
++                        }
++                    });
++                acc + sum * column
++            })
++    }
++
++    #[test]
++    fn weighted_bridge_authenticates_arbitrary_weights_and_rejects_bad_inputs() {
++        let p = IntegerMatrixLayout {
++            row_vars: 7,
++            col_vars: 2,
++        };
++        let rows = weighted_test_source(&p);
++        for (mode, modulus) in [
++            (BridgeMode::Unsplit, (1u128 << 107) - 1),
++            (BridgeMode::TwoLimbs, (1u128 << 127) - 1),
++        ] {
++            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
++            let column_point: Vec<_> = [3u128, 7]
++                .map(|x| F::from_with_cfg(Uint::from(x), &field))
++                .to_vec();
++            // Includes zero, negative field coefficients, and values spanning
++            // both limbs. No equality polynomial is assumed for these rows.
++            let row_weights: Vec<_> = (0..p.rows())
++                .map(|row| match row % 4 {
++                    0 => 0,
++                    1 => modulus - 1 - row as u128,
++                    2 => 1u128 << (row % 100),
++                    _ => (row * row + 1) as u128,
++                })
++                .collect();
++            let value = weighted_prime_value(&rows, &row_weights, &column_point, &field);
++            let mut pt = Blake3Transcript::new();
++            let (proof, claim) = super::prove_weighted(
++                &mut pt,
++                &p,
++                &rows,
++                mode,
++                &column_point,
++                modulus,
++                2,
++                &row_weights,
++            )
++            .unwrap();
++            let mut vt = Blake3Transcript::new();
++            let verified = super::verify_weighted(
++                &mut vt,
++                &p,
++                mode,
++                &column_point,
++                value,
++                modulus,
++                &proof,
++                2,
++                &row_weights,
++            )
++            .unwrap();
++            assert_eq!(claim.low, verified.low);
++            assert_eq!(claim.high_point, verified.high_point);
++            assert_eq!(claim.value, verified.value);
++            assert_eq!(binary_claim_value(&rows, &verified), verified.value);
++            assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
++
++            let verify = |point: &[F], value: F, weights: &[u128]| {
++                super::verify_weighted(
++                    &mut Blake3Transcript::new(),
++                    &p,
++                    mode,
++                    point,
++                    value,
++                    modulus,
++                    &proof,
++                    2,
++                    weights,
++                )
++            };
++            let prove = |point: &[F], weights: &[u128]| {
++                super::prove_weighted(
++                    &mut Blake3Transcript::new(),
++                    &p,
++                    &rows,
++                    mode,
++                    point,
++                    modulus,
++                    2,
++                    weights,
++                )
++            };
++            let wrong_value = F::from_with_cfg(
++                Uint::from(field.add_u128(u128::from(field.to_integer(&value)), 1)),
++                &field,
++            );
++            assert!(verify(&column_point, wrong_value, &row_weights).is_err());
++            let mut wrong_point = column_point.clone();
++            wrong_point[0] = F::from_with_cfg(Uint::from(5u128), &field);
++            assert_ne!(
++                weighted_prime_value(&rows, &row_weights, &wrong_point, &field),
++                value
++            );
++            assert!(verify(&wrong_point, value, &row_weights).is_err());
++
++            let mut changed_weights = row_weights.clone();
++            changed_weights[0] = 1;
++            // A bridge verifier returns a binary PCS claim; final source
++            // authentication belongs to that PCS. A changed public row weight
++            // must therefore fail either this reduction or its terminal claim.
++            if let Ok(changed) = verify(&column_point, value, &changed_weights) {
++                assert_ne!(binary_claim_value(&rows, &changed), changed.value);
++            }
++            changed_weights[0] = modulus;
++            for bad_weights in [&changed_weights[..], &row_weights[..p.rows() - 1]] {
++                assert!(prove(&column_point, bad_weights).is_err());
++                assert!(verify(&column_point, value, bad_weights).is_err());
++            }
++            let mut long_point = column_point.clone();
++            long_point.push(column_point[0]);
++            for bad_point in [&column_point[..1], &long_point[..]] {
++                assert!(prove(bad_point, &row_weights).is_err());
++                assert!(verify(bad_point, value, &row_weights).is_err());
++            }
++            // Construct an element reduced in a wider context whose raw
++            // Montgomery encoding is out of range in the statement's field.
++            let wider = field::create_prime_field(Uint::from(u128::MAX - 158));
++            let noncanonical = F::new_unchecked_with_cfg(Uint::from(modulus), &wider);
++            let mut bad_point = column_point.clone();
++            bad_point[0] = noncanonical;
++            assert!(prove(&bad_point, &row_weights).is_err());
++            assert!(verify(&bad_point, value, &row_weights).is_err());
++            assert!(verify(&column_point, noncanonical, &row_weights).is_err());
++        }
++    }
++
++    #[test]
++    fn weighted_equality_openings_preserve_wrapper_proofs_and_transcripts() {
++        let p = IntegerMatrixLayout {
++            row_vars: 7,
++            col_vars: 2,
++        };
++        let rows = weighted_test_source(&p);
++        for (mode, modulus) in [
++            (BridgeMode::Unsplit, (1u128 << 107) - 1),
++            (BridgeMode::TwoLimbs, (1u128 << 127) - 1),
++        ] {
++            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
++            let point: Vec<_> = (0..p.row_vars + p.col_vars)
++                .map(|i| F::from_with_cfg(Uint::from(3 + 2 * i as u128), &field))
++                .collect();
++            let row_weights = weights(&point[..p.row_vars], &field);
++            let column_point = &point[p.row_vars..];
++            let value = weighted_prime_value(&rows, &row_weights, column_point, &field);
++            let mut wrapper_t = Blake3Transcript::new();
++            let (wrapper, wrapper_claim) = super::prove(
++                &mut wrapper_t,
++                &p,
++                &rows,
++                mode,
++                &point,
++                modulus,
++                2,
++                &row_weights,
++            )
++            .unwrap();
++            let mut weighted_t = Blake3Transcript::new();
++            let (weighted, weighted_claim) = super::prove_weighted(
++                &mut weighted_t,
++                &p,
++                &rows,
++                mode,
++                column_point,
++                modulus,
++                2,
++                &row_weights,
++            )
++            .unwrap();
++            assert_eq!(wrapper.sums, weighted.sums);
++            assert_eq!(wrapper.forest, weighted.forest);
++            assert_eq!(wrapper.nonces, weighted.nonces);
++            assert_eq!(wrapper_claim.low, weighted_claim.low);
++            assert_eq!(wrapper_claim.high_point, weighted_claim.high_point);
++            assert_eq!(wrapper_claim.value, weighted_claim.value);
++            let expected_challenge = wrapper_t.get_challenge::<u128>();
++            assert_eq!(expected_challenge, weighted_t.get_challenge::<u128>());
++            let mut wrapper_t = Blake3Transcript::new();
++            let wrapper_claim = super::verify(
++                &mut wrapper_t,
++                &p,
++                mode,
++                &point,
++                value,
++                modulus,
++                &wrapper,
++                2,
++            )
++            .unwrap();
++            let mut weighted_t = Blake3Transcript::new();
++            let weighted_claim = super::verify_weighted(
++                &mut weighted_t,
++                &p,
++                mode,
++                column_point,
++                value,
++                modulus,
++                &weighted,
++                2,
++                &row_weights,
++            )
++            .unwrap();
++            assert_eq!(wrapper_claim.low, weighted_claim.low);
++            assert_eq!(wrapper_claim.high_point, weighted_claim.high_point);
++            assert_eq!(wrapper_claim.value, weighted_claim.value);
++            assert_eq!(
++                binary_claim_value(&rows, &weighted_claim),
++                weighted_claim.value
++            );
++            assert_eq!(expected_challenge, wrapper_t.get_challenge::<u128>());
++            assert_eq!(expected_challenge, weighted_t.get_challenge::<u128>());
++        }
++    }
++
+     #[test]
+     fn single_algebraic_source_bridge_authenticates_without_falcon_trace() {
+         let p = IntegerMatrixLayout {
+diff --git a/src/piop/spartan/falcon1024_algebraic/README.md b/src/piop/spartan/falcon1024_algebraic/README.md
+index 83291fa6f..faa8f4036 100644
+--- a/src/piop/spartan/falcon1024_algebraic/README.md
++++ b/src/piop/spartan/falcon1024_algebraic/README.md
+@@ -99,8 +99,10 @@ selected layout; `LIVE_BITS` is the signed15 maximum and `COMPACT_LIVE_BITS`
+ is the compact maximum.
+ `source_bits_per_signature()` reports the aligned virtual stride, and
+ `committed_source_bits()` reports the total physical allocation.
+-`capacity()` retains its previous PCS-capacity meaning; `arithmetic_capacity()`,
+-`logical_binding_bits()`, and `bridge_layouts()` expose the actual computation.
++`capacity()` retains its previous PCS-capacity meaning; `arithmetic_capacity()`
++reports the instance domain. `logical_binding_bits()` and `bridge_layouts()`
++report the source-bit domains authenticated by the bridges. Production's
++word sumcheck has one entry per sixteen of these logical bits.
+ 
+ After binding public inputs, exception metadata, and the source root, the protocol samples a prime
+ `2^125 <= p < 2^126`. Ring equations are batched over
+@@ -127,18 +129,50 @@ residuals are below `2^50` for every supported batch. These bounds apply to each
+ equation before random batching.
+ 
+ A fresh four-claim merge combines the ring claim, the single norm endpoint,
+-slack, and padding. The default binds the signed15 view with one streamed
+-sumcheck and a two-limb integer bridge, including when physical storage is split.
+-The default reduces logical padding for small batches and reuses cached decoder
+-weights and streamed byte buckets for larger batches on the measured one- and
+-eight-worker configurations. A four-variable prefix keeps a coefficient and
+-its spare lane together, halving the dense suffix table relative to a
+-three-variable prefix. The prover selects the prefix by public degree, batch
+-size and worker count; these computation choices preserve every proof message.
+-On Linux/x86-64, the selected four-variable paths combine buckets across up to
+-sixteen signatures before expanding the decoder, reducing repeated field
+-operations. The group size shrinks to preserve parallel work on smaller batches.
+-Other worker counts retain the previous binding strategy.
++slack, and padding. The production binder sums out the four bit-lane variables
++before its degree-two sumcheck. For a word `w = (coefficient, side, instance)`,
++define the following uniform linear functions of its sixteen committed bits:
++
++```text
++D(w) = sum(l=0..13, 2^l*b(w,l)) - 2^14*b(w,14)
++H(w) = b(w,15)
++C(w) = sum(l=0..14, b(w,l)).
++```
++
++The public weights combine ring and norm coefficients for `D`, slack and
++lane-15 padding masks for `H`, and the inactive-instance mask for `C`. All
++side, coefficient-position and activity masks belong to these public weights;
++the three word functions are defined uniformly even on padding. The sumcheck
++therefore has `log2(N)+1+log2(C)` rounds: 21 for Falcon-1024 at batch 1024,
++instead of the previous 25. When every logical instance is active, the weight
++of `C` is identically zero and only `D` and `H` are needed.
++
++The prover reuses the ring/norm weights `Lambda` and allocates its sole dense
++`[Lambda,D]` pair after the first word fold, whose arithmetic uses native
++signed coefficients. For the coefficient and side rounds, it aggregates `H`
++across instances into at most 32 positions:
++`U[j] = sum_i slack_weight[i]*H[i,j]` and `V[j] = sum_i H[i,j]`.
++After those rounds, it projects the original sparse `H` entries to one value
++per represented instance and folds those values through the instance rounds.
++
++For a partial batch, popcount folding is deferred until the instance rounds
++and uses a capacity-sized table. This avoids three dense pairs of word
++tables. Source scanning rejects malformed padding; the verifier independently
++enforces the padding relation and authenticates the uniform word functions.
++
++All two or three terminal values are absorbed before a fresh, independently
++ground prime-field challenge `zeta`. Their combination uses weights
++`[1,zeta]` or `[1,zeta,zeta^2]`. One two-limb BitZ bridge authenticates the
++combined value against the original committed bits, including when physical
++storage is split. Its public row weights multiply the word-row equality
++weights by the combined lane decoder; all word functions share the same
++column point. The bridge verifier reconstructs these weights from the
++sumcheck point, `zeta`, and prepared layout.
++
++Earlier R7 paths already used a word-sized dense suffix after four lane
++rounds. This change removes those rounds and their prefix work; it does not
++halve that existing suffix domain. Historical R7 timings do not establish a
++speedup for the word binder.
+ 
+ An experimental compact computation binds three logical planes directly,
+ without constructing the original signed15 bit source. It remains disabled by
+@@ -147,6 +181,9 @@ It can be selected only in a `bench-internals` build with
+ `BITZ_ARITHMETIC_COMPUTE_VARIANT=combined` (or `compact` to retain old logical
+ padding); `padding` selects the default behavior. This is separate from the
+ already enabled compact physical storage described above.
++The `compute_variant()` metadata retains this historical selection label;
++`padding` now runs word binding. Use `protocol_id()` to distinguish v9 results
++from earlier implementations with the same label.
+ 
+ | Plane | Logical bits | Bridge row variables |
+ |---|---:|---:|
+@@ -179,13 +216,21 @@ There is no Orthus-style public-input preprocessing in this interface.
+ 
+ The selected decoder, exception indices, physical geometry, direct ring check,
+ logical support, combined integer outer, bridge matrices, and allocated grinding
+-schedule are bound into the v8
+-protocol domain. Unchanged raw configurations retain their exact v7 transcript;
+-`prepared.protocol_id()` reports the effective domain, while `PROTOCOL_ID` names
+-the newest protocol. Reduced logical support and compact computation never use
+-the v7 domain.
+-The five prime-field groups each receive at most `2^(-target-4)`. The degree
+-numerators of the prime and binary groups are:
++schedule are bound into the protocol domain. Production word binding uses v9
++at every batch size, additionally binding the word decoder, terminal count,
++and terminal-merge grinding difficulty. The experimental compact computation
++retains its v8 domain. `prepared.protocol_id()` reports the effective domain,
++while `PROTOCOL_ID` names the production protocol.
++The six production prime-field groups each receive at most `2^(-target-4)`;
++the separate compact experiment retains five. Production keeps the binding
++difficulty `g` for the former bit domain and funds the terminal merge from
++the four removed degree-two rounds. For `k` word variables and terminal-merge
++degree `e` in `{1,2}`, its difficulty `h` satisfies
++`h >= max(0, g + log2(e) - 3)`, in addition to the per-group bound. Thus
++`2k/2^g + e/2^h <= (2k+8)/2^g`: the combined binder and terminal merge consume
++no more error budget than the former bit binder. Compact-computation
++grinding is unchanged. The degree numerators of the prime and binary groups
++are:
+ 
+ | Group | Numerator | Domain lower bound |
+ |---|---:|---:|
+@@ -193,18 +238,23 @@ numerators of the prime and binary groups are:
+ | Norm instance batching | d | `2^125` |
+ | Integer outer sumcheck | 3(11+d) | `2^125` |
+ | Four-claim merge | 3 | `2^125` |
+-| Bit-source binder | `2*sum(branch bit logs)` | `2^125` |
++| Production word binder | `2(11+d)` | `2^125` |
++| Word terminal claim merge | 1 if `batch=C`, otherwise 2 | `2^125` |
++| Experimental bit-source binder | `2*sum(branch bit logs)` | `2^125` |
+ | Each BitZ product GKR | `s + 3*(r*(r-1)/2 + r*s) + r` | `2^128` |
+ | Compact binary claim merge | 2 | `2^128` |
+ | Binary source sumcheck | 2m | `2^128` |
+ | Ring switch | 256 | `2^128` |
+ 
+-This table uses Falcon-1024 and `d = log2(capacity)`.
++This table uses Falcon-1024 and `d = log2(arithmetic_capacity)`.
+ `m = log2(shared opening bit domain)`: it is 20 at the minimum allocation and
+ `15+d` in split mode. For a bridge with row log `r` and column log `c`,
+ `s=c+1` accounts for its two limbs. Single mode has one binding domain and
+-bridge; experimental compact computation has three. The bridge-claim merge is present only in
+-compact computation. The native ring identity now has
++bridge; experimental compact computation has three. The prime-field terminal
++merge is present only in production word binding; the binary bridge-claim
++merge is present only in compact computation. All terminal values are fixed
++before the prime merge challenge, giving a degree-one or degree-two error
++polynomial even though the lane decoder depends on that challenge. The native ring identity now has
+ error at most `(1023+d)/2^149`, or generally `(N-1+d)/2^149`, because it checks
+ the reduced residual directly. Prime sampling requests a 144-bit
+ composite-acceptance budget. The allocation is recomputed for the actual
+@@ -227,7 +277,12 @@ bounded coordinate carries, exhaustive signed15 decoder reconstruction,
+ maximum exception counts, malformed exception metadata, compact/virtual claim
+ equivalence, norm budget borrowing, inconsistent source bits, padding, malformed proofs,
+ public input changes, configuration replay and original Falcon interoperability.
+-Large end-to-end cases for batches 32 and 1024 are explicitly ignored by default.
++Word-binding tests check the reduced round count, two/three terminal shape,
++one-bridge integration, fresh-merge schedule binding and prover/verifier
++transcript continuation.
++Large end-to-end cases for batches 32, 512, 513 and 1024 are explicitly ignored
++by default; these include the largest arithmetic-capacity boundary and both
++terminal counts at both security targets.
+ 
+ Validation and benchmark commands:
+ 
+diff --git a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+index f2da29a18..e1ab65fcb 100644
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -1,8 +1,8 @@
+ //! Exact integer norms and authentication against the one committed bit source.
+ //!
+ //! The native ring reduction, norm endpoint, and slack are joined only after all
+-//! their claimed values are fixed. The resulting linear form is streamed into
+-//! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
++//! their claimed values are fixed. A word-level quadratic sumcheck ends in
++//! two or three raw lane evaluations, batched into one weighted BitZ opening.
+ 
+ use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
+ #[cfg(feature = "parallel")]
+@@ -11,6 +11,12 @@ use rayon::prelude::*;
+ #[cfg(test)]
+ use crate::piop::spartan::SpartanField;
+ 
++#[cfg(any(test, feature = "bench-internals"))]
++use crate::sumcheck::inner::{
++    packed::{ColumnMajorPackedBits, PackedInput, StreamingMle},
++    prove_inner_sumcheck,
++};
++
+ use crate::{
+     piop::spartan::{
+         absorb_field_elements,
+@@ -23,13 +29,7 @@ use crate::{
+     sumcheck::{
+         SumcheckError, SumcheckProof,
+         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
+-        inner::{
+-            packed::{
+-                BindingOptions, ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource,
+-                StreamingMle,
+-            },
+-            prove_inner_sumcheck,
+-        },
++        inner::packed::{BindingOptions, StreamingCoefficientSource},
+         proof::validate_field_elements,
+     },
+     transcript::traits::Transcript,
+@@ -44,6 +44,10 @@ mod compact_binding;
+ #[cfg(any(test, feature = "bench-internals"))]
+ pub(super) use compact_binding::{CompactProof, prove_compact, verify_compact};
+ 
++#[path = "word_binding.rs"]
++mod word_binding;
++pub(super) use word_binding::WordBridgeClaim;
++
+ const COEFFICIENT_BITS: usize = 15;
+ const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
+ const SLACK_BITS: usize = super::SLACK_BITS;
+@@ -51,6 +55,7 @@ const SLACK_BITS: usize = super::SLACK_BITS;
+ const SMALL_BATCH_MAX: usize = (1 << 19) / (64 * N);
+ const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
+ const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
++#[cfg(test)]
+ const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+ 
+ struct NormInstance;
+@@ -84,7 +89,8 @@ pub(super) struct Proof {
+     pub norm: NormProof,
+     pub merge_nonce: Option<u64>,
+     pub binding: SumcheckProof<F, 3>,
+-    pub binding_terminal: [F; 2],
++    pub binding_terminal: Vec<F>,
++    pub terminal_merge_nonce: Option<u64>,
+     pub binding_nonces: Vec<u64>,
+ }
+ 
+@@ -95,16 +101,18 @@ impl Proof {
+         16 * (2
+             + 4 * self.norm.sumcheck.round_polynomials.len()
+             + 3 * self.binding.round_polynomials.len()
+-            + 2)
++            + self.binding_terminal.len())
+             + 8 * (usize::from(self.norm.instance_nonce.is_some())
+                 + self.norm.grinding_nonces.len()
+                 + usize::from(self.merge_nonce.is_some())
+-                + self.binding_nonces.len())
++                + self.binding_nonces.len()
++                + usize::from(self.terminal_merge_nonce.is_some()))
+     }
+ }
+ 
+ /// This is a pending PCS obligation, not a standalone proof of the relation.
+ #[derive(Clone, Debug, PartialEq, Eq)]
++#[cfg(any(test, feature = "bench-internals"))]
+ pub(super) struct BridgeClaim {
+     pub point: Vec<F>,
+     pub modulus: u128,
+@@ -126,7 +134,7 @@ pub(super) fn prove(
+     field: &Cfg,
+     ring: &PreparedClaim,
+     schedule: &Schedule,
+-) -> Result<(Proof, Vec<u128>, BridgeClaim), FalconError> {
++) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+     if source.layout() != layout {
+         return Err(failure("algebraic source layout mismatch"));
+     }
+@@ -136,56 +144,18 @@ pub(super) fn prove(
+     transcript.absorb_slice(MERGE_DOMAIN);
+     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
+     let eta = sample(transcript, field)?;
+-    let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+-    form.options = arithmetic_binding_options(layout.batch(), schedule.binding_bits == 0);
+-
+-    transcript.absorb_slice(BINDING_DOMAIN);
+-    let stream = StreamingMle::new(&form);
+-    let bits = ColumnMajorPackedBits::new(source.rows(), layout.bitz_params().row_vars);
+-    let mut boundary =
+-        ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(schedule.binding_bits, 0);
+-    let output = prove_inner_sumcheck(
+-        field,
++    let (form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
++    word_binding::prove(
+         transcript,
++        layout,
++        source,
++        form,
+         target,
+-        PackedInput::new(
+-            &stream,
+-            &bits,
+-            source_rounds(layout),
+-            layout.source_bits(),
+-            binding_prefix_variables(layout.batch()),
+-        ),
+-        (),
+-        &mut boundary,
++        norm,
++        merge_nonce,
++        schedule,
++        field,
+     )
+-    .map_err(failure)?;
+-    let binding_nonces = boundary.into_nonces();
+-    let binding_terminal = output.terminal_evaluations;
+-    // A dishonest host witness may disagree with the source. Catch that here,
+-    // while the verifier separately checks the same coefficient evaluation.
+-    if output.final_claim != field.mul(&binding_terminal[0], &binding_terminal[1])
+-        || form.evaluate(&output.point)? != binding_terminal[0]
+-    {
+-        return Err(failure("algebraic binding terminal mismatch"));
+-    }
+-    absorb_field_elements(transcript, &binding_terminal, field);
+-    let claim = bind_opening(transcript, output.point, binding_terminal[1], field);
+-    let row_weights = eq_table(&claim.point[..layout.bitz_params().row_vars], field)
+-        .map_err(failure)?
+-        .into_iter()
+-        .map(|value| u128::from(field.to_integer(&value)))
+-        .collect();
+-    Ok((
+-        Proof {
+-            norm,
+-            merge_nonce,
+-            binding: output.proof,
+-            binding_terminal,
+-            binding_nonces,
+-        },
+-        row_weights,
+-        claim,
+-    ))
+ }
+ 
+ pub(super) fn verify(
+@@ -195,41 +165,14 @@ pub(super) fn verify(
+     ring: &PreparedClaim,
+     proof: &Proof,
+     schedule: &Schedule,
+-) -> Result<BridgeClaim, FalconError> {
++) -> Result<WordBridgeClaim, FalconError> {
+     validate_field(layout, field)?;
+     let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
+     transcript.absorb_slice(MERGE_DOMAIN);
+     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
+     let eta = sample(transcript, field)?;
+     let (form, target) = BindingForm::new(layout, ring, &norm, eta, field)?;
+-    transcript.absorb_slice(BINDING_DOMAIN);
+-    let mut boundary = VerifierGrindingRoundBoundary::<BindingRound>::new(
+-        schedule.binding_bits,
+-        &proof.binding_nonces,
+-    );
+-    let (point, final_claim) = proof
+-        .binding
+-        .verify_with_round_boundary(
+-            transcript,
+-            target,
+-            source_rounds(layout),
+-            field,
+-            &mut boundary,
+-        )
+-        .map_err(failure)?;
+-    validate_field_elements(&proof.binding_terminal, field).map_err(failure)?;
+-    if final_claim != field.mul(&proof.binding_terminal[0], &proof.binding_terminal[1])
+-        || form.evaluate(&point)? != proof.binding_terminal[0]
+-    {
+-        return Err(failure("algebraic binding terminal mismatch"));
+-    }
+-    absorb_field_elements(transcript, &proof.binding_terminal, field);
+-    Ok(bind_opening(
+-        transcript,
+-        point,
+-        proof.binding_terminal[1],
+-        field,
+-    ))
++    word_binding::verify(transcript, layout, &form, target, proof, schedule, field)
+ }
+ 
+ #[tracing::instrument(skip_all, name = "falcon_algebraic:integer_outer")]
+@@ -443,41 +386,6 @@ fn binding_parallel(batch: usize) -> bool {
+     optimized_binding(batch) && binding_workers() > 1
+ }
+ 
+-fn arithmetic_binding_options(batch: usize, ungrinded: bool) -> BindingOptions {
+-    #[cfg(feature = "bench-internals")]
+-    match std::env::var("BITZ_ARITHMETIC_BINDING_GROUP_CAP") {
+-        Ok(value) => {
+-            let group_cap = match value.as_str() {
+-                "1" => 1,
+-                "8" => 8,
+-                "16" => 16,
+-                _ => panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be 1, 8, or 16"),
+-            };
+-            return BindingOptions {
+-                optimized: true,
+-                group_cap,
+-            };
+-        }
+-        Err(std::env::VarError::NotPresent) => {}
+-        Err(std::env::VarError::NotUnicode(_)) => {
+-            panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be valid Unicode")
+-        }
+-    }
+-    // Aggregate signatures before expanding their common signed decoder. The
+-    // packed consumer reduces this cap when there are fewer parallel tasks.
+-    if cfg!(all(target_os = "linux", target_arch = "x86_64"))
+-        && matches!(binding_workers(), 1 | 8)
+-        && binding_prefix_variables(batch) == 4
+-    {
+-        BindingOptions {
+-            optimized: true,
+-            group_cap: 16,
+-        }
+-    } else {
+-        BindingOptions::for_arithmetic(batch, N, ungrinded)
+-    }
+-}
+-
+ impl<'a> BindingForm<'a> {
+     fn new(
+         layout: &'a Layout,
+@@ -611,6 +519,7 @@ impl<'a> BindingForm<'a> {
+ 
+     /// Split bit-lane, coefficient and instance variables. The signed decoder
+     /// is evaluated once, rather than once per coefficient or per signature.
++    #[cfg(test)]
+     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
+         let _span = tracing::info_span!("falcon_algebraic:binding_evaluation").entered();
+         self.evaluate_with_strategy(
+@@ -620,6 +529,7 @@ impl<'a> BindingForm<'a> {
+         )
+     }
+ 
++    #[cfg(test)]
+     fn evaluate_with_strategy(
+         &self,
+         point: &[F],
+@@ -1154,6 +1064,7 @@ impl BindingForm<'_> {
+     }
+ }
+ 
++#[cfg(test)]
+ fn signed_decoder(weights: &[F], field: &Cfg) -> F {
+     let mut value = field.zero();
+     let mut power = field.one();
+@@ -1169,6 +1080,7 @@ fn signed_decoder(weights: &[F], field: &Cfg) -> F {
+     value
+ }
+ 
++#[cfg(any(test, feature = "bench-internals"))]
+ fn bind_opening(
+     transcript: &mut impl Transcript,
+     point: Vec<F>,
+@@ -1223,6 +1135,7 @@ fn verify_nonce<D: GrindingDomain>(
+ }
+ 
+ /// Prefix width affects only the prover's representation, never the transcript.
++#[cfg(any(test, feature = "bench-internals"))]
+ fn binding_prefix_variables(batch: usize) -> usize {
+     #[cfg(feature = "bench-internals")]
+     match std::env::var("BITZ_ARITHMETIC_BINDING_PREFIX") {
+@@ -1299,6 +1212,7 @@ mod tests {
+             norm_round_bits: 0,
+             merge_bits: 0,
+             binding_bits: 0,
++            terminal_merge_bits: 0,
+         }
+     }
+ 
+@@ -1953,7 +1867,27 @@ mod tests {
+             )
+             .unwrap();
+             assert_eq!(claim, verified);
+-            assert_eq!(claim.value, open_source(&source, &claim.point, &field));
++            let cols = eq_table(claim.column_point(&layout), &field).unwrap();
++            let opened = rows
++                .iter()
++                .enumerate()
++                .fold(field.zero(), |sum, (row, &weight)| {
++                    cols.iter().enumerate().fold(sum, |sum, (col, col_weight)| {
++                        if !source.bit((col << layout.row_vars()) + row) {
++                            return sum;
++                        }
++                        field.add(&sum, &field.mul(&unsigned(weight, &field), col_weight))
++                    })
++                });
++            assert_eq!(claim.value, opened);
++            assert_eq!(
++                proof.binding.round_polynomials.len(),
++                source_rounds(&layout) - 4
++            );
++            assert_eq!(
++                proof.binding_terminal.len(),
++                if batch.is_power_of_two() { 2 } else { 3 }
++            );
+             assert_eq!(rows.len(), 1 << layout.row_vars());
+         }
+     }
+@@ -2128,7 +2062,13 @@ mod tests {
+                 self.0.fill_sampling_bytes(output);
+             }
+             fn absorb_inner(&mut self, value: &[u8]) {
+-                if value.starts_with(b"bitz/falcon1024-algebraic/") && value.ends_with(b"/v2") {
++                if value == b"bitz/falcon-algebraic/word-binding/v1" {
++                    // The word binder replaced this bit-domain frame. Exercise
++                    // the current frame even when all grinding is disabled.
++                    self.0.absorb_inner(BINDING_DOMAIN);
++                } else if value.starts_with(b"bitz/falcon1024-algebraic/")
++                    && value.ends_with(b"/v2")
++                {
+                     let mut legacy = value.to_vec();
+                     *legacy.last_mut().unwrap() = b'1';
+                     self.0.absorb_inner(&legacy);
+@@ -2180,6 +2120,10 @@ mod tests {
+ 
+     #[test]
+     fn grinded_messages_roundtrip_and_require_all_nonces() {
++        use crate::piop::spartan::grinding::{
++            derive_grinding_seed_in_domain, grinding_nonce_is_valid,
++        };
++
+         let field = field();
+         let layout = Layout::new(3).unwrap();
+         let data = data(3);
+@@ -2190,6 +2134,7 @@ mod tests {
+             norm_round_bits: 2,
+             merge_bits: 2,
+             binding_bits: 2,
++            terminal_merge_bits: 2,
+         };
+         let (mut proof, _, claim) = prove(
+             &mut Blake3Transcript::new(),
+@@ -2213,6 +2158,54 @@ mod tests {
+             .unwrap(),
+             claim
+         );
++        let terminal_nonce = proof
++            .terminal_merge_nonce
++            .expect("terminal merge is grinded");
++        let mut missing = proof.clone();
++        missing.terminal_merge_nonce = None;
++        let mut terminal_transcript = Blake3Transcript::new();
++        assert!(
++            verify(
++                &mut terminal_transcript,
++                &layout,
++                &field,
++                &ring,
++                &missing,
++                &schedule,
++            )
++            .is_err()
++        );
++        // Missing-nonce validation stops immediately before the terminal
++        // grinding frame. Check the exact seed before choosing a bad nonce;
++        // incrementing a valid nonce could accidentally find another valid one.
++        let seed = derive_grinding_seed_in_domain(
++            &mut terminal_transcript,
++            b"bitz/falcon-algebraic/grinding/word-terminals/v1",
++            0,
++            schedule.terminal_merge_bits,
++        )
++        .unwrap();
++        assert!(
++            grinding_nonce_is_valid(&seed, terminal_nonce, schedule.terminal_merge_bits).unwrap()
++        );
++        let invalid_nonce = (0..256)
++            .find(|&nonce| {
++                !grinding_nonce_is_valid(&seed, nonce, schedule.terminal_merge_bits).unwrap()
++            })
++            .expect("fixture has an invalid terminal nonce");
++        let mut altered = proof.clone();
++        altered.terminal_merge_nonce = Some(invalid_nonce);
++        assert!(
++            verify(
++                &mut Blake3Transcript::new(),
++                &layout,
++                &field,
++                &ring,
++                &altered,
++                &schedule,
++            )
++            .is_err()
++        );
+         proof.norm.grinding_nonces.pop();
+         assert!(
+             verify(
+@@ -2226,4 +2219,49 @@ mod tests {
+             .is_err()
+         );
+     }
++
++    #[test]
++    fn terminal_merge_rejects_nonce_when_grinding_is_disabled() {
++        let field = field();
++        let layout = Layout::new(3).unwrap();
++        let data = data(3);
++        let source = Source::new(layout, &data);
++        let ring = ring(&data, &field);
++        let schedule = schedule();
++        let (mut proof, _, claim) = prove(
++            &mut Blake3Transcript::new(),
++            &layout,
++            &data,
++            &source,
++            &field,
++            &ring,
++            &schedule,
++        )
++        .unwrap();
++        assert_eq!(proof.terminal_merge_nonce, None);
++        assert_eq!(
++            verify(
++                &mut Blake3Transcript::new(),
++                &layout,
++                &field,
++                &ring,
++                &proof,
++                &schedule,
++            )
++            .unwrap(),
++            claim
++        );
++        proof.terminal_merge_nonce = Some(0);
++        assert!(
++            verify(
++                &mut Blake3Transcript::new(),
++                &layout,
++                &field,
++                &ring,
++                &proof,
++                &schedule,
++            )
++            .is_err()
++        );
++    }
+ }
+diff --git a/src/piop/spartan/falcon1024_algebraic/backend.rs b/src/piop/spartan/falcon1024_algebraic/backend.rs
+index 7f0499cf2..07ca40efd 100644
+--- a/src/piop/spartan/falcon1024_algebraic/backend.rs
++++ b/src/piop/spartan/falcon1024_algebraic/backend.rs
+@@ -35,9 +35,9 @@ pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
+ pub const COMPACT_LIVE_BITS: usize =
+     2 * N * compact::BASE_BITS + 3 * compact::MAX_EXCEPTIONS + SLACK_BITS;
+ pub const PROTOCOL_ID: &str = if N == 1024 {
+-    "bitz/falcon1024-algebraic/non-zk/v8"
++    "bitz/falcon1024-algebraic/non-zk/v9"
+ } else {
+-    "bitz/falcon512-algebraic/non-zk/v8"
++    "bitz/falcon512-algebraic/non-zk/v9"
+ };
+ const PRIME_MIN: u128 = 1 << 125;
+ const PRIME_MAX: u128 = (1 << 126) - 1;
+@@ -48,6 +48,7 @@ struct Schedule {
+     norm_round_bits: u32,
+     merge_bits: u32,
+     binding_bits: u32,
++    terminal_merge_bits: u32,
+ }
+ 
+ fn error(e: impl std::fmt::Display) -> FalconError {
+diff --git a/src/piop/spartan/falcon1024_algebraic/compact_binding.rs b/src/piop/spartan/falcon1024_algebraic/compact_binding.rs
+index c8f3c1786..ef1f4e06e 100644
+--- a/src/piop/spartan/falcon1024_algebraic/compact_binding.rs
++++ b/src/piop/spartan/falcon1024_algebraic/compact_binding.rs
+@@ -1218,6 +1218,7 @@ mod tests {
+             norm_round_bits: 0,
+             merge_bits: 0,
+             binding_bits: 0,
++            terminal_merge_bits: 0,
+         };
+         let mut prover = Blake3Transcript::new();
+         let (proof, rows, claims) = prove_compact(
+diff --git a/src/piop/spartan/falcon1024_algebraic/protocol.rs b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+index 55c97b808..4bef9f94a 100644
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -160,8 +160,8 @@ impl std::fmt::Debug for FalconAlgebraicProof {
+             .field("source_root", &self.source_root)
+             .field("exceptions", &self.exceptions)
+             .field("ring", &self.ring);
+-        // Preserve the complete v7 diagnostic encoding for the unchanged raw
+-        // proof shape, so benchmark controls can compare every proof component.
++        // Keep the single-bridge diagnostic shape compact. Arithmetic Debug
++        // includes all word terminals and their fresh merge nonce.
+         match &self.arithmetic {
+             ArithmeticProof::Raw(arithmetic)
+                 if self.bridges.len() == 1 && self.bridge_merge_nonces.is_empty() =>
+@@ -258,7 +258,7 @@ impl FalconAlgebraicProof {
+ impl PreparedFalconAlgebraic {
+     pub fn new(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+         // Compact binding has not passed the proving-time gate. Keep it an
+-        // explicit benchmark experiment; production only trims logical padding.
++        // explicit benchmark experiment; production uses the word binder.
+         let compute_variant = "padding";
+         #[cfg(feature = "bench-internals")]
+         let compute_variant = match std::env::var("BITZ_ARITHMETIC_COMPUTE_VARIANT").as_deref() {
+@@ -290,15 +290,14 @@ impl PreparedFalconAlgebraic {
+             return Err(error("algebraic security must be 100 or 128 bits"));
+         }
+         let d = layout.capacity().ilog2() as usize;
++        let (binding_bits, terminal_merge_bits) =
++            binding_grinding(&layout, compact_binding, target_bits);
+         let schedule = Schedule {
+             norm_instance_bits: grind(target_bits, d, 125),
+             norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
+             merge_bits: grind(target_bits, 3, 125),
+-            binding_bits: grind(
+-                target_bits,
+-                binding_numerator(&layout, compact_binding),
+-                125,
+-            ),
++            binding_bits,
++            terminal_merge_bits,
+         };
+         let geometry = SourceGeometry::new(&layout)?;
+         let ligerito = LigeritoSelection::MATCHED_UDR
+@@ -343,17 +342,20 @@ impl PreparedFalconAlgebraic {
+     pub fn arithmetic_capacity(&self) -> usize {
+         self.layout.capacity()
+     }
++    /// Benchmark selection label. `padding` selects production word binding;
++    /// the label is retained from the logical-padding experiment. Use
++    /// [`Self::protocol_id`] to distinguish its v9 protocol from earlier runs.
+     pub fn compute_variant(&self) -> &'static str {
+         self.compute_variant
+     }
+-    /// The unchanged raw computation retains its v7 transcript. Reduced
+-    /// logical support and compact computation use the new protocol domain.
++    /// Production word binding uses v9 at every batch size. The separate
++    /// compact-computation experiment retains its v8 transcript.
+     pub fn protocol_id(&self) -> &'static str {
+-        if self.uses_legacy_transcript() {
++        if self.uses_compact_binding() {
+             if N == 1024 {
+-                "bitz/falcon1024-algebraic/non-zk/v7"
++                "bitz/falcon1024-algebraic/non-zk/v8"
+             } else {
+-                "bitz/falcon512-algebraic/non-zk/v7"
++                "bitz/falcon512-algebraic/non-zk/v8"
+             }
+         } else {
+             PROTOCOL_ID
+@@ -365,10 +367,9 @@ impl PreparedFalconAlgebraic {
+         cfg!(any(test, feature = "bench-internals")) && self.compact_binding
+     }
+ 
+-    fn uses_legacy_transcript(&self) -> bool {
+-        !self.uses_compact_binding() && self.layout.capacity() == self.layout.allocation_capacity()
+-    }
+-    /// Bits visited by prime-field source binding and the integer bridges.
++    /// Logical source bits authenticated by the integer bridges. Production
++    /// folds sixteen lanes per word before its prime-field binding sumcheck,
++    /// so this is sixteen times that sumcheck's initial word-table length.
+     pub fn logical_binding_bits(&self) -> usize {
+         self.bridge_layouts()
+             .iter()
+@@ -602,13 +603,18 @@ impl PreparedFalconAlgebraic {
+         for &log in self.geometry.physical_logs() {
+             h.update(&(log as u64).to_le_bytes());
+         }
+-        if !self.uses_legacy_transcript() {
+-            h.update(&(self.arithmetic_capacity() as u64).to_le_bytes());
+-            h.update(&(u64::from(self.uses_compact_binding())).to_le_bytes());
+-            for matrix in self.bridge_layouts() {
+-                h.update(&(matrix.row_vars as u64).to_le_bytes());
+-                h.update(&(matrix.col_vars as u64).to_le_bytes());
+-            }
++        h.update(&(self.arithmetic_capacity() as u64).to_le_bytes());
++        h.update(&(u64::from(self.uses_compact_binding())).to_le_bytes());
++        for matrix in self.bridge_layouts() {
++            h.update(&(matrix.row_vars as u64).to_le_bytes());
++            h.update(&(matrix.col_vars as u64).to_le_bytes());
++        }
++        if !self.uses_compact_binding() {
++            h.update(
++                b"word-binder:signed15/lane15/lower-popcount;public-masks;prime-terminal-merge/v9",
++            );
++            let tables = 2 + usize::from(self.batch() < self.arithmetic_capacity());
++            h.update(&(tables as u64).to_le_bytes());
+         }
+         for indices in exceptions {
+             h.update(&(indices.len() as u16).to_le_bytes());
+@@ -630,14 +636,15 @@ impl PreparedFalconAlgebraic {
+         ] {
+             h.update(&bits.to_le_bytes());
+         }
+-        if !self.uses_legacy_transcript() {
+-            for bits in [
+-                self.grinding.bridge[1],
+-                self.grinding.bridge[2],
+-                self.grinding.bridge_merge,
+-            ] {
+-                h.update(&bits.to_le_bytes());
+-            }
++        for bits in [
++            self.grinding.bridge[1],
++            self.grinding.bridge[2],
++            self.grinding.bridge_merge,
++        ] {
++            h.update(&bits.to_le_bytes());
++        }
++        if !self.uses_compact_binding() {
++            h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
+         }
+         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+         for (key, target) in public.public_keys.iter().zip(&public.targets) {
+@@ -769,12 +776,12 @@ impl PreparedFalconAlgebraic {
+                 };
+                 let (bridge, binary) = {
+                     let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
+-                    bridge::prove(
++                    bridge::prove_weighted(
+                         &mut t,
+                         &self.layout.bitz_params(),
+                         source.rows(),
+                         BridgeMode::TwoLimbs,
+-                        &claim.point,
++                        claim.column_point(&self.layout),
+                         claim.modulus,
+                         self.grinding.bridge[0],
+                         &row_weights,
+@@ -948,15 +955,17 @@ impl PreparedFalconAlgebraic {
+                     arithmetic,
+                     &self.schedule,
+                 )?;
+-                let binary = bridge::verify(
++                let row_weights = claim.row_weights(&self.layout, &field)?;
++                let binary = bridge::verify_weighted(
+                     &mut t,
+                     &self.layout.bitz_params(),
+                     BridgeMode::TwoLimbs,
+-                    &claim.point,
++                    claim.column_point(&self.layout),
+                     claim.value,
+                     claim.modulus,
+                     &proof.bridges[0],
+                     self.grinding.bridge[0],
++                    &row_weights,
+                 )?;
+                 let target = binary.value;
+                 (
+@@ -1037,10 +1046,36 @@ fn bridge_matrices(layout: &Layout, compact_binding: bool) -> Vec<IntegerMatrixL
+ }
+ 
+ fn binding_numerator(layout: &Layout, compact_binding: bool) -> usize {
+-    2 * bridge_matrices(layout, compact_binding)
+-        .iter()
+-        .map(|m| m.row_vars + m.col_vars)
+-        .sum::<usize>()
++    if compact_binding {
++        2 * bridge_matrices(layout, true)
++            .iter()
++            .map(|m| m.row_vars + m.col_vars)
++            .sum::<usize>()
++    } else {
++        2 * (COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize)
++    }
++}
++
++fn terminal_merge_numerator(layout: &Layout, compact_binding: bool) -> usize {
++    if compact_binding {
++        0
++    } else {
++        1 + usize::from(layout.batch() < layout.capacity())
++    }
++}
++
++fn binding_grinding(layout: &Layout, compact_binding: bool, target_bits: usize) -> (u32, u32) {
++    let numerator = binding_numerator(layout, compact_binding);
++    if compact_binding {
++        return (grind(target_bits, numerator, 125), 0);
++    }
++    // Keep the old bit-domain difficulty and fund the terminal merge from
++    // the four removed degree-two rounds: n/2^g + d/2^h <= (n+8)/2^g.
++    let binding_bits = grind(target_bits, numerator + 8, 125);
++    let degree = terminal_merge_numerator(layout, false);
++    let terminal_merge_bits =
++        grind(target_bits, degree, 125).max((binding_bits + degree.ilog2()).saturating_sub(3));
++    (binding_bits, terminal_merge_bits)
+ }
+ 
+ #[cfg(any(test, feature = "bench-internals"))]
+@@ -1127,7 +1162,7 @@ fn fixed_terms(
+ ) -> Vec<(&'static str, f64)> {
+     let d = layout.capacity().ilog2() as usize;
+     let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
+-    vec![
++    let mut terms = vec![
+         ("prime sampling", 2f64.powi(-144)),
+         // |E \ F_q| >= 2^149; includes instance batching and degree-(N-1) negacyclic residual.
+         ("native ring identity", (N - 1 + d) as f64 * 2f64.powi(-149)),
+@@ -1151,7 +1186,17 @@ fn fixed_terms(
+                 schedule.binding_bits,
+             ),
+         ),
+-    ]
++    ];
++    if !compact_binding {
++        terms.push((
++            "word terminal claim merge",
++            prime(
++                terminal_merge_numerator(layout, compact_binding),
++                schedule.terminal_merge_bits,
++            ),
++        ));
++    }
++    terms
+ }
+ 
+ /// Work-optimal difficulties for the binary groups and every Ligerito block,
+@@ -1276,7 +1321,8 @@ mod tests {
+                     d,
+                     3 * (COEFFICIENT_LOG + 1 + d),
+                     3,
+-                    2 * (COEFFICIENT_LOG + 5 + d),
++                    2 * (COEFFICIENT_LOG + 1 + d),
++                    terminal_merge_numerator(&layout, false),
+                     10,
+                 ] {
+                     let g = grind(target, numerator, 125);
+@@ -1318,6 +1364,89 @@ mod tests {
+         assert!(PreparedFalconAlgebraic::new(1, 127).is_err());
+     }
+ 
++    #[test]
++    fn word_binding_schedule_preserves_the_removed_lane_round_budget() {
++        for target in [100, 128] {
++            for batch in 1..=1024 {
++                let layout = Layout::new(batch).unwrap();
++                let word_log = COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize;
++                let old_bit_log = layout.bitz_params().row_vars + layout.bitz_params().col_vars;
++                let degree: usize = if batch.is_power_of_two() { 1 } else { 2 };
++                let (binding_bits, terminal_bits) = binding_grinding(&layout, false, target);
++                assert_eq!(binding_bits, grind(target, 2 * old_bit_log, 125));
++                assert!(terminal_bits >= grind(target, degree, 125));
++                assert!(terminal_bits >= (binding_bits + degree.ilog2()).saturating_sub(3));
++
++                // Exact common-denominator comparison, independent of the
++                // floating-point composed ledger and PCS configuration.
++                let scale = binding_bits.max(terminal_bits);
++                let combined = (BigUint::from(2 * word_log) << (scale - binding_bits))
++                    + (BigUint::from(degree) << (scale - terminal_bits));
++                let old = BigUint::from(2 * old_bit_log) << (scale - binding_bits);
++                assert!(combined <= old, "target={target}, batch={batch}");
++                assert!(
++                    (combined << (target + 4)) <= (BigUint::from(1u8) << (125 + scale as usize))
++                );
++
++                assert_eq!(
++                    binding_grinding(&layout, true, target),
++                    (grind(target, binding_numerator(&layout, true), 125), 0),
++                    "compact computation must retain its grinding schedule"
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn word_binding_schedule_and_security_are_bound() {
++        for target in [100, 128] {
++            for batch in [1, 3, 16, 17, 65, 1024] {
++                let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
++                assert_eq!(prepared.protocol_id(), PROTOCOL_ID);
++                let word_log =
++                    COEFFICIENT_LOG + 1 + prepared.arithmetic_capacity().ilog2() as usize;
++                assert_eq!(binding_numerator(&prepared.layout, false), 2 * word_log);
++                assert_eq!(
++                    prepared.schedule.binding_bits,
++                    grind(target, 2 * word_log + 8, 125)
++                );
++                let merge_degree = 1 + usize::from(batch < prepared.arithmetic_capacity());
++                assert_eq!(
++                    terminal_merge_numerator(&prepared.layout, false),
++                    merge_degree
++                );
++                let security = prepared.security();
++                let merge_error = security
++                    .terms
++                    .iter()
++                    .find(|(name, _)| *name == "word terminal claim merge")
++                    .unwrap()
++                    .1;
++                assert_eq!(
++                    merge_error,
++                    merge_degree as f64
++                        * 2f64.powi(-125 - prepared.schedule.terminal_merge_bits as i32)
++                );
++                assert!(security.algebraic_bits >= target as f64 + (16f64 / 15.0).log2() - 1e-9);
++
++                let (public, _) = fixture(batch);
++                let exceptions = if compact::is_split(&prepared.layout) {
++                    vec![Vec::new(); batch]
++                } else {
++                    Vec::new()
++                };
++                let (_, before) = prepared.transcript(&public, &[0; 32], &exceptions).unwrap();
++                let mut altered = prepared;
++                altered.schedule.terminal_merge_bits += 1;
++                let (_, after) = altered.transcript(&public, &[0; 32], &exceptions).unwrap();
++                assert_ne!(
++                    before, after,
++                    "terminal grinding must be configuration-bound"
++                );
++            }
++        }
++    }
++
+     #[test]
+     fn end_to_end_and_tampering() {
+         for (batch, target) in [100, 128]
+@@ -1327,8 +1456,31 @@ mod tests {
+             let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+             let (public, witness) = fixture(batch);
+             let committed = prepared.commit(public.clone(), witness).unwrap();
+-            let proof = prepared.prove(committed).unwrap();
+-            prepared.verify(&public, &proof).unwrap();
++            let mut prover_next = [0u64; 4];
++            let proof = prepared
++                .prove_observed(committed, |t| {
++                    prover_next = std::array::from_fn(|_| t.get_challenge());
++                })
++                .unwrap();
++            let mut verifier_next = [0u64; 4];
++            prepared
++                .verify_observed(&public, &proof, |t| {
++                    verifier_next = std::array::from_fn(|_| t.get_challenge());
++                })
++                .unwrap();
++            assert_eq!(prover_next, verifier_next);
++            let ArithmeticProof::Raw(arithmetic) = &proof.arithmetic else {
++                panic!("production must use word binding")
++            };
++            assert_eq!(
++                arithmetic.binding.round_polynomials.len(),
++                COEFFICIENT_LOG + 1 + prepared.arithmetic_capacity().ilog2() as usize
++            );
++            assert_eq!(
++                arithmetic.binding_terminal.len(),
++                2 + usize::from(batch < prepared.arithmetic_capacity())
++            );
++            assert_eq!(proof.bridges.len(), 1);
+             assert_eq!(
+                 proof.payload_size_bytes(),
+                 proof
+@@ -1478,7 +1630,7 @@ mod tests {
+ 
+     #[cfg(feature = "parallel")]
+     #[test]
+-    fn serial_and_optimized_binding_preserve_complete_proof_contents() {
++    fn serial_and_parallel_word_binding_preserve_complete_proof_contents() {
+         const BATCH: usize = 1024;
+         let pools = [1, 2, 8].map(|threads| {
+             rayon::ThreadPoolBuilder::new()
+@@ -1506,10 +1658,6 @@ mod tests {
+             let run = |pool: &rayon::ThreadPool, threads| {
+                 pool.install(|| {
+                     assert_eq!(rayon::current_num_threads(), threads);
+-                    assert_eq!(
+-                        arithmetic::optimized_binding(BATCH),
+-                        matches!(threads, 1 | 8)
+-                    );
+                     let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
+                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
+                     let root = *committed.source_root();
+@@ -1621,8 +1769,8 @@ mod tests {
+         ] {
+             let mut source = Source::new(prepared.layout, &data);
+             source.flip(index);
+-            // Single commits the malformed source unchanged, so rejection must
+-            // come from the proof constraints, not a constructor padding scan.
++            // Single commits the malformed source unchanged. The word prover
++            // must reject it, independently of commitment construction.
+             let committed = prepared
+                 .commit_source(public.clone(), data.clone(), source)
+                 .unwrap();
+@@ -1740,7 +1888,7 @@ mod tests {
+     #[ignore = "large end-to-end qualification; run explicitly"]
+     fn large_batches_at_both_security_targets() {
+         for target in [100, 128] {
+-            for batch in [32, 1024] {
++            for batch in [32, 512, 513, 1024] {
+                 let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                 let (public, witness) = fixture(batch);
+                 let proof = prepared

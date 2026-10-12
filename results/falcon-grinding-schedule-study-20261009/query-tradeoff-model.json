@@ -1,0 +1,291 @@
+[
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "candidates": [
+      {
+        "query_target": 128,
+        "queries": [
+          309,
+          190,
+          156,
+          143
+        ],
+        "queries_total": 798,
+        "modeled_hashes": 2615808,
+        "security_bits": 128.09329783923647
+      },
+      {
+        "query_target": 124,
+        "queries": [
+          300,
+          184,
+          151,
+          139
+        ],
+        "queries_total": 774,
+        "modeled_hashes": 2631680,
+        "security_bits": 128.0932920028403
+      },
+      {
+        "query_target": 120,
+        "queries": [
+          290,
+          178,
+          146,
+          134
+        ],
+        "queries_total": 748,
+        "modeled_hashes": 2638336,
+        "security_bits": 128.09317654019657
+      },
+      {
+        "query_target": 116,
+        "queries": [
+          280,
+          172,
+          141,
+          130
+        ],
+        "queries_total": 723,
+        "modeled_hashes": 3147776,
+        "security_bits": 128.09316470075538
+      },
+      {
+        "query_target": 112,
+        "queries": [
+          271,
+          166,
+          136,
+          126
+        ],
+        "queries_total": 699,
+        "modeled_hashes": 5726720,
+        "security_bits": 128.09349819779882
+      }
+    ]
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "candidates": [
+      {
+        "query_target": 128,
+        "queries": [
+          309,
+          189,
+          155,
+          142,
+          136
+        ],
+        "queries_total": 931,
+        "modeled_hashes": 3531776,
+        "security_bits": 128.09317680865942
+      },
+      {
+        "query_target": 124,
+        "queries": [
+          299,
+          184,
+          150,
+          138,
+          131
+        ],
+        "queries_total": 902,
+        "modeled_hashes": 3546112,
+        "security_bits": 128.09311294651133
+      },
+      {
+        "query_target": 120,
+        "queries": [
+          290,
+          178,
+          145,
+          133,
+          127
+        ],
+        "queries_total": 873,
+        "modeled_hashes": 3695104,
+        "security_bits": 128.09353420815432
+      },
+      {
+        "query_target": 116,
+        "queries": [
+          280,
+          172,
+          141,
+          129,
+          123
+        ],
+        "queries_total": 845,
+        "modeled_hashes": 4537344,
+        "security_bits": 128.09382337804144
+      },
+      {
+        "query_target": 112,
+        "queries": [
+          270,
+          166,
+          136,
+          124,
+          119
+        ],
+        "queries_total": 815,
+        "modeled_hashes": 9418752,
+        "security_bits": 128.09315247100125
+      }
+    ]
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "candidates": [
+      {
+        "query_target": 128,
+        "queries": [
+          309,
+          189,
+          155,
+          141,
+          135,
+          132
+        ],
+        "queries_total": 1061,
+        "modeled_hashes": 31449088,
+        "security_bits": 128.0931095005047
+      },
+      {
+        "query_target": 124,
+        "queries": [
+          299,
+          183,
+          150,
+          136,
+          131,
+          128
+        ],
+        "queries_total": 1027,
+        "modeled_hashes": 31555584,
+        "security_bits": 128.09314503961
+      },
+      {
+        "query_target": 120,
+        "queries": [
+          290,
+          177,
+          145,
+          132,
+          126,
+          124
+        ],
+        "queries_total": 994,
+        "modeled_hashes": 32825344,
+        "security_bits": 128.09324213312797
+      },
+      {
+        "query_target": 116,
+        "queries": [
+          280,
+          172,
+          140,
+          128,
+          122,
+          120
+        ],
+        "queries_total": 962,
+        "modeled_hashes": 35315712,
+        "security_bits": 128.09321942104793
+      },
+      {
+        "query_target": 112,
+        "queries": [
+          270,
+          166,
+          135,
+          123,
+          118,
+          116
+        ],
+        "queries_total": 928,
+        "modeled_hashes": 48537600,
+        "security_bits": 128.0932830571423
+      }
+    ]
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "candidates": [
+      {
+        "query_target": 128,
+        "queries": [
+          309,
+          189,
+          155,
+          141,
+          135,
+          132
+        ],
+        "queries_total": 1061,
+        "modeled_hashes": 52875264,
+        "security_bits": 128.09323823903128
+      },
+      {
+        "query_target": 124,
+        "queries": [
+          299,
+          183,
+          150,
+          136,
+          130,
+          128
+        ],
+        "queries_total": 1026,
+        "modeled_hashes": 53075968,
+        "security_bits": 128.0931103696421
+      },
+      {
+        "query_target": 120,
+        "queries": [
+          290,
+          177,
+          145,
+          132,
+          126,
+          124
+        ],
+        "queries_total": 994,
+        "modeled_hashes": 55087104,
+        "security_bits": 128.09315907924253
+      },
+      {
+        "query_target": 116,
+        "queries": [
+          280,
+          172,
+          140,
+          128,
+          122,
+          120
+        ],
+        "queries_total": 962,
+        "modeled_hashes": 58722304,
+        "security_bits": 128.09323149559435
+      },
+      {
+        "query_target": 112,
+        "queries": [
+          270,
+          166,
+          135,
+          123,
+          118,
+          116
+        ],
+        "queries_total": 928,
+        "modeled_hashes": 75964416,
+        "security_bits": 128.09325604856008
+      }
+    ]
+  }
+]

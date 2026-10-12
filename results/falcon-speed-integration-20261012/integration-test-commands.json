@@ -1,0 +1,32 @@
+[
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/falcon_benchmark_inputs-4f5d7f3191c26575",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 0.02959442138671875,
+    "RAYON_NUM_THREADS": 8
+  },
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/falcon_upstream-7c958a3a93c2882a",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 0.38018107414245605,
+    "RAYON_NUM_THREADS": 8
+  },
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/falcon_profiles-80ff125bb5c55504",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 23.539374828338623,
+    "RAYON_NUM_THREADS": 8
+  }
+]

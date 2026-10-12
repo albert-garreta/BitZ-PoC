@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6",
+    "/tmp/falcon-sumcheck-opt-binaries/integer/falcon_algebraic",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "1",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--trace"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+    "BITZ_FALCON_INTEGER_PREFIX": "3"
+  },
+  "idle": {
+    "cpu": 6,
+    "sibling": 22,
+    "cpu_busy_pct": 0.998003992015968,
+    "sibling_busy_pct": 1.0
+  }
+}

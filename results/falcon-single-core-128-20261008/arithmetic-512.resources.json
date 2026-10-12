@@ -1,0 +1,12 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 4.002637494995724,
+  "user_cpu_s": 3.186455,
+  "system_cpu_s": 0.244034,
+  "cpu_utilization_pct": 85.70571290277849,
+  "process_peak_rss_kib": 131992,
+  "sibling_busy_pct": 0.0,
+  "selected_cpu_busy_pct": 85.71428571428571,
+  "affinity_violations": [],
+  "observation_count": 4
+}

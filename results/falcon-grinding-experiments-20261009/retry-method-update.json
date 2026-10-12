@@ -1,0 +1,11 @@
+{
+  "retry_limit": 30,
+  "previous_retry_limit": 4,
+  "unchanged_acceptance_rule": "every unused SMT sibling <2% busy; input/proof/security/affinity checks unchanged",
+  "reason": "Transient interference repeatedly exhausted the previous retry limit. Preserve accepted results and rejected attempts; no inclusion based on speed.",
+  "new_profiles": [
+    "weighted_external",
+    "weighted_external_queries120"
+  ],
+  "cost_file": "costs-external/curves.json"
+}

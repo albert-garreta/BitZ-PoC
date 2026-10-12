@@ -1,0 +1,17 @@
+1 cells, 4 pairs, 0 completed
+priming fixture cache: fn-dsa-0.3.0-n512-b1024-seed45.bin
+arithmetic-n512-b1024-s128-t16-seed45-baseline
+arithmetic-n512-b1024-s128-t16-seed45-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 45, "ratios": {"total_prover_ms": 0.8505547724679541, "prove_ms": 0.8693534387286391, "witness_commit_ms": 0.6151980757666867, "verify_ms": 0.7811636911815754, "process_peak_rss_kib": 0.9845712765643011}}
+priming fixture cache: fn-dsa-0.3.0-n512-b1024-seed46.bin
+arithmetic-n512-b1024-s128-t16-seed46-candidate
+arithmetic-n512-b1024-s128-t16-seed46-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 46, "ratios": {"total_prover_ms": 0.8474146077743718, "prove_ms": 0.8722690596925886, "witness_commit_ms": 0.5550008998914581, "verify_ms": 0.8088260876860465, "process_peak_rss_kib": 0.9917237272997916}}
+priming fixture cache: fn-dsa-0.3.0-n512-b1024-seed47.bin
+arithmetic-n512-b1024-s128-t16-seed47-baseline
+arithmetic-n512-b1024-s128-t16-seed47-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 47, "ratios": {"total_prover_ms": 0.8563335594237893, "prove_ms": 0.8765975802639336, "witness_commit_ms": 0.5605953548048991, "verify_ms": 0.814900196716159, "process_peak_rss_kib": 0.9778320772491756}}
+priming fixture cache: fn-dsa-0.3.0-n512-b1024-seed48.bin
+arithmetic-n512-b1024-s128-t16-seed48-candidate
+arithmetic-n512-b1024-s128-t16-seed48-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 48, "ratios": {"total_prover_ms": 0.8472142575171496, "prove_ms": 0.871478865367985, "witness_commit_ms": 0.5649597756298591, "verify_ms": 0.7952460455518773, "process_peak_rss_kib": 0.9878422163431527}}

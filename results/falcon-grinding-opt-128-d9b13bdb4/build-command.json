@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "14",
+    "cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "--release",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid",
+    "--example",
+    "falcon_algebraic",
+    "--target-dir",
+    "target/falcon-native",
+    "-j",
+    "1",
+    "--message-format=json"
+  ],
+  "environment": {
+    "RUSTFLAGS": "-C target-cpu=native"
+  }
+}

@@ -1,0 +1,257 @@
+{
+  "runs": [
+    {
+      "directory": "confirmation-n1024-b33-s128-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n1024-b513-s100-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n1024-b65-s128-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n1024-b9-s128-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n512-b1024-s128-t8",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n512-b16-s100-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n512-b17-s100-t8",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n512-b17-s100-t8-extended",
+      "pairs": 8,
+      "cells": 1,
+      "seeds": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56
+      ],
+      "warmup": 3,
+      "samples": 31,
+      "verified_sample_and_warmup_proofs": 544,
+      "phase": "production"
+    },
+    {
+      "directory": "confirmation-n512-b8-s128-t16",
+      "pairs": 4,
+      "cells": 1,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 144,
+      "phase": "production"
+    },
+    {
+      "directory": "production-controls",
+      "pairs": 72,
+      "cells": 24,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "warmup": 1,
+      "samples": 3,
+      "verified_sample_and_warmup_proofs": 576,
+      "phase": "production"
+    },
+    {
+      "directory": "production-large-confirmation",
+      "pairs": 16,
+      "cells": 4,
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ],
+      "warmup": 3,
+      "samples": 15,
+      "verified_sample_and_warmup_proofs": 576,
+      "phase": "production"
+    },
+    {
+      "directory": "production-matrix",
+      "pairs": 144,
+      "cells": 48,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "warmup": 2,
+      "samples": 7,
+      "verified_sample_and_warmup_proofs": 2592,
+      "phase": "production"
+    },
+    {
+      "directory": "strategy-boundaries",
+      "pairs": 60,
+      "cells": 20,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "warmup": 2,
+      "samples": 7,
+      "verified_sample_and_warmup_proofs": 1080,
+      "phase": "exploratory"
+    },
+    {
+      "directory": "strategy-boundary9",
+      "pairs": 6,
+      "cells": 2,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "warmup": 2,
+      "samples": 7,
+      "verified_sample_and_warmup_proofs": 108,
+      "phase": "exploratory"
+    },
+    {
+      "directory": "strategy-large",
+      "pairs": 12,
+      "cells": 4,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "warmup": 2,
+      "samples": 7,
+      "verified_sample_and_warmup_proofs": 216,
+      "phase": "exploratory"
+    }
+  ],
+  "production_pairs": 272,
+  "production_verified_proofs": 5440,
+  "exploratory_pairs": 78,
+  "exploratory_verified_proofs": 1404,
+  "traced_verified_proofs": 8,
+  "falcon_library_tests_passed": 304,
+  "identity_fields": [
+    "input_digest",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes",
+    "proof_payload_breakdown",
+    "protocol",
+    "build_rustflags"
+  ],
+  "source_files_audited": 563,
+  "workspace_differences_from_tested_source": [
+    "Cargo.toml"
+  ],
+  "excluded_difference": "Unrelated example registration in Cargo.toml; library/dependency configuration matches.",
+  "binary_hashes_match": true,
+  "source_revision": "7fbadd3da46f9c67469d3c50845219290ca119c8",
+  "final_git_head": "7fbadd3da46f9c67469d3c50845219290ca119c8",
+  "qualification": "Finite measurements on one host; no universal performance guarantee. Complete Debug digest checks proof contents, not a wire serialization codec.",
+  "production_cache_prime_proofs": 45,
+  "exploratory_cache_prime_proofs": 21,
+  "independent_evidence_audit": "passed",
+  "rustfmt_check": "passed",
+  "git_diff_check": "passed"
+}

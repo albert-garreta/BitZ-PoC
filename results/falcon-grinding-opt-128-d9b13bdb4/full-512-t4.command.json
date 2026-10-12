@@ -1,0 +1,54 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-opt-128-d9b13bdb4/binaries/falcon_hybrid",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "4",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "5"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "4",
+    "OMP_NUM_THREADS": "4",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007"
+  },
+  "idle_check": {
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5
+    ],
+    "sibling_cpus": [
+      20,
+      21,
+      22,
+      23
+    ],
+    "busy_pct_by_cpu": {
+      "6": 0.0,
+      "7": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "20": 0.20040080160320642,
+      "21": 0.5988023952095808,
+      "22": 0.0,
+      "23": 0.20040080160320642
+    },
+    "seconds": 5
+  }
+}

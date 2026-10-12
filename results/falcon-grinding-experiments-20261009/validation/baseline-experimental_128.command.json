@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "14,15",
+    "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+    "experimental_128",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "2"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "pid": 3929586,
+  "cwd": "/home/john-wu/.codex/worktrees/b9a8/BitZ-pcs",
+  "start_epoch": 1791550970.26,
+  "observed_epoch": 1791551195.2575161,
+  "affinity": [
+    14
+  ],
+  "exit_observed_epoch": 1791551245.2120934
+}

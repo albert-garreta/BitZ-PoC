@@ -1,0 +1,528 @@
+use super::super::super::FalconAlgebraicWitness;
+use super::*;
+use crate::transcript::Blake3Transcript;
+use field::Uint;
+
+fn test_field() -> Cfg {
+    F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap()
+}
+
+fn value(x: i64, f: &Cfg) -> F {
+    let magnitude = F::from_with_cfg(x.unsigned_abs() as u128, f);
+    if x < 0 { f.neg(&magnitude) } else { magnitude }
+}
+
+fn source_fixture(layout: &Layout) -> Source {
+    // The binder accepts arbitrary signed15 words; norm validity belongs to the
+    // outer proof. Extremes here exercise signed mixed products and bit 14.
+    let cases = [-16384, -8193, -1, 0, 1, 8191, 16383];
+    let witness = FalconAlgebraicWitness {
+        s1: (0..layout.batch())
+            .map(|i| std::array::from_fn(|j| cases[(j + i) % cases.len()]))
+            .collect(),
+        s2: (0..layout.batch())
+            .map(|i| std::array::from_fn(|j| cases[(3 * j + i + 2) % cases.len()]))
+            .collect(),
+    };
+    Source::new(
+        *layout,
+        &WitnessData {
+            witness,
+            slacks: (0..layout.batch())
+                .map(|i| (0x0555_5555u64 ^ (i as u64 * 17)) & ((1u64 << SLACK_BITS) - 1))
+                .collect(),
+        },
+    )
+}
+
+fn form_fixture<'a>(layout: &'a Layout, f: &'a Cfg) -> BindingForm<'a> {
+    BindingForm {
+        layout,
+        field: f,
+        coefficients: std::array::from_fn(|side| {
+            (0..layout.batch() * N)
+                .map(|j| value((j as i64 * 29 + side as i64 * 11) % 101 - 73, f))
+                .collect()
+        }),
+        slacks: (0..layout.batch())
+            .map(|i| {
+                let weight = 17 + i as i64 * 31;
+                value(if i % 2 == 0 { weight } else { -weight }, f)
+            })
+            .collect(),
+        padding: value(-47, f),
+        options: BindingOptions::default(),
+        folded_decoder: Default::default(),
+    }
+}
+
+fn dummy_norm(f: &Cfg) -> NormProof {
+    NormProof {
+        instance_nonce: None,
+        slack: f.zero(),
+        sumcheck: SumcheckProof {
+            round_polynomials: Vec::new(),
+        },
+        terminal: f.zero(),
+        grinding_nonces: Vec::new(),
+    }
+}
+
+fn test_schedule(grinding: u32) -> Schedule {
+    Schedule {
+        norm_instance_bits: 0,
+        norm_round_bits: 0,
+        merge_bits: 0,
+        binding_bits: grinding,
+        word_binding: true,
+        terminal_merge_bits: grinding,
+    }
+}
+
+/// Materialize the mathematical statement from individual committed bits.
+/// This intentionally does not call the optimized word decoder or weight code.
+struct Reference {
+    weights: [Vec<F>; 3],
+    tables: [Vec<F>; 3],
+}
+
+impl Reference {
+    fn new(form: &BindingForm<'_>, source: &Source, f: &Cfg) -> Self {
+        let mut result = Self {
+            weights: std::array::from_fn(|_| Vec::new()),
+            tables: std::array::from_fn(|_| Vec::new()),
+        };
+        for c in 0..form.layout.source_bits() / 16 {
+            let instance = c / (2 * N);
+            let side = c / N % 2;
+            let j = c % N;
+            let active = instance < form.layout.batch();
+            let d = (0..15)
+                .filter(|&lane| source.bit(16 * c + lane))
+                .map(|lane| {
+                    if lane == 14 {
+                        -(1i64 << lane)
+                    } else {
+                        1i64 << lane
+                    }
+                })
+                .sum();
+            let h = i64::from(source.bit(16 * c + 15));
+            let count = (0..15).filter(|&lane| source.bit(16 * c + lane)).count() as i64;
+            let wd = if active {
+                form.coefficients[side][instance * N + j]
+            } else {
+                f.zero()
+            };
+            let wh = if active && side == 0 && j < SLACK_BITS {
+                f.mul(&form.slacks[instance], &value(1i64 << j, f))
+            } else {
+                form.padding
+            };
+            let wc = if active { f.zero() } else { form.padding };
+            for (k, (w, x)) in [wd, wh, wc].into_iter().zip([d, h, count]).enumerate() {
+                result.weights[k].push(w);
+                result.tables[k].push(value(x, f));
+            }
+        }
+        result
+    }
+
+    fn target(&self, f: &Cfg) -> F {
+        self.weights
+            .iter()
+            .zip(&self.tables)
+            .flat_map(|(w, t)| w.iter().zip(t))
+            .fold(f.zero(), |sum, (w, x)| f.add(&sum, &f.mul(w, x)))
+    }
+
+    fn polynomial(&self, f: &Cfg) -> [F; 3] {
+        let mut sum = [f.zero(); 3];
+        for (weights, table) in self.weights.iter().zip(&self.tables) {
+            for (w, x) in weights.chunks_exact(2).zip(table.chunks_exact(2)) {
+                let dw = f.sub(&w[1], &w[0]);
+                let dx = f.sub(&x[1], &x[0]);
+                let terms = [
+                    f.mul(&w[0], &x[0]),
+                    f.add(&f.mul(&w[0], &dx), &f.mul(&dw, &x[0])),
+                    f.mul(&dw, &dx),
+                ];
+                for k in 0..3 {
+                    sum[k] = f.add(&sum[k], &terms[k]);
+                }
+            }
+        }
+        sum
+    }
+
+    fn fold(&mut self, r: F, f: &Cfg) {
+        for table in self.weights.iter_mut().chain(&mut self.tables) {
+            *table = table
+                .chunks_exact(2)
+                .map(|x| f.add(&f.mul(&f.sub(&f.one(), &r), &x[0]), &f.mul(&r, &x[1])))
+                .collect();
+        }
+    }
+}
+
+#[test]
+fn word_proof_matches_dense_reference_rounds_and_terminals() {
+    let f = test_field();
+    for (batch, grinding) in [(1, 0), (3, 0), (3, 2)] {
+        let layout = Layout::new(batch).unwrap();
+        let source = source_fixture(&layout);
+        let form = form_fixture(&layout, &f);
+        let mut reference = Reference::new(&form, &source, &f);
+        let target = reference.target(&f);
+        let schedule = test_schedule(grinding);
+        let mut prover_transcript = Blake3Transcript::new();
+        let (proof, row_weights, bridge) = prove(
+            &mut prover_transcript,
+            &layout,
+            &source,
+            form,
+            target,
+            dummy_norm(&f),
+            None,
+            &schedule,
+            &f,
+        )
+        .unwrap();
+
+        let mut replay = Blake3Transcript::new();
+        replay.absorb_slice(DOMAIN);
+        let mut boundary =
+            ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(grinding, 0);
+        for (round, polynomial) in proof.binding.round_polynomials.iter().enumerate() {
+            assert_eq!(
+                *polynomial,
+                reference.polynomial(&f),
+                "batch={batch}, round={round}"
+            );
+            absorb_field_elements(&mut replay, polynomial, &f);
+            boundary.after_round(&mut replay, round).unwrap();
+            let r = sample(&mut replay, &f).unwrap();
+            assert_eq!(r, bridge.point[round]);
+            reference.fold(r, &f);
+        }
+        assert_eq!(boundary.into_nonces(), proof.binding_nonces);
+        let terminal_count = if batch == 1 { 2 } else { 3 };
+        assert_eq!(proof.binding_terminal.len(), terminal_count);
+        assert_eq!(
+            proof.binding.round_polynomials.len(),
+            COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
+        );
+        for k in 0..terminal_count {
+            assert_eq!(proof.binding_terminal[k], reference.tables[k][0]);
+        }
+        assert_eq!(row_weights, bridge.row_weights(&layout, &f).unwrap());
+        let verifier_form = form_fixture(&layout, &f);
+        let mut verifier_transcript = Blake3Transcript::new();
+        assert_eq!(
+            verify(
+                &mut verifier_transcript,
+                &layout,
+                &verifier_form,
+                target,
+                &proof,
+                &schedule,
+                &f
+            )
+            .unwrap(),
+            bridge
+        );
+        assert_eq!(
+            verifier_transcript.state_digest(),
+            prover_transcript.state_digest()
+        );
+
+        for k in 0..terminal_count {
+            let mut altered = proof.clone();
+            altered.binding_terminal[k] = f.add(&altered.binding_terminal[k], &f.one());
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &verifier_form,
+                    target,
+                    &altered,
+                    &schedule,
+                    &f
+                )
+                .is_err()
+            );
+        }
+        let mut wrong_shape = proof.clone();
+        if terminal_count == 2 {
+            wrong_shape.binding_terminal.push(f.zero());
+        } else {
+            wrong_shape.binding_terminal.pop();
+        }
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &verifier_form,
+                target,
+                &wrong_shape,
+                &schedule,
+                &f
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn first_word_fold_matches_independent_signed_bit_reference() {
+    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        for batch in [1, 3, 17] {
+            let layout = Layout::new(batch).unwrap();
+            let source = source_fixture(&layout);
+            let form = form_fixture(&layout, &f);
+            for r in [
+                f.zero(),
+                f.one(),
+                value(-1, &f),
+                F::from_with_cfg(modulus / 2, &f),
+            ] {
+                let mut reference = Reference::new(&form, &source, &f);
+                reference.fold(r, &f);
+                let expected: Vec<_> = reference.weights[0]
+                    .iter()
+                    .zip(&reference.tables[0])
+                    .map(|(&w, &d)| [w, d])
+                    .collect();
+                let expected_sums =
+                    expected
+                        .chunks_exact(2)
+                        .fold([f.zero(); 2], |mut sum, pair| {
+                            sum[0] = f.add(&sum[0], &f.mul(&pair[0][0], &pair[0][1]));
+                            sum[1] = f.add(
+                                &sum[1],
+                                &f.mul(
+                                    &f.sub(&pair[1][0], &pair[0][0]),
+                                    &f.sub(&pair[1][1], &pair[0][1]),
+                                ),
+                            );
+                            sum
+                        });
+                let actual = first_fold(&form, &source, r, &f);
+                assert_eq!(actual.0, expected, "modulus={modulus}, batch={batch}");
+                assert_eq!(actual.1, expected_sums, "modulus={modulus}, batch={batch}");
+            }
+        }
+    }
+}
+
+#[test]
+fn word_kernels_match_dense_reference_at_boolean_challenges() {
+    let f = test_field();
+    let layout = Layout::new(3).unwrap();
+    let source = source_fixture(&layout);
+    for mode in 0..3 {
+        let form = form_fixture(&layout, &f);
+        let mut reference = Reference::new(&form, &source, &f);
+        let mut weights = PublicWeights::new(&form);
+        let mut spare = Sparse::from_source(&source, &layout, &f).unwrap();
+        let mut aggregate_spare = Some(AggregateSpare::new(&spare, &weights, &f));
+        let (mut next, _) = first_round(&form, &source, &f);
+        let mut dense = Vec::new();
+        let mut stride = 1;
+        let mut point = Vec::new();
+        let mut count = None;
+        for round in 0..rounds(&layout) {
+            if round == COEFFICIENT_LOG + 1 {
+                count = Some(counts(&source, &layout, &point, &f).unwrap());
+                assert_eq!(count.as_ref().unwrap(), &reference.tables[2]);
+            }
+            let spare_sums = aggregate_spare.as_ref().map_or_else(
+                || spare.sums(&weights, round, &f),
+                |aggregate| aggregate.sums(&weights, round, &f),
+            );
+            let mut actual = add_pair(next, spare_sums, &f);
+            if let Some(c) = &count {
+                actual = add_pair(actual, count_sums(c, &weights, &f), &f);
+            }
+            let expected = reference.polynomial(&f);
+            assert_eq!(
+                actual,
+                [expected[0], expected[2]],
+                "mode={mode}, round={round}"
+            );
+            let r = match mode {
+                0 => f.zero(),
+                1 => f.one(),
+                _ => value(if round % 2 == 0 { -3 } else { 5 }, &f),
+            };
+            point.push(r);
+            if round == 0 {
+                (dense, next) = first_fold(&form, &source, r, &f);
+            } else {
+                next = dense_fold(&mut dense, stride, r, &f);
+                stride *= 2;
+            }
+            if round < COEFFICIENT_LOG {
+                aggregate_spare.as_mut().unwrap().fold(r, &f);
+            } else if round == COEFFICIENT_LOG {
+                spare.project_instances(&point, &f).unwrap();
+                aggregate_spare = None;
+            } else {
+                spare.fold(r, &f);
+            }
+            if let Some(c) = &mut count {
+                fold_small(c, r, &f);
+            }
+            weights.fold(round, r, &f);
+            reference.fold(r, &f);
+        }
+        assert_eq!(dense[0], [reference.weights[0][0], reference.tables[0][0]]);
+        assert_eq!(spare.terminal(&f), reference.tables[1][0]);
+        assert_eq!(
+            weights.spare(0, rounds(&layout), &f),
+            reference.weights[1][0]
+        );
+        assert_eq!(weights.count(0, &f), reference.weights[2][0]);
+        assert_eq!(count.unwrap()[0], reference.tables[2][0]);
+    }
+}
+
+#[test]
+fn raw_word_masks_and_bridge_cover_malformed_padding() {
+    let f = test_field();
+    for batch in [1, 3] {
+        let layout = Layout::new(batch).unwrap();
+        let mut source = source_fixture(&layout);
+        // Unused spare lanes on both sides and, when present, low/sign/spare
+        // lanes of inactive instances must retain their original bit weights.
+        for c in [SLACK_BITS, N, 2 * N - 1] {
+            source.flip(16 * c + 15);
+        }
+        if batch < layout.capacity() {
+            for lane in [0, 14, 15] {
+                source.flip(16 * batch * 2 * N + lane);
+            }
+        }
+        assert!(Sparse::from_source(&source, &layout, &f).is_err());
+        let form = form_fixture(&layout, &f);
+        let mut reference = Reference::new(&form, &source, &f);
+        let mut bit_target = f.zero();
+        for bit in 0..layout.source_bits() {
+            if !source.bit(bit) {
+                continue;
+            }
+            let c = bit / 16;
+            let lane = bit % 16;
+            let i = c / (2 * N);
+            let local = c % (2 * N);
+            let weight = if i >= batch {
+                form.padding
+            } else if lane == 15 {
+                if local < SLACK_BITS {
+                    f.mul(&form.slacks[i], &value(1i64 << local, &f))
+                } else {
+                    form.padding
+                }
+            } else {
+                let digit = if lane == 14 {
+                    -(1i64 << lane)
+                } else {
+                    1i64 << lane
+                };
+                f.mul(
+                    &form.coefficients[local / N][i * N + local % N],
+                    &value(digit, &f),
+                )
+            };
+            bit_target = f.add(&bit_target, &weight);
+        }
+        assert_eq!(reference.target(&f), bit_target);
+
+        let point: Vec<_> = (0..rounds(&layout))
+            .map(|j| value(j as i64 * 3 - 17, &f))
+            .collect();
+        for &r in &point {
+            reference.fold(r, &f);
+        }
+        let zeta = value(-7, &f);
+        let mut expected = f.add(
+            &reference.tables[0][0],
+            &f.mul(&zeta, &reference.tables[1][0]),
+        );
+        if batch < layout.capacity() {
+            expected = f.add(
+                &expected,
+                &f.mul(&f.mul(&zeta, &zeta), &reference.tables[2][0]),
+            );
+        }
+        let bridge = WordBridgeClaim {
+            point,
+            modulus: f.modulus_u128(),
+            value: expected,
+            zeta,
+            with_padding: batch < layout.capacity(),
+        };
+        let rows = bridge.row_weights(&layout, &f).unwrap();
+        let columns = eq_table(bridge.column_point(&layout), &f).unwrap();
+        let mut actual = f.zero();
+        for bit in 0..layout.source_bits() {
+            if source.bit(bit) {
+                actual = f.add(
+                    &actual,
+                    &f.mul(
+                        &F::from_with_cfg(rows[bit % rows.len()], &f),
+                        &columns[bit / rows.len()],
+                    ),
+                );
+            }
+        }
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(feature = "parallel")]
+#[test]
+fn parallel_sparse_source_scan_preserves_entries_and_padding_errors() {
+    let f = test_field();
+    let layout = Layout::new(65).unwrap();
+    let source = source_fixture(&layout);
+    let serial = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+    let parallel = rayon::ThreadPoolBuilder::new()
+        .num_threads(8)
+        .build()
+        .unwrap();
+    let expected = serial.install(|| Sparse::from_source(&source, &layout, &f).unwrap().0);
+    let actual = parallel.install(|| Sparse::from_source(&source, &layout, &f).unwrap().0);
+    assert_eq!(actual, expected);
+    assert!(actual.windows(2).all(|pair| pair[0].0 < pair[1].0));
+
+    let spare_padding = 16 * (17 * 2 * N + N) + 15;
+    let inactive_padding = 16 * (layout.batch() * 2 * N) + 14;
+    for flips in [
+        vec![spare_padding],
+        vec![inactive_padding],
+        vec![spare_padding, inactive_padding],
+    ] {
+        let mut malformed = source.clone();
+        for bit in flips {
+            malformed.flip(bit);
+        }
+        let serial_error = serial.install(|| {
+            Sparse::from_source(&malformed, &layout, &f)
+                .err()
+                .unwrap()
+                .to_string()
+        });
+        let parallel_error = parallel.install(|| {
+            Sparse::from_source(&malformed, &layout, &f)
+                .err()
+                .unwrap()
+                .to_string()
+        });
+        assert_eq!(parallel_error, serial_error);
+    }
+}

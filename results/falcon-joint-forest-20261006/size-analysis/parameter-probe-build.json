@@ -1,0 +1,30 @@
+{
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "-C",
+    "target-cpu=native",
+    "-C",
+    "opt-level=2",
+    "-L",
+    "dependency=target/falcon-native/release/deps",
+    "results/falcon-joint-forest-20261006/size-analysis/falcon_pcs_parameters.rs",
+    "-o",
+    "/tmp/falcon-size-parameter-probe",
+    "--extern",
+    "bitz=target/falcon-native/release/deps/libbitz-e8200784436b736c.rlib",
+    "--extern",
+    "flock_core=target/falcon-native/release/deps/libflock_core-66566fc69f6a5200.rlib",
+    "--extern",
+    "bincode=target/falcon-native/release/deps/libbincode-925d32ca425519ae.rlib",
+    "--extern",
+    "blake3=target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib"
+  ],
+  "dependency_sha256": {
+    "bitz": "5437f7c95ac7bfb6eb9cc8c15cda2a306c94582184c0b4a9782046ba41838419",
+    "flock_core": "bc8795e05b44e0353ae517df0023590bd8c484526e3e03caa5ca0235e0638c47",
+    "bincode": "446d3f9389c6d16d16726c3531126f407a3c572b9a9a03d15734a40044b8c53b",
+    "blake3": "d68b14f19f7976398caa21ae57cdac9d8182c23605d31402600a5b9d092fb3ca"
+  },
+  "output_reproduced": true
+}

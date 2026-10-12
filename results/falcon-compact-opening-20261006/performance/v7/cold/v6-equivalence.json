@@ -1,0 +1,199 @@
+{
+  "status": "pass",
+  "comparison": "Frozen V6 and V7 optimized-scanner candidate cold proofs",
+  "cases": [
+    {
+      "case": "native-s100-b1-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s100-b1024-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s100-b3-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s100-b32-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s128-b1-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s128-b1024-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s128-b3-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "native-s128-b32-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s100-b1-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s100-b1024-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s100-b3-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s100-b32-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s128-b1-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s128-b1024-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s128-b3-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    },
+    {
+      "case": "shared-prime-s128-b32-t16-seed42-candidate.jsonl",
+      "fields_equal": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "source_root",
+        "input_digest",
+        "grinding_diagnostics",
+        "security_terms",
+        "protocol"
+      ]
+    }
+  ],
+  "count": 16
+}

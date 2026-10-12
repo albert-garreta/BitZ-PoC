@@ -1,0 +1,450 @@
+arithmetic-n512-b1-s100-t16-seed42-baseline
+arithmetic-n512-b1-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.8435633275336227, "prove_ms": 0.8482761413030184, "witness_commit_ms": 0.7288320330426801, "verify_ms": 0.8195393342679229, "process_peak_rss_kib": 1.0003428179636613}}
+arithmetic-n512-b1-s100-t16-seed43-candidate
+arithmetic-n512-b1-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 1.0073700083268995, "prove_ms": 1.0077124647081053, "witness_commit_ms": 1.0118814895526214, "verify_ms": 1.0057433312583939, "process_peak_rss_kib": 1.0087254063301967}}
+arithmetic-n512-b1-s100-t16-seed44-baseline
+arithmetic-n512-b1-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9971092606740587, "prove_ms": 0.9968700804592755, "witness_commit_ms": 1.0201931723047346, "verify_ms": 0.9933613874151654, "process_peak_rss_kib": 0.9806418746816098}}
+arithmetic-n512-b1-s128-t16-seed42-candidate
+arithmetic-n512-b1-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.999118356310128, "prove_ms": 1.0005589292116246, "witness_commit_ms": 1.0111454839828842, "verify_ms": 0.9941751140696483, "process_peak_rss_kib": 0.9912551440329218}}
+arithmetic-n512-b1-s128-t16-seed43-baseline
+arithmetic-n512-b1-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9980717092840413, "prove_ms": 0.9992713854418325, "witness_commit_ms": 0.9592748185006936, "verify_ms": 0.9909826903855548, "process_peak_rss_kib": 0.9991413360810579}}
+arithmetic-n512-b1-s128-t16-seed44-candidate
+arithmetic-n512-b1-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9956597912662237, "prove_ms": 0.995912381832443, "witness_commit_ms": 1.02068189312802, "verify_ms": 1.0050460755644226, "process_peak_rss_kib": 0.9917326903203583}}
+arithmetic-n512-b7-s100-t16-seed42-baseline.cache-prime
+arithmetic-n512-b7-s100-t16-seed42-baseline
+arithmetic-n512-b7-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9992158569380608, "prove_ms": 1.0024058435009766, "witness_commit_ms": 0.9805259866452382, "verify_ms": 0.9911351175064709, "process_peak_rss_kib": 1.0190735694822888}}
+arithmetic-n512-b7-s100-t16-seed43-candidate.cache-prime
+arithmetic-n512-b7-s100-t16-seed43-candidate
+arithmetic-n512-b7-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9913185729436864, "prove_ms": 0.9930279766722078, "witness_commit_ms": 0.9637650736647656, "verify_ms": 1.0089262723575814, "process_peak_rss_kib": 1.005256018989488}}
+arithmetic-n512-b7-s100-t16-seed44-baseline.cache-prime
+arithmetic-n512-b7-s100-t16-seed44-baseline
+arithmetic-n512-b7-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9945268000144508, "prove_ms": 0.9924481999537461, "witness_commit_ms": 0.9693783946095417, "verify_ms": 0.9992412738177779, "process_peak_rss_kib": 0.9918591128094368}}
+arithmetic-n512-b7-s128-t16-seed42-candidate
+arithmetic-n512-b7-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9932805646826816, "prove_ms": 0.9911395674753054, "witness_commit_ms": 1.0278215413218401, "verify_ms": 0.998230447226226, "process_peak_rss_kib": 0.9932659932659933}}
+arithmetic-n512-b7-s128-t16-seed43-baseline
+arithmetic-n512-b7-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9856120640958131, "prove_ms": 0.9816266289789368, "witness_commit_ms": 1.1411951874316395, "verify_ms": 1.0025149853204698, "process_peak_rss_kib": 1.0144287896791717}}
+arithmetic-n512-b7-s128-t16-seed44-candidate
+arithmetic-n512-b7-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9970093964829241, "prove_ms": 0.9979762509430158, "witness_commit_ms": 0.9756106378107416, "verify_ms": 0.9972848188152408, "process_peak_rss_kib": 0.9965963240299524}}
+arithmetic-n512-b8-s100-t16-seed42-baseline
+arithmetic-n512-b8-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9964305980044634, "prove_ms": 0.9961151780135259, "witness_commit_ms": 1.0463309255383784, "verify_ms": 1.0015016297851338, "process_peak_rss_kib": 1.001700969552645}}
+arithmetic-n512-b8-s100-t16-seed43-candidate
+arithmetic-n512-b8-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9877047294451231, "prove_ms": 0.9840293418710551, "witness_commit_ms": 1.0115528372409108, "verify_ms": 1.000530565889289, "process_peak_rss_kib": 1.005229419703104}}
+arithmetic-n512-b8-s100-t16-seed44-baseline
+arithmetic-n512-b8-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9930498034168429, "prove_ms": 0.9971693078725725, "witness_commit_ms": 1.044498962068315, "verify_ms": 1.0087901443000529, "process_peak_rss_kib": 0.9912384161752317}}
+arithmetic-n512-b8-s128-t16-seed42-candidate
+arithmetic-n512-b8-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9993313248585497, "prove_ms": 1.0006860109049325, "witness_commit_ms": 0.8742814749041966, "verify_ms": 0.9950086874817281, "process_peak_rss_kib": 0.9927377132241175}}
+arithmetic-n512-b8-s128-t16-seed43-baseline
+arithmetic-n512-b8-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 1.0020351243259948, "prove_ms": 1.0049857883178321, "witness_commit_ms": 0.9649632521819017, "verify_ms": 1.0057844440863875, "process_peak_rss_kib": 1.0011842327863305}}
+arithmetic-n512-b8-s128-t16-seed44-candidate
+arithmetic-n512-b8-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0068344127263391, "prove_ms": 1.0090083132253982, "witness_commit_ms": 0.9928011320087258, "verify_ms": 0.972754188625816, "process_peak_rss_kib": 0.9858823529411764}}
+arithmetic-n512-b9-s100-t16-seed42-baseline
+arithmetic-n512-b9-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 1.0041973491979501, "prove_ms": 1.0047795332285177, "witness_commit_ms": 1.0393823991517042, "verify_ms": 0.9933946739963051, "process_peak_rss_kib": 0.9843648208469056}}
+arithmetic-n512-b9-s100-t16-seed43-candidate
+arithmetic-n512-b9-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9982219901053528, "prove_ms": 0.9977469169013328, "witness_commit_ms": 0.9955246538342741, "verify_ms": 1.0014948792676577, "process_peak_rss_kib": 1.0054027504911591}}
+arithmetic-n512-b9-s100-t16-seed44-baseline
+arithmetic-n512-b9-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0024807755865197, "prove_ms": 0.9973502758352092, "witness_commit_ms": 1.178379404565764, "verify_ms": 0.9996094170206098, "process_peak_rss_kib": 1.0053235734486774}}
+arithmetic-n512-b9-s128-t16-seed42-candidate
+arithmetic-n512-b9-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9944999852108292, "prove_ms": 0.9977588334154182, "witness_commit_ms": 0.8975699443989102, "verify_ms": 0.9851077260743717, "process_peak_rss_kib": 0.9848661233993015}}
+arithmetic-n512-b9-s128-t16-seed43-baseline
+arithmetic-n512-b9-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9984053894781204, "prove_ms": 0.9970223497710393, "witness_commit_ms": 1.0005283488511347, "verify_ms": 0.9955019520249652, "process_peak_rss_kib": 1.000993213044198}}
+arithmetic-n512-b9-s128-t16-seed44-candidate
+arithmetic-n512-b9-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9986555256783485, "prove_ms": 1.0020388923537593, "witness_commit_ms": 0.9680112206795154, "verify_ms": 0.9978718698235794, "process_peak_rss_kib": 0.9941118743866536}}
+arithmetic-n512-b15-s100-t16-seed42-baseline.cache-prime
+arithmetic-n512-b15-s100-t16-seed42-baseline
+arithmetic-n512-b15-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.990069702050838, "prove_ms": 0.9861861912734781, "witness_commit_ms": 1.029547134096537, "verify_ms": 1.006898893811219, "process_peak_rss_kib": 1.0027859718125205}}
+arithmetic-n512-b15-s100-t16-seed43-candidate.cache-prime
+arithmetic-n512-b15-s100-t16-seed43-candidate
+arithmetic-n512-b15-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9967931122197342, "prove_ms": 0.9971095464262021, "witness_commit_ms": 0.9896311954163655, "verify_ms": 1.010953662326364, "process_peak_rss_kib": 1.0087329049266764}}
+arithmetic-n512-b15-s100-t16-seed44-baseline.cache-prime
+arithmetic-n512-b15-s100-t16-seed44-baseline
+arithmetic-n512-b15-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0107134874928043, "prove_ms": 1.0156804080625825, "witness_commit_ms": 0.9906927742763991, "verify_ms": 0.9875422356485047, "process_peak_rss_kib": 1.0137122088220718}}
+arithmetic-n512-b15-s128-t16-seed42-candidate
+arithmetic-n512-b15-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9903045749932468, "prove_ms": 0.9895350961289411, "witness_commit_ms": 1.0048903731668362, "verify_ms": 1.008177232104547, "process_peak_rss_kib": 0.9983560743054414}}
+arithmetic-n512-b15-s128-t16-seed43-baseline
+arithmetic-n512-b15-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9929792183690005, "prove_ms": 0.9962653947190394, "witness_commit_ms": 0.9797452137851822, "verify_ms": 0.9895830499095848, "process_peak_rss_kib": 0.9889322916666666}}
+arithmetic-n512-b15-s128-t16-seed44-candidate
+arithmetic-n512-b15-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9948676097307247, "prove_ms": 0.9952117444167131, "witness_commit_ms": 0.9926969106596158, "verify_ms": 1.0018508341040324, "process_peak_rss_kib": 0.9995085190039319}}
+arithmetic-n512-b16-s100-t16-seed42-baseline.cache-prime
+arithmetic-n512-b16-s100-t16-seed42-baseline
+arithmetic-n512-b16-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 1.0047908514858648, "prove_ms": 1.0076948691784609, "witness_commit_ms": 0.9416179560986808, "verify_ms": 1.033684322301646, "process_peak_rss_kib": 1.0016542597187759}}
+arithmetic-n512-b16-s100-t16-seed43-candidate.cache-prime
+arithmetic-n512-b16-s100-t16-seed43-candidate
+arithmetic-n512-b16-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9998339748199542, "prove_ms": 1.0019952836626005, "witness_commit_ms": 0.9121073458858135, "verify_ms": 1.0099515608687066, "process_peak_rss_kib": 0.9831794195250659}}
+arithmetic-n512-b16-s100-t16-seed44-baseline.cache-prime
+arithmetic-n512-b16-s100-t16-seed44-baseline
+arithmetic-n512-b16-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0112821350004857, "prove_ms": 1.0081197097072396, "witness_commit_ms": 1.050425318524572, "verify_ms": 0.997084303803736, "process_peak_rss_kib": 0.9937694704049844}}
+arithmetic-n512-b16-s128-t16-seed42-candidate
+arithmetic-n512-b16-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9970691980747248, "prove_ms": 0.9968167526250828, "witness_commit_ms": 1.019811969731713, "verify_ms": 0.9964440451909848, "process_peak_rss_kib": 0.9953278825296179}}
+arithmetic-n512-b16-s128-t16-seed43-baseline
+arithmetic-n512-b16-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 1.011680613242953, "prove_ms": 1.009639856071246, "witness_commit_ms": 1.003351423078886, "verify_ms": 1.0054717102144042, "process_peak_rss_kib": 0.9931848404255319}}
+arithmetic-n512-b16-s128-t16-seed44-candidate
+arithmetic-n512-b16-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0017912450020368, "prove_ms": 1.0027324998450426, "witness_commit_ms": 1.0128325167012275, "verify_ms": 0.9942737448180127, "process_peak_rss_kib": 0.9835634451019066}}
+arithmetic-n512-b17-s100-t16-seed42-baseline
+arithmetic-n512-b17-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9662506895128737, "prove_ms": 0.9652710353205844, "witness_commit_ms": 0.9169197711896397, "verify_ms": 0.9557912116446443, "process_peak_rss_kib": 0.9760988129611806}}
+arithmetic-n512-b17-s100-t16-seed43-candidate
+arithmetic-n512-b17-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9726109057083627, "prove_ms": 0.9704598006570405, "witness_commit_ms": 1.0259954806980232, "verify_ms": 0.9480268167790138, "process_peak_rss_kib": 1.0043888166449935}}
+arithmetic-n512-b17-s100-t16-seed44-baseline
+arithmetic-n512-b17-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9366519105624476, "prove_ms": 0.9354252878914582, "witness_commit_ms": 0.9787991584398769, "verify_ms": 0.9503967701418061, "process_peak_rss_kib": 0.9969379532634972}}
+arithmetic-n512-b17-s128-t16-seed42-candidate
+arithmetic-n512-b17-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9745665602233534, "prove_ms": 0.9730903356533486, "witness_commit_ms": 1.0878839590443687, "verify_ms": 0.9570280018248961, "process_peak_rss_kib": 0.9954538074362721}}
+arithmetic-n512-b17-s128-t16-seed43-baseline
+arithmetic-n512-b17-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.987935592904773, "prove_ms": 0.985054886952275, "witness_commit_ms": 0.9854916472944557, "verify_ms": 0.9637798904275863, "process_peak_rss_kib": 1.0036237852083676}}
+arithmetic-n512-b17-s128-t16-seed44-candidate
+arithmetic-n512-b17-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9846054037570049, "prove_ms": 0.9846753774576731, "witness_commit_ms": 1.0083189886589436, "verify_ms": 0.9589999982340652, "process_peak_rss_kib": 1.0055464926590538}}
+arithmetic-n512-b32-s100-t16-seed42-baseline
+arithmetic-n512-b32-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9442144612644007, "prove_ms": 0.9453699929639258, "witness_commit_ms": 0.9210436031014626, "verify_ms": 0.9381830085693127, "process_peak_rss_kib": 0.9790697674418605}}
+arithmetic-n512-b32-s100-t16-seed43-candidate
+arithmetic-n512-b32-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9683031366592728, "prove_ms": 0.9673909257804363, "witness_commit_ms": 1.0006329514526235, "verify_ms": 0.9312440593964558, "process_peak_rss_kib": 0.9974497927956647}}
+arithmetic-n512-b32-s100-t16-seed44-baseline
+arithmetic-n512-b32-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9653162291228717, "prove_ms": 0.9658767114597111, "witness_commit_ms": 1.0644730437932244, "verify_ms": 0.9235350873374162, "process_peak_rss_kib": 0.9897070467141726}}
+arithmetic-n512-b32-s128-t16-seed42-candidate
+arithmetic-n512-b32-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9648955149785132, "prove_ms": 0.9640321918571492, "witness_commit_ms": 1.0564017983027851, "verify_ms": 0.9428454806223336, "process_peak_rss_kib": 0.9877087929404349}}
+arithmetic-n512-b32-s128-t16-seed43-baseline
+arithmetic-n512-b32-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9754721921906301, "prove_ms": 0.9738508302484485, "witness_commit_ms": 1.0111871626791291, "verify_ms": 0.9524044158974312, "process_peak_rss_kib": 0.992049883086516}}
+arithmetic-n512-b32-s128-t16-seed44-candidate
+arithmetic-n512-b32-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9695525871543001, "prove_ms": 0.9711962427897652, "witness_commit_ms": 1.0197277092823578, "verify_ms": 0.9483279162271359, "process_peak_rss_kib": 1.0022012578616353}}
+arithmetic-n512-b33-s100-t16-seed42-baseline
+arithmetic-n512-b33-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9425280425825185, "prove_ms": 0.9386104801330777, "witness_commit_ms": 0.9770664749651313, "verify_ms": 0.8820659009813017, "process_peak_rss_kib": 0.9931168636839742}}
+arithmetic-n512-b33-s100-t16-seed43-candidate
+arithmetic-n512-b33-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9345297619512651, "prove_ms": 0.9347942194716156, "witness_commit_ms": 0.9473799792594398, "verify_ms": 0.8855322578692927, "process_peak_rss_kib": 1.0035820895522387}}
+arithmetic-n512-b33-s100-t16-seed44-baseline
+arithmetic-n512-b33-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9448370016861142, "prove_ms": 0.9408043857034137, "witness_commit_ms": 0.9991241740054845, "verify_ms": 0.8873179469565644, "process_peak_rss_kib": 1.0004497751124437}}
+arithmetic-n512-b33-s128-t16-seed42-candidate
+arithmetic-n512-b33-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9656494862548152, "prove_ms": 0.9639182572275969, "witness_commit_ms": 1.0225972181613132, "verify_ms": 0.9033798114992327, "process_peak_rss_kib": 1.0}}
+arithmetic-n512-b33-s128-t16-seed43-baseline
+arithmetic-n512-b33-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9686943569850796, "prove_ms": 0.9684885366775728, "witness_commit_ms": 0.971595276764711, "verify_ms": 0.895399414141891, "process_peak_rss_kib": 1.01452313220542}}
+arithmetic-n512-b33-s128-t16-seed44-candidate
+arithmetic-n512-b33-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9628807947155883, "prove_ms": 0.959665335473856, "witness_commit_ms": 1.0453896476823912, "verify_ms": 0.892061557571175, "process_peak_rss_kib": 1.0180623973727423}}
+arithmetic-n512-b65-s100-t16-seed42-baseline
+arithmetic-n512-b65-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.908265704528314, "prove_ms": 0.9006266462524166, "witness_commit_ms": 1.0061182715492565, "verify_ms": 0.7669481700083736, "process_peak_rss_kib": 0.9885835656444976}}
+arithmetic-n512-b65-s100-t16-seed43-candidate
+arithmetic-n512-b65-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9086211223425007, "prove_ms": 0.9032795212095002, "witness_commit_ms": 0.993714832164537, "verify_ms": 0.775005732698051, "process_peak_rss_kib": 1.0060362173038229}}
+arithmetic-n512-b65-s100-t16-seed44-baseline
+arithmetic-n512-b65-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9221810895010228, "prove_ms": 0.9155701675203058, "witness_commit_ms": 1.0251025532215856, "verify_ms": 0.7666409039659358, "process_peak_rss_kib": 0.9982650473775524}}
+arithmetic-n512-b65-s128-t16-seed42-candidate
+arithmetic-n512-b65-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9327533942958925, "prove_ms": 0.9301368830149167, "witness_commit_ms": 0.9972230581926622, "verify_ms": 0.7920408848438393, "process_peak_rss_kib": 0.998674618952949}}
+arithmetic-n512-b65-s128-t16-seed43-baseline
+arithmetic-n512-b65-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9338745048694626, "prove_ms": 0.9303607808546444, "witness_commit_ms": 0.9921516363097883, "verify_ms": 0.8040928363346185, "process_peak_rss_kib": 1.0103778605641298}}
+arithmetic-n512-b65-s128-t16-seed44-candidate
+arithmetic-n512-b65-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9286781817142765, "prove_ms": 0.9257769598638693, "witness_commit_ms": 0.9885317468514809, "verify_ms": 0.7953811826371463, "process_peak_rss_kib": 0.9926900584795322}}
+arithmetic-n512-b513-s100-t16-seed42-baseline
+arithmetic-n512-b513-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7853639521059709, "prove_ms": 0.7711998219899677, "witness_commit_ms": 1.0572268869355952, "verify_ms": 0.4286870879407237, "process_peak_rss_kib": 1.0015642458100558}}
+arithmetic-n512-b513-s100-t16-seed43-candidate
+arithmetic-n512-b513-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.791475282244513, "prove_ms": 0.7790133166391302, "witness_commit_ms": 0.9617153857226857, "verify_ms": 0.4304002373991328, "process_peak_rss_kib": 0.9986183203256283}}
+arithmetic-n512-b513-s100-t16-seed44-baseline
+arithmetic-n512-b513-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.79111540060206, "prove_ms": 0.7770163850213477, "witness_commit_ms": 1.0453385251112524, "verify_ms": 0.42363569652863103, "process_peak_rss_kib": 1.004774694121158}}
+arithmetic-n512-b513-s128-t16-seed42-candidate
+arithmetic-n512-b513-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7970804425768724, "prove_ms": 0.7896757467811546, "witness_commit_ms": 0.9413192991438684, "verify_ms": 0.45547006703388826, "process_peak_rss_kib": 1.0013383894713361}}
+arithmetic-n512-b513-s128-t16-seed43-baseline
+arithmetic-n512-b513-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.8074132282415161, "prove_ms": 0.7991765851245284, "witness_commit_ms": 0.996717158997617, "verify_ms": 0.45548987512744754, "process_peak_rss_kib": 0.9992910712286855}}
+arithmetic-n512-b513-s128-t16-seed44-candidate
+arithmetic-n512-b513-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.8082219344558619, "prove_ms": 0.8005796162655224, "witness_commit_ms": 0.942265843193572, "verify_ms": 0.4473457452261389, "process_peak_rss_kib": 0.9958642274302322}}
+arithmetic-n512-b1024-s100-t16-seed42-baseline
+arithmetic-n512-b1024-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7924829178893674, "prove_ms": 0.7838208623719558, "witness_commit_ms": 0.983932851347514, "verify_ms": 0.47198782401711664, "process_peak_rss_kib": 1.0035589353612167}}
+arithmetic-n512-b1024-s100-t16-seed43-candidate
+arithmetic-n512-b1024-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.7827854604178073, "prove_ms": 0.7771794075601093, "witness_commit_ms": 0.876229891903206, "verify_ms": 0.4695687341872264, "process_peak_rss_kib": 1.0014254518985806}}
+arithmetic-n512-b1024-s100-t16-seed44-baseline
+arithmetic-n512-b1024-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.7915905831601431, "prove_ms": 0.7833897709132545, "witness_commit_ms": 0.9022652815368072, "verify_ms": 0.4697811193060636, "process_peak_rss_kib": 0.9951060358890701}}
+arithmetic-n512-b1024-s128-t16-seed42-candidate
+arithmetic-n512-b1024-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.8161352855842933, "prove_ms": 0.8084424788916685, "witness_commit_ms": 0.9529613934476332, "verify_ms": 0.4926421409614484, "process_peak_rss_kib": 1.004678643193474}}
+arithmetic-n512-b1024-s128-t16-seed43-baseline
+arithmetic-n512-b1024-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.7979668213757377, "prove_ms": 0.7918151101676271, "witness_commit_ms": 0.9296676415286333, "verify_ms": 0.4961586872566299, "process_peak_rss_kib": 1.009501116004102}}
+arithmetic-n512-b1024-s128-t16-seed44-candidate
+arithmetic-n512-b1024-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.8098888326802222, "prove_ms": 0.8039009544054718, "witness_commit_ms": 0.9192767084468411, "verify_ms": 0.4775230119240044, "process_peak_rss_kib": 0.9963217703349282}}
+arithmetic-n1024-b1-s100-t16-seed42-baseline
+arithmetic-n1024-b1-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 1.0046078372039198, "prove_ms": 1.0050592761852675, "witness_commit_ms": 1.001231103328567, "verify_ms": 1.0020850042596443, "process_peak_rss_kib": 0.9866984993178718}}
+arithmetic-n1024-b1-s100-t16-seed43-candidate
+arithmetic-n1024-b1-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9957289958268959, "prove_ms": 0.9989519654094435, "witness_commit_ms": 1.0140377881248317, "verify_ms": 0.9981332689939577, "process_peak_rss_kib": 1.002212389380531}}
+arithmetic-n1024-b1-s100-t16-seed44-baseline
+arithmetic-n1024-b1-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9960680805605362, "prove_ms": 0.9936883445322972, "witness_commit_ms": 0.9192531335704114, "verify_ms": 1.0037919007458458, "process_peak_rss_kib": 0.989172728810692}}
+arithmetic-n1024-b1-s128-t16-seed42-candidate
+arithmetic-n1024-b1-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 1.0082545778952723, "prove_ms": 1.0047645775663023, "witness_commit_ms": 1.099035616685864, "verify_ms": 0.9981248546431799, "process_peak_rss_kib": 1.005267629566695}}
+arithmetic-n1024-b1-s128-t16-seed43-baseline
+arithmetic-n1024-b1-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9957827250871022, "prove_ms": 0.9954244298276359, "witness_commit_ms": 0.9983556688317028, "verify_ms": 0.9904851176155373, "process_peak_rss_kib": 0.9879951980792316}}
+arithmetic-n1024-b1-s128-t16-seed44-candidate
+arithmetic-n1024-b1-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9915553918670655, "prove_ms": 0.9885798128634434, "witness_commit_ms": 1.017258046947334, "verify_ms": 0.9989650948861213, "process_peak_rss_kib": 1.000343997248022}}
+arithmetic-n1024-b7-s100-t16-seed42-baseline.cache-prime
+arithmetic-n1024-b7-s100-t16-seed42-baseline
+arithmetic-n1024-b7-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9990723842674145, "prove_ms": 0.9951539959197173, "witness_commit_ms": 1.0500538930132854, "verify_ms": 0.9980758005572036, "process_peak_rss_kib": 1.0031208935611038}}
+arithmetic-n1024-b7-s100-t16-seed43-candidate.cache-prime
+arithmetic-n1024-b7-s100-t16-seed43-candidate
+arithmetic-n1024-b7-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 1.0014214960495298, "prove_ms": 0.9959397837362027, "witness_commit_ms": 1.1830791204759283, "verify_ms": 1.0052353298659769, "process_peak_rss_kib": 0.9967352269017303}}
+arithmetic-n1024-b7-s100-t16-seed44-baseline.cache-prime
+arithmetic-n1024-b7-s100-t16-seed44-baseline
+arithmetic-n1024-b7-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9979866801918501, "prove_ms": 1.0031209411360067, "witness_commit_ms": 0.8565374965151937, "verify_ms": 1.0031233465484932, "process_peak_rss_kib": 0.9962164829741734}}
+arithmetic-n1024-b7-s128-t16-seed42-candidate
+arithmetic-n1024-b7-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9944195308982613, "prove_ms": 0.9929015139250337, "witness_commit_ms": 1.0567966019799309, "verify_ms": 0.9952973916822992, "process_peak_rss_kib": 1.0071239231278992}}
+arithmetic-n1024-b7-s128-t16-seed43-baseline
+arithmetic-n1024-b7-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9950652565272233, "prove_ms": 0.9944401732159156, "witness_commit_ms": 0.996979580649582, "verify_ms": 0.9991227880780608, "process_peak_rss_kib": 1.0109441359032996}}
+arithmetic-n1024-b7-s128-t16-seed44-candidate
+arithmetic-n1024-b7-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 7, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9968971098272249, "prove_ms": 0.9934584633922359, "witness_commit_ms": 1.0372666321605257, "verify_ms": 0.9952606635071091, "process_peak_rss_kib": 0.9985192497532083}}
+arithmetic-n1024-b8-s100-t16-seed42-baseline
+arithmetic-n1024-b8-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 1.0007252049745385, "prove_ms": 1.0006137458844742, "witness_commit_ms": 1.0353337392495623, "verify_ms": 0.9897092385847414, "process_peak_rss_kib": 0.9996731492073868}}
+arithmetic-n1024-b8-s100-t16-seed43-candidate
+arithmetic-n1024-b8-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9896200677818257, "prove_ms": 0.9900157741843096, "witness_commit_ms": 0.8601469232764665, "verify_ms": 1.0035839630012293, "process_peak_rss_kib": 1.016820580474934}}
+arithmetic-n1024-b8-s100-t16-seed44-baseline
+arithmetic-n1024-b8-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0024020793780801, "prove_ms": 0.9981822060319007, "witness_commit_ms": 1.1689111657524744, "verify_ms": 0.99639238997233, "process_peak_rss_kib": 0.9913342053629823}}
+arithmetic-n1024-b8-s128-t16-seed42-candidate
+arithmetic-n1024-b8-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9970289515244816, "prove_ms": 0.9962141696702561, "witness_commit_ms": 0.9947930338077815, "verify_ms": 0.9880096020572193, "process_peak_rss_kib": 0.9988422097254384}}
+arithmetic-n1024-b8-s128-t16-seed43-baseline
+arithmetic-n1024-b8-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 1.0007681558437238, "prove_ms": 0.9992359181898985, "witness_commit_ms": 0.96053408764543, "verify_ms": 1.0120464750713687, "process_peak_rss_kib": 1.0172096908939015}}
+arithmetic-n1024-b8-s128-t16-seed44-candidate
+arithmetic-n1024-b8-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 8, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 1.0154962703929835, "prove_ms": 1.0133379326038416, "witness_commit_ms": 1.1129747985251983, "verify_ms": 1.0002882586760908, "process_peak_rss_kib": 0.9868766404199475}}
+arithmetic-n1024-b9-s100-t16-seed42-baseline
+arithmetic-n1024-b9-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9714455945127876, "prove_ms": 0.9696646678888252, "witness_commit_ms": 1.025651090555347, "verify_ms": 0.9542672981958612, "process_peak_rss_kib": 0.9934661354581673}}
+arithmetic-n1024-b9-s100-t16-seed43-candidate
+arithmetic-n1024-b9-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9647265931665358, "prove_ms": 0.9620149704917212, "witness_commit_ms": 0.9240903665060347, "verify_ms": 0.9529120270128744, "process_peak_rss_kib": 1.014441018984261}}
+arithmetic-n1024-b9-s100-t16-seed44-baseline
+arithmetic-n1024-b9-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9557686318678739, "prove_ms": 0.9592218239487914, "witness_commit_ms": 0.9279901955372029, "verify_ms": 0.9576987014136976, "process_peak_rss_kib": 0.9966464388374321}}
+arithmetic-n1024-b9-s128-t16-seed42-candidate
+arithmetic-n1024-b9-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9692856467581094, "prove_ms": 0.9652375338005893, "witness_commit_ms": 0.9907828322412767, "verify_ms": 0.9586661108604385, "process_peak_rss_kib": 1.0106194690265486}}
+arithmetic-n1024-b9-s128-t16-seed43-baseline
+arithmetic-n1024-b9-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.971655065641486, "prove_ms": 0.9688036514741645, "witness_commit_ms": 1.0625258846156027, "verify_ms": 0.9633369949577583, "process_peak_rss_kib": 1.0175976751695188}}
+arithmetic-n1024-b9-s128-t16-seed44-candidate
+arithmetic-n1024-b9-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9771244829047473, "prove_ms": 0.9780344638650492, "witness_commit_ms": 1.0069411378810484, "verify_ms": 0.9574438183819404, "process_peak_rss_kib": 1.0056397035127296}}
+arithmetic-n1024-b15-s100-t16-seed42-baseline.cache-prime
+arithmetic-n1024-b15-s100-t16-seed42-baseline
+arithmetic-n1024-b15-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9843141934859314, "prove_ms": 0.9814418587045913, "witness_commit_ms": 1.0095514875513076, "verify_ms": 0.9373304900519658, "process_peak_rss_kib": 1.0031720856463124}}
+arithmetic-n1024-b15-s100-t16-seed43-candidate.cache-prime
+arithmetic-n1024-b15-s100-t16-seed43-candidate
+arithmetic-n1024-b15-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.962495493922947, "prove_ms": 0.9650096285561136, "witness_commit_ms": 1.1154174674354047, "verify_ms": 0.9200971682549244, "process_peak_rss_kib": 0.9833385238243538}}
+arithmetic-n1024-b15-s100-t16-seed44-baseline.cache-prime
+arithmetic-n1024-b15-s100-t16-seed44-baseline
+arithmetic-n1024-b15-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9643294368809426, "prove_ms": 0.9633188170899122, "witness_commit_ms": 1.0015731485028967, "verify_ms": 0.9304858299730074, "process_peak_rss_kib": 1.0099510345916918}}
+arithmetic-n1024-b15-s128-t16-seed42-candidate
+arithmetic-n1024-b15-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9781670293681795, "prove_ms": 0.9773144592335535, "witness_commit_ms": 1.0771852295708189, "verify_ms": 0.9348154896383669, "process_peak_rss_kib": 0.9957930819569959}}
+arithmetic-n1024-b15-s128-t16-seed43-baseline
+arithmetic-n1024-b15-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9784801639708102, "prove_ms": 0.9759489771496681, "witness_commit_ms": 1.0598865997094704, "verify_ms": 0.934781970990183, "process_peak_rss_kib": 1.006009805472086}}
+arithmetic-n1024-b15-s128-t16-seed44-candidate
+arithmetic-n1024-b15-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 15, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9785778700553105, "prove_ms": 0.9759033676231024, "witness_commit_ms": 0.9783475377824787, "verify_ms": 0.9410746596576212, "process_peak_rss_kib": 0.9762569832402235}}
+arithmetic-n1024-b16-s100-t16-seed42-baseline.cache-prime
+arithmetic-n1024-b16-s100-t16-seed42-baseline
+arithmetic-n1024-b16-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9624018343803482, "prove_ms": 0.9575775617354556, "witness_commit_ms": 1.0247192830922047, "verify_ms": 0.9357940950346222, "process_peak_rss_kib": 1.0060625398851308}}
+arithmetic-n1024-b16-s100-t16-seed43-candidate.cache-prime
+arithmetic-n1024-b16-s100-t16-seed43-candidate
+arithmetic-n1024-b16-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9619140224512843, "prove_ms": 0.9570193958918962, "witness_commit_ms": 1.0997474965345482, "verify_ms": 0.9338273104525832, "process_peak_rss_kib": 0.9940270355234203}}
+arithmetic-n1024-b16-s100-t16-seed44-baseline.cache-prime
+arithmetic-n1024-b16-s100-t16-seed44-baseline
+arithmetic-n1024-b16-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9516708362165328, "prove_ms": 0.9551314790367124, "witness_commit_ms": 0.966161124718988, "verify_ms": 0.9359744527236544, "process_peak_rss_kib": 0.9891764705882353}}
+arithmetic-n1024-b16-s128-t16-seed42-candidate
+arithmetic-n1024-b16-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.971817921578264, "prove_ms": 0.9727492542615125, "witness_commit_ms": 0.9835948240794616, "verify_ms": 0.9445206377252902, "process_peak_rss_kib": 0.997969701702327}}
+arithmetic-n1024-b16-s128-t16-seed43-baseline
+arithmetic-n1024-b16-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9765448831222909, "prove_ms": 0.9769498029336696, "witness_commit_ms": 0.9809296662441064, "verify_ms": 0.943743016058679, "process_peak_rss_kib": 1.007625099285147}}
+arithmetic-n1024-b16-s128-t16-seed44-candidate
+arithmetic-n1024-b16-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 16, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9716062840494666, "prove_ms": 0.9719538388434128, "witness_commit_ms": 1.0992267395576436, "verify_ms": 0.9424223412719807, "process_peak_rss_kib": 0.9971901342491414}}
+arithmetic-n1024-b17-s100-t16-seed42-baseline
+arithmetic-n1024-b17-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9323215498070682, "prove_ms": 0.9309429711130124, "witness_commit_ms": 1.0236280857461564, "verify_ms": 0.8851693845984853, "process_peak_rss_kib": 1.017163504968383}}
+arithmetic-n1024-b17-s100-t16-seed43-candidate
+arithmetic-n1024-b17-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9378074129517753, "prove_ms": 0.935869681098016, "witness_commit_ms": 1.0338241517512634, "verify_ms": 0.8844249615604729, "process_peak_rss_kib": 1.006720430107527}}
+arithmetic-n1024-b17-s100-t16-seed44-baseline
+arithmetic-n1024-b17-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9508224262252185, "prove_ms": 0.9480158433904996, "witness_commit_ms": 1.02714065521225, "verify_ms": 0.8832975071188939, "process_peak_rss_kib": 0.986574210681617}}
+arithmetic-n1024-b17-s128-t16-seed42-candidate
+arithmetic-n1024-b17-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9624359619511795, "prove_ms": 0.9597730419688851, "witness_commit_ms": 1.0230125332597095, "verify_ms": 0.8951986747564937, "process_peak_rss_kib": 1.0007441583568983}}
+arithmetic-n1024-b17-s128-t16-seed43-baseline
+arithmetic-n1024-b17-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9627411355055991, "prove_ms": 0.9613226062213457, "witness_commit_ms": 1.0182278690023028, "verify_ms": 0.8983732874703483, "process_peak_rss_kib": 1.0137512938045246}}
+arithmetic-n1024-b17-s128-t16-seed44-candidate
+arithmetic-n1024-b17-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 17, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9581768626781875, "prove_ms": 0.9565434408893904, "witness_commit_ms": 0.972446059584628, "verify_ms": 0.9016585104122875, "process_peak_rss_kib": 1.0078635014836794}}
+arithmetic-n1024-b32-s100-t16-seed42-baseline
+arithmetic-n1024-b32-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9234922120570115, "prove_ms": 0.9153022432938044, "witness_commit_ms": 0.995502883033439, "verify_ms": 0.8448667444577989, "process_peak_rss_kib": 1.0234375}}
+arithmetic-n1024-b32-s100-t16-seed43-candidate
+arithmetic-n1024-b32-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9279694912125118, "prove_ms": 0.9238447846189359, "witness_commit_ms": 0.965080215556769, "verify_ms": 0.8560422232749524, "process_peak_rss_kib": 0.9985935302390999}}
+arithmetic-n1024-b32-s100-t16-seed44-baseline
+arithmetic-n1024-b32-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9370885265146671, "prove_ms": 0.9358538311062189, "witness_commit_ms": 0.9836251059114907, "verify_ms": 0.856762348798486, "process_peak_rss_kib": 1.0143018974794675}}
+arithmetic-n1024-b32-s128-t16-seed42-candidate
+arithmetic-n1024-b32-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9500681526326785, "prove_ms": 0.9482665580923326, "witness_commit_ms": 1.0204220664813437, "verify_ms": 0.8607066382673587, "process_peak_rss_kib": 0.9917586255063556}}
+arithmetic-n1024-b32-s128-t16-seed43-baseline
+arithmetic-n1024-b32-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9615304173136825, "prove_ms": 0.9600858756993685, "witness_commit_ms": 1.0282494986565818, "verify_ms": 0.8560003606527816, "process_peak_rss_kib": 1.0050483803113168}}
+arithmetic-n1024-b32-s128-t16-seed44-candidate
+arithmetic-n1024-b32-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 32, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9531314806331972, "prove_ms": 0.9475845110356912, "witness_commit_ms": 1.0174426229508196, "verify_ms": 0.8656490542970581, "process_peak_rss_kib": 0.9964843200675011}}
+arithmetic-n1024-b33-s100-t16-seed42-baseline
+arithmetic-n1024-b33-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.90892697391031, "prove_ms": 0.9023234712666641, "witness_commit_ms": 0.9950950674170619, "verify_ms": 0.7779403371570296, "process_peak_rss_kib": 1.0136641018837889}}
+arithmetic-n1024-b33-s100-t16-seed43-candidate
+arithmetic-n1024-b33-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9111455263802292, "prove_ms": 0.9058284680480142, "witness_commit_ms": 0.9949036268199818, "verify_ms": 0.7746804206646495, "process_peak_rss_kib": 0.991843178529141}}
+arithmetic-n1024-b33-s100-t16-seed44-baseline
+arithmetic-n1024-b33-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9133655983629254, "prove_ms": 0.9065340907188877, "witness_commit_ms": 1.0015628132695182, "verify_ms": 0.7873517112792844, "process_peak_rss_kib": 1.0023913909924274}}
+arithmetic-n1024-b33-s128-t16-seed42-candidate
+arithmetic-n1024-b33-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9334993149260813, "prove_ms": 0.9295922512064406, "witness_commit_ms": 0.9863724624889673, "verify_ms": 0.7890196087113421, "process_peak_rss_kib": 1.0007863695937091}}
+arithmetic-n1024-b33-s128-t16-seed43-baseline
+arithmetic-n1024-b33-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9333795032216554, "prove_ms": 0.9293524165954811, "witness_commit_ms": 0.9916120885711504, "verify_ms": 0.8221380908477547, "process_peak_rss_kib": 1.0123781933105083}}
+arithmetic-n1024-b33-s128-t16-seed44-candidate
+arithmetic-n1024-b33-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 33, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9361114000064779, "prove_ms": 0.9325876974697078, "witness_commit_ms": 0.9862336781072485, "verify_ms": 0.8052493577245623, "process_peak_rss_kib": 0.9912521216869042}}
+arithmetic-n1024-b65-s100-t16-seed42-baseline
+arithmetic-n1024-b65-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.8900472835483918, "prove_ms": 0.8823327074334947, "witness_commit_ms": 1.0317666478657512, "verify_ms": 0.6152071102211494, "process_peak_rss_kib": 1.0055777731003999}}
+arithmetic-n1024-b65-s100-t16-seed43-candidate
+arithmetic-n1024-b65-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.8959928223853794, "prove_ms": 0.8903275869102718, "witness_commit_ms": 0.9924183137558775, "verify_ms": 0.6102539912904993, "process_peak_rss_kib": 1.0074698538042899}}
+arithmetic-n1024-b65-s100-t16-seed44-baseline
+arithmetic-n1024-b65-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.8929921451553975, "prove_ms": 0.8864597732444899, "witness_commit_ms": 0.9867312279037735, "verify_ms": 0.6227390462075829, "process_peak_rss_kib": 1.0015804446317564}}
+arithmetic-n1024-b65-s128-t16-seed42-candidate
+arithmetic-n1024-b65-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9274444541495391, "prove_ms": 0.9246333711369205, "witness_commit_ms": 0.9678434868871294, "verify_ms": 0.6578772271371891, "process_peak_rss_kib": 0.9782947346557275}}
+arithmetic-n1024-b65-s128-t16-seed43-baseline
+arithmetic-n1024-b65-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9162308376409001, "prove_ms": 0.9145804102806556, "witness_commit_ms": 0.9619054842399996, "verify_ms": 0.661389346050127, "process_peak_rss_kib": 0.9994764946078945}}
+arithmetic-n1024-b65-s128-t16-seed44-candidate
+arithmetic-n1024-b65-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9085544850141319, "prove_ms": 0.9028719024162988, "witness_commit_ms": 1.0234054898002836, "verify_ms": 0.644416738250837, "process_peak_rss_kib": 1.003968253968254}}
+arithmetic-n1024-b513-s100-t16-seed42-baseline
+arithmetic-n1024-b513-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7650951243078492, "prove_ms": 0.7582351767213263, "witness_commit_ms": 0.9233393633174188, "verify_ms": 0.37353946724350606, "process_peak_rss_kib": 0.9860468282058263}}
+arithmetic-n1024-b513-s100-t16-seed43-candidate
+arithmetic-n1024-b513-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.7717373354554482, "prove_ms": 0.7649034442542718, "witness_commit_ms": 0.9331360025216565, "verify_ms": 0.37389860282830195, "process_peak_rss_kib": 0.985572320736655}}
+arithmetic-n1024-b513-s100-t16-seed44-baseline
+arithmetic-n1024-b513-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.7628724201339759, "prove_ms": 0.7530480820914636, "witness_commit_ms": 0.9429664707819464, "verify_ms": 0.3720501519424212, "process_peak_rss_kib": 0.9919642041822665}}
+arithmetic-n1024-b513-s128-t16-seed42-candidate
+arithmetic-n1024-b513-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7768158492753101, "prove_ms": 0.769538287443914, "witness_commit_ms": 0.9644906841906953, "verify_ms": 0.3881644349961502, "process_peak_rss_kib": 1.0043307993549873}}
+arithmetic-n1024-b513-s128-t16-seed43-baseline
+arithmetic-n1024-b513-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.7731462215737097, "prove_ms": 0.7660439467302056, "witness_commit_ms": 0.9403139087360993, "verify_ms": 0.38485949663359986, "process_peak_rss_kib": 1.0079907887161774}}
+arithmetic-n1024-b513-s128-t16-seed44-candidate
+arithmetic-n1024-b513-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 513, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.7664042313632451, "prove_ms": 0.7585981131558247, "witness_commit_ms": 0.93230834402761, "verify_ms": 0.38428000775545007, "process_peak_rss_kib": 1.0009447439974193}}
+arithmetic-n1024-b1024-s100-t16-seed42-baseline
+arithmetic-n1024-b1024-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7410242025787357, "prove_ms": 0.7306119310530851, "witness_commit_ms": 0.9838449935792817, "verify_ms": 0.41234167666591764, "process_peak_rss_kib": 0.9979178530751709}}
+arithmetic-n1024-b1024-s100-t16-seed43-candidate
+arithmetic-n1024-b1024-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.7437550050640112, "prove_ms": 0.7331216918137456, "witness_commit_ms": 0.9602223865708095, "verify_ms": 0.41134433743476345, "process_peak_rss_kib": 1.0016918665740593}}
+arithmetic-n1024-b1024-s100-t16-seed44-baseline
+arithmetic-n1024-b1024-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.7425156158202169, "prove_ms": 0.7300892417760434, "witness_commit_ms": 0.9887643382455497, "verify_ms": 0.4296085835235889, "process_peak_rss_kib": 1.000978438767523}}
+arithmetic-n1024-b1024-s128-t16-seed42-candidate
+arithmetic-n1024-b1024-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.7510785110812288, "prove_ms": 0.7368232416157386, "witness_commit_ms": 1.015922989297659, "verify_ms": 0.4240805759184994, "process_peak_rss_kib": 0.9995193078032366}}
+arithmetic-n1024-b1024-s128-t16-seed43-baseline
+arithmetic-n1024-b1024-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.747369749895927, "prove_ms": 0.736725427474044, "witness_commit_ms": 1.0105161354750818, "verify_ms": 0.42887694097192364, "process_peak_rss_kib": 1.0003393463118413}}
+arithmetic-n1024-b1024-s128-t16-seed44-candidate
+arithmetic-n1024-b1024-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 1024, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.7448656190361536, "prove_ms": 0.732589328517282, "witness_commit_ms": 0.9891718758549787, "verify_ms": 0.41755013904148264, "process_peak_rss_kib": 1.0017821817468946}}

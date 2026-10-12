@@ -1,0 +1,15 @@
+{
+  "workload": "1024 distinct original-Falcon signatures per configuration; fn-dsa 0.3.0; 32-byte messages; seed 42; matching input digest between full and arithmetic at each degree",
+  "trials": "One warm-up followed by five measured trials in one fresh process per configuration; table timings are medians; every proof including warm-ups verified",
+  "machine": "AMD Ryzen 9 9950X3D; CPU 6, SMT sibling 22; 96 MiB shared L3; powersave governor with boost enabled",
+  "single_core": "RAYON_NUM_THREADS=1 and --threads 1; main and all worker/helper threads pinned to CPU 6. Affinities sampled every second. SMT sibling 22 was 100% idle in three runs and 99.936% idle in full Falcon-1024 (aggregate CPU tick accounting). Selected CPU and sibling each below 2% busy during each preceding five-second check. No exclusive OS core reservation.",
+  "build": "Current checkout ac2b42feae0cfcfd86eda449a42edb4942cfa15f with pre-existing user changes; release opt-level 3, -C target-cpu=native, fat LTO and one codegen unit. Build logs, source hashes and executable hashes retained. Tracing and allocator instrumentation disabled.",
+  "security": "Explicit 128-bit target under repository computational grinding model; composed algebraic/IOP security accounting checked >=128 for all four configurations; BLAKE3 collision bound stated separately by implementation",
+  "prover_time": "Prepared prove call, excluding initial witness commitment",
+  "commit_plus_prover_time": "Checked witness derivation, packing, initial source commitment and proof generation; configuration setup and input generation excluded. Public-target hashing is external for arithmetic.",
+  "verifier_time": "Prepared verification against public statement, using one configured worker; setup excluded",
+  "peak_memory": "Process-wide maximum resident set (RSS) from Linux wait4 rusage, including preparation, warm-up, persistent caches and measured trials; not phase-isolated prover heap",
+  "proof_size": "Canonical stored payload including the 32-byte source commitment root, excluding public inputs and outer framing. Full payload API excludes its external root, so add 32 bytes; arithmetic API already includes root. No complete Falcon transport codec is defined.",
+  "scope": "Full includes SHAKE/HashToPoint and arithmetic relation. Arithmetic proves short s1,s2 for public h,t and assumes caller establishes desired HashToPoint target.",
+  "units": "1 KiB = 1024 bytes; 1 MiB = 1024 KiB"
+}

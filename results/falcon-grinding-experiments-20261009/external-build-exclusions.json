@@ -1,0 +1,21 @@
+[
+  "arithmetic-1024-t8-s44-weighted_external_queries120",
+  "arithmetic-1024-t8-s43-weighted",
+  "arithmetic-1024-t8-s44-weighted_external",
+  "arithmetic-1024-t8-s43-queries124",
+  "arithmetic-1024-t8-s43-baseline",
+  "arithmetic-1024-t8-s44-queries124",
+  "arithmetic-1024-t8-s44-original",
+  "arithmetic-1024-t8-s43-weighted_external_queries120",
+  "arithmetic-1024-t8-s43-queries120",
+  "arithmetic-1024-t8-s44-queries116",
+  "arithmetic-1024-t8-s43-original",
+  "arithmetic-1024-t8-s44-queries120",
+  "arithmetic-1024-t8-s44-global",
+  "arithmetic-1024-t8-s44-weighted",
+  "arithmetic-1024-t8-s44-weighted_queries120",
+  "arithmetic-1024-t8-s43-queries116",
+  "arithmetic-1024-t8-s43-weighted_queries120",
+  "arithmetic-1024-t8-s44-baseline",
+  "full-1024-t16-s44-weighted_queries120"
+]

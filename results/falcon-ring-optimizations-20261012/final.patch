@@ -1,0 +1,875 @@
+diff --git a/src/piop/spartan/falcon1024_algebraic/ring.rs b/src/piop/spartan/falcon1024_algebraic/ring.rs
+index eaad4e0ed..163525dbb 100644
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -4,7 +4,7 @@
+ //! coefficient vectors to the same BitZ source used by the norm proof.
+ 
+ use field::{
+-    BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint,
++    BatchMulAcc, FpSignedLinearAcc, PreparedLinearCombination, Reduce, RingOps,
+     q12289::{PowerBasis, PowerCoordinates},
+ };
+ #[cfg(feature = "parallel")]
+@@ -12,7 +12,6 @@ use rayon::prelude::*;
+ 
+ use crate::{
+     piop::spartan::{
+-        SpartanField,
+         falcon_extension::FalconExtension,
+         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+         squeeze_field,
+@@ -313,38 +312,77 @@ fn coordinates(
+     let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
+     let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
+     let mut targets = vec![Ext::ZERO; batch];
+-    let fill = |(i, ((a, b), target)): (
++    // Four independent SIMD states hide the dependency chain in each pair.
++    // Portable builds keep one signature per task and the existing recurrence.
++    const PAIRS: usize = if cfg!(all(
++        target_arch = "x86_64",
++        target_feature = "avx512f",
++        target_feature = "avx512bw"
++    )) {
++        4
++    } else {
++        1
++    };
++    #[cfg(feature = "parallel")]
++    let workers = rayon::current_num_threads();
++    #[cfg(not(feature = "parallel"))]
++    let workers = 1;
++    // Keep at least one independent task per worker for small batches.
++    let group_size = if batch / PAIRS >= workers { PAIRS } else { 1 };
++    let prepare = |i: usize, target: &mut Ext| {
++        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
++        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
++        // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplication by X gives
++        // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j]. Apply lambda first
++        // to obtain canonical adjoint coordinates in O(N*K) per signature.
++        let subtract = basis.encode(lambda[i].mul(wrap));
++        ([basis.encode(lambda[i]), basis.encode(lambda_h)], subtract)
++    };
++    let fill = |(chunk, ((a, b), targets)): (
+         usize,
+         (
+             (&mut [CoordinatesInAlpha], &mut [CoordinatesInAlpha]),
+-            &mut Ext,
++            &mut [Ext],
+         ),
+     )| {
+-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
+-        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
+-        // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplying by X wraps
+-        // h[N-1-j] from degree N to degree zero, so
+-        // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j].
+-        // Applying lambda before the recurrence gives the adjoint weights on
+-        // s2 directly, with O(N*K) canonical base-field operations per key.
+-        let subtract = basis.encode(lambda[i].mul(wrap));
+-        basis.fill_powers_adjoint_pair(
+-            [basis.encode(lambda[i]), basis.encode(lambda_h)],
+-            subtract,
+-            &public.public_keys[i],
+-            [a, b],
+-        );
++        let start = chunk * group_size;
++        if PAIRS > 1 && targets.len() == PAIRS {
++            let prepared: [_; PAIRS] = std::array::from_fn(|i| prepare(start + i, &mut targets[i]));
++            let mut a = a.chunks_mut(N);
++            let mut b = b.chunks_mut(N);
++            basis.fill_powers_adjoint_pairs(
++                prepared.map(|v| v.0),
++                prepared.map(|v| v.1),
++                std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
++                std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
++            );
++        } else {
++            for (i, ((a, b), target)) in a
++                .chunks_mut(N)
++                .zip(b.chunks_mut(N))
++                .zip(targets)
++                .enumerate()
++            {
++                let (starts, subtract) = prepare(start + i, target);
++                basis.fill_powers_adjoint_pair(
++                    starts,
++                    subtract,
++                    &public.public_keys[start + i],
++                    [a, b],
++                );
++            }
++        }
+     };
+     #[cfg(feature = "parallel")]
+-    s1.par_chunks_mut(N)
+-        .zip(s2.par_chunks_mut(N))
+-        .zip(targets.par_iter_mut())
++    s1.par_chunks_mut(group_size * N)
++        .zip(s2.par_chunks_mut(group_size * N))
++        .zip(targets.par_chunks_mut(group_size))
+         .enumerate()
+         .for_each(fill);
+     #[cfg(not(feature = "parallel"))]
+-    s1.chunks_mut(N)
+-        .zip(s2.chunks_mut(N))
+-        .zip(targets.iter_mut())
++    s1.chunks_mut(group_size * N)
++        .zip(s2.chunks_mut(group_size * N))
++        .zip(targets.chunks_mut(group_size))
+         .enumerate()
+         .for_each(fill);
+     let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
+@@ -436,14 +474,16 @@ fn collapse_claim(
+     for k in 1..EXTENSION_DEGREE {
+         xi_powers[k] = field.mul(&xi_powers[k - 1], &xi);
+     }
++    // Prepare an extra Montgomery factor once for both vectors. With weights
++    // below p and coordinates at most q-1, S <= 11*(q-1)*(p-1) < p*2^128.
++    // One REDC therefore returns the required Montgomery scale without a
++    // general remainder reduction for each eleven-term dot product.
++    let prepared =
++        <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(field, xi_powers);
+     let weight = |value: &CoordinatesInAlpha| {
+-        // Eleven 126-bit field representatives times fourteen-bit coordinates
+-        // fit in the 192-bit linear accumulator, retaining Montgomery scale.
+-        let mut sum = FpLinearAcc::<2, 1>::default();
+-        for (&coordinate, power) in value.coordinates().iter().zip(&xi_powers) {
+-            sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
+-        }
+-        field.reduce(sum)
++        <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
++            u64::from(value.coordinates()[k])
++        })
+     };
+     #[cfg(feature = "parallel")]
+     let weights_s1 = coordinates.s1.par_iter().map(weight).collect();
+@@ -476,7 +516,11 @@ fn error(message: impl Into<String>) -> FalconError {
+ mod tests {
+     use super::super::FalconAlgebraicWitness;
+     use super::*;
+-    use crate::transcript::{Blake3Transcript, traits::ConstTranscribable};
++    use crate::{
++        piop::spartan::SpartanField,
++        transcript::{Blake3Transcript, traits::ConstTranscribable},
++    };
++    use field::Uint;
+     use std::collections::VecDeque;
+ 
+     fn fixture(batch: usize) -> (Layout, FalconAlgebraicStatement, WitnessData) {
+@@ -506,6 +550,80 @@ mod tests {
+         F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap()
+     }
+ 
++    #[test]
++    fn prepared_collapse_matches_individual_field_operations() {
++        // For alpha=Z, encode preserves the coordinates, including q-1.
++        let basis =
++            PowerBasis::try_new(Ext::new(std::array::from_fn(|k| u16::from(k == 1)))).unwrap();
++        let mut values = vec![
++            [0; EXTENSION_DEGREE],
++            [1; EXTENSION_DEGREE],
++            [(Q - 1) as u16; EXTENSION_DEGREE],
++        ];
++        for coordinate in 0..EXTENSION_DEGREE {
++            values.push(std::array::from_fn(|k| {
++                if k == coordinate { (Q - 1) as u16 } else { 0 }
++            }));
++        }
++        let mut state = 0x1234_5678_9abc_def0u64;
++        for _ in 0..257 {
++            values.push(std::array::from_fn(|_| {
++                state ^= state << 13;
++                state ^= state >> 7;
++                state ^= state << 17;
++                (state % Q as u64) as u16
++            }));
++        }
++        let coordinates = Coordinates {
++            s1: values.iter().map(|&v| basis.encode(Ext::new(v))).collect(),
++            s2: values
++                .iter()
++                .rev()
++                .map(|&v| basis.encode(Ext::new(v)))
++                .collect(),
++            target: basis.encode(Ext::new([(Q - 1) as u16; EXTENSION_DEGREE])),
++        };
++        let bound = carry_bound(1024) as i64;
++        let carries = std::array::from_fn(|k| [0, 1, -1, bound, -bound][k % 5]);
++        for prime in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
++            let field = F::make_cfg(&Uint::from(prime)).unwrap();
++            for xi in [0, 1, prime - 1, 1234567890123456789] {
++                let xi = F::from_with_cfg(xi, &field);
++                let actual = collapse_claim(&coordinates, &carries, xi, &field);
++                let mut powers = [field.one(); EXTENSION_DEGREE];
++                for k in 1..EXTENSION_DEGREE {
++                    powers[k] = field.mul(&powers[k - 1], &xi);
++                }
++                for (weights, inputs) in [
++                    (&actual.weights_s1, &coordinates.s1),
++                    (&actual.weights_s2, &coordinates.s2),
++                ] {
++                    for (weight, input) in weights.iter().zip(inputs) {
++                        let expected = input.coordinates().iter().zip(powers).fold(
++                            field.zero(),
++                            |sum, (&c, power)| {
++                                field.add(
++                                    &sum,
++                                    &field.mul(&F::from_with_cfg(u64::from(c), &field), &power),
++                                )
++                            },
++                        );
++                        assert_eq!(*weight, expected);
++                    }
++                }
++                let expected = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
++                    let value = i128::from(coordinates.target.coordinates()[k])
++                        + i128::from(Q) * i128::from(carries[k]);
++                    field.add(
++                        &sum,
++                        &field.mul(&F::from_with_cfg(value, &field), &powers[k]),
++                    )
++                });
++                assert_eq!(actual.target, expected);
++            }
++        }
++    }
++
+     fn dot(claim: &PreparedClaim, data: &WitnessData, field: &Cfg) -> F {
+         let mut sum = field.zero();
+         for (weights, coefficients) in [
+@@ -553,8 +671,8 @@ mod tests {
+ 
+     #[test]
+     fn alpha_coordinates_and_carries_match_independent_fixed_basis_reference() {
+-        let (_, mut public, mut data) = fixture(3);
+-        for i in 0..3 {
++        let (_, mut public, mut data) = fixture(5);
++        for i in 0..5 {
+             public.public_keys[i] = std::array::from_fn(|j| ((i * 37 + j * 101) as i64 % Q) as u16);
+             data.witness.s1[i] = std::array::from_fn(|j| (j as i16 % 17) - 8);
+             data.witness.s2[i] = std::array::from_fn(|j| (j as i16 % 11) - 5);
+@@ -566,9 +684,17 @@ mod tests {
+         }
+         let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
+         let basis = PowerBasis::try_new(alpha).unwrap();
+-        let lambda: Vec<_> = (0..3)
++        let lambda: Vec<_> = (0..5)
+             .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
+             .collect();
++        #[cfg(feature = "parallel")]
++        let actual = rayon::ThreadPoolBuilder::new()
++            .num_threads(1)
++            .build()
++            .unwrap()
++            .install(|| coordinates(&public, &lambda, alpha))
++            .unwrap();
++        #[cfg(not(feature = "parallel"))]
+         let actual = coordinates(&public, &lambda, alpha).unwrap();
+         let mut reference = Coordinates {
+             s1: vec![],
+@@ -577,7 +703,7 @@ mod tests {
+         };
+         let powers = powers(alpha);
+         let mut target = Ext::ZERO;
+-        for i in 0..3 {
++        for i in 0..5 {
+             target = target.add(lambda[i].mul(eval_public(&public.targets[i], &powers)));
+             for (j, &power) in powers[..N].iter().enumerate() {
+                 reference.s1.push(basis.encode(lambda[i].mul(power)));
+@@ -598,6 +724,18 @@ mod tests {
+             calculate_carries(&actual, &data).unwrap(),
+             calculate_carries(&reference, &data).unwrap()
+         );
++        #[cfg(feature = "parallel")]
++        for workers in [8, 16] {
++            let other = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap()
++                .install(|| coordinates(&public, &lambda, alpha))
++                .unwrap();
++            assert_eq!(other.s1, reference.s1);
++            assert_eq!(other.s2, reference.s2);
++            assert_eq!(other.target, reference.target);
++        }
+         assert!(coordinates(&public, &lambda, Ext::ONE).is_err());
+     }
+ 
+diff --git a/src/piop/spartan/falcon1024_algebraic/source.rs b/src/piop/spartan/falcon1024_algebraic/source.rs
+index 5cd595f7d..7d978bff9 100644
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -2,7 +2,7 @@ use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error}
+ use crate::pcs::IntegerMatrixLayout;
+ #[cfg(test)]
+ use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
+-use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
++use crate::piop::spartan::falcon_polynomial::NegacyclicWorkspace;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -132,8 +132,7 @@ impl WitnessData {
+             let mut s1 = [0; N];
+             let mut norm = 0;
+             for j in 0..N {
+-                let centered =
+-                    center(i64::from(public.targets[i][j]) - product[j] + product[N + j]);
++                let centered = center(i64::from(public.targets[i][j]) - product[j]);
+                 s1[j] = centered;
+                 norm += i64::from(centered).unsigned_abs().pow(2);
+                 norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
+@@ -166,8 +165,8 @@ impl WitnessData {
+         let slacks = check_norms(&witness)?;
+         map_products(public, &witness.s2, |i, product| {
+             for j in 0..N {
+-                let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
+-                    - i64::from(witness.s1[i][j]);
++                let residual =
++                    i64::from(public.targets[i][j]) - product[j] - i64::from(witness.s1[i][j]);
+                 if residual.rem_euclid(Q) != 0 {
+                     return Err(error("invalid algebraic ring witness"));
+                 }
+@@ -188,14 +187,14 @@ fn map_products<T: Send>(
+         (0..s2.len())
+             .into_par_iter()
+             .map_init(
+-                || PolynomialWorkspace::new(N),
++                || NegacyclicWorkspace::new(N),
+                 |workspace, i| f(i, workspace.product(&public.public_keys[i], &s2[i])),
+             )
+             .collect()
+     }
+     #[cfg(not(feature = "parallel"))]
+     {
+-        let mut workspace = PolynomialWorkspace::new(N);
++        let mut workspace = NegacyclicWorkspace::new(N);
+         (0..s2.len())
+             .map(|i| f(i, workspace.product(&public.public_keys[i], &s2[i])))
+             .collect()
+@@ -203,7 +202,7 @@ fn map_products<T: Send>(
+ }
+ 
+ fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
+-    std::array::from_fn(|j| center(i64::from(target[j]) - product[j] + product[N + j]))
++    std::array::from_fn(|j| center(i64::from(target[j]) - product[j]))
+ }
+ 
+ fn center(value: i64) -> i16 {
+@@ -445,8 +444,10 @@ mod tests {
+         assert_eq!(combined.witness, witness);
+         assert_eq!(combined.slacks, data.slacks);
+         assert_eq!(
+-            PolynomialWorkspace::new(N).product(&h, &s2),
+-            ordinary.map(|coefficient| coefficient.rem_euclid(Q))
++            NegacyclicWorkspace::new(N).product(&h, &s2),
++            (0..N)
++                .map(|j| (ordinary[j] - ordinary[N + j]).rem_euclid(Q))
++                .collect::<Vec<_>>()
+         );
+         assert_eq!(
+             data.slacks[0],
+diff --git a/src/piop/spartan/falcon_polynomial.rs b/src/piop/spartan/falcon_polynomial.rs
+index 529052cc4..1e7770a91 100644
+--- a/src/piop/spartan/falcon_polynomial.rs
++++ b/src/piop/spartan/falcon_polynomial.rs
+@@ -58,6 +58,91 @@ impl PolynomialWorkspace {
+     }
+ }
+ 
++/// Reusable multiplication in F_q[X]/(X^n+1) for the algebraic relation.
++/// The ordinary workspace above retains the high coefficients needed by full
++/// Falcon; this workspace returns only the n canonical negacyclic coefficients.
++pub(crate) struct NegacyclicWorkspace {
++    output: Vec<i64>,
++    left: Vec<u32>,
++    right: Vec<u32>,
++    tables: &'static NegacyclicTables,
++}
++
++impl NegacyclicWorkspace {
++    pub(crate) fn new(n: usize) -> Self {
++        static TABLES_512: OnceLock<NegacyclicTables> = OnceLock::new();
++        static TABLES_1024: OnceLock<NegacyclicTables> = OnceLock::new();
++        let tables = match n {
++            512 => &TABLES_512,
++            1024 => &TABLES_1024,
++            _ => panic!("unsupported Falcon polynomial degree"),
++        }
++        .get_or_init(|| NegacyclicTables::new(n));
++        Self {
++            output: vec![0; n],
++            left: vec![0; n],
++            right: vec![0; n],
++            tables,
++        }
++    }
++
++    pub(crate) fn product(&mut self, h: &[u16], s2: &[i16]) -> &[i64] {
++        let n = self.output.len();
++        assert_eq!(h.len(), n);
++        assert_eq!(s2.len(), n);
++        // psi has order 2n, so twisting by psi^i turns the negacyclic product
++        // into an n-point cyclic convolution. All products below fit in u32:
++        // even (i16::MAX + 3q)*(q-1) is less than 2^30.
++        for i in 0..n {
++            let twist = self.tables.twist[i];
++            self.left[i] = u32::from(h[i]) * twist % Q;
++            self.right[i] = (i32::from(s2[i]) + 3 * Q as i32) as u32 * twist % Q;
++        }
++        forward_ntt(&mut self.left, &self.tables.ntt);
++        forward_ntt(&mut self.right, &self.tables.ntt);
++        for (left, right) in self.left.iter_mut().zip(&self.right) {
++            *left = *left * *right % Q;
++        }
++        inverse_ntt(&mut self.left, &self.tables.ntt);
++        for ((output, &value), &untwist) in self
++            .output
++            .iter_mut()
++            .zip(&self.left)
++            .zip(&self.tables.untwist)
++        {
++            *output = i64::from(value * untwist % Q);
++        }
++        &self.output
++    }
++}
++
++struct NegacyclicTables {
++    ntt: NttTables,
++    twist: Vec<u32>,
++    untwist: Vec<u32>,
++}
++
++impl NegacyclicTables {
++    fn new(n: usize) -> Self {
++        let psi = power(11, (Q - 1) / (2 * n) as u32);
++        let powers = |step| {
++            let mut value = 1;
++            (0..n)
++                .map(|_| {
++                    let result = value;
++                    value = value * step % Q;
++                    result
++                })
++                .collect()
++        };
++        Self {
++            ntt: NttTables::new(n),
++            twist: powers(psi),
++            untwist: powers(power(psi, Q - 2)),
++        }
++    }
++}
++
+ struct NttTables {
+     forward: Vec<Vec<u32>>,
+     inverse: Vec<Vec<u32>>,
+@@ -66,7 +151,7 @@ struct NttTables {
+ 
+ impl NttTables {
+     fn new(len: usize) -> Self {
+-        // 11 generates F_12289*. Both 1024 and 2048 divide q - 1.
++        // 11 generates F_12289*. Transform lengths 512/1024/2048 divide q-1.
+         let root = power(11, (Q - 1) / len as u32);
+         let inverse_root = power(root, Q - 2);
+         let mut forward = Vec::new();
+@@ -217,4 +302,60 @@ mod tests {
+             compare(&h, &s2, &mut workspace);
+         }
+     }
++
++    #[test]
++    fn negacyclic_workspace_matches_schoolbook_and_ordinary_product() {
++        let mut state = 0x1234_5678_9abc_def0u64;
++        for n in [512, 1024] {
++            let mut workspace = NegacyclicWorkspace::new(n);
++            let mut ordinary = PolynomialWorkspace::new(n);
++            let mut compare = |h: &[u16], s2: &[i16]| {
++                let expected = schoolbook(h, s2);
++                let ordinary = ordinary.product(h, s2);
++                let actual = workspace.product(h, s2);
++                assert_eq!(actual.len(), n);
++                for j in 0..n {
++                    assert_eq!(
++                        actual[j],
++                        (expected[j] - expected[n + j]).rem_euclid(i64::from(Q))
++                    );
++                    assert_eq!(
++                        actual[j],
++                        (ordinary[j] - ordinary[n + j]).rem_euclid(i64::from(Q))
++                    );
++                    assert!((0..i64::from(Q)).contains(&actual[j]));
++                }
++            };
++            for (h, s) in [
++                (Q as u16 - 1, -16384),
++                (Q as u16 - 1, 16383),
++                (u16::MAX, i16::MIN),
++                (u16::MAX, i16::MAX),
++            ] {
++                compare(&vec![h; n], &vec![s; n]);
++            }
++            for _ in 0..8 {
++                let mut next = || {
++                    state ^= state << 13;
++                    state ^= state >> 7;
++                    state ^= state << 17;
++                    state
++                };
++                let h: Vec<_> = (0..n).map(|_| next() as u16).collect();
++                let s: Vec<_> = (0..n).map(|_| next() as i16).collect();
++                compare(&h, &s);
++            }
++            let mut h = vec![0; n];
++            let mut s = vec![0; n];
++            compare(&h, &s);
++            for (i, j) in [(0, 0), (n - 1, 1), (n - 1, n - 1)] {
++                h[i] = Q as u16 - 1;
++                s[j] = -16384;
++                compare(&h, &s);
++                h[i] = 0;
++                s[j] = 0;
++            }
++            compare(&h, &s);
++        }
++    }
+ }
+diff --git a/vendor/field/src/q12289.rs b/vendor/field/src/q12289.rs
+index 57933e522..793a6f1bf 100644
+--- a/vendor/field/src/q12289.rs
++++ b/vendor/field/src/q12289.rs
+@@ -412,6 +412,56 @@ impl<const K: usize> PowerBasis<K> {
+             }
+         }
+     }
++
++    /// Emit independent power/adjoint pairs with one shared public generator.
++    ///
++    /// Every polynomial and output must have the same length. Coordinates and
++    /// subtraction vectors belong to this basis, and polynomial coefficients
++    /// must be canonical. Interleaving pairs hides recurrence latency on AVX512;
++    /// other targets retain the individual portable recurrences.
++    pub fn fill_powers_adjoint_pairs<const PAIRS: usize>(
++        &self,
++        starts: [[PowerCoordinates<K>; 2]; PAIRS],
++        subtract: [PowerCoordinates<K>; PAIRS],
++        polynomials: [&[u16]; PAIRS],
++        outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
++    ) {
++        const {
++            assert!(PAIRS > 0);
++        }
++        let len = polynomials[0].len();
++        for i in 0..PAIRS {
++            assert_eq!(polynomials[i].len(), len, "polynomial lengths differ");
++            assert_eq!(outputs[i][0].len(), len, "sequence lengths differ");
++            assert_eq!(outputs[i][1].len(), len, "sequence lengths differ");
++            assert!(
++                polynomials[i].iter().all(|&scalar| u64::from(scalar) < Q),
++                "noncanonical base-field scalar"
++            );
++        }
++        #[cfg(all(
++            target_arch = "x86_64",
++            target_feature = "avx512f",
++            target_feature = "avx512bw"
++        ))]
++        if K == 11 {
++            // SAFETY: build features, degree, matching lengths, and canonical
++            // scalars were checked; coordinate constructors preserve their range.
++            unsafe {
++                avx512::fill_powers_adjoint_pairs(
++                    &self.feedback,
++                    starts,
++                    subtract,
++                    polynomials,
++                    outputs,
++                )
++            };
++            return;
++        }
++        for (i, output) in outputs.into_iter().enumerate() {
++            self.fill_powers_adjoint_pair(starts[i], subtract[i], polynomials[i], output);
++        }
++    }
+ }
+ 
+ #[inline]
+@@ -577,6 +627,95 @@ mod power_basis_tests {
+         check_adjoint_pair::<11>();
+     }
+ 
++    fn check_adjoint_pairs<const K: usize>() {
++        let alpha = Q12289Extension(std::array::from_fn(|k| u16::from(k == 1)));
++        let basis = PowerBasis::try_new(alpha).unwrap();
++        let fixed: [[Q12289Extension<K>; 2]; 2] = std::array::from_fn(|i| {
++            std::array::from_fn(|j| {
++                Q12289Extension(std::array::from_fn(|k| {
++                    ((i * 311 + j * 79 + k * 101) % Q as usize) as u16
++                }))
++            })
++        });
++        let subtract = fixed.map(|v| v[1]);
++        for len in [0, 1, 3, 17, 513] {
++            let polynomials: [Vec<u16>; 2] = std::array::from_fn(|i| {
++                (0..len)
++                    .map(|j| ((i * 73 + j * 931) % Q as usize) as u16)
++                    .collect()
++            });
++            let mut buffers = vec![[PowerCoordinates::ZERO; 2]; len * 2];
++            // Separate vectors exercise the actual signature-major API layout.
++            let mut a = vec![PowerCoordinates::ZERO; len * 2];
++            let mut b = a.clone();
++            let (a0, a1) = a.split_at_mut(len);
++            let (b0, b1) = b.split_at_mut(len);
++            basis.fill_powers_adjoint_pairs(
++                fixed.map(|v| v.map(|x| basis.encode(x))),
++                subtract.map(|x| basis.encode(x)),
++                [&polynomials[0], &polynomials[1]],
++                [[a0, b0], [a1, b1]],
++            );
++            for i in 0..2 {
++                let [mut first, mut second] = fixed[i];
++                for j in 0..len {
++                    buffers[i * len + j] = [basis.encode(first), basis.encode(second)];
++                    first = first.mul(alpha);
++                    let mut scalar = Q12289Extension::ZERO;
++                    scalar.0[0] = polynomials[i][len - 1 - j];
++                    second = second.mul(alpha).sub(subtract[i].mul(scalar));
++                }
++            }
++            for (j, expected) in buffers.iter().enumerate() {
++                assert_eq!(a[j], expected[0]);
++                assert_eq!(b[j], expected[1]);
++            }
++        }
++    }
++
++    #[test]
++    fn interleaved_dispatch_matches_fixed_basis_reference() {
++        check_adjoint_pairs::<9>();
++        check_adjoint_pairs::<10>();
++        check_adjoint_pairs::<11>();
++    }
++
++    #[test]
++    #[should_panic(expected = "noncanonical base-field scalar")]
++    fn interleaved_pairs_reject_noncanonical_polynomials() {
++        let basis = PowerBasis::try_new(Q12289Extension::<11>(std::array::from_fn(|k| {
++            u16::from(k == 1)
++        })))
++        .unwrap();
++        basis.fill_powers_adjoint_pairs(
++            [[PowerCoordinates::ZERO; 2]; 2],
++            [PowerCoordinates::ZERO; 2],
++            [&[0], &[Q as u16]],
++            [
++                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
++                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
++            ],
++        );
++    }
++
++    #[test]
++    #[should_panic(expected = "polynomial lengths differ")]
++    fn interleaved_pairs_reject_mismatched_polynomials() {
++        let basis = PowerBasis::try_new(Q12289Extension::<11>(std::array::from_fn(|k| {
++            u16::from(k == 1)
++        })))
++        .unwrap();
++        basis.fill_powers_adjoint_pairs(
++            [[PowerCoordinates::ZERO; 2]; 2],
++            [PowerCoordinates::ZERO; 2],
++            [&[0], &[]],
++            [
++                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
++                [&mut [], &mut []],
++            ],
++        );
++    }
++
+     #[test]
+     #[should_panic(expected = "polynomial length differs")]
+     fn adjoint_pair_rejects_polynomial_length() {
+diff --git a/vendor/field/src/q12289/avx512.rs b/vendor/field/src/q12289/avx512.rs
+index a32058820..40ecdb8bb 100644
+--- a/vendor/field/src/q12289/avx512.rs
++++ b/vendor/field/src/q12289/avx512.rs
+@@ -179,10 +179,91 @@ unsafe fn fill_pair<const K: usize, const ADJOINT: bool>(
+         }
+     }
+ }
++/// Interleave independent paired recurrences, sharing feedback preparation.
++///
++/// # Safety
++/// AVX512F+BW must be available, K must be eleven, PAIRS must be positive,
++/// all polynomials/outputs must have equal lengths, and all inputs must be
++/// canonical. Each mutable output is a distinct slice supplied by the caller.
++#[target_feature(enable = "avx512f,avx512bw")]
++pub(super) unsafe fn fill_powers_adjoint_pairs<const K: usize, const PAIRS: usize>(
++    feedback: &[u16; K],
++    starts: [[PowerCoordinates<K>; 2]; PAIRS],
++    subtract: [PowerCoordinates<K>; PAIRS],
++    polynomials: [&[u16]; PAIRS],
++    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
++) {
++    assert_eq!(K, 11);
++    assert!(PAIRS > 0);
++    let len = polynomials[0].len();
++    for i in 0..PAIRS {
++        assert_eq!(polynomials[i].len(), len);
++        assert_eq!(outputs[i][0].len(), len);
++        assert_eq!(outputs[i][1].len(), len);
++    }
++    let mut coefficients = [0i16; 32];
++    let mut quotients = [0i16; 32];
++    for i in 0..11 {
++        (coefficients[i], quotients[i]) = centered_multiplier(feedback[i]);
++        coefficients[i + 16] = coefficients[i];
++        quotients[i + 16] = quotients[i];
++    }
++    // These arrays each contain a full vector; unaligned loads are permitted.
++    let feedback = unsafe { _mm512_loadu_si512(coefficients.as_ptr().cast()) };
++    let quotients = unsafe { _mm512_loadu_si512(quotients.as_ptr().cast()) };
++    let correction: [(__m512i, __m512i); PAIRS] = std::array::from_fn(|pair| {
++        let mut coefficients = [0i16; 32];
++        let mut quotients = [0i16; 32];
++        for i in 0..11 {
++            (coefficients[16 + i], quotients[16 + i]) = centered_multiplier(subtract[pair].0[i]);
++        }
++        // Zero lower lanes leave the ordinary power sequence unchanged.
++        unsafe {
++            (
++                _mm512_loadu_si512(coefficients.as_ptr().cast()),
++                _mm512_loadu_si512(quotients.as_ptr().cast()),
++            )
++        }
++    });
++    // Degree eleven and canonical starts satisfy load_starts' shape contract.
++    let mut values = starts.map(|start| unsafe { load_starts(start) });
++    let q = _mm512_set1_epi16(Q as i16);
++    let top_indices = unsafe { _mm512_loadu_si512(TOP_INDICES.as_ptr().cast()) };
++    let shift_indices = unsafe { _mm512_loadu_si512(SHIFT_INDICES.as_ptr().cast()) };
++    for j in 0..len {
++        for pair in 0..PAIRS {
++            let [a, b] = &mut outputs[pair];
++            // Each output has len entries of exactly eleven writable u16s.
++            unsafe { store(values[pair], &mut a[j], &mut b[j]) };
++        }
++        if j + 1 == len {
++            break;
++        }
++        for pair in 0..PAIRS {
++            let value = values[pair];
++            let top = _mm512_permutexvar_epi16(top_indices, value);
++            let quotient = _mm512_mulhrs_epi16(top, quotients);
++            let product = _mm512_mullo_epi16(top, feedback);
++            let remainder = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
++            let shifted = _mm512_maskz_permutexvar_epi16(SHIFT, shift_indices, value);
++            let scalar = _mm512_set1_epi16(polynomials[pair][len - 1 - j] as i16);
++            let quotient = _mm512_mulhrs_epi16(scalar, correction[pair].1);
++            let product = _mm512_mullo_epi16(scalar, correction[pair].0);
++            let subtract = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
++            let sum = _mm512_sub_epi16(_mm512_add_epi16(remainder, shifted), subtract);
++            // As in fill_pair: each remainder lies in [-8448,8448] and the
++            // predecessor is canonical, giving sum in [-16896,29184].
++            values[pair] = unsafe { reduce_adjoint(sum, q) };
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::super::{PowerBasis, PowerCoordinates, Q12289Extension};
+-    use super::{fill_powers_adjoint_pair, fill_powers_pair, reduce_adjoint};
++    use super::{
++        fill_powers_adjoint_pair, fill_powers_adjoint_pairs, fill_powers_pair, reduce_adjoint,
++    };
+     use core::arch::x86_64::*;
+ 
+     const Q: u16 = 12_289;
+@@ -397,6 +478,84 @@ mod tests {
+         }
+     }
+ 
++    fn check_interleaved<const PAIRS: usize>() {
++        let mut state = 0xface_cafe_1234_5678;
++        for len in [0, 1, 2, 3, 7, 16, 17, 31, 32, 33, 255, 257, 512, 1024] {
++            for case in 0..16 {
++                let mut next = || match case {
++                    0 => 0,
++                    1 => Q - 1,
++                    2 => 6144,
++                    3 => 6145,
++                    _ => sample(&mut state),
++                };
++                let feedback = std::array::from_fn(|_| next());
++                let starts: [[PowerCoordinates<11>; 2]; PAIRS] = std::array::from_fn(|_| {
++                    std::array::from_fn(|_| PowerCoordinates(std::array::from_fn(|_| next())))
++                });
++                let subtract =
++                    std::array::from_fn(|_| PowerCoordinates(std::array::from_fn(|_| next())));
++                let polynomials: [Vec<u16>; PAIRS] =
++                    std::array::from_fn(|_| (0..len).map(|_| next()).collect());
++                let basis = PowerBasis {
++                    columns: [[0; 11]; 11],
++                    inverse: [[0; 11]; 11],
++                    feedback,
++                };
++                let sentinel = PowerCoordinates([u16::MAX; 11]);
++                let mut actual: [[Vec<PowerCoordinates<11>>; 2]; PAIRS] =
++                    std::array::from_fn(|_| std::array::from_fn(|_| vec![sentinel; len + 4]));
++                let mut buffers = actual.iter_mut();
++                let outputs = std::array::from_fn(|_| {
++                    let [a, b] = buffers.next().unwrap();
++                    [&mut a[2..len + 2], &mut b[2..len + 2]]
++                });
++                // Feature availability is checked by the test; inputs have
++                // canonical lanes and all guarded slices have the same length.
++                unsafe {
++                    fill_powers_adjoint_pairs(
++                        &feedback,
++                        starts,
++                        subtract,
++                        std::array::from_fn(|i| polynomials[i].as_slice()),
++                        outputs,
++                    );
++                }
++                for pair in 0..PAIRS {
++                    let [mut a, mut b] = starts[pair];
++                    for j in 0..len {
++                        assert_eq!(actual[pair][0][j + 2], a);
++                        assert_eq!(actual[pair][1][j + 2], b);
++                        basis.advance(&mut a);
++                        basis.advance_sub_scaled(
++                            &mut b,
++                            polynomials[pair][len - 1 - j],
++                            subtract[pair],
++                        );
++                    }
++                    for output in &actual[pair] {
++                        assert_eq!(&output[..2], &[sentinel; 2]);
++                        assert_eq!(&output[len + 2..], &[sentinel; 2]);
++                        assert!(
++                            output[2..len + 2]
++                                .iter()
++                                .all(|v| v.0.iter().all(|&c| c < Q))
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn interleaved_adjoint_matches_portable_with_guarded_tails() {
++        if !available() {
++            return;
++        }
++        check_interleaved::<2>();
++        check_interleaved::<4>();
++    }
++
+     #[target_feature(enable = "avx512f,avx512bw")]
+     unsafe fn check_adjoint_reduction() {
+         for base in (-16896_i32..=29184).step_by(32) {

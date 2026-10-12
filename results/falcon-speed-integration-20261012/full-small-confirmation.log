@@ -1,0 +1,25 @@
+1 cells, 8 pairs, 0 completed
+full-n1024-b1-s128-t8-seed45-baseline
+full-n1024-b1-s128-t8-seed45-candidate
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 45, "ratios": {"total_prover_ms": 0.9950930222394803, "prove_ms": 0.9998137748690255, "witness_commit_ms": 0.8623119650183181, "verify_ms": 1.0001268360741309, "process_peak_rss_kib": 0.9569136745607334}}
+full-n1024-b1-s128-t8-seed46-candidate
+full-n1024-b1-s128-t8-seed46-baseline
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 46, "ratios": {"total_prover_ms": 0.9930730503187306, "prove_ms": 0.9976374751950319, "witness_commit_ms": 0.8638547694824185, "verify_ms": 1.0034570204020623, "process_peak_rss_kib": 0.9552181873664938}}
+full-n1024-b1-s128-t8-seed47-baseline
+full-n1024-b1-s128-t8-seed47-candidate
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 47, "ratios": {"total_prover_ms": 0.9978389337585128, "prove_ms": 1.002899275003732, "witness_commit_ms": 0.8519736411585325, "verify_ms": 1.0000506047698123, "process_peak_rss_kib": 0.9956390738978751}}
+full-n1024-b1-s128-t8-seed48-candidate
+full-n1024-b1-s128-t8-seed48-baseline
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 48, "ratios": {"total_prover_ms": 0.9998195011187284, "prove_ms": 1.0054418360214954, "witness_commit_ms": 0.8476024632700603, "verify_ms": 1.0049088358441594, "process_peak_rss_kib": 1.0128174697365298}}
+full-n1024-b1-s128-t8-seed49-baseline
+full-n1024-b1-s128-t8-seed49-candidate
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 49, "ratios": {"total_prover_ms": 0.9929732550747864, "prove_ms": 0.9977584597517736, "witness_commit_ms": 0.8480881288484482, "verify_ms": 0.9983226483747286, "process_peak_rss_kib": 1.0004782400765184}}
+full-n1024-b1-s128-t8-seed50-candidate
+full-n1024-b1-s128-t8-seed50-baseline
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 50, "ratios": {"total_prover_ms": 0.9934176100369373, "prove_ms": 0.997267515120046, "witness_commit_ms": 0.8511531370661967, "verify_ms": 1.0017898703029682, "process_peak_rss_kib": 0.9990445099132097}}
+full-n1024-b1-s128-t8-seed51-baseline
+full-n1024-b1-s128-t8-seed51-candidate
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 51, "ratios": {"total_prover_ms": 1.0023868240224652, "prove_ms": 1.0082154156039234, "witness_commit_ms": 0.8425620373691589, "verify_ms": 0.9995736368962665, "process_peak_rss_kib": 1.0255031369673266}}
+full-n1024-b1-s128-t8-seed52-candidate
+full-n1024-b1-s128-t8-seed52-baseline
+{"matched": true, "cell": {"mode": "full", "degree": 1024, "batch": 1, "security_bits": 128, "threads": 8}, "seed": 52, "ratios": {"total_prover_ms": 0.9998222322566592, "prove_ms": 1.0051640339705652, "witness_commit_ms": 0.8457270027728431, "verify_ms": 1.0020925362185475, "process_peak_rss_kib": 1.019307535641548}}

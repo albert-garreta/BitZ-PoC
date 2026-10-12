@@ -1,0 +1,108 @@
+{
+  "cells": [
+    {
+      "cell": {
+        "batch": 16,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25752.0,
+          "candidate_median_of_seed_medians": 25704.0,
+          "candidate_over_baseline_geomean": 0.9986865673145888,
+          "observed_change_percent": -0.13134326854111755,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9890315755587544,
+            1.0084358117395076
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9904394757131842,
+            1.0068911511354737,
+            1.0099828419903292,
+            0.9876256767208044
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 5.126644499999999,
+          "candidate_median_of_seed_medians": 5.137995500000001,
+          "candidate_over_baseline_geomean": 1.0026293114456877,
+          "observed_change_percent": 0.26293114456876765,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9975716109429602,
+            1.007712654553011
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0075713957033712,
+            0.9981437148645118,
+            0.9969998349330031,
+            1.0078539332067686
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 5.297060999999999,
+          "candidate_median_of_seed_medians": 5.316874,
+          "candidate_over_baseline_geomean": 1.003537097824105,
+          "observed_change_percent": 0.353709782410494,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9993380698610519,
+            1.0077537693017666
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.008260469277269,
+            0.9983896731642828,
+            1.0002873674648702,
+            1.007247323967672
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 2.786985,
+          "candidate_median_of_seed_medians": 2.760119,
+          "candidate_over_baseline_geomean": 0.9925194005203257,
+          "observed_change_percent": -0.7480599479674277,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9903661400094848,
+            0.9956906401783849
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9919725809693514,
+            0.9973894792965714,
+            0.9901208760069059,
+            0.990611464766697
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.1687595,
+          "candidate_median_of_seed_medians": 0.16652499999999998,
+          "candidate_over_baseline_geomean": 0.9978485410297205,
+          "observed_change_percent": -0.2151458970279463,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9845170035988122,
+            1.010726288955332
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9786193183884774,
+            0.9945409342999705,
+            1.002424173013419,
+            1.0161797310517693
+          ]
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ]
+    }
+  ],
+  "completed_pairs": 4,
+  "limitations": "Finite-sample comparison on this machine and these inputs only. Each seed contributes the median of repeated proofs in one process per variant. Reported 95% bootstrap intervals resample paired seed ratios, not individual proofs; three seeds give weak uncertainty estimates and do not establish nonregression. Missing fixture caches are primed in a separate untimed process before either paired measurement. RSS is process lifetime high-water memory, including fixture setup and warmups, not per-proof allocated memory. Preparation and fixture generation are excluded from total_prover_ms."
+}

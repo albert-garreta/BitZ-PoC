@@ -11,6 +11,16 @@ pub const NONCE_BYTES: usize = 40;
 /// Domain identifier for the full Falcon verification protocol.
 pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v7";
 
+/// Hash public statement bytes without per-coefficient update overhead.
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) fn hash_statement_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
+    if bytes.len() >= 1 << 17 {
+        hasher.update_rayon(bytes);
+    } else {
+        hasher.update(bytes);
+    }
+}
+
 /// A malformed encoding or failed Falcon verification.
 #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub enum FalconError {
@@ -44,3 +54,49 @@ pub enum FalconError {
 
 #[cfg(feature = "falcon-hybrid")]
 pub(crate) mod grinding;
+
+#[cfg(all(test, feature = "falcon-hybrid"))]
+mod tests {
+    use super::hash_statement_bytes;
+
+    #[test]
+    fn bulk_statement_hash_preserves_streaming_transcript_digest() {
+        let bytes: Vec<u8> = (0..4 * 1024 * 1024)
+            .map(|i| (i * 37 + i / 251) as u8)
+            .collect();
+        for workers in [1, 2, 8] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                for len in [
+                    0,
+                    1,
+                    2048,
+                    (1 << 17) - 1,
+                    1 << 17,
+                    (1 << 17) + 1,
+                    bytes.len(),
+                ] {
+                    // Prefix and suffix represent the surrounding transcript fields;
+                    // the coefficient bytes need not start on a BLAKE3 block boundary.
+                    let mut reference = blake3::Hasher::new();
+                    reference.update(&[0x5a; 173]);
+                    let mut bulk = reference.clone();
+                    for coefficient in bytes[..len].chunks(2) {
+                        reference.update(coefficient);
+                    }
+                    hash_statement_bytes(&mut bulk, &bytes[..len]);
+                    reference.update(b"source-root-and-grinding-schedule");
+                    bulk.update(b"source-root-and-grinding-schedule");
+                    assert_eq!(
+                        reference.finalize(),
+                        bulk.finalize(),
+                        "len={len}, workers={workers}"
+                    );
+                }
+            });
+        }
+    }
+}

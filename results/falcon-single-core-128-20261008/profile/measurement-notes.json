@@ -1,0 +1,7 @@
+{
+  "method": "Exact binaries from initial measurements, same input seed42, batch1024, security128, --threads1, all threads pinnedCPU6. One warmup and three diagnostic trials per configuration; all16 proofs verified. Ordinary timing results unchanged.",
+  "aggregation": "Only prover-root descendants from measured trials included. Per-path repeated spans are summed within each trial then medians taken. Parent durations include children: do not add parent/child entries. Percentages are median per-trial ratios. Stage logging adds overhead (0.8-2.3% difference from initial prover medians).",
+  "arithmetic": "Source binding dominates both degrees; in arithmetic1024 tail preparation83.97ms and folding87.44ms plus prefix accumulators45.78ms dominate its258.50ms. Binding grinding0.95ms.",
+  "full": "Full1024 source binding1278.36ms is effectively tied with shared opening1256.94ms. Prefix accumulators779.27ms dominate binding. Opening includes Ligerito grinding559.37ms. Bridge706.30ms is the next major stage. Keccak prefix361.29ms.",
+  "candidate": "128-bit configurations currently select BindingOptions::REFERENCE. Existing optimized paths were qualified for batch1024/security100. Qualify transcript equivalence, all128-bit security schedules, and performance before extending. Full uses126-bit prime at128 vs115-bit at100, changing available prepared-reduction optimizations; arithmetic already uses126-bit primes at both security targets. No optimization or security change made."
+}

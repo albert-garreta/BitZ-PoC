@@ -1,0 +1,368 @@
+{
+  "host": "will",
+  "observed_at_unix": 1791326514.090534,
+  "read_only": true,
+  "settings_changed": false,
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "smt_active": "1",
+  "loadavg": "0.67 0.56 0.67 3/2098 2",
+  "frequency_policies": [
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy0",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "0"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy1",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "1"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy10",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "10"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy11",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "11"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy12",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "12"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy13",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "13"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy14",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "14"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy15",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "15"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy16",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "16"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy17",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "17"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy18",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "18"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy19",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "19"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy2",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "2"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy20",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "20"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy21",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "21"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy22",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "22"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy23",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "23"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy24",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "24"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy25",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "25"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy26",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "26"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy27",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "27"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy28",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "28"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy29",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "29"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy3",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "3"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy30",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "30"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy31",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "31"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy4",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "4"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy5",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "5"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy6",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "6"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy7",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "7"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy8",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "8"
+    },
+    {
+      "path": "/sys/devices/system/cpu/cpufreq/policy9",
+      "scaling_driver": "amd-pstate-epp",
+      "scaling_governor": "powersave",
+      "scaling_min_freq": "624194",
+      "scaling_max_freq": "5756452",
+      "energy_performance_preference": "balance_performance",
+      "affected_cpus": "9"
+    }
+  ],
+  "l3_domains": [
+    {
+      "representative_cpu": 0,
+      "smt_siblings": "0,16",
+      "l3": [
+        {
+          "size": "98304K",
+          "shared_cpu_list": "0-7,16-23"
+        }
+      ]
+    },
+    {
+      "representative_cpu": 8,
+      "smt_siblings": "8,24",
+      "l3": [
+        {
+          "size": "32768K",
+          "shared_cpu_list": "8-15,24-31"
+        }
+      ]
+    }
+  ],
+  "existing_controls": [
+    "machine-wide cooperative benchmark lock",
+    "global CPU idle >=88% before each process",
+    "20-second nominal initial idle hold",
+    "swap growth <=0.1GiB",
+    "16 Rayon threads",
+    "balanced AB/BA/BA/AB process order"
+  ],
+  "uncontrolled": [
+    "per-thread CPU placement and SMT siblings",
+    "serial verifier migration across96MiB/32MiB L3 domains",
+    "dynamic frequency/boost under amd-pstate-epp powersave and balance_performance"
+  ],
+  "note": "PID namespace visibility limits process-list inspection; global idle/load counters were inspected. No CPU affinity, governor, warmup, trial, seed, or gate setting was changed."
+}

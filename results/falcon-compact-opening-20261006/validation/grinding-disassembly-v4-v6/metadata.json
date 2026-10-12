@@ -1,0 +1,120 @@
+{
+  "baseline": {
+    "binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+    "functions": {
+      "scanner": {
+        "address": "0x17f370",
+        "size_bytes": 9443,
+        "instructions": 1631,
+        "entry_mod64": 48,
+        "entry_mod4096": 880,
+        "stack_references": 227,
+        "name": "bitz::utils::blake3x4::first_pow_nonce"
+      },
+      "parallel": {
+        "address": "0x17dbc0",
+        "size_bytes": 3742,
+        "instructions": 820,
+        "entry_mod64": 0,
+        "entry_mod4096": 3008,
+        "stack_references": 151,
+        "name": "bitz::utils::blake3x4::smallest_pow_nonce"
+      },
+      "pow_ok": {
+        "address": "0x17eca0",
+        "size_bytes": 818,
+        "instructions": 191,
+        "entry_mod64": 32,
+        "entry_mod4096": 3232,
+        "stack_references": 53,
+        "name": "bitz::utils::blake3x4::pow_ok"
+      },
+      "dispatch": {
+        "address": "0x18cc60",
+        "size_bytes": 967,
+        "instructions": 230,
+        "entry_mod64": 32,
+        "entry_mod4096": 3168,
+        "stack_references": 46,
+        "name": "bitz::piop::spartan::grinding::find_grinding_nonce"
+      },
+      "worker8": {
+        "address": "0x17efe0",
+        "size_bytes": 573,
+        "instructions": 140,
+        "entry_mod64": 32,
+        "entry_mod4096": 4064,
+        "stack_references": 9,
+        "name": "<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure#0}, ()>::{closure#0}, ()> as rayon_core::job::Job>::execute"
+      },
+      "worker10": {
+        "address": "0x17ea60",
+        "size_bytes": 573,
+        "instructions": 140,
+        "entry_mod64": 32,
+        "entry_mod4096": 2656,
+        "stack_references": 9,
+        "name": "<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<10, bitz::utils::blake3x4::first_pow_nonce>::{closure#0}, ()>::{closure#0}, ()> as rayon_core::job::Job>::execute"
+      }
+    }
+  },
+  "candidate": {
+    "binary_sha256": "eefeeb4f57db35192e1f7e192572399d3d078beea82e0db41961be9826c09d41",
+    "functions": {
+      "scanner": {
+        "address": "0x180400",
+        "size_bytes": 9443,
+        "instructions": 1631,
+        "entry_mod64": 0,
+        "entry_mod4096": 1024,
+        "stack_references": 227,
+        "name": "bitz::utils::blake3x4::first_pow_nonce"
+      },
+      "parallel": {
+        "address": "0x17ec50",
+        "size_bytes": 3742,
+        "instructions": 820,
+        "entry_mod64": 16,
+        "entry_mod4096": 3152,
+        "stack_references": 151,
+        "name": "bitz::utils::blake3x4::smallest_pow_nonce"
+      },
+      "pow_ok": {
+        "address": "0x17fd30",
+        "size_bytes": 818,
+        "instructions": 191,
+        "entry_mod64": 48,
+        "entry_mod4096": 3376,
+        "stack_references": 53,
+        "name": "bitz::utils::blake3x4::pow_ok"
+      },
+      "dispatch": {
+        "address": "0x18d150",
+        "size_bytes": 967,
+        "instructions": 230,
+        "entry_mod64": 16,
+        "entry_mod4096": 336,
+        "stack_references": 46,
+        "name": "bitz::piop::spartan::grinding::find_grinding_nonce"
+      },
+      "worker8": {
+        "address": "0x180070",
+        "size_bytes": 573,
+        "instructions": 140,
+        "entry_mod64": 48,
+        "entry_mod4096": 112,
+        "stack_references": 9,
+        "name": "<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure#0}, ()>::{closure#0}, ()> as rayon_core::job::Job>::execute"
+      },
+      "worker10": {
+        "address": "0x17faf0",
+        "size_bytes": 573,
+        "instructions": 140,
+        "entry_mod64": 48,
+        "entry_mod4096": 2800,
+        "stack_references": 9,
+        "name": "<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<10, bitz::utils::blake3x4::first_pow_nonce>::{closure#0}, ()>::{closure#0}, ()> as rayon_core::job::Job>::execute"
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "workload": "1024 distinct original-Falcon signatures per configuration; fn-dsa 0.3.0; 32-byte messages; seed 42; matching input digest between full and arithmetic at each degree",
+  "trials": "One warm-up followed by five measured trials in one fresh process per configuration; table timings are medians; every proof including warm-ups verified",
+  "machine": "AMD Ryzen 9 9950X3D; 16 physical cores / 32 logical CPUs. The 1/2/4/8-thread sets use the 96 MiB L3 CCD; 16 threads span both CCDs. Powersave governor with boost enabled.",
+  "build": "Checkout d9b13bdb43cd2d3a0901b44f0939293f234661b5, with the pre-existing Cargo.toml example declaration; release opt-level 3, -C target-cpu=native, fat LTO and one codegen unit. Offline locked build; source and copied executable hashes retained. Tracing and allocator instrumentation disabled.",
+  "security": "Explicit 128-bit target under repository computational grinding model; composed algebraic/IOP security accounting checked >=128 for all four configurations; BLAKE3 collision bound stated separately by implementation",
+  "prover_time": "Prepared prove call, excluding initial witness commitment",
+  "commit_plus_prover_time": "Checked witness derivation, packing, initial source commitment and proof generation; configuration setup and input generation excluded. Public-target hashing is external for arithmetic.",
+  "verifier_time": "Prepared verification against public statement, using one configured worker; setup excluded",
+  "peak_memory": "Process-wide maximum resident set (RSS) from Linux wait4 rusage, including preparation, warm-up, persistent caches and measured trials; not phase-isolated prover heap",
+  "proof_size": "Canonical stored payload including 32-byte source commitment root, excluding public inputs and outer framing. Full API excludes its external root, so add 32 bytes; arithmetic API already includes root. No complete Falcon transport codec is defined.",
+  "scope": "Full includes SHAKE/HashToPoint and arithmetic relation. Arithmetic proves short s1,s2 for public h,t and assumes caller establishes desired HashToPoint target.",
+  "units": "1 KiB = 1024 bytes; 1 MiB = 1024 KiB",
+  "peak_performance": "Fastest observed throughput among five measured repeats of the fixed seed-42 batch: 1024 divided by minimum prover or commit-plus-prover seconds; not a hardware maximum or representative average across random seeds.",
+  "baseline": "/home/john-wu/code/BitZ-pcs/results/falcon-single-thread-128-20261008T214640Z",
+  "comparison": "Historical single-thread comparison only against saved 33f266903 results on the same core and inputs; multithread scaling uses this campaign. Both versions target 128 bits but composed margins differ.",
+  "threads": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "placement": "Rayon workers pinned to distinct physical cores, with nested CPU sets [6], [6,7], [6,7,4,5], all CPUs 0..7 for eight threads, and all CPUs 0..15 for sixteen threads. Main thread and serial auxiliary verifier work pinned to CPU 6. RAYON_NUM_THREADS and --threads match. SMT siblings checked idle before each cell and monitored during it. Lightweight Python monitor is on CPU 31; its activity is included in sibling-load checks. This is affinity, not exclusive OS core reservation.",
+  "execution_order_threads": [
+    1,
+    2,
+    4,
+    16,
+    8,
+    16
+  ],
+  "campaign": "run.py started the 1/2/4/16-thread matrix. run_remaining.py adds the later-requested 8-thread cells and completes the 16-thread cells using the same copied binaries. Contaminated timing attempts are retained under discarded/ and excluded from summary.json."
+}

@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6",
+    "/tmp/falcon-single-core-128-20261008-binaries/falcon_algebraic",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "1",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "5"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007"
+  },
+  "idle": {
+    "cpu": 6,
+    "sibling": 22,
+    "cpu_busy_pct": 0.1996007984031936,
+    "sibling_busy_pct": 0.0
+  }
+}

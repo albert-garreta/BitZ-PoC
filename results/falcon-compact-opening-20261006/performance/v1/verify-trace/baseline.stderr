@@ -1,0 +1,36 @@
+[lig-verify] total = 1.72 ms
+  merkle multi-proofs:       0.22 ms
+  sample_distinct_queries:   0.39 ms
+  enforced_sum (eq+dot):     0.02 ms
+  residual basis eval:       0.75 ms
+  eval_b (yr_len positions): 0.31 ms
+[lig-verify] total = 2.24 ms
+  merkle multi-proofs:       0.22 ms
+  sample_distinct_queries:   0.39 ms
+  enforced_sum (eq+dot):     0.02 ms
+  residual basis eval:       1.26 ms
+  eval_b (yr_len positions): 0.31 ms
+[lig-verify] total = 1.73 ms
+  merkle multi-proofs:       0.22 ms
+  sample_distinct_queries:   0.39 ms
+  enforced_sum (eq+dot):     0.02 ms
+  residual basis eval:       0.76 ms
+  eval_b (yr_len positions): 0.31 ms
+[lig-verify] total = 1.59 ms
+  merkle multi-proofs:       0.28 ms
+  sample_distinct_queries:   0.44 ms
+  enforced_sum (eq+dot):     0.01 ms
+  residual basis eval:       0.58 ms
+  eval_b (yr_len positions): 0.24 ms
+[lig-verify] total = 1.36 ms
+  merkle multi-proofs:       0.17 ms
+  sample_distinct_queries:   0.31 ms
+  enforced_sum (eq+dot):     0.01 ms
+  residual basis eval:       0.59 ms
+  eval_b (yr_len positions): 0.24 ms
+[lig-verify] total = 1.35 ms
+  merkle multi-proofs:       0.17 ms
+  sample_distinct_queries:   0.31 ms
+  enforced_sum (eq+dot):     0.01 ms
+  residual basis eval:       0.59 ms
+  eval_b (yr_len positions): 0.24 ms

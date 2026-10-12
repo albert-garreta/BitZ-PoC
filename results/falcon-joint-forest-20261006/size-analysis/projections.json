@@ -1,0 +1,77 @@
+{
+  "status": "Analytic projections only; not generated proofs or a recertified full changed-geometry security ledger",
+  "assumptions": [
+    "same six-level initial-arity-four PCS geometry",
+    "uniform distinct query positions",
+    "one source commitment before Fiat-Shamir challenges",
+    "five implicit initial zero lanes",
+    "65536 bridge rows, two bounded limbs, 16+3 byte sums at 100 bits and 16+4 at 128",
+    "current fixed message sizes; transcript changes may change exact authentication lengths"
+  ],
+  "profiles": [
+    {
+      "security_target": 100,
+      "rate": "1/2",
+      "initial_queries": 241,
+      "pcs_bound_bits": 104.327571701,
+      "joint_source_and_zero_codec_expected_bytes": 680197,
+      "including_larger_bridge_rows_expected_bytes": 458725
+    },
+    {
+      "security_target": 100,
+      "rate": "1/4",
+      "initial_queries": 148,
+      "pcs_bound_bits": 103.953072148,
+      "joint_source_and_zero_codec_expected_bytes": 633311,
+      "including_larger_bridge_rows_expected_bytes": 411839
+    },
+    {
+      "security_target": 100,
+      "rate": "1/8",
+      "initial_queries": 121,
+      "pcs_bound_bits": 103.726308883,
+      "joint_source_and_zero_codec_expected_bytes": 629216,
+      "including_larger_bridge_rows_expected_bytes": 407744
+    },
+    {
+      "security_target": 100,
+      "rate": "1/16",
+      "initial_queries": 110,
+      "pcs_bound_bits": 103.445329182,
+      "joint_source_and_zero_codec_expected_bytes": 637925,
+      "including_larger_bridge_rows_expected_bytes": 416453
+    },
+    {
+      "security_target": 128,
+      "rate": "1/2",
+      "initial_queries": 309,
+      "pcs_bound_bits": 130.302917792,
+      "joint_source_and_zero_codec_expected_bytes": 1038478,
+      "including_larger_bridge_rows_expected_bytes": 556830
+    },
+    {
+      "security_target": 128,
+      "rate": "1/4",
+      "initial_queries": 189,
+      "pcs_bound_bits": 130.319308189,
+      "joint_source_and_zero_codec_expected_bytes": 979425,
+      "including_larger_bridge_rows_expected_bytes": 497777
+    },
+    {
+      "security_target": 128,
+      "rate": "1/8",
+      "initial_queries": 155,
+      "pcs_bound_bits": 130.272123408,
+      "joint_source_and_zero_codec_expected_bytes": 974832,
+      "including_larger_bridge_rows_expected_bytes": 493184
+    },
+    {
+      "security_target": 128,
+      "rate": "1/16",
+      "initial_queries": 141,
+      "pcs_bound_bits": 130.248983509,
+      "joint_source_and_zero_codec_expected_bytes": 985923,
+      "including_larger_bridge_rows_expected_bytes": 504275
+    }
+  ]
+}

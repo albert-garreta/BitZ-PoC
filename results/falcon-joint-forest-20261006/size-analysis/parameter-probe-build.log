@@ -1,0 +1,22 @@
+warning: field `source` is never read
+  --> results/falcon-joint-forest-20261006/size-analysis/../../../src/ligerito_flock/grinding_plan.rs:16:16
+   |
+14 | pub(crate) struct GrindingPlan {
+   |                   ------------ field in this struct
+15 |     pub blocks: Vec<ChallengeBlock>,
+16 |     pub(super) source: [u8; 32],
+   |                ^^^^^^
+   |
+   = note: `GrindingPlan` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `matches` is never used
+  --> results/falcon-joint-forest-20261006/size-analysis/../../../src/ligerito_flock/grinding_plan.rs:20:19
+   |
+19 | impl GrindingPlan {
+   | ----------------- method in this implementation
+20 |     pub(crate) fn matches(&self, config: &ligerito::LigeritoSecurityConfig) -> bool {
+   |                   ^^^^^^^
+
+warning: 2 warnings emitted
+

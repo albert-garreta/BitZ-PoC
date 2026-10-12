@@ -1,0 +1,198 @@
+{
+  "cells": [
+    {
+      "cell": {
+        "batch": 9,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25348,
+          "candidate_median_of_seed_medians": 25204,
+          "candidate_over_baseline_geomean": 0.9929817585673747,
+          "observed_change_percent": -0.7018241432625305,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9795221843003413,
+            1.006710337114555
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.992898848035348,
+            0.9795221843003413,
+            1.006710337114555
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 5.747698,
+          "candidate_median_of_seed_medians": 5.475022,
+          "candidate_over_baseline_geomean": 0.9560100026328496,
+          "observed_change_percent": -4.398999736715037,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.950805602627721,
+            0.9629894213948752
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.950805602627721,
+            0.9542761293303859,
+            0.9629894213948752
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 5.927698,
+          "candidate_median_of_seed_medians": 5.645044,
+          "candidate_over_baseline_geomean": 0.9581306474782836,
+          "observed_change_percent": -4.186935252171642,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9523163966855261,
+            0.9664360095048833
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9523163966855261,
+            0.9556961374966626,
+            0.9664360095048833
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 2.9163639999999997,
+          "candidate_median_of_seed_medians": 2.774967,
+          "candidate_over_baseline_geomean": 0.9499416513312802,
+          "observed_change_percent": -5.005834866871983,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9430592605511224,
+            0.9552910577922877
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9515159973172075,
+            0.9430592605511224,
+            0.9552910577922877
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.186192,
+          "candidate_median_of_seed_medians": 0.178918,
+          "candidate_over_baseline_geomean": 0.9810762089560006,
+          "observed_change_percent": -1.8923791043999438,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9035942276101558,
+            1.0875313044582164
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9609328005499699,
+            1.0875313044582164,
+            0.9035942276101558
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 9,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25408,
+          "candidate_median_of_seed_medians": 25304,
+          "candidate_over_baseline_geomean": 1.0000743423543113,
+          "observed_change_percent": 0.007434235431125202,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9926007556675063,
+            1.0100590771195912
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0100590771195912,
+            0.9976437323279924,
+            0.9926007556675063
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 8.100467,
+          "candidate_median_of_seed_medians": 7.920927,
+          "candidate_over_baseline_geomean": 0.9761462298863874,
+          "observed_change_percent": -2.385377011361256,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9743356774724977,
+            0.9778358457604975
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9778358457604975,
+            0.9743356774724977,
+            0.9762703160910783
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 8.299503,
+          "candidate_median_of_seed_medians": 8.100126,
+          "candidate_over_baseline_geomean": 0.9760146777023516,
+          "observed_change_percent": -2.398532229764838,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.97401827487631,
+            0.9780526921248428
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9759772362272777,
+            0.97401827487631,
+            0.9780526921248428
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.4574369999999996,
+          "candidate_median_of_seed_medians": 3.302324,
+          "candidate_over_baseline_geomean": 0.956144260021836,
+          "observed_change_percent": -4.3855739978164054,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9544873263503053,
+            0.9588147244835383
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9544873263503053,
+            0.9588147244835383,
+            0.9551364204177836
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.203324,
+          "candidate_median_of_seed_medians": 0.202072,
+          "candidate_over_baseline_geomean": 0.9917477599833211,
+          "observed_change_percent": -0.8252240016678902,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8601099722610218,
+            1.1442203463130523
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8601099722610218,
+            0.9911514842355157,
+            1.1442203463130523
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    }
+  ],
+  "completed_pairs": 6,
+  "limitations": "Finite-sample comparison on this machine and these inputs only. Each seed contributes the median of repeated proofs in one process per variant. Reported 95% bootstrap intervals resample paired seed ratios, not individual proofs; three seeds give weak uncertainty estimates and do not establish nonregression. Missing fixture caches are primed in a separate untimed process before either paired measurement. RSS is process lifetime high-water memory, including fixture setup and warmups, not per-proof allocated memory. Preparation and fixture generation are excluded from total_prover_ms."
+}

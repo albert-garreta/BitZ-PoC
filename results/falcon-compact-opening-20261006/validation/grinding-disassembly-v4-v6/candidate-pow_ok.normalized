@@ -1,0 +1,191 @@
+push   %r15
+push   %r14
+push   %r12
+push   %rbx
+sub    $0x128,%rsp
+lea    0xe0(%rsp),%r12
+mov    %rsi,%r15
+mov    %rdx,%r14
+mov    %rdi,%rsi
+vxorps %xmm0,%xmm0,%xmm0
+mov    %ecx,%ebx
+vmovups %zmm0,0xe0(%rsp)
+mov    %r15,%rdx
+mov    %r12,%rdi
+vzeroupper
+call   *RIP(%rip)
+vmovups RIP(%rip),%ymm1
+mov    %r14,0xe0(%rsp,%r15,1)
+add    $0x8,%r15
+vxorps %xmm0,%xmm0,%xmm0
+vmovups %zmm0,(%rsp)
+mov    %rsp,%rdi
+mov    %r12,%rsi
+mov    %r15,%rdx
+vmovups %ymm1,0x40(%rsp)
+movq   $0x0,0x60(%rsp)
+movl   $0x0,0x67(%rsp)
+movb   $0x4,0x6b(%rsp)
+vzeroupper
+call   TARGET <<blake3::ChunkState>::update>
+cmpb   $0x0,0x69(%rsp)
+vmovups 0x40(%rsp),%ymm0
+vmovups (%rsp),%zmm1
+movzbl 0x68(%rsp),%ecx
+mov    0x60(%rsp),%rdx
+movzbl 0x6b(%rsp),%esi
+mov    %rsp,%rdi
+sete   %al
+or     0x6a(%rsp),%al
+vmovups %ymm0,0xb0(%rsp)
+vmovups %zmm1,0x70(%rsp)
+mov    %cl,0xd8(%rsp)
+mov    %rdx,0xd0(%rsp)
+or     $0x2,%al
+mov    %al,0xd9(%rsp)
+mov    %sil,0xda(%rsp)
+lea    0x70(%rsp),%rsi
+vzeroupper
+call   TARGET <<blake3::Output>::root_hash>
+movzbl (%rsp),%eax
+xor    %ecx,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1(%rsp),%eax
+mov    $0x8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x2(%rsp),%eax
+mov    $0x10,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x3(%rsp),%eax
+mov    $0x18,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x4(%rsp),%eax
+mov    $0x20,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x5(%rsp),%eax
+mov    $0x28,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x6(%rsp),%eax
+mov    $0x30,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x7(%rsp),%eax
+mov    $0x38,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x8(%rsp),%eax
+mov    $0x40,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x9(%rsp),%eax
+mov    $0x48,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xa(%rsp),%eax
+mov    $0x50,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xb(%rsp),%eax
+mov    $0x58,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xc(%rsp),%eax
+mov    $0x60,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xd(%rsp),%eax
+mov    $0x68,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xe(%rsp),%eax
+mov    $0x70,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0xf(%rsp),%eax
+mov    $0x78,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x10(%rsp),%eax
+mov    $0x80,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x11(%rsp),%eax
+mov    $0x88,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x12(%rsp),%eax
+mov    $0x90,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x13(%rsp),%eax
+mov    $0x98,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x14(%rsp),%eax
+mov    $0xa0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x15(%rsp),%eax
+mov    $0xa8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x16(%rsp),%eax
+mov    $0xb0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x17(%rsp),%eax
+mov    $0xb8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x18(%rsp),%eax
+mov    $0xc0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x19(%rsp),%eax
+mov    $0xc8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1a(%rsp),%eax
+mov    $0xd0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1b(%rsp),%eax
+mov    $0xd8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1c(%rsp),%eax
+mov    $0xe0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1d(%rsp),%eax
+mov    $0xe8,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1e(%rsp),%eax
+mov    $0xf0,%ecx
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::pow_ok+0x30b>
+movzbl 0x1f(%rsp),%eax
+mov    $0xf8,%ecx
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::pow_ok+0x32b>
+movzbl %al,%eax
+shl    $0x18,%eax
+lzcnt  %eax,%eax
+or     %ecx,%eax
+cmp    %ebx,%eax
+setae  %al
+add    $0x128,%rsp
+pop    %rbx
+pop    %r12
+pop    %r14
+pop    %r15
+ret
+mov    $0x100,%eax
+jmp    TARGET <bitz::utils::blake3x4::pow_ok+0x317>

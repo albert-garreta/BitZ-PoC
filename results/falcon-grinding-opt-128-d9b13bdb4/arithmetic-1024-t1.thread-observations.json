@@ -1,0 +1,112 @@
+[
+  {
+    "elapsed_s": 1.0008429430308752,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 17,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 18,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 2.001294816029258,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 17,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 18,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 3.0017605859902687,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 17,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 18,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 4.002218640001956,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 17,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 18,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 5.002771695028059,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 17,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 18,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 6.003243285987992,
+    "tasks": [
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  }
+]

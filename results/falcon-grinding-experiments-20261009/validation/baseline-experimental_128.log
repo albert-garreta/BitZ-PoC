@@ -1,0 +1,10 @@
+
+running 5 tests
+test piop::spartan::falcon1024_algebraic::protocol::tests::experimental_128_schedule_has_exact_rational_security_at_every_capacity ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::experimental_128_schedule_rejects_nonce_and_configuration_mutations ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::experimental_128_schedule_has_exact_rational_security_at_every_capacity ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::experimental_128_schedule_rejects_nonce_and_configuration_mutations ... ok
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::experimental_128_composition_keeps_exact_budget_with_query_grinding ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.13s
+

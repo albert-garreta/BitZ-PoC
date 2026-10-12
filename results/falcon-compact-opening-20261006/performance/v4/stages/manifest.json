@@ -1,0 +1,276 @@
+{
+  "configuration": {
+    "builds": {
+      "binaries": {
+        "baseline": {
+          "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+          "binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+          "sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+          "source_root": "/tmp/falcon-compact-opening-baseline-v4",
+          "source_manifest": "/tmp/falcon-compact-opening-baseline-v4/source-manifest.json",
+          "source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+          "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+          "rustflags": "-C target-cpu=native",
+          "features": [
+            "falcon-hybrid"
+          ],
+          "profile": "release",
+          "target_arch": "x86_64",
+          "root_count": 1,
+          "protocols": {
+            "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+            "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+          },
+          "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/falcon-compact-opening-baseline-target cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+          "working_tree": true,
+          "example_overlay_sha256": "5028ea758abab8911f77da68d85acd5f0df89bbf9e32a0844033eac4c72cb11a",
+          "benchmark_affinity_overlay": {
+            "files": {
+              "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+              "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+            },
+            "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+            "unchanged_original_files": 816,
+            "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+            "production_changed": false
+          },
+          "build_log_sha256": "ea1c46c55e48f498ffd067ebaa0fe1303d15c97882829e162da691b45875eac5",
+          "compiler_artifact": {
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///tmp/falcon-compact-opening-baseline-v4#bitz@0.1.0",
+            "manifest_path": "/tmp/falcon-compact-opening-baseline-v4/Cargo.toml",
+            "target": {
+              "kind": [
+                "bench"
+              ],
+              "crate_types": [
+                "bin"
+              ],
+              "name": "falcon_hybrid",
+              "src_path": "/tmp/falcon-compact-opening-baseline-v4/benches/falcon_hybrid.rs",
+              "edition": "2024",
+              "required-features": [
+                "falcon-hybrid"
+              ],
+              "doc": false,
+              "doctest": false,
+              "test": false
+            },
+            "profile": {
+              "opt_level": "3",
+              "debuginfo": 0,
+              "debug_assertions": false,
+              "overflow_checks": false,
+              "test": true
+            },
+            "features": [
+              "binius64-bench",
+              "default",
+              "falcon",
+              "falcon-hybrid",
+              "hybrid",
+              "parallel",
+              "span-metrics"
+            ],
+            "filenames": [
+              "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9"
+            ],
+            "executable": "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9",
+            "fresh": false
+          }
+        },
+        "candidate": {
+          "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+          "binary": "/tmp/falcon-compact-opening-binaries/candidate-v4",
+          "sha256": "af71d21216c93b1fdfeddc2d146774f721d068c13d347c8c035f98f6b58d2082",
+          "source_root": "/tmp/falcon-compact-opening-candidate-v4",
+          "source_manifest": "/tmp/falcon-compact-opening-candidate-v4/source-manifest.json",
+          "source_manifest_sha256": "d118f0e16a9b793f918ba7ddc5d45b0c8048be222109a2513819393972ba103e",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+          "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+          "rustflags": "-C target-cpu=native",
+          "features": [
+            "falcon-hybrid"
+          ],
+          "profile": "release",
+          "target_arch": "x86_64",
+          "root_count": 1,
+          "protocols": {
+            "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+            "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+          },
+          "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+          "working_tree": true,
+          "benchmark_affinity_overlay": {
+            "files": {
+              "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+              "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+            },
+            "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+            "unchanged_original_files": 816,
+            "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+            "production_changed": false
+          },
+          "build_log_sha256": "5258ed2ac1ebcf707fab3d4b74b75505c58d027c1fe836b5333a71f86276b803",
+          "compiler_artifact": {
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///home/john-wu/code/BitZ-pcs#bitz@0.1.0",
+            "manifest_path": "/home/john-wu/code/BitZ-pcs/Cargo.toml",
+            "target": {
+              "kind": [
+                "bench"
+              ],
+              "crate_types": [
+                "bin"
+              ],
+              "name": "falcon_hybrid",
+              "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_hybrid.rs",
+              "edition": "2024",
+              "required-features": [
+                "falcon-hybrid"
+              ],
+              "doc": false,
+              "doctest": false,
+              "test": false
+            },
+            "profile": {
+              "opt_level": "3",
+              "debuginfo": 0,
+              "debug_assertions": false,
+              "overflow_checks": false,
+              "test": true
+            },
+            "features": [
+              "binius64-bench",
+              "default",
+              "falcon",
+              "falcon-hybrid",
+              "hybrid",
+              "parallel",
+              "span-metrics"
+            ],
+            "filenames": [
+              "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9"
+            ],
+            "executable": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+            "fresh": false
+          },
+          "working_patch_sha256": "9608b3ca8f2f0bc8158d3a019e66e24139e7309f5f2e6d77c1a4886e9407df1b"
+        }
+      }
+    },
+    "campaign": "compact-opening",
+    "campaign_profile": {
+      "title": "Falcon compact-opening qualification",
+      "baseline": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+      "baseline_roots": 1,
+      "candidate_roots": 1,
+      "large_shared_payload_limit": 1.0
+    },
+    "phase": "stages",
+    "seeds": [
+      42
+    ],
+    "protocols": [
+      "native",
+      "shared-prime"
+    ],
+    "security": [
+      100,
+      128
+    ],
+    "batches": [
+      1,
+      3,
+      32,
+      1024
+    ],
+    "threads": 16,
+    "host": "will",
+    "architecture": "x86_64",
+    "cpu_model": "AMD Ryzen 9 9950X3D 16-Core Processor",
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "requested_cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "cpu_affinity_policy": "linux-x86_64-falcon-serial-aux-pinned-v1",
+    "harness_sha256": "5839ec7defd239c847d0fcb71590f7bcecf8819bc71fd5fa30f35fab52a89493",
+    "timing_limit": 1.02,
+    "case_cache": "/tmp/falcon-one-source-case-cache",
+    "cache_reference_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+    "estimator": "ratio of arithmetic means of per-seed medians",
+    "bootstrap_draws": 20000
+  },
+  "status": "completed",
+  "started_at": 1791328546.1291487,
+  "completed_pairs": 16,
+  "active_case": [
+    "shared-prime",
+    128,
+    1024
+  ],
+  "active_seed": 42,
+  "final_build_hashes": {
+    "baseline": {
+      "binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+      "source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364"
+    },
+    "candidate": {
+      "binary_sha256": "af71d21216c93b1fdfeddc2d146774f721d068c13d347c8c035f98f6b58d2082",
+      "source_manifest_sha256": "d118f0e16a9b793f918ba7ddc5d45b0c8048be222109a2513819393972ba103e"
+    }
+  },
+  "cache_reference_final_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+  "final_cache_files_verified": 240,
+  "qualification_status": "diagnostic",
+  "finished_at": 1791328620.6805627
+}

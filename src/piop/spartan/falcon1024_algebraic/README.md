@@ -99,8 +99,10 @@ selected layout; `LIVE_BITS` is the signed15 maximum and `COMPACT_LIVE_BITS`
 is the compact maximum.
 `source_bits_per_signature()` reports the aligned virtual stride, and
 `committed_source_bits()` reports the total physical allocation.
-`capacity()` retains its previous PCS-capacity meaning; `arithmetic_capacity()`,
-`logical_binding_bits()`, and `bridge_layouts()` expose the actual computation.
+`capacity()` retains its previous PCS-capacity meaning; `arithmetic_capacity()`
+reports the instance domain. `logical_binding_bits()` and `bridge_layouts()`
+report the source-bit domains authenticated by the bridges. Production's
+word sumcheck has one entry per sixteen of these logical bits.
 
 After binding public inputs, exception metadata, and the source root, the protocol samples a prime
 `2^125 <= p < 2^126`. Ring equations are batched over
@@ -127,21 +129,50 @@ residuals are below `2^50` for every supported batch. These bounds apply to each
 equation before random batching.
 
 A fresh four-claim merge combines the ring claim, the single norm endpoint,
-slack, and padding. The bit binder authenticates the signed15 view with one streamed
-sumcheck and a two-limb integer bridge, including when physical storage is split.
-It reduces logical padding for small batches and reuses cached decoder
-weights and streamed byte buckets for larger batches on the measured one- and
-eight-worker configurations. A four-variable prefix keeps a coefficient and
-its spare lane together, halving the dense suffix table relative to a
-three-variable prefix. The prover selects the prefix by public degree, batch
-size and worker count; these computation choices preserve every proof message.
-On Linux/x86-64, the selected four-variable paths combine buckets across up to
-sixteen signatures before expanding the decoder, reducing repeated field
-operations. The group size shrinks to preserve parallel work on smaller batches.
-Falcon-512 batches of 1024 also use the optimized construction and evaluation
-kernels at two, four, and sixteen workers. Other worker counts retain the
-previous binding strategy. The production word binder described below bypasses
-the bit-prefix and byte-bucket stages.
+slack, and padding. The production binder sums out the four bit-lane variables
+before its degree-two sumcheck. For a word `w = (coefficient, side, instance)`,
+define the following uniform linear functions of its sixteen committed bits:
+
+```text
+D(w) = sum(l=0..13, 2^l*b(w,l)) - 2^14*b(w,14)
+H(w) = b(w,15)
+C(w) = sum(l=0..14, b(w,l)).
+```
+
+The public weights combine ring and norm coefficients for `D`, slack and
+lane-15 padding masks for `H`, and the inactive-instance mask for `C`. All
+side, coefficient-position and activity masks belong to these public weights;
+the three word functions are defined uniformly even on padding. The sumcheck
+therefore has `log2(N)+1+log2(C)` rounds: 21 for Falcon-1024 at batch 1024,
+instead of the previous 25. When every logical instance is active, the weight
+of `C` is identically zero and only `D` and `H` are needed.
+
+The prover reuses the ring/norm weights `Lambda` and allocates its sole dense
+`[Lambda,D]` pair after the first word fold, whose arithmetic uses native
+signed coefficients. For the coefficient and side rounds, it aggregates `H`
+across instances into at most 32 positions:
+`U[j] = sum_i slack_weight[i]*H[i,j]` and `V[j] = sum_i H[i,j]`.
+After those rounds, it projects the original sparse `H` entries to one value
+per represented instance and folds those values through the instance rounds.
+
+For a partial batch, popcount folding is deferred until the instance rounds
+and uses a capacity-sized table. This avoids three dense pairs of word
+tables. Source scanning rejects malformed padding; the verifier independently
+enforces the padding relation and authenticates the uniform word functions.
+
+All two or three terminal values are absorbed before a fresh, independently
+ground prime-field challenge `zeta`. Their combination uses weights
+`[1,zeta]` or `[1,zeta,zeta^2]`. One two-limb BitZ bridge authenticates the
+combined value against the original committed bits, including when physical
+storage is split. Its public row weights multiply the word-row equality
+weights by the combined lane decoder; all word functions share the same
+column point. The bridge verifier reconstructs these weights from the
+sumcheck point, `zeta`, and prepared layout.
+
+Earlier R7 paths already used a word-sized dense suffix after four lane
+rounds. This change removes those rounds and their prefix work; it does not
+halve that existing suffix domain. Historical R7 timings do not establish a
+speedup for the word binder.
 
 An experimental compact computation binds three logical planes directly,
 without constructing the original signed15 bit source. It remains disabled by
@@ -150,6 +181,9 @@ It can be selected only in a `bench-internals` build with
 `BITZ_ARITHMETIC_COMPUTE_VARIANT=combined` (or `compact` to retain old logical
 padding); `padding` selects the default behavior. This is separate from the
 already enabled compact physical storage described above.
+The `compute_variant()` metadata retains this historical selection label;
+`padding` now runs word binding. Use `protocol_id()` to distinguish v9 results
+from earlier implementations with the same label.
 
 | Plane | Logical bits | Bridge row variables |
 |---|---:|---:|
@@ -175,33 +209,28 @@ transcript for callers using the original geometry constructor, including full
 Falcon verification.
 SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
 
-`PreparedFalconAlgebraic::new_with_binding(batch, security,
-FalconAlgebraicBinding::Words)` selects the full-capacity word binder. It uses two
-word tables: the signed15 decode of every coefficient and lane 15 of every
-word. All slack and padding selectors remain in the public weights. Its
-quadratic sumcheck has four fewer rounds; the commitment and source geometry
-are unchanged. After binding both terminal evaluations, a separate ground
-challenge merges them. The bridge verifies the resulting public row pattern
-`eq(low_coefficient_point) * (signed15_decoder + zeta * lane15)` at the
-remaining column point. It validates each integer row weight is canonical
-and below the sampled prime. Partially filled capacities continue to use the
-bit binder; explicitly requesting the word binder for one is an error.
+`PreparedFalconAlgebraic::new(batch, security)` selects word binding for
+all supported degrees, batch sizes and security targets, including partially
+filled capacities. The relation choice does not depend on the platform or
+worker count. `new_with_binding(..., FalconAlgebraicBinding::Words)` selects
+the same relation explicitly; `FalconAlgebraicBinding::Bits` retains the bit
+relation over the same compact commitment. Prover and verifier must select
+the same relation.
 
-The full Falcon signature profiles retain their existing bit binder. See
-[the word-binder relation and security note](../../../../docs/falcon-word-binder.md)
-for the exact public weights and transcript order.
+`protocol_id()` identifies the effective relation: production word proofs use
+`non-zk/v9`, while explicit bit proofs retain their v7/v8 domains. Bit proofs
+with the original logical capacity retain v7; reduced logical support and
+experimental compact computation use v8. The earlier full-capacity-only
+`word-binder/v9` relation is superseded by the production word relation above.
+The older v5/v6 relations used a different ring reduction and commitment encoding.
 
-The default constructor selects the word binder only for Falcon-512 batches
-of 1024 at 128-bit security. Every other configuration retains the bit binder.
-This relation choice depends only on the public configuration, never the
-platform or worker count. Use `protocol_id()` on a prepared configuration to
-identify its selected relation: the combined word binder and compact commitment
-use `word-binder/v9`, while bit proofs retain their v7/v8 domains. Select
-`FalconAlgebraicBinding::Bits` explicitly for the bit relation, including the
-Falcon-512 configuration whose default selects words. The older v5/v6 proof
-relations used a different ring reduction and commitment encoding. Prover and
-verifier must select the same relation. Experimental compact computation remains
-separate from the production word binder.
+The explicit bit binder retains its streamed prefix and byte-bucket preparation,
+with optimized construction/evaluation at one, eight and sixteen workers above
+the small-batch threshold. Falcon-512 batches of 1024 also retain their qualified
+two- and four-worker paths. Full Falcon signature profiles retain their existing
+bit binder. The [earlier full-capacity word-binder note](../../../../docs/falcon-word-binder.md)
+describes that historical relation; the uniform two/three-terminal relation and
+its current grinding budget are specified here.
 
 The verifier reads the public polynomials and does linear work in their size.
 There is no Orthus-style public-input preprocessing in this interface.
@@ -210,14 +239,21 @@ There is no Orthus-style public-input preprocessing in this interface.
 
 The selected decoder, exception indices, physical geometry, direct ring check,
 logical support, combined integer outer, bridge matrices, and allocated grinding
-schedule are bound into the selected protocol domain. Bit configurations with
-reduced logical support or compact computation use v8; unchanged raw bit
-configurations retain their exact v7 transcript. The word relation uses its
-separate v9 domain and also binds the word terminal-merge schedule.
-`prepared.protocol_id()` reports the effective domain, while `PROTOCOL_ID` names
-the v8 bit relation.
-The five prime-field groups each receive at most `2^(-target-4)`. The degree
-numerators of the prime and binary groups are:
+schedule are bound into the protocol domain. Production word binding uses v9
+at every batch size, additionally binding the word decoder, terminal count,
+and terminal-merge grinding difficulty. The experimental compact computation
+retains its v8 domain. `prepared.protocol_id()` reports the effective domain,
+while `PROTOCOL_ID` names the production protocol.
+The six production prime-field groups each receive at most `2^(-target-4)`;
+the explicit bit relation and separate compact experiment retain five. Production keeps the binding
+difficulty `g` for the former bit domain and funds the terminal merge from
+the four removed degree-two rounds. For `k` word variables and terminal-merge
+degree `e` in `{1,2}`, its difficulty `h` satisfies
+`h >= max(0, g + log2(e) - 3)`, in addition to the per-group bound. Thus
+`2k/2^g + e/2^h <= (2k+8)/2^g`: the combined binder and terminal merge consume
+no more error budget than the former bit binder. Compact-computation
+grinding is unchanged. The degree numerators of the prime and binary groups
+are:
 
 | Group | Numerator | Domain lower bound |
 |---|---:|---:|
@@ -225,27 +261,30 @@ numerators of the prime and binary groups are:
 | Norm instance batching | d | `2^125` |
 | Integer outer sumcheck | 3(11+d) | `2^125` |
 | Four-claim merge | 3 | `2^125` |
-| Bit-source binder | `2*sum(branch bit logs)` | `2^125` |
+| Production word binder | `2(11+d)` | `2^125` |
+| Word terminal claim merge | 1 if `batch=C`, otherwise 2 | `2^125` |
+| Explicit bit binder | `2(15+d)` | `2^125` |
+| Experimental compact binder | `2*sum(branch bit logs)` | `2^125` |
 | Each BitZ product GKR | `s + 3*(r*(r-1)/2 + r*s) + r` | `2^128` |
 | Compact binary claim merge | 2 | `2^128` |
 | Binary source sumcheck | 2m | `2^128` |
 | Ring switch | 256 | `2^128` |
 
-This table uses Falcon-1024 and `d = log2(capacity)`.
+This table uses Falcon-1024 and `d = log2(arithmetic_capacity)`.
 `m = log2(shared opening bit domain)`: it is 20 at the minimum allocation and
 `15+d` in split mode. For a bridge with row log `r` and column log `c`,
 `s=c+1` accounts for its two limbs. Single mode has one binding domain and
-bridge; experimental compact computation has three. The bridge-claim merge is present only in
-compact computation. The native ring identity now has
+bridge; experimental compact computation has three. The prime-field terminal
+merge is present only in production word binding; the binary bridge-claim
+merge is present only in compact computation. All terminal values are fixed
+before the prime merge challenge, giving a degree-one or degree-two error
+polynomial even though the lane decoder depends on that challenge. The native ring identity now has
 error at most `(1023+d)/2^149`, or generally `(N-1+d)/2^149`, because it checks
 the reduced residual directly. Prime sampling requests a 144-bit
 composite-acceptance budget. The allocation is recomputed for the actual
 opening geometry, including its Ligerito challenge blocks.
 
-For the word binder, the source-binding numerator is
-`2(11+d)` and a sixth prime-field group accounts for the degree-one terminal
-merge with numerator 1. Each receives its own `2^(-target-4)` budget. The
-terminal evaluations are absorbed before the merge nonce and challenge;
+The terminal evaluations are absorbed before the merge nonce and challenge;
 its difficulty and the selected binder relation are bound into the v9
 configuration digest. The BitZ product-GKR numerator is unchanged. At degree
 512, subtract one from the parenthesized round counts for the norm, binder,
@@ -268,8 +307,12 @@ bounded coordinate carries, exhaustive signed15 decoder reconstruction,
 maximum exception counts, malformed exception metadata, compact/virtual claim
 equivalence, norm budget borrowing, inconsistent source bits, padding, malformed proofs,
 public input changes, configuration replay and original Falcon interoperability.
-Large batches 32 and 1024 can be checked directly with the benchmark at both
-degrees and security targets 100 and 128; every generated proof is verified.
+Word-binding tests check the reduced round count, two/three terminal shape,
+one-bridge integration, fresh-merge schedule binding and prover/verifier
+transcript continuation.
+Large end-to-end cases for batches 32, 512, 513 and 1024 are explicitly ignored
+by default; these include the largest arithmetic-capacity boundary and both
+terminal counts at both security targets.
 
 Validation and benchmark commands:
 

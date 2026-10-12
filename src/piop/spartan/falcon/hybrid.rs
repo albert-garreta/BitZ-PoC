@@ -687,6 +687,8 @@ impl PreparedFalconHybrid {
             h.update(&(n as u64).to_le_bytes());
         }
         h.update(&statement.source_root);
+        let mut public =
+            Vec::with_capacity(self.batch() * (2 * N + 32 + super::CT_SIGNATURE_BYTES));
         for ((pk, msg), signature) in statement
             .public
             .public_keys
@@ -695,11 +697,12 @@ impl PreparedFalconHybrid {
             .zip(&statement.public.signatures)
         {
             for &coefficient in pk.h.iter() {
-                h.update(&coefficient.to_le_bytes());
+                public.extend_from_slice(&coefficient.to_le_bytes());
             }
-            h.update(msg);
-            h.update(&signature.encode_ct()?);
+            public.extend_from_slice(msg);
+            public.extend_from_slice(&signature.encode_ct()?);
         }
+        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &public);
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
             h.update(&block.bits.to_le_bytes());

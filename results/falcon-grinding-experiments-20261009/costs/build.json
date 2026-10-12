@@ -1,0 +1,54 @@
+{
+  "command": [
+    "taskset",
+    "-c",
+    "14",
+    "rustc",
+    "--edition=2024",
+    "-C",
+    "opt-level=3",
+    "-C",
+    "target-cpu=native",
+    "-L",
+    "dependency=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/costs/probe.rs",
+    "-o",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/costs/probe",
+    "--extern",
+    "bitz=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libbitz-e8200784436b736c.rlib",
+    "--extern",
+    "blake3=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib",
+    "--extern",
+    "flock_core=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libflock_core-66566fc69f6a5200.rlib",
+    "--extern",
+    "libc=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib",
+    "--extern",
+    "rayon=/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib"
+  ],
+  "libraries": {
+    "libc": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib",
+      "sha256": "f62b9732159f382f5d21384bfdbd6bc58bd213d867d47fda68d971011d105a88"
+    },
+    "rayon": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib",
+      "sha256": "ace8b7ca7046914f2c505eb610e9447cf11b2eacb9d33773938cb53d6cef3a25"
+    },
+    "blake3": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib",
+      "sha256": "d68b14f19f7976398caa21ae57cdac9d8182c23605d31402600a5b9d092fb3ca"
+    },
+    "flock_core": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libflock_core-66566fc69f6a5200.rlib",
+      "sha256": "1fc7b02b5dc2e151fec4e8ab10980bab69c50b991574eb6a345ab959b39c247d"
+    },
+    "bitz": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libbitz-e8200784436b736c.rlib",
+      "sha256": "5d775a46be9688bd9f375736a9f953f146fa539e60c7c8101fe5c0bc3e9af01d"
+    }
+  },
+  "source_sha256": "327ddf72d6873d0d1663c2582301686fce1e9a2fc211ec78a99dc9233c1a304b",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "source_commit": "d9b13bdb43cd2d3a0901b44f0939293f234661b5",
+  "binary_sha256": "9160cbcfa0ad0c706da3cfe6d64400ae4e7a76a5eb84b26071b33e8c19d71f76"
+}

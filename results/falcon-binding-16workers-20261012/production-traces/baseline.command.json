@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "/tmp/bitz-falcon-binding16-binaries-20261012/production-baseline",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--trace"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "16",
+    "OMP_NUM_THREADS": "16",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/bitz-falcon-speed-case-cache"
+  },
+  "cleared_environment_names": [],
+  "sha256": "73d9e25f83c0b8b7aa9a9eafa7773ecadbcd3a81b0846dc59f5da91ec572307f",
+  "started_unix": 1791829170.275518,
+  "returncode": 0,
+  "finished_unix": 1791829172.7270226
+}

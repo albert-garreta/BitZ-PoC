@@ -1,0 +1,1631 @@
+push   %rbp
+mov    %rsp,%rbp
+push   %r15
+push   %r14
+push   %r13
+push   %r12
+push   %rbx
+and    $0xffffffffffffffc0,%rsp
+sub    $0xb80,%rsp
+mov    %r8d,0x3c(%rsp)
+mov    %rdi,0x48(%rsp)
+cmp    $0x39,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21e1>
+mov    %rcx,%rbx
+mov    %rsi,%r13
+test   $0x3,%r13b
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x7e>
+cmp    %rdx,%rbx
+cmovbe %rdx,%rbx
+dec    %rdx
+mov    %rbx,%r15
+neg    %r15
+mov    %rbx,%r12
+mov    %rdx,%r14
+xchg   %ax,%ax
+lea    (%r15,%r14,1),%rbx
+cmp    $0xffffffffffffffff,%rbx
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x4c3>
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+inc    %r14
+mov    %r13,%rsi
+mov    %r14,%rdx
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x50>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x4c6>
+mov    %r13,%r14
+shr    $0x2,%r14
+vpxor  %xmm0,%xmm0,%xmm0
+vmovdqu %ymm0,0x98(%rsp)
+mov    %rdx,0x40(%rsp)
+vmovdqa %ymm0,0x80(%rsp)
+mov    %rbx,0x70(%rsp)
+mov    %r13,0x78(%rsp)
+test   %r13,%r13
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x4d1>
+mov    0x48(%rsp),%rsi
+lea    0x80(%rsp),%rdi
+mov    %r13,%rdx
+vzeroupper
+call   *RIP(%rip)
+cmp    $0x4,%r14
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0xd01>
+cmp    $0x8,%r14
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x4d1>
+xor    %ecx,%ecx
+mov    $0x20,%eax
+sub    0x3c(%rsp),%eax
+mov    $0xffffffff,%edx
+cmovb  %ecx,%eax
+cmp    $0x20,%eax
+shlx   %eax,%edx,%eax
+mov    %rbx,%rdx
+bswap  %eax
+cmovae %ecx,%eax
+sub    0x40(%rsp),%rdx
+cmovae %rdx,%rcx
+cmp    $0x10,%rcx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x210e>
+vpbroadcastd 0x80(%rsp),%zmm25
+vpbroadcastd 0x88(%rsp),%zmm27
+vpbroadcastd 0x84(%rsp),%zmm26
+vpbroadcastd 0x8c(%rsp),%zmm28
+vpbroadcastd 0x98(%rsp),%zmm31
+vpbroadcastd 0x9c(%rsp),%zmm14
+vpbroadcastd 0x90(%rsp),%zmm29
+vpbroadcastd 0x94(%rsp),%zmm30
+mov    0x40(%rsp),%r15
+lea    0x480(%rsp),%r12
+lea    RIP(%rip),%rdx
+vpaddd RIP(%rip){1to16},%zmm25,%zmm0
+vpaddd RIP(%rip){1to16},%zmm27,%zmm8
+vpaddd RIP(%rip){1to16},%zmm31,%zmm11
+vpaddd RIP(%rip){1to16},%zmm29,%zmm17
+vmovdqa64 %zmm25,0x140(%rsp)
+vmovdqa64 %zmm26,0x100(%rsp)
+vmovdqa64 %zmm27,0xc0(%rsp)
+vmovdqa64 %zmm28,0x840(%rsp)
+vmovdqa64 %zmm29,0x800(%rsp)
+vmovdqa64 %zmm30,0x7c0(%rsp)
+vmovdqa64 %zmm31,0x780(%rsp)
+vmovdqa64 %zmm14,0x740(%rsp)
+vprold $0x10,%zmm0,%zmm1
+vpaddd RIP(%rip){1to16},%zmm1,%zmm2
+vprold $0x10,%zmm8,%zmm5
+vpaddd RIP(%rip){1to16},%zmm5,%zmm6
+vpaddd %zmm26,%zmm0,%zmm0
+vpxord RIP(%rip){1to16},%zmm2,%zmm3
+vpxord RIP(%rip){1to16},%zmm6,%zmm7
+vprold $0x14,%zmm3,%zmm3
+vprold $0x14,%zmm7,%zmm7
+vpaddd %zmm3,%zmm0,%zmm0
+vpxord %zmm1,%zmm0,%zmm1
+vprold $0x18,%zmm1,%zmm4
+vpaddd %zmm2,%zmm4,%zmm2
+vpxord %zmm3,%zmm2,%zmm1
+vpaddd %zmm28,%zmm8,%zmm3
+vpxord RIP(%rip){1to16},%zmm11,%zmm8
+vpaddd %zmm7,%zmm3,%zmm3
+vprold $0x19,%zmm1,%zmm1
+vpxord %zmm5,%zmm3,%zmm5
+vprold $0x18,%zmm5,%zmm5
+vpaddd %zmm6,%zmm5,%zmm6
+vpxord %zmm7,%zmm6,%zmm7
+vprold $0x19,%zmm7,%zmm15
+vpaddd %zmm14,%zmm11,%zmm7
+vpxord RIP(%rip){1to16},%zmm17,%zmm11
+vprold $0x10,%zmm8,%zmm8
+vpaddd RIP(%rip){1to16},%zmm8,%zmm9
+vpxord RIP(%rip){1to16},%zmm9,%zmm10
+vmovdqa64 %zmm15,0x700(%rsp)
+vprold $0x10,%zmm11,%zmm11
+vpaddd RIP(%rip){1to16},%zmm11,%zmm12
+vpxord RIP(%rip){1to16},%zmm12,%zmm13
+vprold $0x14,%zmm10,%zmm10
+vpaddd %zmm10,%zmm7,%zmm7
+vpxord %zmm8,%zmm7,%zmm8
+vprold $0x18,%zmm8,%zmm16
+vpaddd %zmm9,%zmm16,%zmm8
+vmovdqa64 %zmm16,0x6c0(%rsp)
+vprold $0x14,%zmm13,%zmm13
+vpxord %zmm10,%zmm8,%zmm9
+vpaddd %zmm30,%zmm17,%zmm10
+vprold $0x19,%zmm9,%zmm9
+vpaddd %zmm13,%zmm10,%zmm10
+vpxord %zmm11,%zmm10,%zmm11
+vpaddd %zmm10,%zmm9,%zmm10
+vprold $0x18,%zmm11,%zmm11
+vpaddd %zmm12,%zmm11,%zmm17
+vpxord %zmm13,%zmm17,%zmm12
+vmovdqa64 %zmm17,0x680(%rsp)
+vprold $0x19,%zmm12,%zmm12
+vpaddd %zmm3,%zmm12,%zmm3
+vpxord %zmm4,%zmm3,%zmm4
+vprold $0x10,%zmm4,%zmm4
+vpaddd %zmm8,%zmm4,%zmm8
+vpxord %zmm12,%zmm8,%zmm12
+vprold $0x14,%zmm12,%zmm12
+vpaddd %zmm3,%zmm12,%zmm13
+vpxord %zmm4,%zmm13,%zmm3
+vmovdqa64 %zmm13,0x640(%rsp)
+vprold $0x18,%zmm3,%zmm3
+vpaddd %zmm8,%zmm3,%zmm4
+vmovdqa64 %zmm3,%zmm8
+vmovdqa64 %zmm8,0x600(%rsp)
+vpxord %zmm12,%zmm4,%zmm3
+vmovdqa64 %zmm4,%zmm12
+vpxord %zmm5,%zmm10,%zmm4
+vmovdqa64 %zmm12,0xb00(%rsp)
+vprold $0x10,%zmm4,%zmm4
+vprold $0x19,%zmm3,%zmm18
+vpaddd %zmm2,%zmm4,%zmm2
+vmovdqa64 %zmm18,0xac0(%rsp)
+vpxord %zmm9,%zmm2,%zmm5
+vprold $0x14,%zmm5,%zmm5
+vpaddd %zmm10,%zmm5,%zmm9
+vpxord %zmm4,%zmm9,%zmm3
+vmovdqa64 %zmm9,0xa80(%rsp)
+vprold $0x18,%zmm3,%zmm10
+vpaddd %zmm2,%zmm10,%zmm19
+vmovdqa64 %zmm10,0xa40(%rsp)
+vpxord %zmm5,%zmm19,%zmm2
+vpaddd %zmm1,%zmm7,%zmm5
+vmovdqa64 %zmm19,0xa00(%rsp)
+vpxord %zmm11,%zmm5,%zmm3
+vprold $0x19,%zmm2,%zmm20
+vprold $0x10,%zmm3,%zmm3
+vmovdqa64 %zmm20,0x9c0(%rsp)
+vpaddd %zmm6,%zmm3,%zmm4
+vpxord %zmm1,%zmm4,%zmm1
+vprold $0x14,%zmm1,%zmm1
+vpaddd %zmm5,%zmm1,%zmm11
+vpxord %zmm3,%zmm11,%zmm2
+vpaddd %zmm0,%zmm15,%zmm3
+vmovdqa64 RIP(%rip),%zmm0
+vmovdqa64 %zmm11,0x980(%rsp)
+vprold $0x18,%zmm2,%zmm21
+vpxor  %xmm2,%xmm2,%xmm2
+vmovdqa64 %zmm3,0x880(%rsp)
+vpaddd %zmm4,%zmm21,%zmm22
+vmovdqa64 %zmm21,0x940(%rsp)
+vpxord %zmm1,%zmm22,%zmm1
+vmovdqa64 %zmm22,0x900(%rsp)
+vprold $0x19,%zmm1,%zmm23
+vpbroadcastd %eax,%zmm1
+vmovdqa64 %zmm1,0x1c0(%rsp)
+vpaddd %zmm25,%zmm30,%zmm1
+vmovdqa64 %zmm1,0x180(%rsp)
+vmovdqa64 %zmm23,0x8c0(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x1005>
+mov    %r12,%r14
+xor    %eax,%eax
+cmp    $0xffffffffffffffff,%rbx
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21b6>
+xor    %ecx,%ecx
+mov    $0x20,%eax
+sub    0x3c(%rsp),%eax
+mov    $0xffffffff,%edx
+cmovb  %ecx,%eax
+cmp    $0x20,%eax
+shlx   %eax,%edx,%eax
+mov    %rbx,%rdx
+bswap  %eax
+cmovae %ecx,%eax
+sub    0x40(%rsp),%rdx
+cmovae %rdx,%rcx
+cmp    $0x10,%rcx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0xcb8>
+vpbroadcastd %eax,%zmm0
+mov    %r14,%rax
+shl    $0x6,%rax
+lea    0x8(,%r14,4),%ecx
+mov    %r14,%r15
+mov    %r15d,%edi
+and    $0x7,%edi
+and    $0x8,%r15d
+lea    RIP(%rip),%r8
+lea    0x200(%rsp,%rax,1),%rax
+vmovdqa64 %zmm0,0x140(%rsp)
+mov    %rdi,0x100(%rsp)
+mov    %r15,0xc0(%rsp)
+vpbroadcastd %ecx,%zmm0
+vmovdqa64 %zmm0,0x180(%rsp)
+vpxor  %xmm0,%xmm0,%xmm0
+mov    %rax,0x1c0(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x5af>
+nopl   0x0(%rax)
+mov    0x40(%rsp),%rcx
+mov    0x70(%rsp),%rbx
+mov    0x100(%rsp),%rdi
+lea    RIP(%rip),%r8
+vpxor  %xmm0,%xmm0,%xmm0
+add    $0x10,%rcx
+mov    %rbx,%rax
+mov    %rcx,0x40(%rsp)
+sub    %rcx,%rax
+mov    $0x0,%ecx
+cmovb  %rcx,%rax
+cmp    $0xf,%rax
+jbe    TARGET <bitz::utils::blake3x4::first_pow_nonce+0xcb8>
+vmovdqa64 %zmm0,0x5c0(%rsp)
+vmovdqa64 %zmm0,0x580(%rsp)
+vmovdqa64 %zmm0,0x540(%rsp)
+vmovdqa64 %zmm0,0x500(%rsp)
+vmovdqa64 %zmm0,0x4c0(%rsp)
+vmovdqa64 %zmm0,0x480(%rsp)
+vmovdqa64 %zmm0,0x440(%rsp)
+vmovdqa64 %zmm0,0x400(%rsp)
+vmovdqa64 %zmm0,0x3c0(%rsp)
+vmovdqa64 %zmm0,0x380(%rsp)
+vmovdqa64 %zmm0,0x340(%rsp)
+vmovdqa64 %zmm0,0x300(%rsp)
+vmovdqa64 %zmm0,0x2c0(%rsp)
+vmovdqa64 %zmm0,0x280(%rsp)
+vmovdqa64 %zmm0,0x240(%rsp)
+vmovdqa64 %zmm0,0x200(%rsp)
+test   %r13,%r13
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x729>
+cmp    $0x20,%r13
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x645>
+xor    %eax,%eax
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x6f0>
+mov    0xc0(%rsp),%rdx
+lea    0x3c0(%rsp),%rcx
+xor    %eax,%eax
+nopw   0x0(%rax,%rax,1)
+vpbroadcastd 0x80(%rsp,%rax,4),%zmm0
+vbroadcastss 0x84(%rsp,%rax,4),%zmm1
+vbroadcastss 0x88(%rsp,%rax,4),%zmm2
+vmovdqa64 %zmm0,-0x1c0(%rcx)
+vmovaps %zmm1,-0x180(%rcx)
+vbroadcastss 0x8c(%rsp,%rax,4),%zmm1
+vmovaps %zmm2,-0x140(%rcx)
+vbroadcastss 0x90(%rsp,%rax,4),%zmm2
+vmovaps %zmm1,-0x100(%rcx)
+vbroadcastss 0x94(%rsp,%rax,4),%zmm1
+vmovaps %zmm2,-0xc0(%rcx)
+vpbroadcastd 0x98(%rsp,%rax,4),%zmm2
+vmovaps %zmm1,-0x80(%rcx)
+vpbroadcastd 0x9c(%rsp,%rax,4),%zmm1
+vmovdqa64 %zmm2,-0x40(%rcx)
+add    $0x8,%rax
+vmovdqa64 %zmm1,(%rcx)
+add    $0x200,%rcx
+cmp    %rax,%rdx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x660>
+test   %rdi,%rdi
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x729>
+lea    0x80(%rsp,%rax,4),%rcx
+shl    $0x6,%rax
+xor    %edx,%edx
+lea    0x200(%rsp,%rax,1),%rax
+cs nopw 0x0(%rax,%rax,1)
+vpbroadcastd (%rcx,%rdx,4),%zmm0
+inc    %rdx
+vmovdqa64 %zmm0,(%rax)
+add    $0x40,%rax
+cmp    %rdx,%rdi
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x710>
+mov    0x40(%rsp),%rax
+mov    0x1c0(%rsp),%rcx
+vpbroadcastd RIP(%rip),%zmm13
+vpbroadcastd RIP(%rip),%zmm14
+vpbroadcastd RIP(%rip),%zmm15
+vpbroadcastd RIP(%rip),%zmm11
+vpbroadcastd RIP(%rip),%zmm4
+vpbroadcastd RIP(%rip),%zmm5
+vpbroadcastd RIP(%rip),%zmm12
+vmovdqa64 0x180(%rsp),%zmm6
+mov    $0x78,%edx
+vpxor  %xmm7,%xmm7,%xmm7
+vpxor  %xmm8,%xmm8,%xmm8
+vpbroadcastd %eax,%zmm0
+vpaddd RIP(%rip),%zmm0,%zmm1
+shr    $0x20,%rax
+vpbroadcastd %eax,%zmm2
+vmovdqa64 %zmm13,%zmm3
+vmovdqa64 %zmm14,%zmm10
+vmovdqa64 %zmm15,%zmm9
+vpcmpltud %zmm0,%zmm1,%k0
+vmovdqa64 %zmm1,(%rcx)
+vpbroadcastd RIP(%rip),%zmm1
+vpmovm2d %k0,%zmm0
+vpsubd %zmm0,%zmm2,%zmm0
+vpbroadcastd RIP(%rip),%zmm2
+vmovdqa64 %zmm0,0x40(%rcx)
+vmovdqa64 %zmm11,%zmm0
+nopl   0x0(%rax,%rax,1)
+mov    -0x78(%rdx,%r8,1),%rdi
+cmp    $0xf,%rdi
+ja     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x229e>
+mov    -0x70(%rdx,%r8,1),%rcx
+cmp    $0x10,%rcx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2357>
+mov    -0x68(%rdx,%r8,1),%rax
+cmp    $0x10,%rax
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2287>
+mov    -0x60(%rdx,%r8,1),%r14
+cmp    $0x10,%r14
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2340>
+mov    -0x58(%rdx,%r8,1),%rbx
+cmp    $0x10,%rbx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2270>
+mov    -0x50(%rdx,%r8,1),%r12
+cmp    $0x10,%r12
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2329>
+mov    -0x48(%rdx,%r8,1),%r15
+cmp    $0x10,%r15
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2259>
+mov    -0x40(%rdx,%r8,1),%r13
+cmp    $0x10,%r13
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2312>
+mov    -0x38(%rdx,%r8,1),%r11
+cmp    $0x10,%r11
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2242>
+mov    -0x30(%rdx,%r8,1),%r10
+cmp    $0x10,%r10
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x22fb>
+mov    -0x28(%rdx,%r8,1),%r9
+cmp    $0x10,%r9
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x222b>
+mov    -0x20(%rdx,%r8,1),%rsi
+mov    %rsi,0x68(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x22e2>
+mov    -0x18(%rdx,%r8,1),%rsi
+mov    %rsi,0x60(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2212>
+mov    -0x10(%rdx,%r8,1),%rsi
+mov    %rsi,0x58(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x22c9>
+mov    -0x8(%rdx,%r8,1),%rsi
+mov    %rsi,0x50(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21f9>
+mov    (%rdx,%r8,1),%r8
+cmp    $0x10,%r8
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x22b2>
+shl    $0x6,%rax
+shl    $0x6,%rbx
+vpaddd %zmm5,%zmm14,%zmm14
+vpaddd %zmm4,%zmm13,%zmm13
+shl    $0x6,%rdi
+shl    $0x6,%r14
+shl    $0x6,%r12
+shl    $0x6,%r15
+vpaddd %zmm12,%zmm15,%zmm15
+vpaddd %zmm2,%zmm11,%zmm11
+shl    $0x6,%r13
+shl    $0x6,%rcx
+shl    $0x6,%r9
+shl    $0x6,%r11
+shl    $0x6,%r10
+shl    $0x6,%r8
+sub    $0xffffffffffffff80,%rdx
+vpaddd 0x200(%rsp,%rax,1),%zmm14,%zmm19
+vpaddd 0x200(%rsp,%rbx,1),%zmm13,%zmm21
+vpaddd 0x200(%rsp,%rdi,1),%zmm15,%zmm16
+vpaddd 0x200(%rsp,%r15,1),%zmm11,%zmm15
+mov    0x68(%rsp),%rax
+vpaddd 0x200(%rsp,%r14,1),%zmm19,%zmm20
+vpaddd 0x200(%rsp,%r12,1),%zmm21,%zmm22
+vpaddd 0x200(%rsp,%r13,1),%zmm15,%zmm17
+vpaddd 0x200(%rsp,%rcx,1),%zmm16,%zmm18
+mov    0x78(%rsp),%r13
+shl    $0x6,%rax
+vpxord %zmm7,%zmm19,%zmm7
+vpxord %zmm6,%zmm21,%zmm6
+vpxord %zmm1,%zmm15,%zmm1
+vpxord %zmm8,%zmm16,%zmm8
+vprold $0x10,%zmm7,%zmm7
+vprold $0x10,%zmm6,%zmm6
+vprold $0x10,%zmm1,%zmm1
+vprold $0x10,%zmm8,%zmm11
+vpaddd %zmm10,%zmm7,%zmm10
+vpaddd %zmm3,%zmm6,%zmm3
+vpaddd %zmm0,%zmm1,%zmm0
+vpaddd %zmm9,%zmm11,%zmm8
+vpxord %zmm5,%zmm10,%zmm5
+vpxord %zmm4,%zmm3,%zmm4
+vpxord %zmm2,%zmm0,%zmm2
+vpxord %zmm12,%zmm8,%zmm9
+vprold $0x14,%zmm5,%zmm5
+vprold $0x14,%zmm4,%zmm4
+vprold $0x14,%zmm2,%zmm2
+vprold $0x14,%zmm9,%zmm9
+vpaddd %zmm5,%zmm20,%zmm16
+vpaddd %zmm4,%zmm22,%zmm20
+vpaddd %zmm2,%zmm17,%zmm15
+vpaddd %zmm9,%zmm18,%zmm14
+vpxord %zmm6,%zmm20,%zmm6
+vpxord %zmm7,%zmm16,%zmm7
+vpxord %zmm1,%zmm15,%zmm1
+vpxord %zmm11,%zmm14,%zmm11
+vprold $0x18,%zmm6,%zmm6
+vprold $0x18,%zmm1,%zmm1
+vprold $0x18,%zmm7,%zmm7
+vprold $0x18,%zmm11,%zmm11
+vpaddd %zmm3,%zmm6,%zmm3
+vpaddd %zmm0,%zmm1,%zmm0
+vpaddd %zmm10,%zmm7,%zmm10
+vpxord %zmm4,%zmm3,%zmm4
+vpxord %zmm2,%zmm0,%zmm2
+vpxord %zmm5,%zmm10,%zmm5
+vprold $0x19,%zmm4,%zmm4
+vprold $0x19,%zmm2,%zmm2
+vprold $0x19,%zmm5,%zmm5
+vpaddd %zmm16,%zmm4,%zmm16
+vpaddd 0x200(%rsp,%r9,1),%zmm16,%zmm19
+vpaddd %zmm20,%zmm2,%zmm17
+vpaddd %zmm8,%zmm11,%zmm20
+vpaddd %zmm14,%zmm5,%zmm12
+vpaddd 0x200(%rsp,%r11,1),%zmm12,%zmm13
+vpaddd 0x200(%rsp,%rax,1),%zmm19,%zmm16
+mov    0x60(%rsp),%rax
+vpxord %zmm9,%zmm20,%zmm8
+vpaddd 0x200(%rsp,%r10,1),%zmm13,%zmm12
+vprold $0x19,%zmm8,%zmm21
+vpaddd %zmm21,%zmm15,%zmm8
+shl    $0x6,%rax
+vpaddd 0x200(%rsp,%rax,1),%zmm17,%zmm17
+mov    0x58(%rsp),%rax
+vpxord %zmm1,%zmm13,%zmm1
+vpxord %zmm11,%zmm19,%zmm9
+vprold $0x10,%zmm1,%zmm1
+vpaddd %zmm3,%zmm1,%zmm3
+shl    $0x6,%rax
+vpxord %zmm5,%zmm3,%zmm5
+vpaddd 0x200(%rsp,%rax,1),%zmm17,%zmm18
+mov    0x50(%rsp),%rax
+vprold $0x14,%zmm5,%zmm5
+vpxord %zmm7,%zmm17,%zmm7
+vpaddd %zmm5,%zmm12,%zmm15
+vprold $0x10,%zmm7,%zmm7
+vpxord %zmm1,%zmm15,%zmm1
+vprold $0x18,%zmm1,%zmm1
+shl    $0x6,%rax
+vpaddd 0x200(%rsp,%rax,1),%zmm8,%zmm8
+vpaddd %zmm3,%zmm1,%zmm3
+vpaddd 0x200(%rsp,%r8,1),%zmm8,%zmm22
+vpxord %zmm5,%zmm3,%zmm5
+lea    RIP(%rip),%r8
+vprold $0x19,%zmm5,%zmm5
+vpxord %zmm6,%zmm8,%zmm6
+vprold $0x10,%zmm9,%zmm8
+vpaddd %zmm20,%zmm7,%zmm9
+vprold $0x10,%zmm6,%zmm6
+vpxord %zmm2,%zmm9,%zmm2
+vpaddd %zmm0,%zmm8,%zmm0
+vprold $0x14,%zmm2,%zmm2
+vpaddd %zmm10,%zmm6,%zmm10
+vpxord %zmm4,%zmm0,%zmm4
+vpxord %zmm21,%zmm10,%zmm11
+vprold $0x14,%zmm4,%zmm4
+vpaddd %zmm2,%zmm18,%zmm13
+vprold $0x14,%zmm11,%zmm12
+vpxord %zmm7,%zmm13,%zmm7
+vpaddd %zmm4,%zmm16,%zmm14
+vprold $0x18,%zmm7,%zmm7
+vpaddd %zmm12,%zmm22,%zmm11
+vpxord %zmm8,%zmm14,%zmm8
+vpxord %zmm6,%zmm11,%zmm6
+vprold $0x18,%zmm8,%zmm8
+vpaddd %zmm9,%zmm7,%zmm9
+vprold $0x18,%zmm6,%zmm6
+vpxord %zmm2,%zmm9,%zmm2
+vpaddd %zmm0,%zmm8,%zmm0
+vprold $0x19,%zmm2,%zmm2
+vpaddd %zmm10,%zmm6,%zmm10
+vpxord %zmm4,%zmm0,%zmm4
+vpxord %zmm12,%zmm10,%zmm12
+vprold $0x19,%zmm4,%zmm4
+vprold $0x19,%zmm12,%zmm12
+cmp    $0x3f8,%rdx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x800>
+vpxord %zmm15,%zmm9,%zmm0
+vptestnmd 0x140(%rsp),%zmm0,%k0
+kortestw %k0,%k0
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x570>
+cmpl   $0x21,0x3c(%rsp)
+kmovd  %k0,%ebx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ce>
+nopl   0x0(%rax,%rax,1)
+tzcnt  %ebx,%r14d
+add    0x40(%rsp),%r14
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+mov    %r13,%rsi
+mov    %r14,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2104>
+lea    -0x1(%rbx),%eax
+and    %bx,%ax
+mov    %eax,%ebx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0xc80>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x570>
+mov    0x40(%rsp),%r15
+cmp    %r15,%rbx
+cmovbe %r15,%rbx
+dec    %r15
+mov    %rbx,%r14
+neg    %r14
+mov    %rbx,%r12
+lea    (%r14,%r15,1),%rbx
+cmp    $0xffffffffffffffff,%rbx
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21aa>
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+inc    %r15
+mov    %r13,%rsi
+mov    %r15,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0xcd0>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ad>
+xor    %ecx,%ecx
+mov    $0x20,%eax
+sub    0x3c(%rsp),%eax
+mov    $0xffffffff,%edx
+cmovb  %ecx,%eax
+cmp    $0x20,%eax
+shlx   %eax,%edx,%eax
+mov    %rbx,%rdx
+bswap  %eax
+cmovae %ecx,%eax
+sub    0x40(%rsp),%rdx
+cmovae %rdx,%rcx
+cmp    $0x10,%rcx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x215a>
+vpbroadcastd 0x80(%rsp),%zmm25
+vpbroadcastd 0x84(%rsp),%zmm26
+vpbroadcastd 0x88(%rsp),%zmm27
+vpbroadcastd 0x8c(%rsp),%zmm28
+vpbroadcastd RIP(%rip),%zmm8
+vpbroadcastd RIP(%rip),%zmm11
+vpbroadcastd RIP(%rip),%zmm12
+vpbroadcastd RIP(%rip),%zmm14
+mov    0x40(%rsp),%r15
+lea    0x380(%rsp),%r12
+lea    RIP(%rip),%rdx
+vpaddd RIP(%rip){1to16},%zmm25,%zmm0
+vpaddd RIP(%rip){1to16},%zmm27,%zmm5
+vmovdqa64 %zmm25,0x180(%rsp)
+vmovdqa64 %zmm26,0x140(%rsp)
+vmovdqa64 %zmm27,0x100(%rsp)
+vmovdqa64 %zmm28,0xc0(%rsp)
+vprold $0x10,%zmm0,%zmm1
+vpaddd RIP(%rip){1to16},%zmm1,%zmm2
+vpaddd %zmm26,%zmm0,%zmm0
+vpxord RIP(%rip){1to16},%zmm2,%zmm3
+vprold $0x14,%zmm3,%zmm3
+vpaddd %zmm3,%zmm0,%zmm0
+vpxord %zmm1,%zmm0,%zmm1
+vprold $0x18,%zmm1,%zmm29
+vpaddd %zmm2,%zmm29,%zmm30
+vprold $0x10,%zmm5,%zmm2
+vmovdqa64 %zmm29,0x840(%rsp)
+vpxord %zmm3,%zmm30,%zmm1
+vpaddd RIP(%rip){1to16},%zmm2,%zmm3
+vmovdqa64 %zmm30,0x800(%rsp)
+vpxord RIP(%rip){1to16},%zmm3,%zmm4
+vprold $0x19,%zmm1,%zmm31
+vpaddd %zmm28,%zmm5,%zmm1
+vpaddd RIP(%rip){1to16},%zmm31,%zmm18
+vpbroadcastd RIP(%rip),%zmm5
+vmovdqa64 %zmm31,0x7c0(%rsp)
+vprold $0x14,%zmm4,%zmm4
+vmovdqa64 %zmm18,0x640(%rsp)
+vpaddd %zmm4,%zmm1,%zmm6
+vpxord %zmm2,%zmm6,%zmm1
+vmovdqa64 %zmm6,0x780(%rsp)
+vprold $0x18,%zmm1,%zmm13
+vpaddd %zmm3,%zmm13,%zmm17
+vpxor  %xmm3,%xmm3,%xmm3
+vmovdqa64 %zmm13,0x740(%rsp)
+vpxord %zmm4,%zmm17,%zmm1
+vmovdqa64 RIP(%rip),%zmm4
+vmovdqa64 %zmm17,0x700(%rsp)
+vprold $0x19,%zmm1,%zmm7
+vpbroadcastd %eax,%zmm1
+vmovdqa64 %zmm1,0x1c0(%rsp)
+vpaddd %zmm0,%zmm7,%zmm9
+vpxord RIP(%rip){1to16},%zmm9,%zmm0
+vmovdqa64 %zmm7,0x6c0(%rsp)
+vmovdqa64 %zmm9,0x680(%rsp)
+vprold $0x10,%zmm0,%zmm10
+vmovdqa64 RIP(%rip),%zmm0
+vmovdqa64 %zmm10,0x600(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x18a0>
+mov    0x40(%rsp),%r15
+vmovdqa64 0x140(%rsp),%zmm25
+vmovdqa64 0x100(%rsp),%zmm26
+vmovdqa64 0xc0(%rsp),%zmm27
+vmovdqa64 0x840(%rsp),%zmm28
+vmovdqa64 0x800(%rsp),%zmm29
+vmovdqa64 0x7c0(%rsp),%zmm30
+vmovdqa64 0x780(%rsp),%zmm31
+vmovdqa64 0x740(%rsp),%zmm14
+vmovdqa64 0x700(%rsp),%zmm15
+vmovdqa64 0x6c0(%rsp),%zmm16
+vmovdqa64 0x680(%rsp),%zmm17
+vmovdqa64 0x640(%rsp),%zmm13
+vmovdqa64 0x600(%rsp),%zmm8
+vmovdqa64 0xb00(%rsp),%zmm12
+vmovdqa64 0xac0(%rsp),%zmm18
+vmovdqa64 0xa80(%rsp),%zmm9
+vmovdqa64 0xa40(%rsp),%zmm10
+vmovdqa64 0xa00(%rsp),%zmm19
+vmovdqa64 0x9c0(%rsp),%zmm20
+vmovdqa64 0x980(%rsp),%zmm11
+vmovdqa64 0x940(%rsp),%zmm21
+vmovdqa64 0x900(%rsp),%zmm22
+vmovdqa64 0x8c0(%rsp),%zmm23
+vmovdqa64 0x880(%rsp),%zmm3
+vmovdqa64 RIP(%rip),%zmm0
+mov    0x70(%rsp),%rbx
+mov    $0x0,%ecx
+lea    RIP(%rip),%rdx
+vpxor  %xmm2,%xmm2,%xmm2
+add    $0x10,%r15
+mov    %rbx,%rax
+sub    %r15,%rax
+cmovb  %rcx,%rax
+cmp    $0xf,%rax
+jbe    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2113>
+vpbroadcastd %r15d,%zmm1
+mov    %r15,0x40(%rsp)
+shr    $0x20,%r15
+vmovdqa64 %zmm25,0x200(%rsp)
+vmovdqa64 %zmm26,0x240(%rsp)
+vmovdqa64 %zmm27,0x280(%rsp)
+vmovdqa64 %zmm28,0x2c0(%rsp)
+vmovdqa64 %zmm29,0x300(%rsp)
+vmovdqa64 %zmm30,0x340(%rsp)
+vmovdqa64 %zmm31,0x380(%rsp)
+vmovdqa64 %zmm14,0x3c0(%rsp)
+vmovdqa64 %zmm2,0x140(%r12)
+vmovdqa64 %zmm2,0x100(%r12)
+vmovdqa64 %zmm2,0xc0(%r12)
+vmovdqa64 %zmm2,0x80(%r12)
+vmovdqa64 %zmm2,0x40(%r12)
+vmovdqa64 %zmm2,(%r12)
+vmovdqa64 %zmm19,%zmm14
+vpaddd %zmm0,%zmm1,%zmm0
+vpaddd %zmm0,%zmm3,%zmm7
+vpcmpltud %zmm1,%zmm0,%k0
+vpbroadcastd %r15d,%zmm1
+vmovdqa64 %zmm0,0x400(%rsp)
+vpxord %zmm16,%zmm7,%zmm3
+vpmovm2d %k0,%zmm2
+vpsubd %zmm2,%zmm1,%zmm1
+vmovdqa64 %zmm13,%zmm16
+vmovdqa64 %zmm9,%zmm13
+vmovdqa64 %zmm11,%zmm9
+vmovdqa64 %zmm22,%zmm11
+vprold $0x10,%zmm3,%zmm3
+vpaddd %zmm7,%zmm1,%zmm2
+vmovdqa64 %zmm1,0x440(%rsp)
+vpaddd %zmm17,%zmm3,%zmm4
+vpxord %zmm15,%zmm4,%zmm5
+vmovdqa64 %zmm23,%zmm15
+vprold $0x14,%zmm5,%zmm6
+vpaddd %zmm6,%zmm2,%zmm17
+vpxord %zmm3,%zmm17,%zmm2
+vprold $0x18,%zmm2,%zmm2
+vpaddd %zmm4,%zmm2,%zmm5
+vmovdqa64 %zmm20,%zmm4
+vpxord %zmm6,%zmm5,%zmm3
+vmovdqa64 %zmm18,%zmm6
+vprold $0x19,%zmm3,%zmm7
+vmovdqa64 %zmm12,%zmm3
+vmovdqa64 %zmm8,%zmm12
+vmovdqa64 %zmm21,%zmm8
+cs nopw 0x0(%rax,%rax,1)
+mov    (%rdx),%rdi
+cmp    $0xf,%rdi
+ja     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2413>
+mov    0x8(%rdx),%rcx
+cmp    $0x10,%rcx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x24cc>
+mov    0x10(%rdx),%rax
+cmp    $0x10,%rax
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23fc>
+mov    0x18(%rdx),%rbx
+cmp    $0x10,%rbx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x24b5>
+mov    0x20(%rdx),%r12
+cmp    $0x10,%r12
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23e5>
+mov    0x28(%rdx),%r15
+cmp    $0x10,%r15
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x249e>
+mov    0x30(%rdx),%r13
+cmp    $0x10,%r13
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23ce>
+mov    0x38(%rdx),%r14
+cmp    $0x10,%r14
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2470>
+mov    0x40(%rdx),%r11
+cmp    $0x10,%r11
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23b7>
+mov    0x48(%rdx),%r10
+cmp    $0x10,%r10
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2487>
+mov    0x50(%rdx),%r9
+cmp    $0x10,%r9
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2387>
+mov    0x58(%rdx),%r8
+cmp    $0x10,%r8
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2440>
+mov    0x60(%rdx),%rsi
+mov    %rsi,0x68(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x236e>
+mov    0x68(%rdx),%rsi
+mov    %rsi,0x60(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2457>
+mov    0x70(%rdx),%rsi
+mov    %rsi,0x58(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x239e>
+mov    0x78(%rdx),%rsi
+mov    %rsi,0x50(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2427>
+shl    $0x6,%rdi
+shl    $0x6,%r13
+vpaddd %zmm17,%zmm15,%zmm17
+vpaddd %zmm9,%zmm4,%zmm9
+shl    $0x6,%r12
+shl    $0x6,%r14
+vpaddd %zmm13,%zmm6,%zmm13
+shl    $0x6,%rcx
+shl    $0x6,%r15
+shl    $0x6,%rax
+vpaddd %zmm16,%zmm7,%zmm16
+shl    $0x6,%rbx
+shl    $0x6,%r9
+shl    $0x6,%r11
+shl    $0x6,%r8
+shl    $0x6,%r10
+sub    $0xffffffffffffff80,%rdx
+vpaddd 0x200(%rsp,%rdi,1),%zmm17,%zmm18
+vpaddd 0x200(%rsp,%r13,1),%zmm9,%zmm17
+vpaddd 0x200(%rsp,%r12,1),%zmm13,%zmm23
+vpaddd 0x200(%rsp,%rax,1),%zmm16,%zmm21
+mov    0x68(%rsp),%rax
+mov    0x78(%rsp),%r13
+vpaddd 0x200(%rsp,%r14,1),%zmm17,%zmm19
+vpaddd 0x200(%rsp,%rcx,1),%zmm18,%zmm20
+vpaddd 0x200(%rsp,%r15,1),%zmm23,%zmm24
+vpaddd 0x200(%rsp,%rbx,1),%zmm21,%zmm22
+shl    $0x6,%rax
+vpxord %zmm2,%zmm17,%zmm2
+vpxord %zmm8,%zmm23,%zmm8
+vpxord %zmm12,%zmm18,%zmm9
+vpxord %zmm10,%zmm21,%zmm10
+vprold $0x10,%zmm2,%zmm2
+vprold $0x10,%zmm9,%zmm13
+vprold $0x10,%zmm8,%zmm8
+vpaddd %zmm3,%zmm2,%zmm3
+vpaddd %zmm14,%zmm13,%zmm12
+vpaddd %zmm5,%zmm8,%zmm5
+vpxord %zmm4,%zmm3,%zmm4
+vpxord %zmm6,%zmm5,%zmm6
+vpxord %zmm15,%zmm12,%zmm9
+vprold $0x14,%zmm4,%zmm4
+vprold $0x14,%zmm9,%zmm14
+vprold $0x14,%zmm6,%zmm6
+vprold $0x10,%zmm10,%zmm9
+vpaddd %zmm4,%zmm19,%zmm17
+vpaddd %zmm14,%zmm20,%zmm16
+vpaddd %zmm6,%zmm24,%zmm20
+vpaddd %zmm11,%zmm9,%zmm11
+vpxord %zmm2,%zmm17,%zmm2
+vpxord %zmm7,%zmm11,%zmm7
+vpxord %zmm8,%zmm20,%zmm8
+vpxord %zmm13,%zmm16,%zmm13
+vprold $0x18,%zmm2,%zmm2
+vprold $0x14,%zmm7,%zmm7
+vprold $0x18,%zmm8,%zmm8
+vprold $0x18,%zmm13,%zmm13
+vpaddd %zmm3,%zmm2,%zmm3
+vpaddd %zmm7,%zmm22,%zmm18
+vpaddd %zmm5,%zmm8,%zmm5
+vpaddd %zmm12,%zmm13,%zmm22
+vpxord %zmm4,%zmm3,%zmm4
+vpxord %zmm6,%zmm5,%zmm6
+vpxord %zmm9,%zmm18,%zmm9
+vpxord %zmm14,%zmm22,%zmm12
+vprold $0x19,%zmm4,%zmm4
+vprold $0x18,%zmm9,%zmm10
+vprold $0x19,%zmm6,%zmm6
+vprold $0x19,%zmm12,%zmm23
+vpaddd %zmm20,%zmm4,%zmm19
+vpaddd 0x200(%rsp,%rax,1),%zmm19,%zmm19
+mov    0x60(%rsp),%rax
+vpaddd %zmm11,%zmm10,%zmm9
+vpaddd %zmm18,%zmm6,%zmm18
+vpaddd 0x200(%rsp,%r9,1),%zmm18,%zmm21
+vpaddd %zmm23,%zmm17,%zmm12
+vpxord %zmm7,%zmm9,%zmm7
+vpaddd 0x200(%rsp,%r8,1),%zmm21,%zmm18
+vprold $0x19,%zmm7,%zmm7
+vpaddd %zmm16,%zmm7,%zmm11
+vpaddd 0x200(%rsp,%r11,1),%zmm11,%zmm15
+shl    $0x6,%rax
+vpaddd 0x200(%rsp,%r10,1),%zmm15,%zmm11
+vpaddd 0x200(%rsp,%rax,1),%zmm19,%zmm20
+mov    0x58(%rsp),%rax
+vpxord %zmm13,%zmm21,%zmm13
+vpxord %zmm10,%zmm19,%zmm10
+vprold $0x10,%zmm10,%zmm10
+shl    $0x6,%rax
+vpaddd %zmm22,%zmm10,%zmm14
+vpaddd 0x200(%rsp,%rax,1),%zmm12,%zmm12
+mov    0x50(%rsp),%rax
+vpxord %zmm2,%zmm15,%zmm2
+vpxord %zmm4,%zmm14,%zmm4
+vprold $0x10,%zmm2,%zmm2
+vprold $0x14,%zmm4,%zmm4
+vpaddd %zmm5,%zmm2,%zmm5
+vpxord %zmm7,%zmm5,%zmm7
+shl    $0x6,%rax
+vprold $0x14,%zmm7,%zmm7
+vpaddd 0x200(%rsp,%rax,1),%zmm12,%zmm24
+lea    RIP(%rip),%rax
+vpaddd %zmm7,%zmm11,%zmm17
+vpxord %zmm8,%zmm12,%zmm8
+vprold $0x10,%zmm13,%zmm12
+vpaddd %zmm4,%zmm20,%zmm13
+vpxord %zmm2,%zmm17,%zmm2
+vprold $0x10,%zmm8,%zmm8
+vpxord %zmm10,%zmm13,%zmm10
+vprold $0x18,%zmm2,%zmm2
+vpaddd %zmm3,%zmm12,%zmm3
+vprold $0x18,%zmm10,%zmm10
+vpxord %zmm6,%zmm3,%zmm6
+vpaddd %zmm5,%zmm2,%zmm5
+vprold $0x14,%zmm6,%zmm6
+vpaddd %zmm14,%zmm10,%zmm14
+vpxord %zmm7,%zmm5,%zmm7
+vpxord %zmm4,%zmm14,%zmm4
+vprold $0x19,%zmm7,%zmm7
+vpaddd %zmm6,%zmm18,%zmm16
+vpaddd %zmm9,%zmm8,%zmm18
+vprold $0x19,%zmm4,%zmm4
+vpxord %zmm23,%zmm18,%zmm9
+vpxord %zmm12,%zmm16,%zmm11
+vprold $0x14,%zmm9,%zmm15
+vprold $0x18,%zmm11,%zmm12
+vpaddd %zmm15,%zmm24,%zmm9
+vpaddd %zmm3,%zmm12,%zmm3
+vpxord %zmm8,%zmm9,%zmm8
+vpxord %zmm6,%zmm3,%zmm6
+vprold $0x18,%zmm8,%zmm8
+vprold $0x19,%zmm6,%zmm6
+vpaddd %zmm18,%zmm8,%zmm11
+vpxord %zmm15,%zmm11,%zmm15
+vprold $0x19,%zmm15,%zmm15
+cmp    %rax,%rdx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x1150>
+vpaddd %zmm17,%zmm15,%zmm17
+vpaddd %zmm0,%zmm4,%zmm0
+lea    0x480(%rsp),%r12
+vpxord %zmm12,%zmm17,%zmm12
+vpaddd %zmm9,%zmm0,%zmm0
+vprold $0x10,%zmm12,%zmm12
+vpxord %zmm2,%zmm0,%zmm2
+vpaddd %zmm31,%zmm0,%zmm0
+vprold $0x10,%zmm2,%zmm2
+vpaddd %zmm14,%zmm12,%zmm14
+vpxord %zmm15,%zmm14,%zmm15
+vpaddd %zmm3,%zmm2,%zmm3
+vprold $0x14,%zmm15,%zmm15
+vpxord %zmm4,%zmm3,%zmm4
+vprold $0x14,%zmm4,%zmm4
+vpaddd %zmm17,%zmm15,%zmm15
+vpaddd %zmm7,%zmm16,%zmm17
+vpxord %zmm12,%zmm15,%zmm12
+vpaddd %zmm30,%zmm17,%zmm16
+vpaddd %zmm4,%zmm0,%zmm0
+vprold $0x18,%zmm12,%zmm12
+vpxord %zmm16,%zmm10,%zmm10
+vpxord %zmm2,%zmm0,%zmm0
+vprold $0x10,%zmm10,%zmm10
+vprold $0x18,%zmm0,%zmm0
+vpaddd %zmm14,%zmm12,%zmm12
+vpaddd 0x180(%rsp),%zmm17,%zmm14
+vpaddd %zmm10,%zmm11,%zmm11
+vpaddd %zmm3,%zmm0,%zmm2
+vpxord %zmm7,%zmm11,%zmm7
+vpxord %zmm4,%zmm2,%zmm2
+vprold $0x14,%zmm7,%zmm7
+vprold $0x19,%zmm2,%zmm2
+vpaddd %zmm7,%zmm14,%zmm14
+vpxord %zmm10,%zmm14,%zmm10
+vpaddd %zmm26,%zmm6,%zmm14
+vprold $0x18,%zmm10,%zmm10
+vpaddd %zmm11,%zmm10,%zmm11
+vpxord %zmm7,%zmm11,%zmm7
+vpaddd %zmm13,%zmm14,%zmm11
+vpxord %zmm11,%zmm8,%zmm8
+vprold $0x19,%zmm7,%zmm7
+vpaddd %zmm1,%zmm11,%zmm1
+vprold $0x10,%zmm8,%zmm8
+vpaddd %zmm7,%zmm15,%zmm3
+vpaddd %zmm5,%zmm8,%zmm5
+vpxord %zmm0,%zmm3,%zmm0
+vpxord %zmm6,%zmm5,%zmm6
+vprold $0x10,%zmm0,%zmm0
+vprold $0x14,%zmm6,%zmm6
+vpaddd %zmm6,%zmm1,%zmm1
+vpxord %zmm8,%zmm1,%zmm6
+vpaddd %zmm28,%zmm1,%zmm1
+vprold $0x18,%zmm6,%zmm6
+vpaddd %zmm2,%zmm1,%zmm1
+vpxord %zmm10,%zmm1,%zmm4
+vpaddd %zmm29,%zmm1,%zmm1
+vpaddd %zmm5,%zmm6,%zmm5
+vpaddd %zmm0,%zmm5,%zmm0
+vpxord %zmm7,%zmm0,%zmm0
+vprold $0x14,%zmm0,%zmm0
+vpaddd %zmm3,%zmm0,%zmm0
+vprold $0x10,%zmm4,%zmm3
+vpaddd %zmm3,%zmm12,%zmm4
+vpxord %zmm2,%zmm4,%zmm2
+vprold $0x14,%zmm2,%zmm2
+vpaddd %zmm2,%zmm1,%zmm1
+vpxord %zmm3,%zmm1,%zmm1
+vprold $0x18,%zmm1,%zmm1
+vpaddd %zmm4,%zmm1,%zmm1
+vpxord %zmm0,%zmm1,%zmm0
+vptestnmd 0x1c0(%rsp),%zmm0,%k0
+kortestw %k0,%k0
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0xf09>
+cmpl   $0x21,0x3c(%rsp)
+kmovd  %k0,%ebx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ce>
+data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+tzcnt  %ebx,%r14d
+add    0x40(%rsp),%r14
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+mov    %r13,%rsi
+mov    %r14,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2104>
+lea    -0x1(%rbx),%eax
+and    %bx,%ax
+mov    %eax,%ebx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x1780>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0xf09>
+mov    0x40(%rsp),%r15
+vmovdqa64 0x180(%rsp),%zmm25
+vmovdqa64 0x140(%rsp),%zmm26
+vmovdqa64 0x100(%rsp),%zmm27
+vmovdqa64 0xc0(%rsp),%zmm28
+vmovdqa64 0x840(%rsp),%zmm29
+vmovdqa64 0x800(%rsp),%zmm30
+vmovdqa64 0x7c0(%rsp),%zmm31
+vmovdqa64 0x780(%rsp),%zmm6
+vmovdqa64 0x740(%rsp),%zmm13
+vmovdqa64 0x700(%rsp),%zmm17
+vmovdqa64 0x6c0(%rsp),%zmm7
+vmovdqa64 0x680(%rsp),%zmm9
+vmovdqa64 0x640(%rsp),%zmm18
+vmovdqa64 0x600(%rsp),%zmm10
+vmovdqa64 RIP(%rip),%zmm0
+vmovdqa64 RIP(%rip),%zmm4
+vpbroadcastd RIP(%rip),%zmm5
+vpbroadcastd RIP(%rip),%zmm8
+vpbroadcastd RIP(%rip),%zmm11
+vpbroadcastd RIP(%rip),%zmm12
+vpbroadcastd RIP(%rip),%zmm14
+mov    0x70(%rsp),%rbx
+mov    $0x0,%ecx
+lea    RIP(%rip),%rdx
+vpxor  %xmm3,%xmm3,%xmm3
+add    $0x10,%r15
+mov    %rbx,%rax
+sub    %r15,%rax
+cmovb  %rcx,%rax
+cmp    $0xf,%rax
+jbe    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x215f>
+vpbroadcastd %r15d,%zmm2
+mov    %r15,0x40(%rsp)
+shr    $0x20,%r15
+vmovdqa64 %zmm25,0x200(%rsp)
+vmovdqa64 %zmm26,0x240(%rsp)
+vmovdqa64 %zmm27,0x280(%rsp)
+vmovdqa64 %zmm28,0x2c0(%rsp)
+vmovdqa64 %zmm3,0x240(%r12)
+vmovdqa64 %zmm3,0x200(%r12)
+vmovdqa64 %zmm3,0x1c0(%r12)
+vmovdqa64 %zmm3,0x180(%r12)
+vmovdqa64 %zmm3,0x140(%r12)
+vmovdqa64 %zmm3,0x100(%r12)
+vmovdqa64 %zmm3,0xc0(%r12)
+vmovdqa64 %zmm3,0x80(%r12)
+vmovdqa64 %zmm3,0x40(%r12)
+vmovdqa64 %zmm3,(%r12)
+vpaddd %zmm0,%zmm2,%zmm0
+vpbroadcastd %r15d,%zmm1
+vpcmpltud %zmm2,%zmm0,%k0
+vpaddd %zmm4,%zmm2,%zmm2
+vmovdqa64 %zmm0,0x300(%rsp)
+vpxord %zmm5,%zmm2,%zmm4
+vpmovm2d %k0,%zmm3
+vpsubd %zmm3,%zmm1,%zmm1
+vprold $0x10,%zmm4,%zmm3
+vpaddd %zmm2,%zmm1,%zmm2
+vmovdqa64 %zmm1,0x340(%rsp)
+vpaddd %zmm8,%zmm3,%zmm4
+vpxord %zmm11,%zmm4,%zmm5
+vprold $0x14,%zmm5,%zmm5
+vpaddd %zmm5,%zmm2,%zmm8
+vpxord %zmm3,%zmm8,%zmm2
+vpaddd %zmm14,%zmm8,%zmm19
+vprold $0x18,%zmm2,%zmm11
+vpxord %zmm13,%zmm19,%zmm8
+vprold $0x10,%zmm8,%zmm8
+vpaddd %zmm4,%zmm11,%zmm2
+vpaddd %zmm10,%zmm2,%zmm4
+vpxord %zmm5,%zmm2,%zmm3
+vpxord %zmm7,%zmm4,%zmm2
+vprold $0x19,%zmm3,%zmm3
+vprold $0x14,%zmm2,%zmm5
+vpaddd %zmm5,%zmm9,%zmm16
+vpaddd %zmm3,%zmm6,%zmm9
+vpxord %zmm29,%zmm9,%zmm6
+vpxord %zmm10,%zmm16,%zmm2
+vprold $0x10,%zmm6,%zmm6
+vprold $0x18,%zmm2,%zmm2
+vpaddd %zmm12,%zmm6,%zmm10
+vpaddd %zmm4,%zmm2,%zmm4
+vpxord %zmm3,%zmm10,%zmm3
+vpxord %zmm5,%zmm4,%zmm5
+vprold $0x14,%zmm3,%zmm12
+vprold $0x19,%zmm5,%zmm7
+vpaddd %zmm12,%zmm9,%zmm15
+vpxord %zmm6,%zmm15,%zmm3
+vprold $0x18,%zmm3,%zmm9
+vpaddd %zmm10,%zmm9,%zmm3
+vpxord %zmm12,%zmm3,%zmm5
+vpaddd %zmm30,%zmm8,%zmm12
+vpxord %zmm14,%zmm12,%zmm10
+vprold $0x19,%zmm5,%zmm6
+vprold $0x14,%zmm10,%zmm14
+vpaddd %zmm14,%zmm19,%zmm13
+vpxord %zmm8,%zmm13,%zmm5
+vpxord %zmm11,%zmm18,%zmm8
+vprold $0x10,%zmm8,%zmm8
+vprold $0x18,%zmm5,%zmm10
+vpaddd %zmm17,%zmm8,%zmm19
+vpaddd %zmm12,%zmm10,%zmm12
+vpxord %zmm31,%zmm19,%zmm11
+vpxord %zmm14,%zmm12,%zmm5
+vprold $0x14,%zmm11,%zmm17
+vprold $0x19,%zmm5,%zmm5
+vpaddd %zmm17,%zmm18,%zmm11
+vpxord %zmm8,%zmm11,%zmm8
+vprold $0x18,%zmm8,%zmm8
+vpaddd %zmm19,%zmm8,%zmm14
+vpxord %zmm17,%zmm14,%zmm17
+vprold $0x19,%zmm17,%zmm17
+cs nopw 0x0(%rax,%rax,1)
+mov    (%rdx),%rdi
+cmp    $0xf,%rdi
+ja     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2413>
+mov    0x8(%rdx),%rcx
+cmp    $0x10,%rcx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x24cc>
+mov    0x10(%rdx),%rax
+cmp    $0x10,%rax
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23fc>
+mov    0x18(%rdx),%rbx
+cmp    $0x10,%rbx
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x24b5>
+mov    0x20(%rdx),%r12
+cmp    $0x10,%r12
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23e5>
+mov    0x28(%rdx),%r15
+cmp    $0x10,%r15
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x249e>
+mov    0x30(%rdx),%r13
+cmp    $0x10,%r13
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23ce>
+mov    0x38(%rdx),%r14
+cmp    $0x10,%r14
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2470>
+mov    0x40(%rdx),%r11
+cmp    $0x10,%r11
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x23b7>
+mov    0x48(%rdx),%r10
+cmp    $0x10,%r10
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2487>
+mov    0x50(%rdx),%r9
+cmp    $0x10,%r9
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2387>
+mov    0x58(%rdx),%r8
+cmp    $0x10,%r8
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2440>
+mov    0x60(%rdx),%rsi
+mov    %rsi,0x68(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x236e>
+mov    0x68(%rdx),%rsi
+mov    %rsi,0x60(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2457>
+mov    0x70(%rdx),%rsi
+mov    %rsi,0x58(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x239e>
+mov    0x78(%rdx),%rsi
+mov    %rsi,0x50(%rsp)
+cmp    $0x10,%rsi
+jae    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2427>
+shl    $0x6,%r13
+vpaddd %zmm11,%zmm5,%zmm11
+shl    $0x6,%rdi
+vpaddd %zmm16,%zmm17,%zmm16
+shl    $0x6,%rax
+vpaddd %zmm15,%zmm7,%zmm15
+shl    $0x6,%r12
+shl    $0x6,%r14
+vpaddd %zmm13,%zmm6,%zmm13
+shl    $0x6,%rbx
+shl    $0x6,%rcx
+shl    $0x6,%r15
+shl    $0x6,%r11
+shl    $0x6,%r9
+shl    $0x6,%r10
+shl    $0x6,%r8
+sub    $0xffffffffffffff80,%rdx
+vpaddd 0x200(%rsp,%r13,1),%zmm11,%zmm18
+vpaddd 0x200(%rsp,%rdi,1),%zmm16,%zmm16
+vpaddd 0x200(%rsp,%rax,1),%zmm15,%zmm21
+vpaddd 0x200(%rsp,%r12,1),%zmm13,%zmm23
+mov    0x68(%rsp),%rax
+mov    0x78(%rsp),%r13
+vpaddd 0x200(%rsp,%r14,1),%zmm18,%zmm19
+vpaddd 0x200(%rsp,%rbx,1),%zmm21,%zmm22
+vpaddd 0x200(%rsp,%rcx,1),%zmm16,%zmm20
+vpaddd 0x200(%rsp,%r15,1),%zmm23,%zmm24
+shl    $0x6,%rax
+vpxord %zmm2,%zmm18,%zmm2
+vpxord %zmm9,%zmm16,%zmm9
+vpxord %zmm8,%zmm23,%zmm8
+vprold $0x10,%zmm2,%zmm2
+vprold $0x10,%zmm9,%zmm13
+vprold $0x10,%zmm8,%zmm8
+vpaddd %zmm3,%zmm2,%zmm3
+vpaddd %zmm12,%zmm13,%zmm12
+vpaddd %zmm4,%zmm8,%zmm4
+vpxord %zmm5,%zmm3,%zmm5
+vpxord %zmm17,%zmm12,%zmm9
+vpxord %zmm6,%zmm4,%zmm6
+vprold $0x14,%zmm5,%zmm5
+vprold $0x14,%zmm9,%zmm15
+vpxord %zmm10,%zmm21,%zmm9
+vprold $0x14,%zmm6,%zmm6
+vprold $0x10,%zmm9,%zmm9
+vpaddd %zmm5,%zmm19,%zmm18
+vpaddd %zmm15,%zmm20,%zmm16
+vpaddd %zmm6,%zmm24,%zmm20
+vpxord %zmm2,%zmm18,%zmm2
+vpaddd %zmm14,%zmm9,%zmm10
+vpxord %zmm8,%zmm20,%zmm8
+vpxord %zmm13,%zmm16,%zmm13
+vprold $0x18,%zmm2,%zmm2
+vpxord %zmm7,%zmm10,%zmm7
+vprold $0x18,%zmm8,%zmm8
+vprold $0x18,%zmm13,%zmm13
+vprold $0x14,%zmm7,%zmm7
+vpaddd %zmm3,%zmm2,%zmm3
+vpaddd %zmm4,%zmm8,%zmm4
+vpaddd %zmm12,%zmm13,%zmm12
+vpxord %zmm5,%zmm3,%zmm5
+vpaddd %zmm7,%zmm22,%zmm17
+vpxord %zmm6,%zmm4,%zmm6
+vpxord %zmm15,%zmm12,%zmm15
+vprold $0x19,%zmm5,%zmm5
+vpxord %zmm9,%zmm17,%zmm9
+vprold $0x19,%zmm6,%zmm6
+vprold $0x19,%zmm15,%zmm22
+vprold $0x18,%zmm9,%zmm9
+vpaddd %zmm20,%zmm5,%zmm19
+vpaddd 0x200(%rsp,%rax,1),%zmm19,%zmm19
+mov    0x60(%rsp),%rax
+vpaddd %zmm17,%zmm6,%zmm17
+vpaddd 0x200(%rsp,%r9,1),%zmm17,%zmm21
+vpaddd %zmm22,%zmm18,%zmm15
+vpaddd %zmm10,%zmm9,%zmm11
+vpaddd 0x200(%rsp,%r8,1),%zmm21,%zmm17
+vpxord %zmm7,%zmm11,%zmm7
+vprold $0x19,%zmm7,%zmm7
+shl    $0x6,%rax
+vpaddd %zmm16,%zmm7,%zmm10
+vpaddd 0x200(%rsp,%r11,1),%zmm10,%zmm14
+vpaddd 0x200(%rsp,%rax,1),%zmm19,%zmm20
+mov    0x58(%rsp),%rax
+vpaddd 0x200(%rsp,%r10,1),%zmm14,%zmm10
+vpxord %zmm13,%zmm21,%zmm13
+shl    $0x6,%rax
+vpaddd 0x200(%rsp,%rax,1),%zmm15,%zmm15
+mov    0x50(%rsp),%rax
+vpxord %zmm2,%zmm14,%zmm2
+vpxord %zmm9,%zmm19,%zmm14
+vprold $0x10,%zmm13,%zmm9
+vprold $0x10,%zmm2,%zmm2
+vpaddd %zmm3,%zmm9,%zmm3
+vpaddd %zmm4,%zmm2,%zmm4
+vpxord %zmm6,%zmm3,%zmm6
+vpxord %zmm7,%zmm4,%zmm7
+shl    $0x6,%rax
+vprold $0x14,%zmm6,%zmm6
+vpaddd 0x200(%rsp,%rax,1),%zmm15,%zmm18
+vprold $0x14,%zmm7,%zmm7
+lea    RIP(%rip),%rax
+vpxord %zmm8,%zmm15,%zmm8
+vpaddd %zmm7,%zmm10,%zmm16
+vprold $0x10,%zmm14,%zmm10
+vpaddd %zmm6,%zmm17,%zmm15
+vprold $0x10,%zmm8,%zmm8
+vpxord %zmm2,%zmm16,%zmm2
+vpxord %zmm9,%zmm15,%zmm9
+vpaddd %zmm12,%zmm10,%zmm12
+vprold $0x18,%zmm2,%zmm2
+vprold $0x18,%zmm9,%zmm9
+vpaddd %zmm11,%zmm8,%zmm14
+vpxord %zmm5,%zmm12,%zmm5
+vpxord %zmm22,%zmm14,%zmm11
+vprold $0x14,%zmm5,%zmm5
+vpaddd %zmm4,%zmm2,%zmm4
+vpaddd %zmm3,%zmm9,%zmm3
+vprold $0x14,%zmm11,%zmm17
+vpxord %zmm7,%zmm4,%zmm7
+vpxord %zmm6,%zmm3,%zmm6
+vpaddd %zmm5,%zmm20,%zmm13
+vprold $0x19,%zmm7,%zmm7
+vprold $0x19,%zmm6,%zmm6
+vpaddd %zmm17,%zmm18,%zmm11
+vpxord %zmm10,%zmm13,%zmm10
+vpxord %zmm8,%zmm11,%zmm8
+vprold $0x18,%zmm10,%zmm10
+vprold $0x18,%zmm8,%zmm8
+vpaddd %zmm12,%zmm10,%zmm12
+vpaddd %zmm14,%zmm8,%zmm14
+vpxord %zmm5,%zmm12,%zmm5
+vpxord %zmm17,%zmm14,%zmm17
+vprold $0x19,%zmm5,%zmm5
+vprold $0x19,%zmm17,%zmm17
+cmp    %rax,%rdx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x1ac0>
+vpaddd %zmm1,%zmm7,%zmm1
+vpaddd %zmm17,%zmm16,%zmm16
+vpaddd %zmm11,%zmm5,%zmm11
+lea    0x380(%rsp),%r12
+vpaddd %zmm15,%zmm1,%zmm1
+vpxord %zmm9,%zmm16,%zmm9
+vpxord %zmm2,%zmm11,%zmm2
+vpxord %zmm1,%zmm10,%zmm10
+vprold $0x10,%zmm9,%zmm9
+vpaddd %zmm25,%zmm1,%zmm1
+vprold $0x10,%zmm2,%zmm2
+vprold $0x10,%zmm10,%zmm10
+vpaddd %zmm12,%zmm9,%zmm12
+vpaddd %zmm3,%zmm2,%zmm3
+vpaddd %zmm10,%zmm14,%zmm14
+vpxord %zmm17,%zmm12,%zmm17
+vpxord %zmm5,%zmm3,%zmm5
+vpxord %zmm7,%zmm14,%zmm7
+vprold $0x14,%zmm17,%zmm17
+vprold $0x14,%zmm5,%zmm5
+vprold $0x14,%zmm7,%zmm7
+vpaddd %zmm17,%zmm16,%zmm16
+vpaddd %zmm7,%zmm1,%zmm1
+vpxord %zmm9,%zmm16,%zmm9
+vpxord %zmm10,%zmm1,%zmm1
+vprold $0x18,%zmm9,%zmm9
+vprold $0x18,%zmm1,%zmm1
+vpaddd %zmm12,%zmm9,%zmm9
+vpaddd %zmm26,%zmm6,%zmm12
+vpaddd %zmm14,%zmm1,%zmm10
+vpxord %zmm7,%zmm10,%zmm7
+vpaddd %zmm13,%zmm12,%zmm10
+vpxord %zmm10,%zmm8,%zmm8
+vprold $0x19,%zmm7,%zmm7
+vprold $0x10,%zmm8,%zmm8
+vpaddd %zmm4,%zmm8,%zmm4
+vpxord %zmm6,%zmm4,%zmm6
+vprold $0x14,%zmm6,%zmm6
+vpaddd %zmm6,%zmm10,%zmm6
+vpaddd %zmm11,%zmm5,%zmm10
+vpxord %zmm2,%zmm10,%zmm2
+vpxord %zmm8,%zmm6,%zmm8
+vpaddd %zmm7,%zmm16,%zmm10
+vprold $0x18,%zmm2,%zmm2
+vprold $0x18,%zmm8,%zmm8
+vpaddd %zmm3,%zmm2,%zmm3
+vpxord %zmm2,%zmm10,%zmm2
+vpaddd %zmm4,%zmm8,%zmm4
+vpxord %zmm5,%zmm3,%zmm3
+vprold $0x10,%zmm2,%zmm2
+vpaddd %zmm28,%zmm6,%zmm5
+vprold $0x19,%zmm3,%zmm3
+vpaddd %zmm2,%zmm4,%zmm2
+vpaddd %zmm3,%zmm5,%zmm4
+vpxord %zmm7,%zmm2,%zmm2
+vpxord %zmm1,%zmm4,%zmm1
+vpaddd %zmm0,%zmm4,%zmm0
+vprold $0x14,%zmm2,%zmm2
+vprold $0x10,%zmm1,%zmm1
+vpaddd %zmm2,%zmm10,%zmm2
+vpaddd %zmm1,%zmm9,%zmm5
+vpxord %zmm3,%zmm5,%zmm3
+vprold $0x14,%zmm3,%zmm3
+vpaddd %zmm3,%zmm0,%zmm0
+vpxord %zmm1,%zmm0,%zmm0
+vprold $0x18,%zmm0,%zmm0
+vpaddd %zmm5,%zmm0,%zmm0
+vpxord %zmm2,%zmm0,%zmm0
+vptestnmd 0x1c0(%rsp),%zmm0,%k0
+kortestw %k0,%k0
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x17b8>
+cmpl   $0x21,0x3c(%rsp)
+kmovd  %k0,%ebx
+jb     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ce>
+xchg   %ax,%ax
+tzcnt  %ebx,%r14d
+add    0x40(%rsp),%r14
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+mov    %r13,%rsi
+mov    %r14,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2104>
+lea    -0x1(%rbx),%eax
+and    %bx,%ax
+mov    %eax,%ebx
+jne    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x20d0>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x17b8>
+mov    $0x1,%eax
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21b9>
+mov    0x40(%rsp),%r15
+cmp    %r15,%rbx
+cmovbe %r15,%rbx
+dec    %r15
+mov    %rbx,%r14
+neg    %r14
+mov    %rbx,%r12
+cs nopw 0x0(%rax,%rax,1)
+lea    (%r14,%r15,1),%rbx
+cmp    $0xffffffffffffffff,%rbx
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21aa>
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+inc    %r15
+mov    %r13,%rsi
+mov    %r15,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2130>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ad>
+mov    0x40(%rsp),%r15
+cmp    %r15,%rbx
+cmovbe %r15,%rbx
+dec    %r15
+mov    %rbx,%r14
+neg    %r14
+mov    %rbx,%r12
+data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+lea    (%r14,%r15,1),%rbx
+cmp    $0xffffffffffffffff,%rbx
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21aa>
+mov    0x48(%rsp),%rdi
+mov    0x3c(%rsp),%ecx
+inc    %r15
+mov    %r13,%rsi
+mov    %r15,%rdx
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::first_pow_nonce+0x2180>
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21ad>
+mov    %r12,%r15
+xor    %eax,%eax
+cmp    $0xffffffffffffffff,%rbx
+mov    %r15,%r14
+setne  %al
+mov    %r14,%rdx
+lea    -0x28(%rbp),%rsp
+pop    %rbx
+pop    %r12
+pop    %r13
+pop    %r14
+pop    %r15
+pop    %rbp
+vzeroupper
+ret
+mov    0x40(%rsp),%r14
+tzcnt  %ebx,%eax
+add    %rax,%r14
+mov    $0x1,%eax
+jmp    TARGET <bitz::utils::blake3x4::first_pow_nonce+0x21b9>
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rdx
+mov    $0x4d,%esi
+call   TARGET <core::panicking::panic_fmt>
+lea    RIP(%rip),%rdx
+mov    0x50(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x60(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r9,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r11,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r15,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rbx,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rax,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r8,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x58(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x68(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r10,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r13,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r12,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r14,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rcx,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x68(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r9,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x58(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r11,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r13,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r12,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rax,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x50(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r8,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    0x60(%rsp),%rdi
+mov    $0x10,%esi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r14,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r10,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %r15,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rbx,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>
+lea    RIP(%rip),%rdx
+mov    $0x10,%esi
+mov    %rcx,%rdi
+vzeroupper
+call   TARGET <core::panicking::panic_bounds_check>

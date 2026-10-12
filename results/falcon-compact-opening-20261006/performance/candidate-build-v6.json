@@ -1,0 +1,78 @@
+{
+  "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+  "binary": "/tmp/falcon-compact-opening-binaries/candidate-v6",
+  "sha256": "eefeeb4f57db35192e1f7e192572399d3d078beea82e0db41961be9826c09d41",
+  "source_root": "/tmp/falcon-compact-opening-candidate-v6",
+  "source_manifest": "/tmp/falcon-compact-opening-candidate-v6/source-manifest.json",
+  "source_manifest_sha256": "4b7df033c3e5a80a6fa495406ae8f5092ca846a2e6d9ae01aee9453af9352594",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "profile": "release",
+  "target_arch": "x86_64",
+  "root_count": 1,
+  "protocols": {
+    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+  },
+  "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+  "working_tree": true,
+  "benchmark_affinity_overlay": {
+    "files": {
+      "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+      "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+    },
+    "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+    "unchanged_original_files": 816,
+    "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+    "production_changed": false
+  },
+  "build_log_sha256": "a15d1210ec7c4671b2f73561168b590759770c9f72cdd7a0a74c6dee38a9e116",
+  "compiler_artifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///home/john-wu/code/BitZ-pcs#bitz@0.1.0",
+    "manifest_path": "/home/john-wu/code/BitZ-pcs/Cargo.toml",
+    "target": {
+      "kind": [
+        "bench"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "falcon_hybrid",
+      "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_hybrid.rs",
+      "edition": "2024",
+      "required-features": [
+        "falcon-hybrid"
+      ],
+      "doc": false,
+      "doctest": false,
+      "test": false
+    },
+    "profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": true
+    },
+    "features": [
+      "binius64-bench",
+      "default",
+      "falcon",
+      "falcon-hybrid",
+      "hybrid",
+      "parallel",
+      "span-metrics"
+    ],
+    "filenames": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9"
+    ],
+    "executable": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+    "fresh": false
+  },
+  "working_patch_sha256": "fc397bc46fa301673a07fc8a9435b9c4be0c37ab85422995a95c3f0d7ff209e5"
+}

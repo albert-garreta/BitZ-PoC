@@ -1,0 +1,91 @@
+{
+  "baseline_commit": "d9b13bdb43cd2d3a0901b44f0939293f234661b5",
+  "source_checkout": "/tmp/falcon-grinding-experiment-20261009",
+  "patch": "changes.patch",
+  "source_hashes": "source-hashes.json",
+  "binaries": {
+    "falcon_algebraic": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/binaries/falcon_algebraic",
+      "sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e"
+    },
+    "falcon_hybrid": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/binaries/falcon_hybrid",
+      "sha256": "62e9ddcf634510cf3936aac1c0dc2ad916ee64a55c04ec0c0b5c71a9926f2b9c"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "profile": "release: opt-level3,fatLTO,codegen-units1",
+  "batch": 1024,
+  "proof_security_target": 128,
+  "allocation_budget": "15/16 * 2^-128",
+  "cost_file_sha256": "09e9a8939e086b12ccc726544ec2e160fbca7baa2835ccb3f7ba4018a8d03265",
+  "validation_status": "passed",
+  "screening_seeds": [
+    42,
+    43,
+    44
+  ],
+  "measurement_repeats": 7,
+  "warmup_repeats": 1,
+  "validation_summary": "validation/summary.json",
+  "method_updates": [
+    "screen-method-update.json",
+    "retry-method-update.json"
+  ],
+  "external_cost_file": "costs-external/curves.json",
+  "external_cost_file_sha256": "bc66780fb414400468e5587537944b932b5f032aa0b8fa6a85f2f0cb6d2f132a",
+  "external_validation_summary": "validation-external/summary.json",
+  "screen_profiles": [
+    "baseline",
+    "original",
+    "global",
+    "weighted",
+    "queries124",
+    "queries120",
+    "queries116",
+    "weighted_queries120",
+    "weighted_external",
+    "weighted_external_queries120"
+  ],
+  "tested_thread_classes": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "screen_benchmark_threads": {
+    "arithmetic": 8,
+    "full": 16
+  },
+  "status": "complete",
+  "completed_epoch": 1791552816.0570593,
+  "screen_status": "120 accepted executions;960 verified proofs",
+  "confirmation_status": "120 accepted executions;960 verified proofs",
+  "confirmation_seeds": [
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54
+  ],
+  "selection_artifact": "selection.json",
+  "confirmation_summary": "confirmation/summary.json",
+  "confirmation_original_control_summary": "confirmation/summary-vs-original.json",
+  "final_audit": "final-audit.json",
+  "external_monitor_review": "external-monitor-review.json",
+  "monitor_sensitivity": "sensitivity-summary.json",
+  "preparation_summary": "preparation-summary.json",
+  "security_target_preserved": true,
+  "production_promotion": false,
+  "accepted_benchmark_proofs": 1920,
+  "passed_test_executions": 157,
+  "measurement_conclusion": "No selected candidate has a95% paired-seed bootstrap interval excluding no change in prove+commit versus the same experimental binary baseline. Means improve0.06\u20130.49%.",
+  "report": "REPORT.txt",
+  "report_sha256": "49b5f608011ba18b2ec92e0b52531990a8af48988f8e2a3192ec52a2f265db3c"
+}

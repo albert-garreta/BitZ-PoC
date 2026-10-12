@@ -1,0 +1,53 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5,2,3,0,1",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/binaries/falcon_algebraic",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "8",
+    "--seed",
+    "48",
+    "--warmup",
+    "1",
+    "--iterations",
+    "7"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "8",
+    "OMP_NUM_THREADS": "8",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+    "BITZ_EXPERIMENT_GLOBAL": "1",
+    "BITZ_EXPERIMENT_CORRECTED_SITES": "1",
+    "BITZ_EXPERIMENT_COST_FILE": "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/costs/curves.json",
+    "BITZ_EXPERIMENT_QUERY_BITS": "120",
+    "BITZ_EXPERIMENT_COST_THREADS": "8"
+  },
+  "execution_fingerprint": "22aef7a5662c3c42a230b601e2bda1ef548c677e550a0667b677bd40da574c6e",
+  "idle_busy_pct": {
+    "6": 0.0,
+    "7": 0.0,
+    "4": 0.0,
+    "5": 0.0,
+    "2": 1.0,
+    "3": 0.0,
+    "0": 2.0,
+    "1": 0.9900990099009901,
+    "22": 0.0,
+    "23": 1.9801980198019802,
+    "20": 0.9900990099009901,
+    "21": 0.0,
+    "18": 0.0,
+    "19": 1.0,
+    "16": 0.0,
+    "17": 0.0
+  }
+}

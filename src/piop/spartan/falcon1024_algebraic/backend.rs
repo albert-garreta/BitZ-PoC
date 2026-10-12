@@ -40,21 +40,21 @@ pub const COMPACT_LIVE_BITS: usize =
 pub enum FalconAlgebraicBinding {
     /// Bit-domain binder over the compact commitment, including partial batches.
     Bits,
-    /// Word-domain binder with a merged source opening; requires full capacity.
+    /// Word-domain binder with a merged source opening, including partial batches.
     Words,
 }
 
-/// Identifier of the reduced logical-support bit relation. Use `prepared.protocol_id()` for the
-/// relation selected by a prepared prover or verifier.
+/// Identifier of the default word-binding relation. Use `prepared.protocol_id()`
+/// for the relation selected by a prepared prover or verifier.
 pub const PROTOCOL_ID: &str = if N == 1024 {
+    "bitz/falcon1024-algebraic/non-zk/v9"
+} else {
+    "bitz/falcon512-algebraic/non-zk/v9"
+};
+const BIT_PROTOCOL_ID: &str = if N == 1024 {
     "bitz/falcon1024-algebraic/non-zk/v8"
 } else {
     "bitz/falcon512-algebraic/non-zk/v8"
-};
-const WORD_PROTOCOL_ID: &str = if N == 1024 {
-    "bitz/falcon1024-algebraic/non-zk/word-binder/v9"
-} else {
-    "bitz/falcon512-algebraic/non-zk/word-binder/v9"
 };
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;

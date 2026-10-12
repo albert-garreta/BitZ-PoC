@@ -1,0 +1,46 @@
+{
+  "binary": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+  "binary_sha256": "2f26752518e2c01214753f2cc7f7da7681a294c5f998a8304efeece65bebb6fd",
+  "rayon_num_threads": 16,
+  "test_threads": 1,
+  "runs": [
+    {
+      "log": "falcon-v6-tests.log",
+      "command": [
+        "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+        "piop::spartan::falcon1024_ct::",
+        "--test-threads=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "opening-v6-tests.log",
+      "command": [
+        "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+        "hybrid::opening::",
+        "--test-threads=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "generic-hybrid-v6-tests.log",
+      "command": [
+        "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+        "hybrid::tests::",
+        "--test-threads=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "log": "profile-matrix-v6.log",
+      "command": [
+        "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/bitz-b0347a22deb10013",
+        "piop::spartan::falcon1024_ct::hybrid::tests::joint_source_supported_profiles_roundtrip",
+        "--ignored",
+        "--exact",
+        "--test-threads=1"
+      ],
+      "exit_code": 0
+    }
+  ]
+}

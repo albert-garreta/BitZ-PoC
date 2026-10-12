@@ -1,0 +1,318 @@
+{
+  "schema": "bitz/falcon-word-binding/stage-summary/v1",
+  "caveat": "Instrumented seed-42 stage diagnostics only. Tracing changes latency; use untraced measurements for acceptance. Forest is nested within BitZ; stages must not be added indiscriminately.",
+  "aggregation": "Median of the two measured prover spans per execution, excluding the first warmup. Each trace root is matched by execution order to its verified JSONL trial.",
+  "source": {
+    "manifest": "results/falcon-word-binding-20261011/per-group-schedule/stages/manifest.json",
+    "manifest_sha256": "807f5eecb6f117a9203b4e206c66e23fd56e16517837958b012e5939eee14033",
+    "provenance": "results/falcon-word-binding-20261011/per-group-schedule/provenance.json",
+    "provenance_sha256": "5a7f3c75c36782df8bd6119a98dd12ef290b89995760c32df1cbaa921f544121",
+    "base_commit": "d865c9df5e50a1c78ee4d52885d5381b17fc08c5",
+    "candidate_source_sha256": {
+      "src/hybrid/integer_bridge.rs": "67f82ea48727f0325d00105333372a2801af33673b2b8b353f81a8ae7fa4deb4",
+      "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "0e55d3cdf48cb4456602900822ded64171c9d9a7b9239061832f5d3ec11c31b5",
+      "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "a060ac103b18b637105694533fb47a24b8733ba9d854521cd855a7b5ded9c64f",
+      "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "e92fa9277d6818ee645073a0f7d582aba579db1266bee74962e9c2246e11bc5b",
+      "src/piop/spartan/falcon1024_algebraic/protocol.rs": "44c20871f73aa26f40fdfa96b25f985dd6800b39a63449c502afada19ffc05c3",
+      "src/piop/spartan/falcon1024_algebraic/backend.rs": "12506248a2a521466f683979937f7505d09dc806908ec024a022d734fd846de7",
+      "src/piop/spartan/falcon1024_algebraic/compact_binding.rs": "741527845dfa7d3a141d14af53308c3ea76af486abf63d51d4c82352738fbc98"
+    },
+    "binaries": {
+      "r7": {
+        "path": "/tmp/bitz-arithmetic-v8-r7-qualification-binary",
+        "sha256": "ec1c7b55cfba4b7dbce26e4028913a13ccee6b87795f6b5ddaca58b6327ee141"
+      },
+      "word": {
+        "path": "/home/john-wu/code/BitZ-pcs/target/release/examples/falcon_algebraic",
+        "sha256": "8178a3b90c05e94d5b223935a93963c05ad2776e93c0e4b89898e929b9fa9c6b"
+      }
+    },
+    "features": [
+      "falcon-hybrid"
+    ],
+    "rustflags": "-C target-cpu=native",
+    "profile": "release; LTO; codegen-units=1"
+  },
+  "span_names": {
+    "prove": "falcon_algebraic:prove",
+    "binder": "falcon_algebraic:binding",
+    "bitz": "falcon_algebraic:bitz",
+    "forest": "falcon_bridge:wfbitz_forest",
+    "ring": "falcon_algebraic:ring",
+    "pcs": "falcon_algebraic:pcs"
+  },
+  "comparisons": [
+    {
+      "degree": 512,
+      "batch": 1024,
+      "security": 100,
+      "threads": 1,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s100-t1-seed42-r7.stderr",
+          "trace_sha256": "f0a5dacf6cceebd3b4c4c87357729989244aa4fe8817fc4d39ff01d2461394c1",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s100-t1-seed42-r7.jsonl",
+          "trials_sha256": "f4e67426d5da21669a5416fdd708133ea2a33bdf66c232793faa6d30f9644de4",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s100-t1-seed42-word.stderr",
+          "trace_sha256": "bde6db730a8b1e68b86497eb9892256ea78e510d86e6555c174c324e4847c70b",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s100-t1-seed42-word.jsonl",
+          "trials_sha256": "f9f57eccbb0a2be45e157a8cd524d5f12d4da6fb6d119ca02476d052dba201f7",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 170.924842,
+          "word": 148.07405,
+          "delta_ms": -22.850792000000013,
+          "change_percent": -13.368912167840419
+        },
+        "binder": {
+          "r7": 60.2363765,
+          "word": 39.9978805,
+          "delta_ms": -20.238495999999998,
+          "change_percent": -33.59846188623248
+        },
+        "bitz": {
+          "r7": 55.1530215,
+          "word": 53.04646150000001,
+          "delta_ms": -2.1065599999999947,
+          "change_percent": -3.8194824919972836
+        },
+        "forest": {
+          "r7": 51.049845000000005,
+          "word": 49.0981085,
+          "delta_ms": -1.9517365000000026,
+          "change_percent": -3.8231977002084916
+        },
+        "ring": {
+          "r7": 24.5024315,
+          "word": 23.939150500000004,
+          "delta_ms": -0.5632809999999964,
+          "change_percent": -2.298877970539359
+        },
+        "pcs": {
+          "r7": 7.0627485,
+          "word": 7.100686,
+          "delta_ms": 0.03793749999999996,
+          "change_percent": 0.537149241545265
+        }
+      }
+    },
+    {
+      "degree": 1024,
+      "batch": 1024,
+      "security": 100,
+      "threads": 1,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s100-t1-seed42-r7.stderr",
+          "trace_sha256": "e88f7cf2103bec06833ce1d60888a3969aaa167b5dd861a7b3d1a8c161ba4096",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s100-t1-seed42-r7.jsonl",
+          "trials_sha256": "28d622265d099a412a2abcc83c71f6efacc0eed5214ab4abbc45819f3e2be5c8",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s100-t1-seed42-word.stderr",
+          "trace_sha256": "803263688d8c1ec562a28dfa8903c864dd146c8dbfa7ec6a091744c37b54a20a",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s100-t1-seed42-word.jsonl",
+          "trials_sha256": "ae6075f119905c67aeef222b6efc613488bc88178b912fe998a37bd4ccedec4f",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 330.5330335,
+          "word": 291.8559715,
+          "delta_ms": -38.67706199999998,
+          "change_percent": -11.70142106235199
+        },
+        "binder": {
+          "r7": 117.7614035,
+          "word": 80.6922835,
+          "delta_ms": -37.06912,
+          "change_percent": -31.47815744230663
+        },
+        "bitz": {
+          "r7": 101.16122999999999,
+          "word": 100.618884,
+          "delta_ms": -0.5423459999999949,
+          "change_percent": -0.5361204089748606
+        },
+        "forest": {
+          "r7": 93.3218525,
+          "word": 93.171197,
+          "delta_ms": -0.15065549999999917,
+          "change_percent": -0.1614364652694822
+        },
+        "ring": {
+          "r7": 52.4566715,
+          "word": 52.878904500000004,
+          "delta_ms": 0.42223300000000563,
+          "change_percent": 0.8049176356910159
+        },
+        "pcs": {
+          "r7": 13.457464,
+          "word": 13.398347999999999,
+          "delta_ms": -0.05911600000000128,
+          "change_percent": -0.43928038744893705
+        }
+      }
+    },
+    {
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 8,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s128-t8-seed42-r7.stderr",
+          "trace_sha256": "fae8cd3ed011129efbb523e5306cccf608e8d884a958fe3b818763bbf71a02b0",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s128-t8-seed42-r7.jsonl",
+          "trials_sha256": "ddb18cf336df4f9380bd7ca862ce02f39481c5da6c0795c79c95d7a161dc1e22",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s128-t8-seed42-word.stderr",
+          "trace_sha256": "6749875d0fa913c1992b68d5e1c6e036f68fe924850e21fd2e9e2b66df9dcd67",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n512-b1024-s128-t8-seed42-word.jsonl",
+          "trials_sha256": "f083c8ce444449fa50296d5551022417a1e6110547978fa29366fc0ecdd79fae",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 52.3062465,
+          "word": 51.604108,
+          "delta_ms": -0.7021385000000038,
+          "change_percent": -1.3423607063833276
+        },
+        "binder": {
+          "r7": 9.4762445,
+          "word": 8.728775500000001,
+          "delta_ms": -0.7474689999999988,
+          "change_percent": -7.887818850600558
+        },
+        "bitz": {
+          "r7": 16.341078500000002,
+          "word": 16.536533499999997,
+          "delta_ms": 0.1954549999999955,
+          "change_percent": 1.1960960838661716
+        },
+        "forest": {
+          "r7": 15.002265999999999,
+          "word": 15.2239355,
+          "delta_ms": 0.22166950000000085,
+          "change_percent": 1.4775734545701358
+        },
+        "ring": {
+          "r7": 6.230800500000001,
+          "word": 6.3080465,
+          "delta_ms": 0.07724599999999882,
+          "change_percent": 1.2397443956037257
+        },
+        "pcs": {
+          "r7": 4.742265,
+          "word": 4.6153,
+          "delta_ms": -0.12696499999999933,
+          "change_percent": -2.677307151751307
+        }
+      }
+    },
+    {
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 8,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s128-t8-seed42-r7.stderr",
+          "trace_sha256": "d4987265850d8839b79855b5164bf317c96d8c03561552b50706c6cbb3e9d009",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s128-t8-seed42-r7.jsonl",
+          "trials_sha256": "56d5160237e5411986487affe084c1dd5ef85fdec53f15142b98fef1e1996425",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s128-t8-seed42-word.stderr",
+          "trace_sha256": "8a6bf897089a443d96a15f75be776b182498411c9c7da56af15b9c892963c91b",
+          "trials": "results/falcon-word-binding-20261011/per-group-schedule/stages/n1024-b1024-s128-t8-seed42-word.jsonl",
+          "trials_sha256": "acd3832af6572bca34dd64ee66968188b7442e191e019f70f4a2c24888ea2d25",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 92.010973,
+          "word": 89.65872300000001,
+          "delta_ms": -2.352249999999998,
+          "change_percent": -2.556488561424075
+        },
+        "binder": {
+          "r7": 18.862553,
+          "word": 17.53906,
+          "delta_ms": -1.3234929999999991,
+          "change_percent": -7.016510437372925
+        },
+        "bitz": {
+          "r7": 27.4424525,
+          "word": 25.927075000000002,
+          "delta_ms": -1.5153774999999996,
+          "change_percent": -5.522019214572749
+        },
+        "forest": {
+          "r7": 25.2251785,
+          "word": 23.860046000000004,
+          "delta_ms": -1.3651324999999943,
+          "change_percent": -5.411785292222982
+        },
+        "ring": {
+          "r7": 12.816357,
+          "word": 12.8459435,
+          "delta_ms": 0.029586500000000626,
+          "change_percent": 0.23084953079881565
+        },
+        "pcs": {
+          "r7": 5.5713225,
+          "word": 5.721141,
+          "delta_ms": 0.1498185000000003,
+          "change_percent": 2.689101196349708
+        }
+      }
+    }
+  ]
+}

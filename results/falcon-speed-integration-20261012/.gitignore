@@ -1,0 +1,7 @@
+# Raw evidence is preserved in the verified archive below.
+**/raw/
+*.jsonl
+*.stderr
+*.s
+*.command.json
+!raw-evidence.tar.gz

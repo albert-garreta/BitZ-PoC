@@ -1,0 +1,16 @@
+{
+  "status": "prepared_not_measured",
+  "baseline_revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+  "baseline_binary_sha256": "2753f4b6afdc0ccbc73da9924411509faa6ede32a7502938c88d5b9f657c4efc",
+  "baseline_source_files": 817,
+  "matched_build_inputs": 574,
+  "cache_reference_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+  "cache_files_verified": 240,
+  "harness_tests": 16,
+  "harness_sha256": "a3adf9c3698330046d31fd2dc80f11ece92542ec12db47e0e5716e7ad09f8324",
+  "campaign": "compact-opening",
+  "timing_limit": 1.02,
+  "payload_gate": "strictly smaller ratio of mean bytes in every cell",
+  "required_pairs": 960,
+  "required_verified_proofs": 7680
+}

@@ -1,758 +1,742 @@
-//! Word-domain binder: Λ·signed15 + H·lane15. The source remains bit committed.
-//!
-//! The honest lane-15 table is supported on the slack positions. We check that
-//! support against every source word before using its compact representation;
-//! the verifier authenticates the projection of *all* lane-15 bits.
+//! Word sumcheck with one dense product and sparse/factored auxiliary terms.
 use super::*;
-use crate::sumcheck::RoundBoundaryPolicy;
-use field::{FpProductAcc, FpSignedLinearAcc, IntegerEmbedding, PreparedLinearCombination, Z};
+use crate::piop::spartan::SpartanField;
+use crate::sumcheck::boundary::RoundBoundaryPolicy;
+use field::{FpProductAcc, PreparedLinearCombination};
+
+#[cfg(test)]
+#[path = "word_binding_tests.rs"]
+mod tests;
 
 const DOMAIN: &[u8] = b"bitz/falcon-algebraic/word-binding/v1";
-const TERMINAL_DOMAIN: &[u8] = b"bitz/falcon-algebraic/word-binding-terminal/v1";
-const SLACK_WIDTH: usize = SLACK_BITS.next_power_of_two();
-const SLACK_LOG: usize = SLACK_WIDTH.ilog2() as usize;
-type Row = [F; 2]; // Public weight, witness value.
-
+const TERMINALS: &[u8] = b"bitz/falcon-algebraic/word-terminals/v1";
 crate::piop::spartan::grinding::grinding_domains! {
-    TerminalMerge => b"bitz/falcon-algebraic/grinding/word-terminal/v1";
+    TerminalMerge => b"bitz/falcon-algebraic/grinding/word-terminals/v1";
 }
 
-pub(super) struct Output {
-    pub proof: SumcheckProof<F, 3>,
-    pub terminal: [F; 2],
-    pub nonces: Vec<u64>,
-    pub merge_nonce: Option<u64>,
-    pub claim: BridgeClaim,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in super::super) struct WordBridgeClaim {
+    pub point: Vec<F>,
+    pub modulus: u128,
+    pub value: F,
+    pub zeta: F,
+    pub with_padding: bool,
 }
 
-/// Source words are ordered coefficient, side, then instance (low bit first).
+impl WordBridgeClaim {
+    pub fn column_point(&self, layout: &Layout) -> &[F] {
+        &self.point[layout.row_vars() - 4..]
+    }
+
+    pub fn row_weights(&self, layout: &Layout, field: &Cfg) -> Result<Vec<u128>, FalconError> {
+        if self.point.len() != rounds(layout)
+            || self.with_padding != (layout.batch() < layout.capacity())
+        {
+            return Err(failure("word bridge shape"));
+        }
+        let eq = eq_table(&self.point[..layout.row_vars() - 4], field).map_err(failure)?;
+        let extra = if self.with_padding {
+            field.mul(&self.zeta, &self.zeta)
+        } else {
+            field.zero()
+        };
+        let decoder: [F; 16] = std::array::from_fn(|lane| {
+            if lane == 15 {
+                self.zeta
+            } else {
+                field.add(
+                    &small(if lane == 14 { -(1 << 14) } else { 1 << lane }, field),
+                    &extra,
+                )
+            }
+        });
+        Ok(eq
+            .iter()
+            .flat_map(|weight| {
+                decoder
+                    .iter()
+                    .map(move |digit| u128::from(field.to_integer(&field.mul(weight, digit))))
+            })
+            .collect())
+    }
+}
+
+fn rounds(layout: &Layout) -> usize {
+    source_rounds(layout) - 4
+}
+fn small(x: i64, f: &Cfg) -> F {
+    let v = F::from_with_cfg(x.unsigned_abs() as u128, f);
+    if x < 0 { f.neg(&v) } else { v }
+}
+fn lerp(a: F, b: F, r: F, f: &Cfg) -> F {
+    f.add(&a, &f.mul(&r, &f.sub(&b, &a)))
+}
 fn word(source: &Source, index: usize) -> u16 {
-    let words_per_column = 1usize << (source.layout().row_vars() - 4);
-    (source.rows()[index / words_per_column][(index % words_per_column) / 4] >> (16 * (index % 4)))
-        as u16
+    // Four lane bits and nine coefficient bits are in each physical row.
+    (source.rows()[index >> 9][(index & 511) >> 2] >> (16 * (index & 3))) as u16
 }
-fn signed_word(source: &Source, index: usize) -> i64 {
-    i64::from(((word(source, index) << 1) as i16) >> 1)
+fn decode(bits: u16) -> i64 {
+    i64::from(((bits << 1) as i16) >> 1)
 }
-fn weight(form: &BindingForm<'_>, index: usize) -> F {
-    form.coefficients[(index / N) % 2][(index / (2 * N)) * N + index % N]
-}
-fn interpolate(field: &Cfg, a: F, b: F, challenge: F) -> F {
-    field.add(&a, &field.mul(&challenge, &field.sub(&b, &a)))
-}
-fn product_coefficients(field: &Cfg, rows: &[Row], constant: F) -> [F; 2] {
-    let zero = || [FpProductAcc::<2>::default(); 2];
-    let accumulate = |mut sums: [FpProductAcc<2>; 2], pair: &[Row]| {
-        field.mul_acc(
-            &mut sums[0],
-            &field.add(&constant, &pair[0][0]),
-            &pair[0][1],
-        );
-        field.mul_acc(
-            &mut sums[1],
-            &field.sub(&pair[1][0], &pair[0][0]),
-            &field.sub(&pair[1][1], &pair[0][1]),
-        );
-        sums
-    };
-    let sums = if rows.len() >= 4096 && binding_workers() > 1 {
-        rows.par_chunks_exact(2)
-            .fold(zero, accumulate)
-            .reduce(zero, |a, b| [a[0] + b[0], a[1] + b[1]])
-    } else {
-        rows.chunks_exact(2).fold(zero(), accumulate)
-    };
-    let reduce = field.prepare_product_reduction(rows.len() / 2);
-    sums.map(|sum| reduce.reduce(sum))
-}
-
-/// Fuse the compact side/instance folds and the next round's accumulation.
-fn fold_dense(
-    field: &Cfg,
-    output: &mut Vec<Row>,
-    len: usize,
-    read: impl Fn(usize) -> Row + Sync,
-) -> [F; 2] {
-    output.resize(len, [field.zero(); 2]);
-    if len == 1 {
-        output[0] = read(0);
-        return [field.zero(); 2];
+fn coefficient(form: &BindingForm<'_>, index: usize) -> F {
+    let instance = index / (2 * N);
+    if instance >= form.layout.batch() {
+        return form.field.zero();
     }
-    let zero = || [FpProductAcc::<2>::default(); 2];
-    let fill = |mut sums: [FpProductAcc<2>; 2], (pair, rows): (usize, &mut [Row])| {
-        rows[0] = read(2 * pair);
-        rows[1] = read(2 * pair + 1);
-        field.mul_acc(&mut sums[0], &rows[0][0], &rows[0][1]);
-        field.mul_acc(
-            &mut sums[1],
-            &field.sub(&rows[1][0], &rows[0][0]),
-            &field.sub(&rows[1][1], &rows[0][1]),
-        );
-        sums
-    };
-    let sums = if len >= 4096 && binding_workers() > 1 {
-        output
-            .par_chunks_exact_mut(2)
-            .enumerate()
-            .fold(zero, fill)
-            .reduce(zero, |a, b| [a[0] + b[0], a[1] + b[1]])
-    } else {
-        output.chunks_exact_mut(2).enumerate().fold(zero(), fill)
-    };
-    let reduce = field.prepare_product_reduction(len / 2);
-    sums.map(|sum| reduce.reduce(sum))
+    form.coefficients[(index / N) & 1][instance * N + index % N]
 }
-
-/// Reuse the two Λ allocations for the coefficient rounds. Each signature has
-/// an N-field stride: first, each weight pair becomes [folded Λ, folded A];
-/// later rounds compress those rows into the beginning of the same chunk.
-/// The writes proceed left to right and never reach an unread input row.
-fn fold_coefficients(
-    field: &Cfg,
-    tables: &mut [Vec<F>; 2],
-    source: &Source,
-    round: usize,
-    challenge: F,
-) -> [F; 2] {
-    let remaining_rows = N >> (round + 1);
-    let native_fold = (round == 0).then(|| {
-        <Cfg as PreparedLinearCombination<Z<1>>>::prepare_linear_combination(
-            field,
-            [field.sub(&field.one(), &challenge), challenge],
-        )
-    });
-    let zero = || [FpProductAcc::<2>::default(); 2];
-    let process = |mut sums: [FpProductAcc<2>; 2],
-                   (instance, (s1, s2)): (usize, (&mut [F], &mut [F]))| {
-        for (side, chunk) in [s1, s2].into_iter().enumerate() {
-            // Read both rows before writing either compressed row. For round
-            // zero each input is one weight; afterward it is [weight, value].
-            let read_folded = |chunk: &[F], row: usize| -> Row {
-                if let Some(native_fold) = &native_fold {
-                    let first_word = instance * 2 * N + side * N + 2 * row;
-                    let value = <Cfg as PreparedLinearCombination<Z<1>>>::linear_combination(
-                        native_fold,
-                        |j| Z::from(signed_word(source, first_word + j)),
-                    );
-                    [
-                        interpolate(field, chunk[2 * row], chunk[2 * row + 1], challenge),
-                        value,
-                    ]
-                } else {
-                    std::array::from_fn(|j| {
-                        interpolate(field, chunk[4 * row + j], chunk[4 * row + 2 + j], challenge)
-                    })
-                }
-            };
-            if remaining_rows == 1 {
-                let row = read_folded(chunk, 0);
-                chunk[..2].copy_from_slice(&row);
-                continue;
-            }
-            for pair in 0..remaining_rows / 2 {
-                let a = read_folded(chunk, 2 * pair);
-                let b = read_folded(chunk, 2 * pair + 1);
-                chunk[4 * pair..4 * pair + 2].copy_from_slice(&a);
-                chunk[4 * pair + 2..4 * pair + 4].copy_from_slice(&b);
-                field.mul_acc(&mut sums[0], &a[0], &a[1]);
-                field.mul_acc(
-                    &mut sums[1],
-                    &field.sub(&b[0], &a[0]),
-                    &field.sub(&b[1], &a[1]),
-                );
-            }
-        }
-        sums
-    };
-    let [s1, s2] = tables;
-    let sums = if binding_workers() > 1 {
-        s1.par_chunks_exact_mut(N)
-            .zip(s2.par_chunks_exact_mut(N))
-            .enumerate()
-            .fold(zero, process)
-            .reduce(zero, |a, b| [a[0] + b[0], a[1] + b[1]])
-    } else {
-        s1.chunks_exact_mut(N)
-            .zip(s2.chunks_exact_mut(N))
-            .enumerate()
-            .fold(zero(), process)
-    };
-    if remaining_rows == 1 {
-        // The next variable is side, rather than another coefficient bit.
-        let mut sums = zero();
-        for (a, b) in s1.chunks_exact(N).zip(s2.chunks_exact(N)) {
-            field.mul_acc(&mut sums[0], &a[0], &a[1]);
-            field.mul_acc(
-                &mut sums[1],
-                &field.sub(&b[0], &a[0]),
-                &field.sub(&b[1], &a[1]),
-            );
-        }
-        let reduce = field.prepare_product_reduction(s1.len() / N);
-        sums.map(|sum| reduce.reduce(sum))
-    } else {
-        let reduce = field.prepare_product_reduction((s1.len() / N) * remaining_rows);
-        sums.map(|sum| reduce.reduce(sum))
+fn fold_small(table: &mut Vec<F>, r: F, f: &Cfg) {
+    for i in 0..table.len() / 2 {
+        table[i] = lerp(table[2 * i], table[2 * i + 1], r, f);
     }
+    table.truncate(table.len() / 2);
+}
+fn add_pair(a: [F; 2], b: [F; 2], f: &Cfg) -> [F; 2] {
+    [f.add(&a[0], &b[0]), f.add(&a[1], &b[1])]
 }
 
-struct SlackTable {
-    rows: Vec<Row>, // H - padding, B; omitted coefficient/side coordinates are zero.
-    scratch: Vec<Row>,
+/// H's weights are gamma + 1_side0*(slack_i*pow_j - gamma*active_i*mask_j).
+/// These small factors are multilinear in disjoint coordinate sets.
+struct PublicWeights {
+    powers: Vec<F>,
+    padding_positions: Vec<F>,
+    slacks: Vec<F>,
+    active: Vec<F>,
+    side: F,
     padding: F,
 }
-impl SlackTable {
-    fn new(form: &BindingForm<'_>, source: &Source) -> Result<Self, FalconError> {
-        let field = form.field;
-        let mut rows = vec![[field.zero(); 2]; form.layout.batch() * SLACK_WIDTH];
-        // Scanning all packed high bits is essential: the compact representation
-        // must never silently discard a nonzero padding bit in the commitment.
-        for instance in 0..form.layout.batch() {
-            let mut slack_weight = form.slacks[instance];
-            for j in 0..2 * N {
-                let bit = word(source, instance * 2 * N + j) >> 15;
-                if j < SLACK_BITS {
-                    rows[instance * SLACK_WIDTH + j] = [
-                        field.sub(&slack_weight, &form.padding),
-                        field.from_integer(&u64::from(bit)),
-                    ];
-                    slack_weight = field.add(&slack_weight, &slack_weight);
-                } else if bit != 0 {
-                    return Err(failure("nonzero word binder source padding"));
+impl PublicWeights {
+    fn new(form: &BindingForm<'_>) -> Self {
+        let f = form.field;
+        let mut slacks = form.slacks.clone();
+        slacks.resize(form.layout.capacity(), f.zero());
+        Self {
+            powers: (0..N)
+                .map(|j| {
+                    if j < SLACK_BITS {
+                        small(1 << j, f)
+                    } else {
+                        f.zero()
+                    }
+                })
+                .collect(),
+            padding_positions: (0..N)
+                .map(|j| {
+                    if j < SLACK_BITS {
+                        form.padding
+                    } else {
+                        f.zero()
+                    }
+                })
+                .collect(),
+            slacks,
+            active: (0..form.layout.capacity())
+                .map(|i| {
+                    if i < form.layout.batch() {
+                        f.one()
+                    } else {
+                        f.zero()
+                    }
+                })
+                .collect(),
+            side: f.one(),
+            padding: form.padding,
+        }
+    }
+    fn spare(&self, index: usize, round: usize, f: &Cfg) -> F {
+        if round <= COEFFICIENT_LOG {
+            let n = N >> round;
+            let instance = index / (2 * n);
+            // Side and activity are still public Boolean coordinates here.
+            if (index / n) & 1 != 0 || self.active[instance] == f.zero() {
+                return self.padding;
+            }
+            let j = index % n;
+            return f.add(
+                &f.mul(&self.slacks[instance], &self.powers[j]),
+                &f.sub(&self.padding, &self.padding_positions[j]),
+            );
+        }
+        f.add(
+            &self.padding,
+            &f.mul(
+                &self.side,
+                &f.sub(
+                    &f.mul(&self.slacks[index], &self.powers[0]),
+                    &f.mul(&self.active[index], &self.padding_positions[0]),
+                ),
+            ),
+        )
+    }
+    fn count(&self, index: usize, f: &Cfg) -> F {
+        f.mul(&self.padding, &f.sub(&f.one(), &self.active[index]))
+    }
+    fn fold(&mut self, round: usize, r: F, f: &Cfg) {
+        if round < COEFFICIENT_LOG {
+            fold_small(&mut self.powers, r, f);
+            fold_small(&mut self.padding_positions, r, f);
+        } else if round == COEFFICIENT_LOG {
+            self.side = f.sub(&f.one(), &r);
+        } else {
+            fold_small(&mut self.slacks, r, f);
+            fold_small(&mut self.active, r, f);
+        }
+    }
+}
+
+/// Sorted nonzero H entries; folding never increases their number.
+struct Sparse(Vec<(usize, F)>);
+impl Sparse {
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_source_scan")]
+    fn from_source(source: &Source, layout: &Layout, f: &Cfg) -> Result<Self, FalconError> {
+        let scan = |instances: std::ops::Range<usize>| {
+            let active = instances
+                .end
+                .min(layout.batch())
+                .saturating_sub(instances.start);
+            let mut entries = Vec::with_capacity(active * SLACK_BITS);
+            for instance in instances {
+                let base = instance * 2 * N;
+                if instance >= layout.batch() {
+                    for c in base..base + 2 * N {
+                        if word(source, c) != 0 {
+                            return Err(failure("nonzero inactive word"));
+                        }
+                    }
+                } else {
+                    for j in 0..2 * N {
+                        if word(source, base + j) & 0x8000 != 0 {
+                            if j >= SLACK_BITS {
+                                return Err(failure("nonzero spare-lane padding"));
+                            }
+                            entries.push((base + j, f.one()));
+                        }
+                    }
                 }
             }
+            Ok(entries)
+        };
+        #[cfg(feature = "parallel")]
+        if layout.source_bits() / 16 >= 1 << 17 && rayon::current_num_threads() > 1 {
+            let chunks: Vec<_> = (0..layout.capacity().div_ceil(8))
+                .into_par_iter()
+                .map(|chunk| scan(chunk * 8..((chunk + 1) * 8).min(layout.capacity())))
+                .collect();
+            let mut entries = Vec::with_capacity(layout.batch() * SLACK_BITS);
+            // Indexed collection preserves source order, including which
+            // malformed chunk produces the first error.
+            for chunk in chunks {
+                entries.extend(chunk?);
+            }
+            return Ok(Self(entries));
         }
-        Ok(Self {
-            rows,
-            scratch: Vec::new(),
-            padding: form.padding,
-        })
+        scan(0..layout.capacity()).map(Self)
     }
-    fn omitted(round: usize) -> bool {
-        (SLACK_LOG..COEFFICIENT_LOG + 1).contains(&round)
-    }
-    fn coefficients(&self, round: usize, field: &Cfg) -> [F; 2] {
-        if !Self::omitted(round) {
-            return product_coefficients(field, &self.rows, self.padding);
+    fn pairs(&self, f: &Cfg, mut visit: impl FnMut(usize, F, F)) {
+        let mut i = 0;
+        while i < self.0.len() {
+            let (index, value) = self.0[i];
+            let (a, mut b) = if index & 1 == 0 {
+                (value, f.zero())
+            } else {
+                (f.zero(), value)
+            };
+            i += 1;
+            if index & 1 == 0 && i < self.0.len() && self.0[i].0 == index + 1 {
+                b = self.0[i].1;
+                i += 1;
+            }
+            visit(index / 2, a, b);
         }
-        // For a missing coordinate, D(1)=B(1)=0, H=padding+D.
+    }
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_sums", fields(round = round))]
+    fn sums(&self, weights: &PublicWeights, round: usize, f: &Cfg) -> [F; 2] {
         let mut sums = [FpProductAcc::<2>::default(); 2];
-        for &[d, b] in &self.rows {
-            field.mul_acc(&mut sums[0], &field.add(&self.padding, &d), &b);
-            field.mul_acc(&mut sums[1], &d, &b);
-        }
-        let reduce = field.prepare_product_reduction(self.rows.len());
-        sums.map(|sum| reduce.reduce(sum))
+        self.pairs(f, |i, a, b| {
+            let w0 = weights.spare(2 * i, round, f);
+            let w1 = weights.spare(2 * i + 1, round, f);
+            f.mul_acc(&mut sums[0], &w0, &a);
+            f.mul_acc(&mut sums[1], &f.sub(&w1, &w0), &f.sub(&b, &a));
+        });
+        sums.map(|s| f.reduce(s))
     }
-    fn fold(&mut self, round: usize, r: F, field: &Cfg) {
-        if Self::omitted(round) {
-            let complement = field.sub(&field.one(), &r);
-            for row in &mut self.rows {
-                *row = row.map(|value| field.mul(&value, &complement));
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_fold")]
+    fn fold(&mut self, r: F, f: &Cfg) {
+        // Compact in place; the write cursor never overtakes unread entries.
+        let mut read = 0;
+        let mut write = 0;
+        while read < self.0.len() {
+            let (index, value) = self.0[read];
+            read += 1;
+            let (a, mut b) = if index & 1 == 0 {
+                (value, f.zero())
+            } else {
+                (f.zero(), value)
+            };
+            if index & 1 == 0 && read < self.0.len() && self.0[read].0 == index + 1 {
+                b = self.0[read].1;
+                read += 1;
             }
-        } else {
-            self.scratch.resize(self.rows.len() / 2, [field.zero(); 2]);
-            for (output, pair) in self.scratch.iter_mut().zip(self.rows.chunks_exact(2)) {
-                *output = std::array::from_fn(|j| interpolate(field, pair[0][j], pair[1][j], r));
+            let value = lerp(a, b, r, f);
+            if value != f.zero() {
+                self.0[write] = (index / 2, value);
+                write += 1;
             }
-            std::mem::swap(&mut self.rows, &mut self.scratch);
         }
+        self.0.truncate(write);
+    }
+    /// Project the original unit-valued slack entries after coefficient and
+    /// side challenges. Entries stay grouped by instance throughout the scan.
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_project")]
+    fn project_instances(&mut self, local_point: &[F], f: &Cfg) -> Result<(), FalconError> {
+        let weights = eq_table(local_point, f).map_err(failure)?;
+        let mut read = 0;
+        let mut write = 0;
+        while read < self.0.len() {
+            let instance = self.0[read].0 / (2 * N);
+            let mut sum = f.zero();
+            while read < self.0.len() && self.0[read].0 / (2 * N) == instance {
+                let (index, bit) = self.0[read];
+                debug_assert_eq!(bit, f.one());
+                sum = f.add(&sum, &weights[index % (2 * N)]);
+                read += 1;
+            }
+            if sum != f.zero() {
+                self.0[write] = (instance, sum);
+                write += 1;
+            }
+        }
+        self.0.truncate(write);
+        Ok(())
+    }
+    fn terminal(&self, f: &Cfg) -> F {
+        self.0.first().map_or(f.zero(), |&(_, v)| v)
+    }
+}
+
+/// Before the instance rounds, H is supported on side zero of active
+/// instances. U_j = sum_i slack_i*H_ij and V_j = sum_i H_ij therefore reduce
+/// its contribution to P*U + (gamma-gamma*M)*V over at most 32 positions.
+struct AggregateSpare(Vec<[F; 2]>);
+impl AggregateSpare {
+    fn new(source: &Sparse, weights: &PublicWeights, f: &Cfg) -> Self {
+        let mut values = vec![[f.zero(); 2]; SLACK_BITS.next_power_of_two()];
+        for &(index, bit) in &source.0 {
+            debug_assert_eq!(bit, f.one());
+            let instance = index / (2 * N);
+            let j = index % (2 * N);
+            debug_assert!(j < SLACK_BITS);
+            values[j][0] = f.add(&values[j][0], &weights.slacks[instance]);
+            values[j][1] = f.add(&values[j][1], &bit);
+        }
+        Self(values)
+    }
+
+    fn initial(&self, weights: &PublicWeights, f: &Cfg) -> F {
+        // Every original H entry is an active slack bit, so its padding
+        // weight is zero and the instance sum has already been collected.
+        let mut sum = FpProductAcc::<2>::default();
+        for (j, &[u, _]) in self.0.iter().enumerate() {
+            f.mul_acc(&mut sum, &weights.powers[j], &u);
+        }
+        f.reduce(sum)
+    }
+
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_prefix_sums", fields(round = round))]
+    fn sums(&self, weights: &PublicWeights, round: usize, f: &Cfg) -> [F; 2] {
+        if round == COEFFICIENT_LOG {
+            // H(x)=(1-x)V while its public weight has one more side factor.
+            let [u, v] = self.0[0];
+            let quadratic = f.sub(
+                &f.mul(&weights.powers[0], &u),
+                &f.mul(&weights.padding_positions[0], &v),
+            );
+            return [f.add(&quadratic, &f.mul(&weights.padding, &v)), quadratic];
+        }
+        let mut sums = [FpProductAcc::<2>::default(); 2];
+        for (i, pair) in self.0.chunks(2).enumerate() {
+            let [u0, v0] = pair[0];
+            let [u1, v1] = pair.get(1).copied().unwrap_or([f.zero(); 2]);
+            let p0 = weights.powers[2 * i];
+            let p1 = weights.powers[2 * i + 1];
+            let m0 = weights.padding_positions[2 * i];
+            let m1 = weights.padding_positions[2 * i + 1];
+            f.mul_acc(&mut sums[0], &p0, &u0);
+            f.mul_acc(&mut sums[0], &f.sub(&weights.padding, &m0), &v0);
+            f.mul_acc(&mut sums[1], &f.sub(&p1, &p0), &f.sub(&u1, &u0));
+            f.mul_acc(&mut sums[1], &f.sub(&m0, &m1), &f.sub(&v1, &v0));
+        }
+        sums.map(|sum| f.reduce(sum))
+    }
+
+    fn fold(&mut self, r: F, f: &Cfg) {
+        if self.0.len() == 1 {
+            // Unrepresented high coefficient coordinates have a zero partner.
+            let factor = f.sub(&f.one(), &r);
+            self.0[0] = self.0[0].map(|value| f.mul(&factor, &value));
+        } else {
+            for i in 0..self.0.len() / 2 {
+                self.0[i] =
+                    std::array::from_fn(|k| lerp(self.0[2 * i][k], self.0[2 * i + 1][k], r, f));
+            }
+            self.0.truncate(self.0.len() / 2);
+        }
+    }
+}
+
+fn signed_acc(acc: &mut [FpLinearAcc<2, 1>; 2], w: &F, x: i64, f: &Cfg) {
+    if x != 0 {
+        f.mul_acc(&mut acc[usize::from(x < 0)], w, &x.unsigned_abs());
+    }
+}
+fn reduce_signed(acc: [FpLinearAcc<2, 1>; 2], f: &Cfg) -> F {
+    let [p, n] = acc;
+    f.sub(&f.reduce(p), &f.reduce(n))
+}
+
+/// Before the first challenge D is signed15. Products need a wide accumulator,
+/// not u128: a prime-field coefficient itself can already occupy 126 bits.
+fn first_round(form: &BindingForm<'_>, source: &Source, f: &Cfg) -> ([F; 2], F) {
+    let chunks = (form.layout.source_bits() / 32).div_ceil(1024);
+    let parts: Vec<_> = crate::cfg_into_iter!(0..chunks)
+        .map(|chunk| {
+            let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
+            let end = ((chunk + 1) * 1024).min(form.layout.source_bits() / 32);
+            for i in chunk * 1024..end {
+                let a = decode(word(source, 2 * i));
+                let b = decode(word(source, 2 * i + 1));
+                let w0 = coefficient(form, 2 * i);
+                let w1 = coefficient(form, 2 * i + 1);
+                signed_acc(&mut sums[0], &w0, a, f);
+                signed_acc(&mut sums[1], &f.sub(&w1, &w0), b - a, f);
+                signed_acc(&mut sums[2], &w0, a, f);
+                signed_acc(&mut sums[2], &w1, b, f);
+            }
+            sums.map(|s| reduce_signed(s, f))
+        })
+        .collect();
+    let sum = parts.into_iter().fold([f.zero(); 3], |a, b| {
+        std::array::from_fn(|i| f.add(&a[i], &b[i]))
+    });
+    ([sum[0], sum[1]], sum[2])
+}
+
+fn dense_sums(values: &[[F; 2]], stride: usize, f: &Cfg) -> [F; 2] {
+    let mut sums = [FpProductAcc::<2>::default(); 2];
+    for pair in values.chunks_exact(2 * stride) {
+        let [w0, a] = pair[0];
+        let [w1, b] = pair[stride];
+        f.mul_acc(&mut sums[0], &w0, &a);
+        f.mul_acc(&mut sums[1], &f.sub(&w1, &w0), &f.sub(&b, &a));
+    }
+    sums.map(|s| f.reduce(s))
+}
+
+/// Allocate the sole dense product after the first word fold. Each slot holds
+/// [Lambda, D]. Later folds reuse these slots at a doubling stride.
+#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
+fn first_fold(form: &BindingForm<'_>, source: &Source, r: F, f: &Cfg) -> (Vec<[F; 2]>, [F; 2]) {
+    // Flipping bit 14 maps signed15 a to a+2^14. The interpolation weights
+    // sum to one, so the third term removes this bias in the wide accumulator.
+    // Prepared weights give one Montgomery reduction for the complete fold.
+    let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
+        f,
+        [f.sub(&f.one(), &r), r, f.neg(&small(1 << 14, f))],
+    );
+    let mut values = vec![[f.zero(); 2]; form.layout.source_bits() / 32];
+    let parts: Vec<_> = crate::cfg_chunks_mut!(values, 1024)
+        .enumerate()
+        .map(|(chunk, out)| {
+            for (j, slot) in out.iter_mut().enumerate() {
+                let i = 2 * (chunk * 1024 + j);
+                let words = [word(source, i), word(source, i + 1)];
+                *slot = [
+                    lerp(coefficient(form, i), coefficient(form, i + 1), r, f),
+                    <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+                        if k == 2 {
+                            1
+                        } else {
+                            u64::from((words[k] ^ 0x4000) & 0x7fff)
+                        }
+                    }),
+                ];
+            }
+            dense_sums(out, 1, f)
+        })
+        .collect();
+    let sums = parts
+        .into_iter()
+        .fold([f.zero(); 2], |a, b| add_pair(a, b, f));
+    (values, sums)
+}
+
+fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
+    if values.len() / stride == 2 {
+        values[0] = std::array::from_fn(|k| lerp(values[0][k], values[stride][k], r, f));
+        return [f.zero(); 2];
+    }
+    let fold = |block: &mut [[F; 2]]| {
+        for pair in block.chunks_exact_mut(2 * stride) {
+            pair[0] = std::array::from_fn(|k| lerp(pair[0][k], pair[stride][k], r, f));
+        }
+        dense_sums(block, 2 * stride, f)
+    };
+    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold").entered();
+    #[cfg(feature = "parallel")]
+    if values.len() / stride >= 4096 && rayon::current_num_threads() > 1 {
+        return values
+            .par_chunks_mut(1024 * stride)
+            .map(fold)
+            .reduce(|| [f.zero(); 2], |a, b| add_pair(a, b, f));
+    }
+    fold(values)
+}
+
+/// Padding is checked while scanning the source, so C contributes zero until
+/// the instance rounds. Evaluate its local MLE once instead of folding a
+/// third full-size field table. The verifier never assumes padding is zero.
+fn counts(
+    source: &Source,
+    layout: &Layout,
+    local_point: &[F],
+    f: &Cfg,
+) -> Result<Vec<F>, FalconError> {
+    let weights = eq_table(local_point, f).map_err(failure)?;
+    Ok(crate::cfg_into_iter!(0..layout.capacity())
+        .map(|i| {
+            if i >= layout.batch() {
+                return f.zero();
+            }
+            let mut sum = FpLinearAcc::<2, 1>::default();
+            for (j, w) in weights.iter().enumerate() {
+                f.mul_acc(
+                    &mut sum,
+                    w,
+                    &u64::from((word(source, i * 2 * N + j) & 0x7fff).count_ones()),
+                );
+            }
+            f.reduce(sum)
+        })
+        .collect())
+}
+fn count_sums(values: &[F], weights: &PublicWeights, f: &Cfg) -> [F; 2] {
+    let mut sums = [FpProductAcc::<2>::default(); 2];
+    for (i, pair) in values.chunks_exact(2).enumerate() {
+        let a = weights.count(2 * i, f);
+        let b = weights.count(2 * i + 1, f);
+        f.mul_acc(&mut sums[0], &a, &pair[0]);
+        f.mul_acc(&mut sums[1], &f.sub(&b, &a), &f.sub(&pair[1], &pair[0]));
+    }
+    sums.map(|s| f.reduce(s))
+}
+
+fn bind_terminal(
+    t: &mut impl Transcript,
+    point: Vec<F>,
+    values: &[F],
+    zeta: F,
+    f: &Cfg,
+) -> WordBridgeClaim {
+    let mut value = f.zero();
+    for v in values.iter().rev() {
+        value = f.add(v, &f.mul(&zeta, &value));
+    }
+    t.absorb_slice(b"bitz/falcon-algebraic/word-source-opening/v1");
+    t.absorb_slice(&f.modulus_u128().to_le_bytes());
+    absorb_field_elements(t, &point, f);
+    absorb_field_elements(t, &[zeta, value], f);
+    WordBridgeClaim {
+        point,
+        modulus: f.modulus_u128(),
+        value,
+        zeta,
+        with_padding: values.len() == 3,
     }
 }
 
 pub(super) fn prove(
-    transcript: &mut impl Transcript,
+    t: &mut impl Transcript,
+    layout: &Layout,
+    source: &Source,
     form: BindingForm<'_>,
     target: F,
-    source: &Source,
+    norm: NormProof,
+    merge_nonce: Option<u64>,
     schedule: &Schedule,
-) -> Result<Output, FalconError> {
-    let field = form.field;
-    let layout = form.layout;
-    if layout.batch() != layout.capacity() {
-        return Err(failure("word binding requires a full-capacity batch"));
+    f: &Cfg,
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+    t.absorb_slice(DOMAIN);
+    let mut weights = PublicWeights::new(&form);
+    let mut spare = Sparse::from_source(source, layout, f)?;
+    let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
+    let (mut next, initial) = first_round(&form, source, f);
+    let spare_initial = aggregate_spare.initial(&weights, f);
+    if f.add(&initial, &spare_initial) != target {
+        return Err(failure("word binding initial claim"));
     }
-    let rounds = source_rounds(layout) - 4;
-    let mut slack = SlackTable::new(&form, source)?;
-    let native_instance = |instance: usize| {
-        let mut sums = [FpSignedLinearAcc::<2, 1>::default(); 2];
-        for pair in 0..N {
-            let i = instance * 2 * N + 2 * pair;
-            let [a, b] = [signed_word(source, i), signed_word(source, i + 1)];
-            let [wa, wb] = [weight(&form, i), weight(&form, i + 1)];
-            field.mul_acc(&mut sums[0], &wa, &a);
-            field.mul_acc(&mut sums[1], &field.sub(&wb, &wa), &(b - a));
-        }
-        sums
-    };
-    let sums = if binding_workers() > 1 {
-        (0..layout.batch())
-            .into_par_iter()
-            .map(native_instance)
-            .reduce(
-                || [FpSignedLinearAcc::<2, 1>::default(); 2],
-                |a, b| [a[0] + b[0], a[1] + b[1]],
-            )
-    } else {
-        (0..layout.batch())
-            .map(native_instance)
-            .fold([FpSignedLinearAcc::<2, 1>::default(); 2], |a, b| {
-                [a[0] + b[0], a[1] + b[1]]
-            })
-    };
-    let mut coefficients = sums.map(|sum| field.reduce(sum));
-    let mut coefficient_tables = Some(form.coefficients);
-    let mut dense = Vec::<Row>::new();
-    let mut scratch = Vec::<Row>::new();
-    let mut claim = target;
-    let mut point = Vec::with_capacity(rounds);
+    let mut aggregate_spare = Some(aggregate_spare);
+    let mut form = Some(form);
+    let mut dense = Vec::new();
+    let mut stride = 1;
+    let mut count = None;
+    let with_padding = layout.batch() < layout.capacity();
+    let mut point = Vec::with_capacity(rounds(layout));
     let mut proof = SumcheckProof {
-        round_polynomials: Vec::with_capacity(rounds),
+        round_polynomials: Vec::with_capacity(rounds(layout)),
     };
     let mut boundary =
         ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(schedule.binding_bits, 0);
-    boundary.validate(rounds).map_err(failure)?;
-    transcript.absorb_slice(DOMAIN);
-    for round in 0..rounds {
-        let addition = slack.coefficients(round, field);
-        let c0 = field.add(&coefficients[0], &addition[0]);
-        let c2 = field.add(&coefficients[1], &addition[1]);
-        let c1 = field.sub(&field.sub(&claim, &field.add(&c0, &c0)), &c2);
-        let message = [c0, c1, c2];
-        absorb_field_elements(transcript, &message, field);
-        proof.round_polynomials.push(message);
-        boundary.after_round(transcript, round).map_err(failure)?;
-        let r = sample(transcript, field)?;
-        point.push(r);
-        claim = field.add(&c0, &field.mul(&r, &field.add(&c1, &field.mul(&r, &c2))));
-        if round < COEFFICIENT_LOG {
-            coefficients = fold_coefficients(
-                field,
-                coefficient_tables.as_mut().unwrap(),
-                source,
-                round,
-                r,
-            );
-        } else if round == COEFFICIENT_LOG {
-            let [s1, s2] = coefficient_tables.take().unwrap();
-            coefficients = fold_dense(field, &mut dense, layout.batch(), |instance| {
-                std::array::from_fn(|j| {
-                    interpolate(field, s1[instance * N + j], s2[instance * N + j], r)
-                })
-            });
-        } else {
-            coefficients = fold_dense(field, &mut scratch, dense.len() / 2, |i| {
-                std::array::from_fn(|j| interpolate(field, dense[2 * i][j], dense[2 * i + 1][j], r))
-            });
-            std::mem::swap(&mut dense, &mut scratch);
+    let mut claim = target;
+    for round in 0..rounds(layout) {
+        if with_padding && round == COEFFICIENT_LOG + 1 {
+            count = Some(counts(source, layout, &point, f)?);
         }
-        slack.fold(round, r, field);
+        let spare_sums = aggregate_spare.as_ref().map_or_else(
+            || spare.sums(&weights, round, f),
+            |aggregate| aggregate.sums(&weights, round, f),
+        );
+        let mut sums = add_pair(next, spare_sums, f);
+        if let Some(c) = &count {
+            sums = add_pair(sums, count_sums(c, &weights, f), f);
+        }
+        let [c0, c2] = sums;
+        let c1 = f.sub(&f.sub(&claim, &f.add(&c0, &c0)), &c2);
+        let polynomial = [c0, c1, c2];
+        absorb_field_elements(t, &polynomial, f);
+        proof.round_polynomials.push(polynomial);
+        boundary.after_round(t, round).map_err(failure)?;
+        let r = sample(t, f)?;
+        claim = f.add(&c0, &f.mul(&r, &f.add(&c1, &f.mul(&r, &c2))));
+        point.push(r);
+        if round == 0 {
+            let initial_form = form.take().unwrap();
+            (dense, next) = first_fold(&initial_form, source, r, f);
+        } else {
+            next = dense_fold(&mut dense, stride, r, f);
+            stride *= 2;
+        }
+        if round < COEFFICIENT_LOG {
+            aggregate_spare.as_mut().unwrap().fold(r, f);
+        } else if round == COEFFICIENT_LOG {
+            spare.project_instances(&point, f)?;
+            aggregate_spare = None;
+        } else {
+            spare.fold(r, f);
+        }
+        if let Some(c) = &mut count {
+            fold_small(c, r, f);
+        }
+        weights.fold(round, r, f);
     }
-    let terminal = [dense[0][1], slack.rows[0][1]];
-    if claim
-        != field.add(
-            &field.mul(&dense[0][0], &terminal[0]),
-            &field.mul(&field.add(&slack.padding, &slack.rows[0][0]), &terminal[1]),
-        )
-    {
-        return Err(failure("algebraic word binding terminal mismatch"));
+    let mut values = vec![dense[0][1], spare.terminal(f)];
+    let mut terminal = f.add(
+        &f.mul(&dense[0][0], &values[0]),
+        &f.mul(&weights.spare(0, rounds(layout), f), &values[1]),
+    );
+    if let Some(c) = count {
+        values.push(c[0]);
+        terminal = f.add(&terminal, &f.mul(&weights.count(0, f), &c[0]));
     }
-    transcript.absorb_slice(TERMINAL_DOMAIN);
-    absorb_field_elements(transcript, &terminal, field);
-    let merge_nonce = prove_nonce::<TerminalMerge>(transcript, schedule.terminal_merge_bits)?;
-    let zeta = sample(transcript, field)?;
-    let claim = opening(transcript, layout, &point, terminal, zeta, field)?;
-    Ok(Output {
-        proof,
-        terminal,
-        nonces: boundary.into_nonces(),
-        merge_nonce,
+    if claim != terminal {
+        return Err(failure("word binding terminal mismatch"));
+    }
+    t.absorb_slice(TERMINALS);
+    absorb_field_elements(t, &values, f);
+    let terminal_merge_nonce = prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?;
+    let zeta = sample(t, f)?;
+    let claim = bind_terminal(t, point, &values, zeta, f);
+    let row_weights = claim.row_weights(layout, f)?;
+    Ok((
+        Proof {
+            norm,
+            merge_nonce,
+            binding: proof,
+            binding_terminal: values,
+            binding_nonces: boundary.into_nonces(),
+            terminal_merge_nonce,
+        },
+        row_weights,
         claim,
-    })
+    ))
 }
 
 pub(super) fn verify(
-    transcript: &mut impl Transcript,
+    t: &mut impl Transcript,
+    layout: &Layout,
     form: &BindingForm<'_>,
     target: F,
     proof: &Proof,
     schedule: &Schedule,
-) -> Result<BridgeClaim, FalconError> {
-    let field = form.field;
-    let layout = form.layout;
-    if layout.batch() != layout.capacity() {
-        return Err(failure("word binding requires a full-capacity batch"));
+    f: &Cfg,
+) -> Result<WordBridgeClaim, FalconError> {
+    let n = 2 + usize::from(layout.batch() < layout.capacity());
+    if proof.binding_terminal.len() != n {
+        return Err(failure("word binding terminal count"));
     }
-    transcript.absorb_slice(DOMAIN);
+    validate_field_elements(&proof.binding_terminal, f).map_err(failure)?;
+    t.absorb_slice(DOMAIN);
     let mut boundary = VerifierGrindingRoundBoundary::<BindingRound>::new(
         schedule.binding_bits,
         &proof.binding_nonces,
     );
     let (point, claim) = proof
         .binding
-        .verify_with_round_boundary(
-            transcript,
-            target,
-            source_rounds(layout) - 4,
-            field,
-            &mut boundary,
-        )
+        .verify_with_round_boundary(t, target, rounds(layout), f, &mut boundary)
         .map_err(failure)?;
-    validate_field_elements(&proof.binding_terminal, field).map_err(failure)?;
-    let [lambda, h] = evaluate(form, &point)?;
-    if claim
-        != field.add(
-            &field.mul(&lambda, &proof.binding_terminal[0]),
-            &field.mul(&h, &proof.binding_terminal[1]),
-        )
-    {
-        return Err(failure("algebraic word binding terminal mismatch"));
-    }
-    transcript.absorb_slice(TERMINAL_DOMAIN);
-    absorb_field_elements(transcript, &proof.binding_terminal, field);
-    verify_nonce::<TerminalMerge>(
-        transcript,
-        schedule.terminal_merge_bits,
-        proof.terminal_merge_nonce,
-    )?;
-    let zeta = sample(transcript, field)?;
-    opening(
-        transcript,
-        layout,
-        &point,
-        proof.binding_terminal,
-        zeta,
-        field,
-    )
-}
-
-fn evaluate(form: &BindingForm<'_>, point: &[F]) -> Result<[F; 2], FalconError> {
-    let field = form.field;
-    if point.len() != source_rounds(form.layout) - 4 {
-        return Err(failure("word binding point dimension mismatch"));
-    }
-    let local = eq_table(&point[..COEFFICIENT_LOG + 1], field).map_err(failure)?;
-    let instances = eq_table(&point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
-    let reduce = field.prepare_product_reduction(2 * N);
-    let subtotal = |instance: usize| {
+    let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
+    let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
+    let reduction = f.prepare_product_reduction(2 * N);
+    let evaluate_instance = |instance: usize| {
         let mut sum = FpProductAcc::<2>::default();
-        for (side, values) in form.coefficients.iter().enumerate() {
-            for (value, weight) in values[instance * N..(instance + 1) * N]
+        for side in 0..2 {
+            for (coefficient, weight) in form.coefficients[side][instance * N..(instance + 1) * N]
                 .iter()
                 .zip(&local[side * N..(side + 1) * N])
             {
-                field.mul_acc(&mut sum, value, weight);
+                f.mul_acc(&mut sum, coefficient, weight);
             }
         }
-        reduce.reduce(sum)
+        reduction.reduce(sum)
     };
-    let values: Vec<_> = if binding_workers() > 1 {
-        (0..form.layout.batch())
-            .into_par_iter()
-            .map(subtotal)
-            .collect()
-    } else {
-        (0..form.layout.batch()).map(subtotal).collect()
-    };
-    let mut lambda = FpProductAcc::<2>::default();
-    let mut slack = FpProductAcc::<2>::default();
-    for ((value, slack_weight), instance) in values.iter().zip(&form.slacks).zip(&instances) {
-        field.mul_acc(&mut lambda, value, instance);
-        field.mul_acc(&mut slack, slack_weight, instance);
+    #[cfg(feature = "parallel")]
+    let values: Option<Vec<_>> =
+        if binding_parallel(binding_strategy(layout.batch(), BindingKernel::Evaluation)) {
+            Some(
+                (0..layout.batch())
+                    .into_par_iter()
+                    .map(evaluate_instance)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+    #[cfg(not(feature = "parallel"))]
+    let values: Option<Vec<F>> = None;
+    let mut coefficient_sum = FpProductAcc::<2>::default();
+    for (instance, weight) in instances.iter().take(layout.batch()).enumerate() {
+        let value = values
+            .as_ref()
+            .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
+        f.mul_acc(&mut coefficient_sum, &value, weight);
     }
-    let mut slack_positions = field.zero();
-    let mut decoder = FpLinearAcc::<2, 1>::default();
-    for (j, weight) in local[..SLACK_BITS].iter().enumerate() {
-        slack_positions = field.add(&slack_positions, weight);
-        field.mul_acc(&mut decoder, weight, &(1u64 << j));
+    let mut weights = PublicWeights::new(form);
+    for (round, &r) in point.iter().enumerate() {
+        weights.fold(round, r, f);
     }
-    let reduce = field.prepare_product_reduction(form.layout.batch());
-    let h = field.add(
-        &field.mul(&field.reduce(decoder), &reduce.reduce(slack)),
-        &field.mul(&form.padding, &field.sub(&field.one(), &slack_positions)),
+    let v = &proof.binding_terminal;
+    let mut terminal = f.add(
+        &f.mul(&f.reduce(coefficient_sum), &v[0]),
+        &f.mul(&weights.spare(0, rounds(layout), f), &v[1]),
     );
-    Ok([reduce.reduce(lambda), h])
-}
-
-fn opening(
-    transcript: &mut impl Transcript,
-    layout: &Layout,
-    point: &[F],
-    terminal: [F; 2],
-    zeta: F,
-    field: &Cfg,
-) -> Result<BridgeClaim, FalconError> {
-    let low_variables = layout.row_vars() - 4;
-    let coefficient_weights = eq_table(&point[..low_variables], field).map_err(failure)?;
-    let mut lane_weights = [field.zero(); 16];
-    let mut power = field.one();
-    for (lane, value) in lane_weights.iter_mut().enumerate().take(15) {
-        *value = if lane == 14 { field.neg(&power) } else { power };
-        power = field.add(&power, &power);
+    if n == 3 {
+        terminal = f.add(&terminal, &f.mul(&weights.count(0, f), &v[2]));
     }
-    lane_weights[15] = zeta;
-    let row_weights: Vec<_> = coefficient_weights
-        .iter()
-        .flat_map(|coefficient| {
-            lane_weights.map(|lane| u128::from(field.to_integer(&field.mul(coefficient, &lane))))
-        })
-        .collect();
-    let column_point = point[low_variables..].to_vec();
-    let value = field.add(&terminal[0], &field.mul(&zeta, &terminal[1]));
-    transcript.absorb_slice(b"bitz/falcon-algebraic/word-source-opening/v1");
-    transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
-    for weight in &row_weights {
-        transcript.absorb_slice(&weight.to_le_bytes());
+    if claim != terminal {
+        return Err(failure("word binding terminal mismatch"));
     }
-    absorb_field_elements(transcript, &column_point, field);
-    absorb_field_elements(transcript, &[value], field);
-    Ok(BridgeClaim {
-        column_point,
-        modulus: field.modulus_u128(),
-        value,
-        row_weights,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{sumcheck::inner::prove_inner_sumcheck, transcript::Blake3Transcript};
-
-    fn schedule() -> Schedule {
-        Schedule {
-            norm_instance_bits: 0,
-            norm_round_bits: 0,
-            merge_bits: 0,
-            binding_bits: 2,
-            word_binding: true,
-            terminal_merge_bits: 2,
-        }
-    }
-    fn fixture<'a>(layout: &'a Layout, field: &'a Cfg) -> (BindingForm<'a>, Source) {
-        let batch = layout.batch();
-        let values = [-16384, -1, 0, 1, 16383];
-        let data = WitnessData {
-            witness: super::super::super::FalconAlgebraicWitness {
-                s1: (0..batch)
-                    .map(|i| std::array::from_fn(|j| values[(i + j) % values.len()]))
-                    .collect(),
-                s2: (0..batch)
-                    .map(|i| std::array::from_fn(|j| values[(2 * i + j + 1) % values.len()]))
-                    .collect(),
-            },
-            slacks: (0..batch)
-                .map(|i| (0x5a69c3du64 ^ i as u64) & ((1 << SLACK_BITS) - 1))
-                .collect(),
-        };
-        let form = BindingForm {
-            layout,
-            field,
-            coefficients: std::array::from_fn(|side| {
-                (0..batch * N)
-                    .map(|i| {
-                        field.from_integer(&(field.modulus_u128() - 1 - (i + side * 31) as u128))
-                    })
-                    .collect()
-            }),
-            slacks: (0..batch)
-                .map(|i| field.from_integer(&(field.modulus_u128() - 101 - i as u128)))
-                .collect(),
-            padding: field.from_integer(&123456789u64),
-            options: BindingOptions::default(),
-            folded_decoder: Default::default(),
-        };
-        (form, Source::new(*layout, &data))
-    }
-    fn dense_tables(form: &BindingForm<'_>, source: &Source) -> (Vec<F>, Vec<F>, F) {
-        let field = form.field;
-        let words = form.layout.source_bits() / 16;
-        let mut values = Vec::with_capacity(2 * words);
-        let mut weights = Vec::with_capacity(2 * words);
-        for i in 0..words {
-            values.push(field.from_integer(&signed_word(source, i)));
-            weights.push(weight(form, i));
-        }
-        for i in 0..words {
-            values.push(field.from_integer(&u64::from(word(source, i) >> 15)));
-            let j = i % (2 * N);
-            weights.push(if j < SLACK_BITS {
-                field.reduce(field.mul_wide(&form.slacks[i / (2 * N)], &(1u64 << j)))
-            } else {
-                form.padding
-            });
-        }
-        let target = values
-            .iter()
-            .zip(&weights)
-            .fold(field.zero(), |sum, (a, b)| {
-                field.add(&sum, &field.mul(a, b))
-            });
-        (values, weights, target)
-    }
-    fn proof(output: &Output, field: &Cfg) -> Proof {
-        Proof {
-            norm: NormProof {
-                instance_nonce: None,
-                slack: field.zero(),
-                sumcheck: SumcheckProof {
-                    round_polynomials: Vec::new(),
-                },
-                terminal: field.zero(),
-                grinding_nonces: Vec::new(),
-            },
-            merge_nonce: None,
-            binding: output.proof.clone(),
-            binding_terminal: output.terminal,
-            binding_nonces: output.nonces.clone(),
-            terminal_merge_nonce: output.merge_nonce,
-        }
-    }
-
-    #[test]
-    fn word_sumcheck_matches_dense_two_product_oracle_and_bit_opening() {
-        let field = F::make_cfg(&field::Uint::from((1u128 << 127) - 1)).unwrap();
-        let batch = Layout::new(1).unwrap().capacity();
-        let layout = Layout::new(batch).unwrap();
-        let (form, source) = fixture(&layout, &field);
-        let (values, weights, target) = dense_tables(&form, &source);
-        let rounds = source_rounds(&layout) - 4;
-        let mut oracle_transcript = Blake3Transcript::new();
-        oracle_transcript.absorb_slice(DOMAIN);
-        let mut boundary = ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(
-            schedule().binding_bits,
-            0,
-        );
-        // A final selector variable puts both products into one ordinary dot
-        // product. Its first `rounds` messages are an independent dense oracle.
-        let oracle = prove_inner_sumcheck(
-            &field,
-            &mut oracle_transcript,
-            target,
-            values,
-            weights,
-            &mut boundary,
-        )
-        .unwrap();
-        let output = prove(
-            &mut Blake3Transcript::new(),
-            form,
-            target,
-            &source,
-            &schedule(),
-        )
-        .unwrap();
-        assert_eq!(
-            output.proof.round_polynomials,
-            oracle.proof.round_polynomials[..rounds]
-        );
-        assert_eq!(output.nonces, boundary.into_nonces()[..rounds]);
-        let (form, _) = fixture(&layout, &field);
-        assert_eq!(
-            verify(
-                &mut Blake3Transcript::new(),
-                &form,
-                target,
-                &proof(&output, &field),
-                &schedule()
-            )
-            .unwrap(),
-            output.claim
-        );
-
-        let column_weights = eq_table(&output.claim.column_point, &field).unwrap();
-        let row_weights = &output.claim.row_weights;
-        let mut opening = field.zero();
-        for (column, column_weight) in column_weights.iter().enumerate() {
-            let mut sum = field.zero();
-            for (row, weight) in row_weights.iter().enumerate() {
-                if source.bit(column * row_weights.len() + row) {
-                    sum = field.add(&sum, &field.from_integer(weight));
-                }
-            }
-            opening = field.add(&opening, &field.mul(&sum, column_weight));
-        }
-        assert_eq!(opening, output.claim.value);
-        for index in 0..2 {
-            let mut bad = proof(&output, &field);
-            bad.binding_terminal[index] = field.add(&bad.binding_terminal[index], &field.one());
-            assert!(
-                verify(
-                    &mut Blake3Transcript::new(),
-                    &form,
-                    target,
-                    &bad,
-                    &schedule()
-                )
-                .is_err()
-            );
-        }
-        let mut bad = proof(&output, &field);
-        bad.terminal_merge_nonce = None;
-        assert!(
-            verify(
-                &mut Blake3Transcript::new(),
-                &form,
-                target,
-                &bad,
-                &schedule()
-            )
-            .is_err()
-        );
-        let mut bad = proof(&output, &field);
-        bad.binding_nonces.pop();
-        assert!(
-            verify(
-                &mut Blake3Transcript::new(),
-                &form,
-                target,
-                &bad,
-                &schedule()
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn word_source_mutations_and_partial_batches_are_rejected() {
-        let field = F::make_cfg(&field::Uint::from((1u128 << 127) - 1)).unwrap();
-        let batch = Layout::new(1).unwrap().capacity();
-        let layout = Layout::new(batch).unwrap();
-        let (form, source) = fixture(&layout, &field);
-        let (_, _, target) = dense_tables(&form, &source);
-        for index in [
-            0,
-            14,
-            15,
-            16 * SLACK_BITS + 15,
-            16 * N + 15,
-            layout.source_bits() - 1,
-        ] {
-            let (form, mut source) = fixture(&layout, &field);
-            source.flip(index);
-            assert!(
-                prove(
-                    &mut Blake3Transcript::new(),
-                    form,
-                    target,
-                    &source,
-                    &schedule()
-                )
-                .is_err(),
-                "changed bit {index}"
-            );
-        }
-        let layout = Layout::new(3).unwrap();
-        let (form, source) = fixture(&layout, &field);
-        assert!(
-            prove(
-                &mut Blake3Transcript::new(),
-                form,
-                field.zero(),
-                &source,
-                &schedule()
-            )
-            .is_err()
-        );
-    }
+    t.absorb_slice(TERMINALS);
+    absorb_field_elements(t, v, f);
+    verify_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits, proof.terminal_merge_nonce)?;
+    let zeta = sample(t, f)?;
+    Ok(bind_terminal(t, point, v, zeta, f))
 }

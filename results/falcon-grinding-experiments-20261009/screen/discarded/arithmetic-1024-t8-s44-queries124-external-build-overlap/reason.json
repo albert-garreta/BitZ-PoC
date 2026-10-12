@@ -1,0 +1,5 @@
+{
+  "reason": "overlaps known external compilation; conservatively exclude even when on separate worker cores",
+  "external_build_pid": 3929586,
+  "external_build_start_epoch": 1791550970.26
+}

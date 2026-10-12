@@ -1,0 +1,28 @@
+warning: function `smallest_pow_nonce` is never used
+   --> results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/original.rs:111:15
+    |
+111 | pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
+    |               ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `smallest_pow_nonce_with` is never used
+   --> results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/original.rs:123:4
+    |
+123 | fn smallest_pow_nonce_with<const CHUNK_LOG: u32>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `smallest_pow_nonce` is never used
+   --> results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/specialized.rs:111:15
+    |
+111 | pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
+    |               ^^^^^^^^^^^^^^^^^^
+
+warning: function `smallest_pow_nonce_with` is never used
+   --> results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/specialized.rs:123:4
+    |
+123 | fn smallest_pow_nonce_with<const CHUNK_LOG: u32>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: 4 warnings emitted
+

@@ -1,0 +1,122 @@
+[
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "profile": "baseline",
+    "seeds": 10,
+    "prepare_mean_ms": 0.254183,
+    "prepare_median_ms": 0.29079,
+    "prepare_min_ms": 0.170022,
+    "prepare_max_ms": 0.32216
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "profile": "original",
+    "seeds": 10,
+    "prepare_mean_ms": 0.2607674,
+    "prepare_median_ms": 0.26772650000000003,
+    "prepare_min_ms": 0.16942100000000002,
+    "prepare_max_ms": 0.330776
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "profile": "weighted",
+    "seeds": 10,
+    "prepare_mean_ms": 0.650546,
+    "prepare_median_ms": 0.6558459999999999,
+    "prepare_min_ms": 0.43373100000000003,
+    "prepare_max_ms": 0.867
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "profile": "baseline",
+    "seeds": 10,
+    "prepare_mean_ms": 0.2319059,
+    "prepare_median_ms": 0.20623000000000002,
+    "prepare_min_ms": 0.164762,
+    "prepare_max_ms": 0.386602
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "profile": "original",
+    "seeds": 10,
+    "prepare_mean_ms": 0.2554483,
+    "prepare_median_ms": 0.21085399999999999,
+    "prepare_min_ms": 0.176855,
+    "prepare_max_ms": 0.384447
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "profile": "weighted_queries120",
+    "seeds": 10,
+    "prepare_mean_ms": 0.8331609,
+    "prepare_median_ms": 0.7812385,
+    "prepare_min_ms": 0.637717,
+    "prepare_max_ms": 1.168772
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "profile": "baseline",
+    "seeds": 10,
+    "prepare_mean_ms": 4.7816835,
+    "prepare_median_ms": 4.778142000000001,
+    "prepare_min_ms": 4.754487,
+    "prepare_max_ms": 4.819871
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "profile": "original",
+    "seeds": 10,
+    "prepare_mean_ms": 4.8288819,
+    "prepare_median_ms": 4.822506,
+    "prepare_min_ms": 4.763454,
+    "prepare_max_ms": 4.890925
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "profile": "weighted_external",
+    "seeds": 10,
+    "prepare_mean_ms": 5.2391349,
+    "prepare_median_ms": 5.2379865,
+    "prepare_min_ms": 5.177066999999999,
+    "prepare_max_ms": 5.273099
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "profile": "baseline",
+    "seeds": 10,
+    "prepare_mean_ms": 3.1167889,
+    "prepare_median_ms": 3.115601,
+    "prepare_min_ms": 3.09687,
+    "prepare_max_ms": 3.140052
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "profile": "original",
+    "seeds": 10,
+    "prepare_mean_ms": 3.1162648,
+    "prepare_median_ms": 3.1129404999999997,
+    "prepare_min_ms": 3.097341,
+    "prepare_max_ms": 3.137286
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "profile": "weighted_external",
+    "seeds": 10,
+    "prepare_mean_ms": 3.5842203,
+    "prepare_median_ms": 3.5737275,
+    "prepare_min_ms": 3.531282,
+    "prepare_max_ms": 3.648484
+  }
+]

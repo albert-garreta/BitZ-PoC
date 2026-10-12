@@ -1,0 +1,11 @@
+{
+  "archive": "raw-evidence.tar.gz",
+  "sha256": "616034839430979b41cb4aeaf0f7a6271440180d2d174f7dc0a0cb702f328326",
+  "file_count": 4251,
+  "uncompressed_bytes": 42728125,
+  "archive_bytes": 2319201,
+  "all_files_verified_against_originals": true,
+  "contents": "Raw benchmark/diagnostic process logs, per-process commands, paired-result records, build artifact records, and NTT assembly. Reports, summaries and validation logs remain unpacked.",
+  "restore_command": "tar -xzf raw-evidence.tar.gz",
+  "source_data_retained_locally": true
+}

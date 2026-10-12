@@ -1,0 +1,1602 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c5497c661..7eea20a80 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -262,6 +262,10 @@ required-features = ["binius64-bench"]
+ name = "grind_probe"
+ required-features = ["parallel", "span-metrics"]
+ 
++[[example]]
++name = "falcon_size_breakdown"
++required-features = ["falcon-hybrid"]
++
+ [[example]]
+ name = "hybrid_probe"
+ required-features = ["span-metrics", "hybrid"]
+diff --git a/src/hybrid/joint_sumcheck.rs b/src/hybrid/joint_sumcheck.rs
+index ee49205b6..b556e4ce5 100644
+--- a/src/hybrid/joint_sumcheck.rs
++++ b/src/hybrid/joint_sumcheck.rs
+@@ -412,6 +412,23 @@ impl GatherState {
+             return;
+         }
+         let start = self.word_axis;
++        if start == 0 {
++            // A local word occupies one contiguous repeat interval. Search
++            // the sparse support once for the tile, rather than twice for
++            // every repeated signature in the interval.
++            let repeat_log = self.high.len().ilog2() as usize;
++            let first = self.words.partition_point(|&word| word < (range.start >> repeat_log));
++            let end = self.words.partition_point(|&word| word <= ((range.end - 1) >> repeat_log));
++            for (&word, &coefficient) in self.words[first..end].iter().zip(&self.low[first..end]) {
++                let base = word << repeat_log;
++                let first_repeat = range.start.saturating_sub(base);
++                let end_repeat = (range.end - base).min(self.high.len());
++                for repeat in first_repeat..end_repeat {
++                    emit(base + repeat, coefficient * self.high[repeat]);
++                }
++            }
++            return;
++        }
+         let outer_shift = start + self.high.len().ilog2() as usize;
+         for outer in range.start >> outer_shift..=((range.end - 1) >> outer_shift) {
+             let base = outer << outer_shift;
+diff --git a/src/piop/spartan/falcon/opening_compact.rs b/src/piop/spartan/falcon/opening_compact.rs
+index 4d7d97abc..b082672a4 100644
+--- a/src/piop/spartan/falcon/opening_compact.rs
++++ b/src/piop/spartan/falcon/opening_compact.rs
+@@ -1755,6 +1755,13 @@ mod tests {
+     fn folded_strategies_preserve_emission_and_cache_switches() {
+         for field in [
+             crate::piop::spartan::spartan_bitz_field_config(),
++            crate::prime_sampling::sample_prime_context(
++                &mut crate::transcript::Blake3Transcript::new(),
++                1u128 << 125,
++                (1u128 << 126) - 1,
++                128,
++            )
++            .unwrap(),
+             F::make_cfg(&field::Uint::<2>::from((1u128 << 127) - 1)).unwrap(),
+         ] {
+             let mut sink = WordSink::new(0, 0, &field);
+@@ -1800,6 +1807,18 @@ mod tests {
+     #[test]
+     fn grouped_native_buckets_match_separate_reductions_and_enforce_bound() {
+         let field = crate::piop::spartan::spartan_bitz_field_config();
++        check_grouped_native_buckets(&field);
++        let field = crate::prime_sampling::sample_prime_context(
++            &mut crate::transcript::Blake3Transcript::new(),
++            1u128 << 125,
++            (1u128 << 126) - 1,
++            128,
++        )
++        .unwrap();
++        check_grouped_native_buckets(&field);
++    }
++
++    fn check_grouped_native_buckets(field: &Cfg) {
+         for count in [1, 3, 8, 16, 19] {
+             let mut grouped = WordBuckets::<3>::new();
+             let mut expected = vec![[field.zero(); 8]; 3 * 256];
+diff --git a/src/piop/spartan/falcon_integer.rs b/src/piop/spartan/falcon_integer.rs
+index ebe6a3976..444c4525e 100644
+--- a/src/piop/spartan/falcon_integer.rs
++++ b/src/piop/spartan/falcon_integer.rs
+@@ -1,7 +1,7 @@
+ //! One integer outer reduction for a weighted square sum and optional rejection rows.
+ //!
+ //! Row variables precede instance variables. Equality weights stay factored;
+-//! the first round reads signed machine integers and allocates only the folded
++//! a short prefix reads signed machine integers and allocates only the folded
+ //! tables. Every returned endpoint still requires the caller's source projection.
+ 
+ use super::{
+@@ -17,6 +17,10 @@ use rayon::prelude::*;
+ 
+ type Cfg = <F as SpartanField>::Config;
+ 
++mod native_prefix;
++#[cfg(test)]
++mod reference;
++
+ pub(super) struct Output<const K: usize> {
+     pub proof: SumcheckProof<F, 4>,
+     pub point: Vec<F>,
+@@ -106,12 +110,61 @@ pub(super) fn prove<const K: usize>(
+     initial: F,
+     read: impl Fn(usize) -> [i16; K] + Sync,
+     boundary: &mut impl RoundBoundaryPolicy,
++) -> Result<Output<K>, SumcheckError> {
++    // The width changes only the prover representation. All ordinary round
++    // messages and grinding boundaries remain in their original positions.
++    let prefix_rounds = prefix_rounds()?;
++    prove_with_prefix(
++        field,
++        transcript,
++        row_vars,
++        rho,
++        tau,
++        mix,
++        initial,
++        read,
++        boundary,
++        prefix_rounds,
++    )
++}
++
++fn prefix_rounds() -> Result<usize, SumcheckError> {
++    #[cfg(feature = "bench-internals")]
++    match std::env::var("BITZ_FALCON_INTEGER_PREFIX") {
++        Ok(value) => {
++            return value
++                .parse::<usize>()
++                .ok()
++                .filter(|v| (1..=4).contains(v))
++                .ok_or(SumcheckError::InvalidProductDimensions);
++        }
++        Err(std::env::VarError::NotUnicode(_)) => {
++            return Err(SumcheckError::InvalidProductDimensions);
++        }
++        Err(std::env::VarError::NotPresent) => {}
++    }
++    Ok(2)
++}
++
++#[allow(clippy::too_many_arguments)]
++fn prove_with_prefix<const K: usize>(
++    field: &Cfg,
++    transcript: &mut impl Transcript,
++    row_vars: usize,
++    rho: &[F],
++    tau: Option<&[F]>,
++    mix: F,
++    initial: F,
++    read: impl Fn(usize) -> [i16; K] + Sync,
++    boundary: &mut impl RoundBoundaryPolicy,
++    prefix_rounds: usize,
+ ) -> Result<Output<K>, SumcheckError> {
+     let rounds = row_vars + rho.len();
+     // At most 2^19 native pairs per instance keep all i16 quadratic sums
+     // below 2^52 before mixed multiplication by the instance weight.
+     if row_vars == 0
+         || row_vars > 20
++        || !(1..=4).contains(&prefix_rounds)
+         || rounds >= usize::BITS as usize
+         || !matches!(K, 1 | 4)
+         || (K == 4) != tau.is_some()
+@@ -125,6 +178,10 @@ pub(super) fn prove<const K: usize>(
+     let mut rejection_scale = mix;
+     let norm_instances = eq_table(rho, field)?;
+     let rejection_instances = tau.map(|t| eq_table(&t[row_vars..], field)).transpose()?;
++    let prefix_rounds = prefix_rounds.min(row_vars);
++    let mut prefix = (prefix_rounds > 1)
++        .then(|| native_prefix::Prefix::new(field, row_vars, rho, tau, prefix_rounds, &read))
++        .transpose()?;
+     let mut tables: [Vec<F>; K] = std::array::from_fn(|_| Vec::new());
+     let mut scratch: [Vec<F>; K] = std::array::from_fn(|_| Vec::new());
+     let mut proof = SumcheckProof {
+@@ -142,124 +199,135 @@ pub(super) fn prove<const K: usize>(
+         )
+         .entered();
+         let pairs = 1usize << (rounds - round - 1);
+-        let local_pairs = if round < row_vars {
+-            1usize << (row_vars - round - 1)
+-        } else {
+-            1
+-        };
+-        let norm_tail = if round >= row_vars {
+-            eq_table(&rho[round - row_vars + 1..], field)?
++        let sums = if round < prefix_rounds && prefix.is_some() {
++            prefix
++                .as_ref()
++                .unwrap()
++                .coefficients(field, tau.map(|t| &t[round + 1..prefix_rounds]))?
+         } else {
+-            Vec::new()
+-        };
+-        let rejection_tail = tau
+-            .map(|t| {
+-                eq_table(
+-                    &t[round + 1..if round < row_vars { row_vars } else { rounds }],
+-                    field,
+-                )
+-            })
+-            .transpose()?;
+-        let groups = pairs / local_pairs;
+-        let group = |i: usize| {
+-            let mut native_n = [0i64; 3];
+-            // Each accumulator contains at most 2^19 products. Keep their
+-            // Montgomery R^2 scale until the complete row subtotal is ready.
+-            let mut norm_products = [FpProductAcc::<2>::default(); 3];
+-            let mut rejection_products = [FpProductAcc::<2>::default(); 3];
+-            let mut r = [zero; 3];
+-            for j in 0..local_pairs {
+-                let index = 2 * (i * local_pairs + j);
+-                if round == 0 {
+-                    let a = read(index);
+-                    let b = read(index + 1);
+-                    let x = i64::from(a[0]);
+-                    let d = i64::from(b[0]) - x;
+-                    native_n[0] += x * x;
+-                    native_n[1] += 2 * x * d;
+-                    native_n[2] += d * d;
+-                    if K == 4 {
+-                        let a: [i64; 3] = std::array::from_fn(|k| i64::from(a[k + 1]));
+-                        let d: [i64; 3] = std::array::from_fn(|k| i64::from(b[k + 1]) - a[k]);
+-                        let q = [
+-                            a[0] * a[1] - a[2],
+-                            a[0] * d[1] + a[1] * d[0] - d[2],
+-                            d[0] * d[1],
+-                        ];
+-                        let w = rejection_tail.as_ref().unwrap()[j];
+-                        for k in 0..3 {
+-                            // Native rejection residual coefficients are tiny.
+-                            let term = match q[k] {
+-                                0 => zero,
+-                                1 => w,
+-                                -1 => field.neg(&w),
+-                                v => field.reduce(field.mul_wide(&w, &v)),
+-                            };
+-                            r[k] = field.add(&r[k], &term);
++            let recover_middle = round > 0 && round < row_vars;
++            let local_pairs = if round < row_vars {
++                1usize << (row_vars - round - 1)
++            } else {
++                1
++            };
++            let norm_tail = if round >= row_vars {
++                eq_table(&rho[round - row_vars + 1..], field)?
++            } else {
++                Vec::new()
++            };
++            let rejection_tail = tau
++                .map(|t| {
++                    eq_table(
++                        &t[round + 1..if round < row_vars { row_vars } else { rounds }],
++                        field,
++                    )
++                })
++                .transpose()?;
++            let groups = pairs / local_pairs;
++            let group = |i: usize| {
++                let mut native_n = [0i64; 3];
++                // Each accumulator contains at most 2^19 products. Keep their
++                // Montgomery R^2 scale until the complete row subtotal is ready.
++                let mut norm_products = [FpProductAcc::<2>::default(); 3];
++                let mut rejection_products = [FpProductAcc::<2>::default(); 3];
++                let mut r = [zero; 3];
++                for j in 0..local_pairs {
++                    let index = 2 * (i * local_pairs + j);
++                    if round == 0 {
++                        let a = read(index);
++                        let b = read(index + 1);
++                        let x = i64::from(a[0]);
++                        let d = i64::from(b[0]) - x;
++                        native_n[0] += x * x;
++                        native_n[1] += 2 * x * d;
++                        native_n[2] += d * d;
++                        if K == 4 {
++                            let a: [i64; 3] = std::array::from_fn(|k| i64::from(a[k + 1]));
++                            let d: [i64; 3] = std::array::from_fn(|k| i64::from(b[k + 1]) - a[k]);
++                            let q = [
++                                a[0] * a[1] - a[2],
++                                a[0] * d[1] + a[1] * d[0] - d[2],
++                                d[0] * d[1],
++                            ];
++                            let w = rejection_tail.as_ref().unwrap()[j];
++                            for k in 0..3 {
++                                // Native rejection residual coefficients are tiny.
++                                let term = match q[k] {
++                                    0 => zero,
++                                    1 => w,
++                                    -1 => field.neg(&w),
++                                    v => field.reduce(field.mul_wide(&w, &v)),
++                                };
++                                r[k] = field.add(&r[k], &term);
++                            }
++                        }
++                    } else {
++                        let x = tables[0][index];
++                        let d = field.sub(&tables[0][index + 1], &x);
++                        // Full Falcon pads S1 with zero rows. Their folded square
++                        // is identically zero until the high row variable is bound.
++                        if K != 4 || x != zero || d != zero {
++                            norm_products[0].accumulate(&x, &x);
++                            if !recover_middle {
++                                norm_products[1].accumulate(&x, &d);
++                            }
++                            norm_products[2].accumulate(&d, &d);
++                        }
++                        if K == 4 {
++                            let a = std::array::from_fn(|k| tables[k + 1][index]);
++                            let b = std::array::from_fn(|k| tables[k + 1][index + 1]);
++                            // A=C=0 at both endpoints makes A(t)B(t)-C(t)
++                            // identically zero, regardless of B or the challenge.
++                            if a[0] == zero && b[0] == zero && a[2] == zero && b[2] == zero {
++                                continue;
++                            }
++                            let q = product(field, a, b);
++                            let w = rejection_tail.as_ref().unwrap()
++                                [if round < row_vars { j } else { i }];
++                            for k in 0..3 {
++                                rejection_products[k].accumulate(&w, &q[k]);
++                            }
+                         }
+                     }
++                }
++                let nw = if round < row_vars {
++                    norm_instances[i]
+                 } else {
+-                    let x = tables[0][index];
+-                    let d = field.sub(&tables[0][index + 1], &x);
+-                    // Full Falcon pads S1 with zero rows. Their folded square
+-                    // is identically zero until the high row variable is bound.
+-                    if K != 4 || x != zero || d != zero {
+-                        norm_products[0].accumulate(&x, &x);
+-                        norm_products[1].accumulate(&x, &d);
+-                        norm_products[2].accumulate(&d, &d);
+-                    }
++                    norm_tail[i]
++                };
++                let n = if round == 0 {
++                    native_n.map(|v| field.reduce(field.mul_wide(&nw, &v)))
++                } else {
++                    let mut n = norm_products.map(|sum| field.reduce(sum));
++                    n[1] = field.add(&n[1], &n[1]);
+                     if K == 4 {
+-                        let a = std::array::from_fn(|k| tables[k + 1][index]);
+-                        let b = std::array::from_fn(|k| tables[k + 1][index + 1]);
+-                        // A=C=0 at both endpoints makes A(t)B(t)-C(t)
+-                        // identically zero, regardless of B or the challenge.
+-                        if a[0] == zero && b[0] == zero && a[2] == zero && b[2] == zero {
+-                            continue;
+-                        }
+-                        let q = product(field, a, b);
+-                        let w =
+-                            rejection_tail.as_ref().unwrap()[if round < row_vars { j } else { i }];
+-                        for k in 0..3 {
+-                            rejection_products[k].accumulate(&w, &q[k]);
+-                        }
++                        r = rejection_products.map(|sum| field.reduce(sum));
++                    }
++                    n.map(|v| field.mul(&nw, &v))
++                };
++                if round < row_vars {
++                    if let Some(weights) = &rejection_instances {
++                        r = r.map(|v| field.mul(&weights[i], &v));
+                     }
+                 }
+-            }
+-            let nw = if round < row_vars {
+-                norm_instances[i]
+-            } else {
+-                norm_tail[i]
++                [n, r]
+             };
+-            let n = if round == 0 {
+-                native_n.map(|v| field.reduce(field.mul_wide(&nw, &v)))
++            let combine =
++                |a: [[F; 3]; 2], b: [[F; 3]; 2]| [add(field, a[0], b[0]), add(field, a[1], b[1])];
++            #[cfg(feature = "parallel")]
++            let sums = if pairs >= 4096 && groups > 1 {
++                (0..groups)
++                    .into_par_iter()
++                    .map(group)
++                    .reduce(|| [[zero; 3]; 2], combine)
+             } else {
+-                let mut n = norm_products.map(|sum| field.reduce(sum));
+-                n[1] = field.add(&n[1], &n[1]);
+-                if K == 4 {
+-                    r = rejection_products.map(|sum| field.reduce(sum));
+-                }
+-                n.map(|v| field.mul(&nw, &v))
++                (0..groups).map(group).fold([[zero; 3]; 2], combine)
+             };
+-            if round < row_vars {
+-                if let Some(weights) = &rejection_instances {
+-                    r = r.map(|v| field.mul(&weights[i], &v));
+-                }
+-            }
+-            [n, r]
+-        };
+-        let combine =
+-            |a: [[F; 3]; 2], b: [[F; 3]; 2]| [add(field, a[0], b[0]), add(field, a[1], b[1])];
+-        #[cfg(feature = "parallel")]
+-        let sums = if pairs >= 4096 && groups > 1 {
+-            (0..groups)
+-                .into_par_iter()
+-                .map(group)
+-                .reduce(|| [[zero; 3]; 2], combine)
+-        } else {
+-            (0..groups).map(group).fold([[zero; 3]; 2], combine)
++            #[cfg(not(feature = "parallel"))]
++            let sums = (0..groups).map(group).fold([[zero; 3]; 2], combine);
++            sums
+         };
+-        #[cfg(not(feature = "parallel"))]
+-        let sums = (0..groups).map(group).fold([[zero; 3]; 2], combine);
+         let nl = if round < row_vars {
+             [field.one(), zero]
+         } else {
+@@ -271,6 +339,19 @@ pub(super) fn prove<const K: usize>(
+             let rejection = linear_times(field, sums[1], a, b, rejection_scale);
+             coefficients = std::array::from_fn(|k| field.add(&coefficients[k], &rejection[k]));
+         }
++        if round >= prefix_rounds && round < row_vars {
++            // The norm's row equality factor is 1, so omitting its cross
++            // product affects only the combined c1. Rejection c0, c2, c3
++            // remain complete: c1 = claim - 2*c0 - c2 - c3, with no division
++            // by a possibly zero EQ factor. Round zero is explicitly checked.
++            coefficients[1] = field.sub(
++                &claim,
++                &field.add(
++                    &field.add(&coefficients[0], &coefficients[0]),
++                    &field.add(&coefficients[2], &coefficients[3]),
++                ),
++            );
++        }
+         let sum = coefficients
+             .iter()
+             .fold(coefficients[0], |s, v| field.add(&s, v));
+@@ -301,60 +382,67 @@ pub(super) fn prove<const K: usize>(
+             round_index = round as u64
+         )
+         .entered();
+-        let one = field.one();
+-        let complement = field.sub(&one, &challenge);
+-        // A native signed fold needs one mixed reduction, not two integer
+-        // embeddings followed by a field multiplication. Boolean row operands
+-        // (and zero padding) select their four possible results directly.
+-        let native_fold = (round == 0).then(|| {
+-            <Cfg as PreparedLinearCombination<Z<1>>>::prepare_linear_combination(
+-                field,
+-                [complement, challenge],
+-            )
+-        });
+-        for k in 0..K {
+-            let fold = |i: usize| {
+-                if round == 0 {
+-                    let pair = [read(2 * i)[k], read(2 * i + 1)[k]];
+-                    match pair {
+-                        [0, 0] => zero,
+-                        [1, 1] => one,
+-                        [0, 1] => challenge,
+-                        [1, 0] => complement,
+-                        _ => <Cfg as PreparedLinearCombination<Z<1>>>::linear_combination(
+-                            native_fold.as_ref().unwrap(),
+-                            |j| Z::from(pair[j]),
+-                        ),
++        if round < prefix_rounds && prefix.is_some() {
++            prefix.as_mut().unwrap().fold(field, challenge);
++            if round + 1 == prefix_rounds {
++                tables = native_prefix::fold_tables(field, rounds, &point, challenge, &read);
++            }
++        } else {
++            let one = field.one();
++            let complement = field.sub(&one, &challenge);
++            // A native signed fold needs one mixed reduction, not two integer
++            // embeddings followed by a field multiplication. Boolean row operands
++            // (and zero padding) select their four possible results directly.
++            let native_fold = (round == 0).then(|| {
++                <Cfg as PreparedLinearCombination<Z<1>>>::prepare_linear_combination(
++                    field,
++                    [complement, challenge],
++                )
++            });
++            for k in 0..K {
++                let fold = |i: usize| {
++                    if round == 0 {
++                        let pair = [read(2 * i)[k], read(2 * i + 1)[k]];
++                        match pair {
++                            [0, 0] => zero,
++                            [1, 1] => one,
++                            [0, 1] => challenge,
++                            [1, 0] => complement,
++                            _ => <Cfg as PreparedLinearCombination<Z<1>>>::linear_combination(
++                                native_fold.as_ref().unwrap(),
++                                |j| Z::from(pair[j]),
++                            ),
++                        }
++                    } else {
++                        field.add(
++                            &tables[k][2 * i],
++                            &field.mul(
++                                &challenge,
++                                &field.sub(&tables[k][2 * i + 1], &tables[k][2 * i]),
++                            ),
++                        )
+                     }
++                };
++                // Initialize each output with its folded value. Zero-filling these
++                // large buffers first adds a serial write and page-fault pass.
++                #[cfg(feature = "parallel")]
++                if pairs >= 4096 {
++                    (0..pairs)
++                        .into_par_iter()
++                        .map(fold)
++                        .collect_into_vec(&mut scratch[k]);
+                 } else {
+-                    field.add(
+-                        &tables[k][2 * i],
+-                        &field.mul(
+-                            &challenge,
+-                            &field.sub(&tables[k][2 * i + 1], &tables[k][2 * i]),
+-                        ),
+-                    )
++                    scratch[k].clear();
++                    scratch[k].extend((0..pairs).map(fold));
++                }
++                #[cfg(not(feature = "parallel"))]
++                {
++                    scratch[k].clear();
++                    scratch[k].extend((0..pairs).map(fold));
+                 }
+-            };
+-            // Initialize each output with its folded value. Zero-filling these
+-            // large buffers first adds a serial write and page-fault pass.
+-            #[cfg(feature = "parallel")]
+-            if pairs >= 4096 {
+-                (0..pairs)
+-                    .into_par_iter()
+-                    .map(fold)
+-                    .collect_into_vec(&mut scratch[k]);
+-            } else {
+-                scratch[k].clear();
+-                scratch[k].extend((0..pairs).map(fold));
+-            }
+-            #[cfg(not(feature = "parallel"))]
+-            {
+-                scratch[k].clear();
+-                scratch[k].extend((0..pairs).map(fold));
+             }
++            std::mem::swap(&mut tables, &mut scratch);
+         }
+-        std::mem::swap(&mut tables, &mut scratch);
+         drop(fold_span);
+         point.push(challenge);
+         proof.round_polynomials.push(coefficients);
+@@ -507,4 +595,211 @@ mod tests {
+     fn combined_sum_matches_dense_polynomial() {
+         check::<4>();
+     }
++
++    struct IntegerTestDomain;
++    impl crate::piop::spartan::grinding::GrindingDomain for IntegerTestDomain {
++        const DOMAIN: &'static [u8] = b"bitz/test/integer-native-prefix/v1";
++    }
++
++    fn compare_prefixes<const K: usize>() {
++        use crate::sumcheck::boundary::{
++            ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary,
++        };
++        // A full-width two-limb prime also exercises prepared signed folds at
++        // a larger modulus than the production 126-bit configuration.
++        let field = Cfg::from_prime_u128((1u128 << 127) - 1);
++        for row_vars in [1, 3, 5] {
++            for scenario in 0..3 {
++                let degenerate = scenario == 1;
++                let rho = if degenerate { [0, 1] } else { [3, 5] }.map(|v| signed(v, &field));
++                let tau: Vec<_> = (0..row_vars + rho.len())
++                    .map(|i| {
++                        signed(
++                            if degenerate {
++                                (i % 2) as i64
++                            } else {
++                                7 + 2 * i as i64
++                            },
++                            &field,
++                        )
++                    })
++                    .collect();
++                let tau = (K == 4).then_some(tau.as_slice());
++                let mix = signed(if scenario == 2 { 0 } else { 23 }, &field);
++                let rows: Vec<[i16; K]> = (0..1 << (row_vars + rho.len()))
++                    .map(|i| {
++                        std::array::from_fn(|k| {
++                            if i < 8 {
++                                return [i16::MIN, i16::MAX, -1, 0, 1, 19, -719, 0][(i + k) % 8];
++                            }
++                            if i % 19 == 0 {
++                                return 0;
++                            }
++                            // Include every prefix coordinate: a repeating
++                            // eight-row fixture leaves the fourth one constant.
++                            let mut word = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
++                                ^ (k as u64 + 11).wrapping_mul(0xbf58_476d_1ce4_e5b9);
++                            word = (word ^ (word >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
++                            word = (word ^ (word >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
++                            (word >> 48) as u16 as i16
++                        })
++                    })
++                    .collect();
++                let norm_weights = eq_table(&rho, &field).unwrap();
++                let rejection_weights = tau.map(|t| eq_table(t, &field).unwrap());
++                let initial = rows.iter().enumerate().fold(field.zero(), |sum, (i, row)| {
++                    let x = signed(i64::from(row[0]), &field);
++                    let mut value = field.mul(&norm_weights[i >> row_vars], &field.mul(&x, &x));
++                    if K == 4 {
++                        let residual = i64::from(row[1]) * i64::from(row[2]) - i64::from(row[3]);
++                        value = field.add(
++                            &value,
++                            &field.mul(
++                                &mix,
++                                &field.mul(
++                                    &rejection_weights.as_ref().unwrap()[i],
++                                    &signed(residual, &field),
++                                ),
++                            ),
++                        );
++                    }
++                    field.add(&sum, &value)
++                });
++                for bits in [0, 3] {
++                    let mut expected_transcript = Blake3Transcript::new();
++                    let mut expected_boundary =
++                        ProverGrindingRoundBoundary::<IntegerTestDomain>::with_round_offset(
++                            bits, 0,
++                        );
++                    let expected = reference::prove(
++                        &field,
++                        &mut expected_transcript,
++                        row_vars,
++                        &rho,
++                        tau,
++                        mix,
++                        initial,
++                        |i| rows[i],
++                        &mut expected_boundary,
++                    )
++                    .unwrap();
++                    let expected_nonces = expected_boundary.into_nonces();
++                    let expected_challenge = expected_transcript.get_challenge::<field::Gf128>();
++                    for width in 1..=4 {
++                        let mut transcript = Blake3Transcript::new();
++                        let mut boundary =
++                            ProverGrindingRoundBoundary::<IntegerTestDomain>::with_round_offset(
++                                bits, 0,
++                            );
++                        let actual = prove_with_prefix(
++                            &field,
++                            &mut transcript,
++                            row_vars,
++                            &rho,
++                            tau,
++                            mix,
++                            initial,
++                            |i| rows[i],
++                            &mut boundary,
++                            width,
++                        )
++                        .unwrap();
++                        let nonces = boundary.into_nonces();
++                        assert_eq!(
++                            actual.proof, expected.proof,
++                            "width {width}, K {K}, rows {row_vars}"
++                        );
++                        assert_eq!(actual.point, expected.point);
++                        assert_eq!(actual.terminal, expected.terminal);
++                        assert_eq!(nonces, expected_nonces);
++                        assert_eq!(
++                            transcript.get_challenge::<field::Gf128>(),
++                            expected_challenge
++                        );
++                        let mut verifier = Blake3Transcript::new();
++                        let mut boundary =
++                            VerifierGrindingRoundBoundary::<IntegerTestDomain>::new(bits, &nonces);
++                        let (point, claim) = actual
++                            .proof
++                            .verify_with_round_boundary(
++                                &mut verifier,
++                                initial,
++                                row_vars + rho.len(),
++                                &field,
++                                &mut boundary,
++                            )
++                            .unwrap();
++                        assert_eq!(
++                            claim,
++                            direct(&field, &rows, row_vars, &rho, tau, mix, &point)
++                        );
++                        absorb_field_elements(&mut verifier, &actual.terminal, &field);
++                        assert_eq!(verifier.get_challenge::<field::Gf128>(), expected_challenge);
++                    }
++                }
++                for width in 1..=4 {
++                    let mut transcript = Blake3Transcript::new();
++                    let wrong = field.add(&initial, &field.one());
++                    let result = prove_with_prefix(
++                        &field,
++                        &mut transcript,
++                        row_vars,
++                        &rho,
++                        tau,
++                        mix,
++                        wrong,
++                        |i| rows[i],
++                        &mut UngrindedRoundBoundary,
++                        width,
++                    );
++                    assert!(matches!(
++                        result,
++                        Err(SumcheckError::InvalidRoundClaim { round: 0 })
++                    ));
++                    assert_eq!(
++                        transcript.get_challenge::<field::Gf128>(),
++                        Blake3Transcript::new().get_challenge::<field::Gf128>()
++                    );
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn native_prefix_matches_ordinary_square_rounds_and_grinding() {
++        compare_prefixes::<1>();
++    }
++
++    #[test]
++    fn native_prefix_matches_ordinary_combined_rounds_and_grinding() {
++        compare_prefixes::<4>();
++    }
++
++    #[test]
++    fn invalid_integer_dimensions_do_not_read_or_absorb() {
++        let field = Cfg::from_prime_u128((1u128 << 127) - 1);
++        for (row_vars, width) in [(0, 2), (21, 2), (3, 0), (3, 5)] {
++            let mut transcript = Blake3Transcript::new();
++            let result = prove_with_prefix::<1>(
++                &field,
++                &mut transcript,
++                row_vars,
++                &[],
++                None,
++                field.zero(),
++                field.zero(),
++                |_| panic!("invalid dimensions must be rejected before reading"),
++                &mut UngrindedRoundBoundary,
++                width,
++            );
++            assert!(matches!(
++                result,
++                Err(SumcheckError::InvalidProductDimensions)
++            ));
++            assert_eq!(
++                transcript.get_challenge::<field::Gf128>(),
++                Blake3Transcript::new().get_challenge::<field::Gf128>()
++            );
++        }
++    }
+ }
+diff --git a/src/sumcheck/inner/packed/binding_options.rs b/src/sumcheck/inner/packed/binding_options.rs
+index aac95daa5..5b6a0493d 100644
+--- a/src/sumcheck/inner/packed/binding_options.rs
++++ b/src/sumcheck/inner/packed/binding_options.rs
+@@ -31,7 +31,7 @@ impl BindingOptions {
+             && matches!(degree, 512 | 1024)
+             && security_100
+             && matches!(workers, 1 | 2 | 4 | 8 | 16);
+-        if supported || cfg!(test) {
++        let options = if supported || cfg!(test) {
+             Self {
+                 optimized: true,
+                 // Arithmetic has no grouped adapter and keeps one task per signature.
+@@ -45,7 +45,34 @@ impl BindingOptions {
+             }
+         } else {
+             Self::REFERENCE
++        };
++        #[cfg(feature = "bench-internals")]
++        return options.benchmark_override();
++        #[cfg(not(feature = "bench-internals"))]
++        options
++    }
++
++    /// Prover representation controls for comparing identical proof transcripts.
++    #[cfg(feature = "bench-internals")]
++    fn benchmark_override(mut self) -> Self {
++        match std::env::var("BITZ_FALCON_BINDING_KERNELS") {
++            Ok(value) if value == "reference" => self.optimized = false,
++            Ok(value) if value == "optimized" => self.optimized = true,
++            Err(std::env::VarError::NotPresent) => {}
++            _ => panic!("BITZ_FALCON_BINDING_KERNELS must be reference or optimized"),
++        }
++        match std::env::var("BITZ_FALCON_BINDING_GROUP") {
++            Ok(value) => {
++                self.group_cap = value
++                    .parse::<usize>()
++                    .ok()
++                    .filter(|value| matches!(value, 1 | 2 | 4 | 8 | 16))
++                    .expect("BITZ_FALCON_BINDING_GROUP must be 1, 2, 4, 8, or 16");
++            }
++            Err(std::env::VarError::NotPresent) => {}
++            _ => panic!("BITZ_FALCON_BINDING_GROUP must be 1, 2, 4, 8, or 16"),
+         }
++        self
+     }
+ }
+ 
+diff --git a/src/sumcheck/inner/packed/overlay.rs b/src/sumcheck/inner/packed/overlay.rs
+index 3480142fd..db16d0cd1 100644
+--- a/src/sumcheck/inner/packed/overlay.rs
++++ b/src/sumcheck/inner/packed/overlay.rs
+@@ -144,17 +144,6 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
+         let (zero, one) = (f.zero(), f.one());
+         self.prefix_weights =
+             PreparedPrefixWeights::new(equality_weights_lsb(&self.point[..K], &zero, &one, f), f);
+-        let mut table = {
+-            let _span = tracing::info_span!("inner_overlay:folded_coefficients").entered();
+-            StreamingMle::new(self.input.integer).fold_prefix_table::<K>(
+-                self.input.num_vars,
+-                self.input.live_len,
+-                &self.point[..K],
+-                f,
+-                &zero,
+-                &one,
+-            )?
+-        };
+         self.row = self.input.row.to_vec();
+         self.column = self
+             .input
+@@ -168,48 +157,108 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
+                 product_reduce(acc, f)
+             })
+             .collect::<Result<_, _>>()?;
+-        if self.input.num_vars > K {
+-            let _span = tracing::info_span!("inner_overlay:first_tail_round").entered();
+-            let (fast, slow) = ring_axes(&self.row, &self.column);
+-            self.next = sum_pairs(
+-                &mut table.values,
+-                2,
+-                fast,
+-                slow,
+-                &self.input.integer_scale,
++        // A complete folded partition is one tensor row. Consume its pairs
++        // before replaying the next row, keeping the integer coefficients in
++        // cache instead of scanning the entire suffix table a second time.
++        let separate_scan = self.column.len() == 1 || self.input.num_vars == K;
++        #[cfg(feature = "parallel")]
++        let separate_scan = separate_scan
++            || ((self.input.live_len >> (K + 1)) >= 1 << 10
++                && rayon::current_num_threads() > self.row.len());
++        let source = StreamingMle::new(self.input.integer);
++        let table = if separate_scan {
++            let mut table = {
++                let _span = tracing::info_span!("inner_overlay:folded_coefficients").entered();
++                source.fold_prefix_table::<K>(
++                    self.input.num_vars,
++                    self.input.live_len,
++                    &self.point[..K],
++                    f,
++                    &zero,
++                    &one,
++                )?
++            };
++            if self.input.num_vars > K {
++                let _span = tracing::info_span!("inner_overlay:first_tail_round").entered();
++                let (fast, slow) = ring_axes(&self.row, &self.column);
++                self.next = self.first_tail_round(&mut table.values, 0, fast, slow, f)?;
++            }
++            table
++        } else {
++            let _span =
++                tracing::info_span!("inner_overlay:folded_coefficients_and_first_tail").entered();
++            let (table, partials) = source.fold_prefix_table_with::<K, _>(
++                self.input.num_vars,
++                self.input.live_len,
++                &self.point[..K],
+                 f,
+-                |pair, values| {
+-                    // Every input partition is complete, so both suffixes
+-                    // exist whenever a tail round remains.
+-                    let h0 = folded_packed_h::<K, _>(
+-                        pair * 2,
+-                        self.input.live_len,
+-                        self.input.bits,
+-                        &self.prefix_weights,
+-                        f,
+-                        &zero,
+-                        &one,
+-                    )?;
+-                    let h1 = folded_packed_h::<K, _>(
+-                        pair * 2 + 1,
+-                        self.input.live_len,
+-                        self.input.bits,
+-                        &self.prefix_weights,
++                &zero,
++                &one,
++                |partition, values| {
++                    self.first_tail_round(
++                        values,
++                        partition * self.column.len() / 2,
++                        &self.column,
++                        &self.row[partition..partition + 1],
+                         f,
+-                        &zero,
+-                        &one,
+-                    )?;
+-                    Ok([
+-                        [field_from_raw(&values[0], f), h0],
+-                        [field_from_raw(&values[1], f), h1],
+-                    ])
++                    )
+                 },
+             )?;
+-        }
++            self.next = partials.into_iter().fold([zero; 2], |sum, part| {
++                std::array::from_fn(|i| f.add(&sum[i], &part[i]))
++            });
++            table
++        };
+         self.table = Some(table);
+         Ok(())
+     }
+ 
++    fn first_tail_round(
++        &self,
++        values: &mut [RawMontgomery],
++        pair_offset: usize,
++        fast: &[Field],
++        slow: &[Field],
++        f: &FieldConfig,
++    ) -> Result<[Field; 2], SumcheckError> {
++        let (zero, one) = (f.zero(), f.one());
++        sum_pairs(
++            values,
++            2,
++            fast,
++            slow,
++            &self.input.integer_scale,
++            f,
++            |pair, values| {
++                // Omitted integer coefficients still have a ring contribution,
++                // so visit every pair, including zero-filled source padding.
++                let suffix = (pair_offset + pair) * 2;
++                let h0 = folded_packed_h::<K, _>(
++                    suffix,
++                    self.input.live_len,
++                    self.input.bits,
++                    &self.prefix_weights,
++                    f,
++                    &zero,
++                    &one,
++                )?;
++                let h1 = folded_packed_h::<K, _>(
++                    suffix + 1,
++                    self.input.live_len,
++                    self.input.bits,
++                    &self.prefix_weights,
++                    f,
++                    &zero,
++                    &one,
++                )?;
++                Ok([
++                    [field_from_raw(&values[0], f), h0],
++                    [field_from_raw(&values[1], f), h1],
++                ])
++            },
++        )
++    }
++
+     fn coefficients(&self, f: &FieldConfig) -> Result<[Field; 2], SumcheckError> {
+         if self.round < K {
+             let [c2, c0] = self.accumulators.as_ref().unwrap().evaluate_round(
+diff --git a/src/sumcheck/inner/packed/overlay/tests.rs b/src/sumcheck/inner/packed/overlay/tests.rs
+index 296138d88..b15fe5eeb 100644
+--- a/src/sumcheck/inner/packed/overlay/tests.rs
++++ b/src/sumcheck/inner/packed/overlay/tests.rs
+@@ -107,9 +107,31 @@ fn fixture(
+ 
+ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field, f: &FieldConfig) {
+     let (source, row, column, bits) = fixture(row_vars, column_vars, f);
+-    let n = row_vars + column_vars;
+-    let coefficients = source
+-        .values
++    assert_dense_oracle(
++        &source,
++        &source.values,
++        &row,
++        &column,
++        &bits,
++        prefix,
++        scale,
++        f,
++    );
++}
++
++#[allow(clippy::too_many_arguments)]
++fn assert_dense_oracle(
++    source: &impl StreamingCoefficientSource,
++    integer_values: &[Field],
++    row: &[Field],
++    column: &[Field],
++    bits: &[u64],
++    prefix: usize,
++    scale: Field,
++    f: &FieldConfig,
++) {
++    let n = source.num_vars();
++    let coefficients = integer_values
+         .iter()
+         .enumerate()
+         .map(|(i, z)| {
+@@ -119,7 +141,7 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
+             )
+         })
+         .collect::<Vec<_>>();
+-    let h = (0..source.values.len())
++    let h = (0..integer_values.len())
+         .map(|i| {
+             if bits[i / 64] >> (i % 64) & 1 == 1 {
+                 f.one()
+@@ -138,13 +160,13 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
+         &mut actual_transcript,
+         claim,
+         FactoredOverlayInput::new(
+-            &source,
+-            &bits,
+-            &row,
+-            &column,
++            source,
++            bits,
++            row,
++            column,
+             scale,
+             n,
+-            source.values.len(),
++            integer_values.len(),
+             prefix,
+         ),
+         (),
+@@ -162,8 +184,11 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
+     )
+     .unwrap();
+     assert_eq!(
+-        actual, expected,
+-        "rows={row_vars}, columns={column_vars}, prefix={prefix}"
++        actual,
++        expected,
++        "rows={}, columns={}, prefix={prefix}",
++        row.len(),
++        column.len()
+     );
+     assert_eq!(
+         actual_transcript.get_challenge::<u128>(),
+@@ -269,3 +294,131 @@ fn factored_overlay_rejects_invalid_shape_and_claim() {
+         .is_err()
+     );
+ }
++
++/// Exercise the source adapters used by the Falcon integer binder, including
++/// sparse final coefficients and overlapping, out-of-order additive updates.
++struct FoldedSource<'a> {
++    source: &'a IntegerSource,
++    f: &'a FieldConfig,
++    additive: bool,
++}
++
++impl FoldedSource<'_> {
++    fn replay(
++        &self,
++        partition: usize,
++        weights: &[Field],
++        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
++    ) -> Result<(), SumcheckError> {
++        let start = partition * self.source.partition;
++        let mut entries = Vec::new();
++        for (i, block) in self.source.values[start..start + self.source.partition]
++            .chunks_exact(weights.len())
++            .enumerate()
++        {
++            let value = block
++                .iter()
++                .zip(weights)
++                .fold(self.f.zero(), |sum, (a, b)| {
++                    self.f.add(&sum, &self.f.mul(a, b))
++                });
++            if value != self.f.zero() {
++                entries.push((start / weights.len() + i, value));
++            }
++        }
++        if self.additive {
++            // Each final value is 2*z + (-z), in reverse index order.
++            for (index, value) in entries.into_iter().rev() {
++                emit(index, self.f.add(&value, &value))?;
++                emit(index, self.f.neg(&value))?;
++            }
++        } else {
++            for (index, value) in entries {
++                emit(index, value)?;
++            }
++        }
++        Ok(())
++    }
++}
++
++impl StreamingCoefficientSource for FoldedSource<'_> {
++    fn num_vars(&self) -> usize {
++        self.source.num_vars()
++    }
++    fn live_len(&self) -> usize {
++        self.source.live_len()
++    }
++    fn partition_len(&self) -> usize {
++        self.source.partition_len()
++    }
++    fn for_each_coefficient(
++        &self,
++        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
++    ) -> Result<(), SumcheckError> {
++        self.source.for_each_coefficient(emit)
++    }
++    fn for_each_partition(
++        &self,
++        partition: usize,
++        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
++    ) -> Result<(), SumcheckError> {
++        self.source.for_each_partition(partition, emit)
++    }
++    fn for_each_partition_folded(
++        &self,
++        partition: usize,
++        weights: &[Field],
++        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
++    ) -> Option<Result<(), SumcheckError>> {
++        self.additive.then(|| self.replay(partition, weights, emit))
++    }
++    fn for_each_partition_folded_final(
++        &self,
++        partition: usize,
++        weights: &[Field],
++        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
++    ) -> Option<Result<(), SumcheckError>> {
++        (!self.additive).then(|| self.replay(partition, weights, emit))
++    }
++}
++
++#[test]
++fn factored_overlay_folded_replays_preserve_sparse_ring_proof_and_transcript() {
++    let f = crate::prime_sampling::sample_prime_context(
++        &mut Blake3Transcript::new(),
++        1u128 << 125,
++        (1u128 << 126) - 1,
++        128,
++    )
++    .unwrap();
++    let (mut source, row, column, bits) = fixture(2, 8, &f);
++    for (index, value) in source.values.iter_mut().enumerate() {
++        // Missing coefficient pairs must retain their nonzero ring terms.
++        if (index / 32) % 3 == 0 {
++            *value = f.zero();
++        } else if index % 2 == 0 {
++            *value = f.neg(value);
++        }
++    }
++    for additive in [false, true] {
++        let folded = FoldedSource {
++            source: &source,
++            f: &f,
++            additive,
++        };
++        for prefix in [0, 3, 4] {
++            for scale in [f.zero(), f.one(), f.neg(&Field::from_with_cfg(137u64, &f))] {
++                assert_dense_oracle(
++                    &folded,
++                    &source.values,
++                    &row,
++                    &column,
++                    &bits,
++                    prefix,
++                    scale,
++                    &f,
++                );
++            }
++        }
++    }
++}
+diff --git a/src/sumcheck/inner/packed/streaming.rs b/src/sumcheck/inner/packed/streaming.rs
+index d5403be5b..da4e8cd52 100644
+--- a/src/sumcheck/inner/packed/streaming.rs
++++ b/src/sumcheck/inner/packed/streaming.rs
+@@ -257,6 +257,95 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
+                 emit(index, value)
+             })
+     }
++
++    /// Consume each folded partition while its coefficient table is still hot.
++    /// The callback sees zero-filled omitted entries and any even-length padding.
++    #[allow(clippy::too_many_arguments)]
++    pub(super) fn fold_prefix_table_with<const K: usize, T: Send>(
++        &self,
++        num_vars: usize,
++        live_len: usize,
++        challenges: &[Field],
++        cfg: &FieldConfig,
++        zero: &Field,
++        one: &Field,
++        finish: impl Fn(usize, &mut [RawMontgomery]) -> Result<T, SumcheckError> + Sync,
++    ) -> Result<(CompactPrefixVTable, Vec<T>), SumcheckError> {
++        self.validate_dimensions::<K>(num_vars, live_len)?;
++        if challenges.len() != K {
++            return Err(SumcheckError::InvalidProductDimensions);
++        }
++        validate_field_values(challenges, cfg)?;
++        let weights = equality_weights_lsb(challenges, zero, one, cfg);
++        let suffix_count = live_len.div_ceil(1usize << K);
++        let mut table = CompactPrefixVTable {
++            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
++            suffix_count,
++        };
++        let width = self.source.partition_len() >> K;
++        let partials: Result<Vec<T>, SumcheckError> =
++            crate::utils::cfg_chunks_mut!(table.values, width)
++                .enumerate()
++                .map(|(partition, values)| {
++                    let mut replay = || {
++                        // The final even-length padding slot has no source coefficient.
++                        if partition * width >= suffix_count {
++                            return Ok(());
++                        }
++                        if let Some(result) = self.visit_folded_final_checked::<K>(
++                            partition,
++                            &weights,
++                            cfg,
++                            |index, value| {
++                                values[index - partition * width] = raw_montgomery(&value);
++                                Ok(())
++                            },
++                        ) {
++                            return result;
++                        }
++                        if let Some(result) = self.visit_folded_checked::<K>(
++                            partition,
++                            &weights,
++                            cfg,
++                            |index, value| {
++                                let slot = &mut values[index - partition * width];
++                                *slot =
++                                    raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
++                                Ok(())
++                            },
++                        ) {
++                            return result;
++                        }
++                        if let Some(result) =
++                            self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
++                                let value = if K == 0 {
++                                    block[0]
++                                } else {
++                                    let mut sum = product_accumulator_zero();
++                                    for (weight, value) in weights.iter().zip(block) {
++                                        product_multiply_accumulate(cfg, &mut sum, weight, value);
++                                    }
++                                    product_reduce(sum, cfg)?
++                                };
++                                values[(base >> K) - partition * width] = raw_montgomery(&value);
++                                Ok(())
++                            })
++                        {
++                            return result;
++                        }
++                        self.visit_checked(partition, cfg, |index, delta| {
++                            let slot = &mut values[(index >> K) - partition * width];
++                            let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
++                            *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
++                            Ok(())
++                        })
++                    };
++                    replay()?;
++                    finish(partition, values)
++                })
++                .collect();
++        Ok((table, partials?))
++    }
+ }
+ 
+ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for StreamingMle<'_, S> {
+@@ -345,70 +434,16 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
+         zero: &Field,
+         one: &Field,
+     ) -> Result<CompactPrefixVTable, SumcheckError> {
+-        self.validate_dimensions::<K>(num_vars, live_len)?;
+-        if challenges.len() != K {
+-            return Err(SumcheckError::InvalidProductDimensions);
+-        }
+-        validate_field_values(challenges, cfg)?;
+-        let weights = equality_weights_lsb(challenges, zero, one, cfg);
+-        let suffix_count = live_len.div_ceil(1usize << K);
+-        let mut table = CompactPrefixVTable {
+-            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
+-            suffix_count,
+-        };
+-        let width = self.source.partition_len() >> K;
+-        crate::utils::cfg_chunks_mut!(table.values, width)
+-            .enumerate()
+-            .try_for_each(|(partition, values)| {
+-                // The final even-length padding slot has no source coefficient.
+-                if partition * width >= suffix_count {
+-                    return Ok(());
+-                }
+-                if let Some(result) = self.visit_folded_final_checked::<K>(
+-                    partition,
+-                    &weights,
+-                    cfg,
+-                    |index, value| {
+-                        values[index - partition * width] = raw_montgomery(&value);
+-                        Ok(())
+-                    },
+-                ) {
+-                    return result;
+-                }
+-                if let Some(result) =
+-                    self.visit_folded_checked::<K>(partition, &weights, cfg, |index, value| {
+-                        let slot = &mut values[index - partition * width];
+-                        *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
+-                        Ok(())
+-                    })
+-                {
+-                    return result;
+-                }
+-                if let Some(result) =
+-                    self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
+-                        let value = if K == 0 {
+-                            block[0]
+-                        } else {
+-                            let mut sum = product_accumulator_zero();
+-                            for (weight, value) in weights.iter().zip(block) {
+-                                product_multiply_accumulate(cfg, &mut sum, weight, value);
+-                            }
+-                            product_reduce(sum, cfg)?
+-                        };
+-                        values[(base >> K) - partition * width] = raw_montgomery(&value);
+-                        Ok(())
+-                    })
+-                {
+-                    return result;
+-                }
+-                self.visit_checked(partition, cfg, |index, delta| {
+-                    let slot = &mut values[(index >> K) - partition * width];
+-                    let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
+-                    *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
+-                    Ok(())
+-                })
+-            })?;
+-        Ok(table)
++        self.fold_prefix_table_with::<K, ()>(
++            num_vars,
++            live_len,
++            challenges,
++            cfg,
++            zero,
++            one,
++            |_, _| Ok(()),
++        )
++        .map(|(table, _)| table)
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+diff --git a/vendor/flock-mod/crates/flock-core/src/lincheck.rs b/vendor/flock-mod/crates/flock-core/src/lincheck.rs
+index 789aa5bd9..cd57fc5b2 100644
+--- a/vendor/flock-mod/crates/flock-core/src/lincheck.rs
++++ b/vendor/flock-mod/crates/flock-core/src/lincheck.rs
+@@ -117,7 +117,7 @@
+ //!   per byte.
+ 
+ use crate::challenger::Challenger;
+-use crate::field::Gf128;
++use crate::field::{Gf128, Gf128Product};
+ use crate::genus95_curve_code::{EvaluationPoint, base_evaluation_functional};
+ use crate::r1cs::SparseBinaryMatrix;
+ use crate::zerocheck::multilinear::lagrange_weights_naive;
+@@ -125,6 +125,7 @@ use serde::{Deserialize, Serialize};
+ use std::sync::atomic::AtomicBool;
+ 
+ mod kernels;
++mod product;
+ 
+ #[cfg(target_arch = "x86_64")]
+ pub use kernels::partial_fold_packed_z_x86_tiled_padded;
+@@ -1020,11 +1021,11 @@ pub fn build_quirky_eq_table(z_skip: Gf128, x_inner_rest: &[Gf128], k_skip: usiz
+ /// Dot product of two equal-length Gf128 slices.
+ fn inner_product(a: &[Gf128], b: &[Gf128]) -> Gf128 {
+     assert_eq!(a.len(), b.len());
+-    let mut acc = Gf128::ZERO;
++    let mut acc = Gf128Product::zero();
+     for (x, y) in a.iter().zip(b.iter()) {
+-        acc += *x * *y;
++        acc ^= x.mul_unreduced(*y);
+     }
+-    acc
++    acc.reduce()
+ }
+ 
+ /// Length above which the inner product / element-wise kernels split via
+@@ -1121,22 +1122,14 @@ fn sumcheck_round_eval_par(c: &[Gf128], z: &[Gf128]) -> (Gf128, Gf128) {
+     debug_assert_eq!(z.len(), c.len());
+     let (clo, chi) = c.split_at(half);
+     let (zlo, zhi) = z.split_at(half);
+-    if half < SUMCHECK_PAR_THRESHOLD {
+-        let mut e1 = Gf128::ZERO;
+-        let mut einf = Gf128::ZERO;
+-        for i in 0..half {
+-            e1 += chi[i] * zhi[i];
+-            einf += (chi[i] + clo[i]) * (zhi[i] + zlo[i]);
+-        }
+-        return (e1, einf);
+-    }
+-    (0..half)
+-        .into_par_iter()
+-        .map(|i| {
+-            let e1_i = chi[i] * zhi[i];
+-            let einf_i = (chi[i] + clo[i]) * (zhi[i] + zlo[i]);
+-            (e1_i, einf_i)
+-        })
++    if half < SUMCHECK_PAR_THRESHOLD || rayon::current_num_threads() == 1 {
++        return product::message([clo, chi], [zlo, zhi]);
++    }
++    clo.par_chunks(SUMCHECK_PAR_THRESHOLD)
++        .zip(chi.par_chunks(SUMCHECK_PAR_THRESHOLD))
++        .zip(zlo.par_chunks(SUMCHECK_PAR_THRESHOLD))
++        .zip(zhi.par_chunks(SUMCHECK_PAR_THRESHOLD))
++        .map(|(((c0, c1), z0), z1)| product::message([c0, c1], [z0, z1]))
+         .reduce(|| (Gf128::ZERO, Gf128::ZERO), |a, b| (a.0 + b.0, a.1 + b.1))
+ }
+ 
+@@ -1206,41 +1199,19 @@ fn sumcheck_bind_both_and_eval_next(
+     let (zq0, zq1) = z_lo.split_at_mut(half2);
+     let (zq2, zq3) = z_hi.split_at(half2);
+ 
+-    let (e1, einf) = if half2 < SUMCHECK_PAR_THRESHOLD {
+-        let mut e1 = Gf128::ZERO;
+-        let mut einf = Gf128::ZERO;
+-        for i in 0..half2 {
+-            let lo = cq0[i] + r * (cq2[i] + cq0[i]);
+-            let hi = cq1[i] + r * (cq3[i] + cq1[i]);
+-            let zlo = zq0[i] + r * (zq2[i] + zq0[i]);
+-            let zhi = zq1[i] + r * (zq3[i] + zq1[i]);
+-            cq0[i] = lo;
+-            cq1[i] = hi;
+-            zq0[i] = zlo;
+-            zq1[i] = zhi;
+-            e1 += hi * zhi;
+-            einf += (hi + lo) * (zhi + zlo);
+-        }
+-        (e1, einf)
++    let (e1, einf) = if half2 < SUMCHECK_PAR_THRESHOLD || rayon::current_num_threads() == 1 {
++        product::fold_and_message([cq0, cq1], [cq2, cq3], [zq0, zq1], [zq2, zq3], r)
+     } else {
+-        cq0.par_iter_mut()
+-            .zip(cq1.par_iter_mut())
+-            .zip(cq2.par_iter())
+-            .zip(cq3.par_iter())
+-            .zip(zq0.par_iter_mut())
+-            .zip(zq1.par_iter_mut())
+-            .zip(zq2.par_iter())
+-            .zip(zq3.par_iter())
++        cq0.par_chunks_mut(SUMCHECK_PAR_THRESHOLD)
++            .zip(cq1.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
++            .zip(cq2.par_chunks(SUMCHECK_PAR_THRESHOLD))
++            .zip(cq3.par_chunks(SUMCHECK_PAR_THRESHOLD))
++            .zip(zq0.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
++            .zip(zq1.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
++            .zip(zq2.par_chunks(SUMCHECK_PAR_THRESHOLD))
++            .zip(zq3.par_chunks(SUMCHECK_PAR_THRESHOLD))
+             .map(|(((((((c0, c1), c2), c3), z0), z1), z2), z3)| {
+-                let lo = *c0 + r * (*c2 + *c0);
+-                let hi = *c1 + r * (*c3 + *c1);
+-                let zlo = *z0 + r * (*z2 + *z0);
+-                let zhi = *z1 + r * (*z3 + *z1);
+-                *c0 = lo;
+-                *c1 = hi;
+-                *z0 = zlo;
+-                *z1 = zhi;
+-                (hi * zhi, (hi + lo) * (zhi + zlo))
++                product::fold_and_message([c0, c1], [c2, c3], [z0, z1], [z2, z3], r)
+             })
+             .reduce(|| (Gf128::ZERO, Gf128::ZERO), |a, b| (a.0 + b.0, a.1 + b.1))
+     };
+@@ -1731,6 +1702,105 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn product_sumcheck_matches_reduced_reference_through_every_round() {
++        fn reference(c: &[Gf128], z: &[Gf128]) -> (Gf128, Gf128) {
++            let half = c.len() / 2;
++            (0..half).fold((Gf128::ZERO, Gf128::ZERO), |(one, inf), i| {
++                (
++                    one + c[i + half] * z[i + half],
++                    inf + (c[i] + c[i + half]) * (z[i] + z[i + half]),
++                )
++            })
++        }
++        for threads in [1, 2] {
++            rayon::ThreadPoolBuilder::new()
++                .num_threads(threads)
++                .build()
++                .unwrap()
++                .install(|| {
++                    let mut rng = Rng::new(0x1cde_fe22);
++                    for log in [1, 2, 3, 5, 9, 13, 15] {
++                        let mut c = rng.f128_vec(1 << log);
++                        let mut z = rng.f128_vec(1 << log);
++                        // Include zero, one and all-one polynomial words.
++                        c[0] = Gf128::ZERO;
++                        z[0] = Gf128::ONE;
++                        c[1] = Gf128::new(u64::MAX, u64::MAX);
++                        assert_eq!(sumcheck_round_eval_par(&c, &z), reference(&c, &z));
++                        assert_eq!(
++                            inner_product(&c, &z),
++                            c.iter()
++                                .zip(&z)
++                                .fold(Gf128::ZERO, |sum, (&x, &y)| sum + x * y)
++                        );
++                        let mut round = 0;
++                        while c.len() >= 4 {
++                            let r = match round % 3 {
++                                0 => Gf128::ZERO,
++                                1 => Gf128::ONE,
++                                _ => rng.f128(),
++                            };
++                            let half = c.len() / 2;
++                            let expected_c: Vec<_> =
++                                (0..half).map(|i| c[i] + r * (c[i] + c[i + half])).collect();
++                            let expected_z: Vec<_> =
++                                (0..half).map(|i| z[i] + r * (z[i] + z[i + half])).collect();
++                            let message = sumcheck_bind_both_and_eval_next(&mut c, &mut z, r);
++                            assert_eq!(c, expected_c);
++                            assert_eq!(z, expected_z);
++                            assert_eq!(message, reference(&expected_c, &expected_z));
++                            round += 1;
++                        }
++                    }
++                    assert_eq!(inner_product(&[], &[]), Gf128::ZERO);
++                });
++        }
++    }
++
++    #[test]
++    fn product_sumcheck_vector_tails_match_reduced_reference() {
++        let mut rng = Rng::new(0x21aa_102a);
++        for n in [0, 1, 2, 3, 4, 5, 7, 9, 17] {
++            let mut c0 = rng.f128_vec(n);
++            let mut c1 = rng.f128_vec(n);
++            let mut z0 = rng.f128_vec(n);
++            let mut z1 = rng.f128_vec(n);
++            let c2 = rng.f128_vec(n);
++            let c3 = rng.f128_vec(n);
++            let z2 = rng.f128_vec(n);
++            let z3 = rng.f128_vec(n);
++            let r = rng.f128();
++            let expected: Vec<_> = (0..n)
++                .map(|i| {
++                    [
++                        c0[i] + r * (c0[i] + c2[i]),
++                        c1[i] + r * (c1[i] + c3[i]),
++                        z0[i] + r * (z0[i] + z2[i]),
++                        z1[i] + r * (z1[i] + z3[i]),
++                    ]
++                })
++                .collect();
++            let message = product::fold_and_message(
++                [&mut c0, &mut c1],
++                [&c2, &c3],
++                [&mut z0, &mut z1],
++                [&z2, &z3],
++                r,
++            );
++            for (i, &[a, b, c, d]) in expected.iter().enumerate() {
++                assert_eq!([c0[i], c1[i], z0[i], z1[i]], [a, b, c, d]);
++            }
++            let reference = expected
++                .iter()
++                .fold((Gf128::ZERO, Gf128::ZERO), |sum, &[a, b, c, d]| {
++                    (sum.0 + b * d, sum.1 + (a + b) * (c + d))
++                });
++            assert_eq!(message, reference);
++            assert_eq!(product::message([&c0, &c1], [&z0, &z1]), reference);
++        }
++    }
++
+     /// Naive MLE evaluation: `f̂(point) = Σ_i eq(point, i) · f[i]` where i ∈
+     /// {0,1}^d and f[i] is given as a bool slice.
+     fn mle_eval_bool(f: &[bool], point: &[Gf128]) -> Gf128 {

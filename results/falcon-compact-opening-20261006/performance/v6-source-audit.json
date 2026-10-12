@@ -1,0 +1,17 @@
+{
+  "status": "pass",
+  "snapshot": "/tmp/falcon-compact-opening-candidate-v6",
+  "source_files": 818,
+  "source_manifest_sha256": "4b7df033c3e5a80a6fa495406ae8f5092ca846a2e6d9ae01aee9453af9352594",
+  "baseline_reuse": "baseline-build-v4.json",
+  "same_affinity_overlay": true,
+  "same_qualification_harness": true,
+  "same_current_and_frozen_sources": true,
+  "changes_versus_candidate_v5": {
+    "src/piop/spartan/falcon1024_ct/piop.rs": {
+      "v5": "7027a0e121b1849cff7bd176ac843fbbb05cb89aff901aaf4446da0b17fdcde8",
+      "v6": "35a73e1f7e4becfa2304f09b99f88ddce3e3e27414bc5f4ddd06e2e731f5900c"
+    }
+  },
+  "grinding_production_changed": false
+}

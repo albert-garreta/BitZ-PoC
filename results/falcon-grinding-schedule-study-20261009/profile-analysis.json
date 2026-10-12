@@ -1,0 +1,1461 @@
+[
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "threads": 1,
+    "medians": {
+      "prove_ms": 430.01302000000004,
+      "grinding_ms": 17.503592,
+      "grinding_pct": 4.062379320514528
+    },
+    "samples": [
+      {
+        "prove_ms": 436.910666,
+        "grinding_ms": 17.630309,
+        "grinding_pct": 4.03522055467513
+      },
+      {
+        "prove_ms": 429.45167699999996,
+        "grinding_ms": 17.503592,
+        "grinding_pct": 4.07580012779878
+      },
+      {
+        "prove_ms": 430.01302000000004,
+        "grinding_ms": 17.46876,
+        "grinding_pct": 4.062379320514528
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 11.629068,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.005029,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 37.692208,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 52.710967,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 52.726414999999996,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.017623,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:native_prefix": 10.21419,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 1.3303980000000006,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.7350329999999999,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 5.481149,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 19.13253,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.0008320000000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 12.422608,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 80.209101,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.761091,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 35.52592,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 46.556616000000005,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 3.374343,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 181.064456,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 200.217015,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 4.904516999999999,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 1.757545,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.365591,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.059462,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 4.877533000000002,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 102.903239,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 110.58057000000001,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 7.066707,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.4436,
+      "falcon_algebraic:prove/falcon_joint:prepare": 2.9248220000000003,
+      "falcon_algebraic:prove/falcon_joint:compact": 1.4588400000000001,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.067204,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.007043,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 6.826263,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.036278,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 7.384889,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 7.470381,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.557414,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 9.895347,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.671571,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 2.499949,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 20.746844,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 35.093562,
+      "falcon_algebraic:prove": 430.01302000000004
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 84
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 1040
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "12": 104
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "13": 92
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "13": 92
+      }
+    }
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "threads": 16,
+    "medians": {
+      "prove_ms": 144.205274,
+      "grinding_ms": 7.89513,
+      "grinding_pct": 5.5041208175549095
+    },
+    "samples": [
+      {
+        "prove_ms": 143.440347,
+        "grinding_ms": 7.89513,
+        "grinding_pct": 5.5041208175549095
+      },
+      {
+        "prove_ms": 144.205274,
+        "grinding_ms": 7.821355,
+        "grinding_pct": 5.423764875617517
+      },
+      {
+        "prove_ms": 146.310196,
+        "grinding_ms": 8.846456,
+        "grinding_pct": 6.046370138141296
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 6.668544,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.004928999999999999,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 2.945571,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 12.339471,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 12.354550000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.017603999999999998,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 1.0938189999999997,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.42828199999999994,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 2.060667000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 5.023052,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.0008309999999999999,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 27.560382,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 3.44703,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.488035,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 5.833815,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 6.419706999999999,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 11.808086000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 58.30614,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 63.359549,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 1.021402,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 0.29247300000000004,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.38056,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.031328999999999996,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 4.220209,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 35.431011,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 37.800242,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 0.50205,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.405089,
+      "falcon_algebraic:prove/falcon_joint:prepare": 0.29705200000000004,
+      "falcon_algebraic:prove/falcon_joint:compact": 0.381591,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.088127,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.015319000000000001,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 0.545742,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.016962,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 0.975635,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 1.0425110000000002,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.35848100000000005,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 1.7715899999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.406671,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 0.23027599999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 5.89998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 7.534241,
+      "falcon_algebraic:prove": 144.205274
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 84
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 1040
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "12": 104
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "13": 92
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "13": 92
+      }
+    }
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 1024,
+    "threads": 8,
+    "medians": {
+      "prove_ms": 111.550706,
+      "grinding_ms": 4.842947,
+      "grinding_pct": 4.341475884518382
+    },
+    "samples": [
+      {
+        "prove_ms": 111.067051,
+        "grinding_ms": 4.873183,
+        "grinding_pct": 4.38760456510185
+      },
+      {
+        "prove_ms": 111.550706,
+        "grinding_ms": 4.842947,
+        "grinding_pct": 4.341475884518382
+      },
+      {
+        "prove_ms": 111.783256,
+        "grinding_ms": 4.815305,
+        "grinding_pct": 4.307715817474489
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 6.719761,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.004619,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 5.127038000000001,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 14.704265,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 14.719864,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.018305,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 1.306552,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.22899299999999997,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 2.3013239999999993,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 5.248558,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.000822,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 2.4036370000000002,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 6.0177629999999995,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.2505740000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 11.111348,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 11.119194000000002,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 0.5686060000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 34.169444,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 39.451676,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 0.8620410000000001,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 0.30801199999999995,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.378896,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.014408,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 1.9470369999999995,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 24.798969,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 26.987188,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 0.895394,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.18758599999999997,
+      "falcon_algebraic:prove/falcon_joint:prepare": 0.425746,
+      "falcon_algebraic:prove/falcon_joint:compact": 0.28657200000000005,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.04946400000000001,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.006502,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 0.968743,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.011622,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 0.9779100000000001,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 1.039877,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.195591,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 1.9629440000000002,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.20855200000000002,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 0.350022,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 5.331696,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 7.387985,
+      "falcon_algebraic:prove": 111.550706
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 84
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 1040
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "12": 104
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "13": 92
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "13": 92
+      }
+    }
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "threads": 1,
+    "medians": {
+      "prove_ms": 254.655799,
+      "grinding_ms": 10.427777,
+      "grinding_pct": 4.094498198843749
+    },
+    "samples": [
+      {
+        "prove_ms": 254.655799,
+        "grinding_ms": 10.414108,
+        "grinding_pct": 4.08948393906396
+      },
+      {
+        "prove_ms": 254.13390200000003,
+        "grinding_ms": 10.427777,
+        "grinding_pct": 4.103260886459768
+      },
+      {
+        "prove_ms": 255.118344,
+        "grinding_ms": 10.445816,
+        "grinding_pct": 4.094498198843749
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 5.38173,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.009978,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 18.478764,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 25.698539999999998,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 25.713439,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.024576,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:native_prefix": 5.643225,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 0.8676110000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.7125290000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 2.7546619999999997,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 11.282682000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.003507,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 6.10605,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 71.040408,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.817696,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 17.611933999999998,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 23.223547000000018,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 1.620245,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 121.42388199999999,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 132.72229399999998,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 2.419086,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 0.862541,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.363949,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.012935,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 4.379144999999998,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 58.399297000000004,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 62.450269000000006,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 3.412976,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.17449700000000007,
+      "falcon_algebraic:prove/falcon_joint:prepare": 1.488727,
+      "falcon_algebraic:prove/falcon_joint:compact": 0.7530349999999999,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.041248000000000014,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.003396,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 3.4277040000000003,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.027562,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 3.7266999999999997,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 3.8013600000000003,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.328654,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 4.027441999999999,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.239774,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 1.2635809999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 9.874087,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 17.141002999999998,
+      "falcon_algebraic:prove": 254.655799
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 96
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 988
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "11": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "12": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "12": 80
+      }
+    }
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "threads": 16,
+    "medians": {
+      "prove_ms": 84.634592,
+      "grinding_ms": 7.448468,
+      "grinding_pct": 8.800737173755149
+    },
+    "samples": [
+      {
+        "prove_ms": 84.634592,
+        "grinding_ms": 7.448468,
+        "grinding_pct": 8.800737173755149
+      },
+      {
+        "prove_ms": 83.22499499999999,
+        "grinding_ms": 6.574676,
+        "grinding_pct": 7.899881519968852
+      },
+      {
+        "prove_ms": 85.78575,
+        "grinding_ms": 8.245541,
+        "grinding_pct": 9.611784008416317
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 2.8247530000000003,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.010459,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 1.513163,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 5.970774,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 5.985693,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.025086999999999998,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 0.7769789999999999,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.41067599999999993,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 1.3014240000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 3.8341019999999997,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.003356,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 13.157719,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 2.9787339999999998,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.46085100000000007,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 2.961572,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 3.52098,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 5.921501,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 30.696905,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 34.678987,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 0.46880700000000003,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 0.197814,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.36926800000000004,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.023184,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 4.352114,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 23.728074,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 25.222159,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 0.474839,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.17229399999999995,
+      "falcon_algebraic:prove/falcon_joint:prepare": 0.15078499999999997,
+      "falcon_algebraic:prove/falcon_joint:compact": 0.242079,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.06339999999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.017051999999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 0.32577700000000004,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.018364,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 0.961589,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 1.0279939999999999,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.336096,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 1.2591409999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.35123499999999996,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 0.15648600000000001,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 4.5033579999999995,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 5.902144,
+      "falcon_algebraic:prove": 84.634592
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 96
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 988
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "11": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "12": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "12": 80
+      }
+    }
+  },
+  {
+    "variant": "arithmetic",
+    "degree": 512,
+    "threads": 8,
+    "medians": {
+      "prove_ms": 64.212162,
+      "grinding_ms": 3.74048,
+      "grinding_pct": 5.828151371075155
+    },
+    "samples": [
+      {
+        "prove_ms": 64.13077799999999,
+        "grinding_ms": 3.74048,
+        "grinding_pct": 5.832581666169713
+      },
+      {
+        "prove_ms": 64.420826,
+        "grinding_ms": 3.737225,
+        "grinding_pct": 5.801268366226784
+      },
+      {
+        "prove_ms": 64.212162,
+        "grinding_ms": 3.742382,
+        "grinding_pct": 5.828151371075155
+      }
+    ],
+    "path_medians": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:coordinates": 3.044649,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": 0.010009,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/falcon_algebraic_ring:collapse": 2.737508,
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove": 7.325015,
+      "falcon_algebraic:prove/falcon_algebraic:ring": 7.341808,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": 0.025047,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:coefficients": 0.8483820000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.21172000000000005,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/falcon_integer:fold": 1.2156109999999996,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer": 3.5977650000000003,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": 0.003507,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_construction": 1.157129,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prefix_accumulators": 4.883427,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": 0.24708800000000003,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:prepare_tail": 5.520863,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/inner_packed:fold_tail": 5.596282000000001,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/falcon_algebraic:binding_evaluation": 0.24237799999999998,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding": 19.229644,
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic": 22.821098000000003,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds": 0.406239,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing": 0.168539,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables": 0.376893,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": 0.008355999999999999,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": 1.809941000000001,
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest": 15.434455,
+      "falcon_algebraic:prove/falcon_algebraic:bitz": 16.794427,
+      "falcon_algebraic:prove/falcon_joint:packed_setup": 0.450562,
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": 0.17426899999999998,
+      "falcon_algebraic:prove/falcon_joint:prepare": 0.220467,
+      "falcon_algebraic:prove/falcon_joint:compact": 0.150654,
+      "falcon_algebraic:prove/falcon_joint:dense": 0.031398999999999996,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": 0.006443,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch": 0.516077,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": 0.009157,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/op:initial_messages": 0.955988,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases": 1.0116129999999999,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": 0.15245899999999998,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow": 1.088258,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": 0.143962,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/op:deferred_first_fold": 0.19039999999999999,
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito": 3.600931,
+      "falcon_algebraic:prove/falcon_algebraic:pcs": 5.1772540000000005,
+      "falcon_algebraic:prove": 64.212162
+    },
+    "grinding_bits_by_path": {
+      "falcon_algebraic:prove/falcon_algebraic:ring/falcon_algebraic_ring:prove/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:grinding": {
+        "11": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:grinding": {
+        "9": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 96
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "12": 988
+      },
+      "falcon_algebraic:prove/spartan:round_grinding_prove/spartan:grinding": {
+        "11": 100
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ring_switch/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:extra_bases/spartan:grinding": {
+        "12": 4
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "12": 80
+      },
+      "falcon_algebraic:prove/falcon_algebraic:pcs/op:ligerito/spartan:grinding": {
+        "12": 80
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "threads": 1,
+    "medians": {
+      "prove_ms": 3077.5094740000004,
+      "grinding_ms": 214.008297,
+      "grinding_pct": 6.953944376386994
+    },
+    "samples": [
+      {
+        "prove_ms": 3077.5094740000004,
+        "grinding_ms": 214.008297,
+        "grinding_pct": 6.953944376386994
+      },
+      {
+        "prove_ms": 3076.547074,
+        "grinding_ms": 213.981167,
+        "grinding_pct": 6.955237864174478
+      },
+      {
+        "prove_ms": 3085.367549,
+        "grinding_ms": 214.27086599999998,
+        "grinding_pct": 6.944743619587476
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.059502,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 2.360204,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 1.02528,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.7170059999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 23.002682,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001543,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.246446,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.128463,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.155644,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 1.0323529999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 35.838491,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.062398,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:native_prefix": 28.646878,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 8.196052,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.9937709999999998,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 25.690995999999995,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 65.366455,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 0.7613,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 29.334007,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 1.9215250000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 368.71492,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 237.677584,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 606.804633,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 1.6624539999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 227.81195200000002,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 228.17254400000002,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 197.54650200000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 1040.859579,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 1180.0422820000001,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 20.446937,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 8.568367,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.37384799999999996,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.005711,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 17.844999000000005,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 416.052683,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 447.22004799999996,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 6.365452,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 326.21605999999997,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.235987,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 3.389752,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 45.481742,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 1.081812,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 130.55829999999997,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 36.488890999999995,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 3.8355619999999995,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 225.472087,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.5629050000000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 198.532488,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.037551,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 235.29659,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 235.392822,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 2.41229,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 181.43299299999998,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 2.863223,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 86.303429,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 434.541045,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 868.3536509999999,
+      "falcon_bench:prove": 3077.5094740000004
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 84
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 108
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "14": 1144
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 152,
+        "15": 144
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "17": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 124
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "15": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "15": 120
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "threads": 16,
+    "medians": {
+      "prove_ms": 564.9549310000001,
+      "grinding_ms": 22.501993,
+      "grinding_pct": 4.002806548122284
+    },
+    "samples": [
+      {
+        "prove_ms": 564.9549310000001,
+        "grinding_ms": 22.501993,
+        "grinding_pct": 3.9829713425405955
+      },
+      {
+        "prove_ms": 560.815611,
+        "grinding_ms": 22.448363999999998,
+        "grinding_pct": 4.002806548122284
+      },
+      {
+        "prove_ms": 566.32839,
+        "grinding_ms": 23.705382,
+        "grinding_pct": 4.185801456995648
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.062378,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 0.236568,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 1.0461179999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.407862,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 2.3509569999999997,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001663,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.23758,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.028113,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.048312,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 0.177505,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 10.690151,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.046668,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 3.522261,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.44430600000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 7.941833000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 17.917773,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 0.080252,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 2.053294,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 2.353562,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 32.588523,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 18.798348,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 51.503262,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 0.5647979999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 20.778213,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 21.166638000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 17.047824000000002,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 100.066653,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 138.336333,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 3.362511,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 1.191994,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.399856,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.020197999999999997,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 5.342921999999996,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 150.321153,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 157.019474,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 1.3522319999999997,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 96.289559,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.038392,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 3.147865,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 4.205665,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 0.536936,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 14.356988,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 22.946184,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 2.6356490000000004,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 46.830253,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.060204,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 13.735772,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.019096000000000002,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 15.379221,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 15.455014,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 0.5968149999999999,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 13.233123000000003,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 0.6889020000000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 6.488634,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 58.937415,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 88.165471,
+      "falcon_bench:prove": 564.9549310000001
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 84
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 108
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "14": 1144
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 152,
+        "15": 144
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "17": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 124
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "15": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "15": 120
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 1024,
+    "threads": 8,
+    "medians": {
+      "prove_ms": 695.44866,
+      "grinding_ms": 30.950099,
+      "grinding_pct": 4.450378695100225
+    },
+    "samples": [
+      {
+        "prove_ms": 694.853174,
+        "grinding_ms": 30.88051,
+        "grinding_pct": 4.444177727825995
+      },
+      {
+        "prove_ms": 699.916581,
+        "grinding_ms": 31.194128,
+        "grinding_pct": 4.456835121041375
+      },
+      {
+        "prove_ms": 695.44866,
+        "grinding_ms": 30.950099,
+        "grinding_pct": 4.450378695100225
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.063079,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 0.489957,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 1.031301,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.41588600000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 3.451218,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001473,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.241036,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.030427,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.051127,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 0.172907,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 11.861216,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.023494,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 5.613407,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.25897000000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 9.822652999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 20.774717000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 0.10874600000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 3.847588,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 1.9920490000000002,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 63.905372,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 36.984158,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 100.83174,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 0.3879159999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 39.663887,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 40.030891,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 27.689546,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 177.978038,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 223.003217,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 3.58398,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 1.520827,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.382343,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.007705,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 3.7439190000000013,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 146.826443,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 154.142301,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 1.1931710000000004,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 98.12731500000001,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.039324,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 2.969246,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 7.241918,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 0.30833200000000005,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 19.598993,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 22.902050000000003,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 1.8621900000000007,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 54.288501000000004,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.081775,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 26.162768,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.011362,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 30.314662,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 30.382310999999998,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 0.5083400000000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 24.196407,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 0.5381589999999999,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 11.426383999999999,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 74.441251,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 131.11255899999998,
+      "falcon_bench:prove": 695.44866
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 84
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 108
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "14": 1144
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 152,
+        "15": 144
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "17": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 124
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "15": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "15": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "15": 120
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "threads": 1,
+    "medians": {
+      "prove_ms": 1676.289649,
+      "grinding_ms": 130.389534,
+      "grinding_pct": 7.778460845223532
+    },
+    "samples": [
+      {
+        "prove_ms": 1680.538216,
+        "grinding_ms": 130.324951,
+        "grinding_pct": 7.754953131039062
+      },
+      {
+        "prove_ms": 1671.538993,
+        "grinding_ms": 130.451298,
+        "grinding_pct": 7.804262930526804
+      },
+      {
+        "prove_ms": 1676.289649,
+        "grinding_ms": 130.389534,
+        "grinding_pct": 7.778460845223532
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.030438,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 1.2458770000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 0.9941310000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.253119,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 11.90578,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001673,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.19860599999999998,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.183077,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.204186,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 0.522278,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 19.276132,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.037291,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:native_prefix": 14.608853,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 4.693546999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 1.2359360000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 12.787309,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 34.842958,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 3.52598,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 15.255327000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 1.022004,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 200.505631,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 142.273269,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 342.819557,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 1.745949,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 117.225751,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 117.419918,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 93.38653600000004,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 559.2116080000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 636.47699,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 9.962955000000001,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 3.51528,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.376863,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.038463000000000004,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 8.719439,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 206.508766,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 221.401116,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 6.775266,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 195.20732900000002,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.154533,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 2.228455,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 22.595319999999997,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 1.049844,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 74.822973,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 41.298609,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 1.9118650000000001,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 146.274008,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.0211,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 107.96017400000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.031549,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 117.618854,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 117.70167099999999,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 1.8707259999999997,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 105.492828,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 1.384077,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 42.109814,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 226.271478,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 452.054263,
+      "falcon_bench:prove": 1676.289649
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 80
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 104
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "13": 1092
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 424
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "16": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "14": 116
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "14": 116
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "threads": 16,
+    "medians": {
+      "prove_ms": 297.299502,
+      "grinding_ms": 17.31031,
+      "grinding_pct": 5.8225678135197665
+    },
+    "samples": [
+      {
+        "prove_ms": 297.299502,
+        "grinding_ms": 17.175528,
+        "grinding_pct": 5.777180212027398
+      },
+      {
+        "prove_ms": 297.296838,
+        "grinding_ms": 17.31031,
+        "grinding_pct": 5.8225678135197665
+      },
+      {
+        "prove_ms": 305.316467,
+        "grinding_ms": 19.215582,
+        "grinding_pct": 6.293660538132719
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.031409,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 0.17328800000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 1.021762,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.208144,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 1.337249,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001603,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.197343,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.031529999999999996,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.051898,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 0.107513,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 6.33894,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.045736,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 2.26226,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.429905,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 4.801750000000002,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 10.815658,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 0.246516,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 1.171285,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 1.053974,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 21.238684,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 10.953409,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 32.295469,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 0.5581560000000001,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 11.267403,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 11.47176,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 7.718258999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 57.209146000000004,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 80.149288,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 1.4479689999999998,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 0.508371,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.384588,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.020177999999999998,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 4.65444,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 67.803214,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 71.21227300000001,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 1.7616599999999998,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 55.174496000000005,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.024936999999999997,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 2.0885309999999997,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 2.659631,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 0.5821109999999999,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 8.16266,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 11.110686,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 1.0228529999999998,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 25.849556999999997,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.019427,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 7.738938,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.019147,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 7.763095,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 7.834129000000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 0.511077,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 8.233414,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 0.567355,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 3.213248,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 28.068563,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 43.809078,
+      "falcon_bench:prove": 297.299502
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 80
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 104
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "13": 1092
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 424
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "16": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "14": 116
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "14": 116
+      }
+    }
+  },
+  {
+    "variant": "full",
+    "degree": 512,
+    "threads": 8,
+    "medians": {
+      "prove_ms": 367.491005,
+      "grinding_ms": 20.247562,
+      "grinding_pct": 5.521911640548175
+    },
+    "samples": [
+      {
+        "prove_ms": 367.491005,
+        "grinding_ms": 20.242283,
+        "grinding_pct": 5.508239038394967
+      },
+      {
+        "prove_ms": 368.38047800000004,
+        "grinding_ms": 20.737753,
+        "grinding_pct": 5.629438647940513
+      },
+      {
+        "prove_ms": 366.676675,
+        "grinding_ms": 20.247562,
+        "grinding_pct": 5.521911640548175
+      }
+    ],
+    "path_medians": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:beta_powers": 0.031529999999999996,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:operand_evaluations": 0.283686,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:outer_sumcheck": 1.005593,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:bit_query": 0.209146,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:integer_lift": 2.098389,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:lift_read_off": 0.001493,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:sample_prime": 0.19641099999999997,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": 0.035577000000000004,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding": 0.055816000000000004,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:project": 0.101161,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove": 7.193607,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": 0.019958,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:coefficients": 3.2029870000000003,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": 0.283165,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/falcon_integer:fold": 5.2601499999999985,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer": 11.519751,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": 0.460822,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_target": 2.045129,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/falcon_arithmetic:binding_template": 1.042262,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:integer_prefix": 41.729915,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators/inner_overlay:ring_prefix": 21.293347,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prefix_accumulators": 63.149842,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": 0.38730299999999995,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail/inner_overlay:folded_coefficients_and_first_tail": 20.895806,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:prepare_tail": 21.097597,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/inner_overlay:fold_tail": 12.802076999999999,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner": 102.610505,
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 128.36468100000002,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:integer_folds": 1.608332,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:column_packing": 0.585097,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:power_tables": 0.385088,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": 0.011282,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": 2.580150999999999,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest": 60.822109,
+      "falcon_bench:prove/falcon_hybrid:binary_bridge": 64.439862,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": 1.3720619999999997,
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix": 55.278493,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": 0.024526,
+      "falcon_bench:prove/falcon_hybrid:link_coefficients": 1.957182,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:packed_setup": 3.807372,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": 0.30474599999999996,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:prepare": 11.506896000000001,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:compact": 13.215166,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/falcon_joint:dense": 0.42636599999999997,
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck": 31.49816,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": 0.011221,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch": 14.444472,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": 0.009948,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/op:initial_messages": 15.201965,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases": 15.266157000000002,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": 0.41221,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow": 14.413055,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": 0.3419580000000001,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/op:deferred_first_fold": 5.423008,
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito": 34.840802999999994,
+      "falcon_bench:prove/falcon_hybrid:shared_opening": 64.750079,
+      "falcon_bench:prove": 367.491005
+    },
+    "grinding_bits_by_path": {
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_shared_ring:prove/falcon_shared_ring:projection_grinding/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:grinding": {
+        "12": 4,
+        "13": 4,
+        "8": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:integer_outer/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 80
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/spartan:grinding": {
+        "19": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:arithmetic_prefix/falcon_arithmetic:binding_inner/spartan:round_grinding_prove/spartan:grinding": {
+        "14": 104
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/spartan:grinding": {
+        "13": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:binary_bridge/falcon_bridge:wfbitz_forest/spartan:grinding": {
+        "13": 1092
+      },
+      "falcon_bench:prove/falcon_hybrid:keccak_prefix/spartan:grinding": {
+        "14": 424
+      },
+      "falcon_bench:prove/falcon_hybrid:link_coefficients/spartan:grinding": {
+        "16": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:joint_sumcheck/spartan:round_grinding_prove/spartan:grinding": {
+        "13": 120
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ring_switch/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:extra_bases/spartan:grinding": {
+        "14": 4
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/lig:grind_pow/spartan:grinding": {
+        "14": 116
+      },
+      "falcon_bench:prove/falcon_hybrid:shared_opening/op:ligerito/spartan:grinding": {
+        "14": 116
+      }
+    }
+  }
+]

@@ -1,0 +1,329 @@
+{
+  "status": "completed",
+  "qualification": false,
+  "purpose": "Attribution only: repeated warm stages and verifier trace",
+  "builds": {
+    "baseline": {
+      "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+      "binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+      "sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+      "source_root": "/tmp/falcon-compact-opening-baseline-v4",
+      "source_manifest": "/tmp/falcon-compact-opening-baseline-v4/source-manifest.json",
+      "source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+      "rustflags": "-C target-cpu=native",
+      "features": [
+        "falcon-hybrid"
+      ],
+      "profile": "release",
+      "target_arch": "x86_64",
+      "root_count": 1,
+      "protocols": {
+        "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+        "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+      },
+      "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/falcon-compact-opening-baseline-target cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+      "working_tree": true,
+      "example_overlay_sha256": "5028ea758abab8911f77da68d85acd5f0df89bbf9e32a0844033eac4c72cb11a",
+      "benchmark_affinity_overlay": {
+        "files": {
+          "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+          "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+        },
+        "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+        "unchanged_original_files": 816,
+        "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+        "production_changed": false
+      },
+      "build_log_sha256": "ea1c46c55e48f498ffd067ebaa0fe1303d15c97882829e162da691b45875eac5",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///tmp/falcon-compact-opening-baseline-v4#bitz@0.1.0",
+        "manifest_path": "/tmp/falcon-compact-opening-baseline-v4/Cargo.toml",
+        "target": {
+          "kind": [
+            "bench"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "falcon_hybrid",
+          "src_path": "/tmp/falcon-compact-opening-baseline-v4/benches/falcon_hybrid.rs",
+          "edition": "2024",
+          "required-features": [
+            "falcon-hybrid"
+          ],
+          "doc": false,
+          "doctest": false,
+          "test": false
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [
+          "binius64-bench",
+          "default",
+          "falcon",
+          "falcon-hybrid",
+          "hybrid",
+          "parallel",
+          "span-metrics"
+        ],
+        "filenames": [
+          "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9"
+        ],
+        "executable": "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "fresh": false
+      }
+    },
+    "candidate": {
+      "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+      "binary": "/tmp/falcon-compact-opening-binaries/candidate-v5",
+      "sha256": "94793f886ae34d32f6fa12eacdaa7045c394b56524c77f265a72117169aacd6c",
+      "source_root": "/tmp/falcon-compact-opening-candidate-v5",
+      "source_manifest": "/tmp/falcon-compact-opening-candidate-v5/source-manifest.json",
+      "source_manifest_sha256": "47e3d269adf4ef9f885f43b6c00e4f2643af08c2da635c844e66a3aa31067528",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+      "rustflags": "-C target-cpu=native",
+      "features": [
+        "falcon-hybrid"
+      ],
+      "profile": "release",
+      "target_arch": "x86_64",
+      "root_count": 1,
+      "protocols": {
+        "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+        "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+      },
+      "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+      "working_tree": true,
+      "benchmark_affinity_overlay": {
+        "files": {
+          "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+          "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+        },
+        "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+        "unchanged_original_files": 816,
+        "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+        "production_changed": false
+      },
+      "build_log_sha256": "7e70d67c62da672a8cfdc589b9a76dbdfdcc6a7659e887c2c78cbfb6fa559902",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/john-wu/code/BitZ-pcs#bitz@0.1.0",
+        "manifest_path": "/home/john-wu/code/BitZ-pcs/Cargo.toml",
+        "target": {
+          "kind": [
+            "bench"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "falcon_hybrid",
+          "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_hybrid.rs",
+          "edition": "2024",
+          "required-features": [
+            "falcon-hybrid"
+          ],
+          "doc": false,
+          "doctest": false,
+          "test": false
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [
+          "binius64-bench",
+          "default",
+          "falcon",
+          "falcon-hybrid",
+          "hybrid",
+          "parallel",
+          "span-metrics"
+        ],
+        "filenames": [
+          "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9"
+        ],
+        "executable": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "fresh": false
+      },
+      "working_patch_sha256": "e12ed8b27439b32908aee0e6b53f1ad379a889ed3014e8f7e67f285ce5944799"
+    }
+  },
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline"
+  ],
+  "warmups": 3,
+  "measured": 30,
+  "seed": 42,
+  "protocol": "native",
+  "security": 128,
+  "batch": 1,
+  "environment": {
+    "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+    "BITZ_FALCON_MAIN_CPU": "0",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-one-source-case-cache",
+    "BITZ_FALCON_STAGE_TIMINGS": "1",
+    "FLOCK_COMMIT_TIMING": "1",
+    "LIG_VERIFY_TRACE": "1",
+    "VERIFY_TRACE": "1",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "16"
+  },
+  "runs": [
+    {
+      "label": "baseline",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/baseline-v4",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "3",
+        "--iterations",
+        "30"
+      ],
+      "started_at": 1791331905.5899122,
+      "status": "validated",
+      "finished_at": 1791331907.5916667,
+      "medians": {
+        "total_prover_ms": 43.664907,
+        "proof_verify_ms": 13.128544,
+        "witness_commit_ms": 0.7059264999999999,
+        "proof_prove_ms": 42.963869
+      },
+      "stdout_sha256": "12365c3aca5f14c0e6183ea5d6e47f4cff70ab25168020ec776441a50adf3a92",
+      "stderr_sha256": "17e858314f24672f0c4009f952c6730afc17e642b8afe6aa9fba9d14113aa8e6"
+    },
+    {
+      "label": "candidate",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/candidate-v5",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "3",
+        "--iterations",
+        "30"
+      ],
+      "started_at": 1791331907.5948107,
+      "status": "validated",
+      "finished_at": 1791331909.5604663,
+      "medians": {
+        "total_prover_ms": 43.346508,
+        "proof_verify_ms": 12.675657000000001,
+        "witness_commit_ms": 0.7019185,
+        "proof_prove_ms": 42.643467
+      },
+      "stdout_sha256": "0fd1a8f6bb4a5dde3928d8ad34f1891c91953574f9d00081b8875c89f68a3ec3",
+      "stderr_sha256": "ce8ebb50f37216c04bc56e64f069c49eda7b5d800827168105a4f6ac7e47eb29"
+    },
+    {
+      "label": "candidate",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/candidate-v5",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "3",
+        "--iterations",
+        "30"
+      ],
+      "started_at": 1791331909.5636485,
+      "status": "validated",
+      "finished_at": 1791331911.565096,
+      "medians": {
+        "total_prover_ms": 43.2642675,
+        "proof_verify_ms": 12.4642415,
+        "witness_commit_ms": 0.6948354999999999,
+        "proof_prove_ms": 42.56335
+      },
+      "stdout_sha256": "a7760ea795afbb66232a52e39111bb58952664b5e38a2bdab7e0e7edf9d10590",
+      "stderr_sha256": "0fdccaf16eaf997e25c605a0716a9bdb1531f7773c86e739e6a853c6c07ec2f7"
+    },
+    {
+      "label": "baseline",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/baseline-v4",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "3",
+        "--iterations",
+        "30"
+      ],
+      "started_at": 1791331911.568183,
+      "status": "validated",
+      "finished_at": 1791331913.5695703,
+      "medians": {
+        "total_prover_ms": 43.7461645,
+        "proof_verify_ms": 13.327917,
+        "witness_commit_ms": 0.7090624999999999,
+        "proof_prove_ms": 43.0262065
+      },
+      "stdout_sha256": "495a86efdaa6539dda47221df4cba59fb0ff3e47222189ff8aaa5a4eadb3468d",
+      "stderr_sha256": "bc52ecb40a36dc74cadba7183814d5025c1ecba311bb521740157c4f65708477"
+    }
+  ],
+  "started_at": 1791331904.5397024,
+  "perf_access": {
+    "command": [
+      "perf",
+      "stat",
+      "-e",
+      "cycles:u,instructions:u",
+      "--",
+      "/bin/true"
+    ],
+    "returncode": 255,
+    "perf_event_paranoid": "4"
+  },
+  "verified_proofs": 132,
+  "measured_proofs": 120,
+  "final_integrity": "pass",
+  "finished_at": 1791331913.607276
+}

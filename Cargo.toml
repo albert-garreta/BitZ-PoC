@@ -276,6 +276,18 @@ name = "grind_probe"
 required-features = ["parallel", "span-metrics"]
 
 [[example]]
+name = "falcon_size_breakdown"
+required-features = ["falcon-hybrid"]
+
+[[example]]
+name = "falcon_cost_study"
+required-features = ["falcon-hybrid"]
+
+[[example]]
+name = "proof_size_comparison"
+required-features = ["falcon-hybrid", "ecdsa"]
+
+[[example]]
 name = "hybrid_probe"
 required-features = ["span-metrics", "hybrid"]
 

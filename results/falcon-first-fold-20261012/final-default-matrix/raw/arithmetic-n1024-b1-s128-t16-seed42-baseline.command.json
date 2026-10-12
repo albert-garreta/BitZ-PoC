@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "/tmp/bitz-first-fold-20261012/baseline-arithmetic",
+    "--degree",
+    "1024",
+    "--batch",
+    "1",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "binary_sha256": "9e3cdecff79390d3c8e9f45a65d100826a927ffacdfc178f3af4289524ae318d",
+  "cleared_environment_names": [],
+  "environment": {
+    "BITZ_FALCON_CASE_CACHE": "/tmp/bitz-falcon-speed-case-cache",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "OMP_NUM_THREADS": "16",
+    "RAYON_NUM_THREADS": "16"
+  },
+  "excluded_from_measurements": false,
+  "finished_unix": 1791826187.9146233,
+  "returncode": 0,
+  "started_unix": 1791826187.8695393
+}

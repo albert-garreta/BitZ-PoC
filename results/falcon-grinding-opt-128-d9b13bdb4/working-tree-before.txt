@@ -1,0 +1,17 @@
+ M Cargo.toml
+?? .learning/
+?? FALCON_COST_STUDY.md
+?? PROOF_SIZE_COMPARISON.md
+?? benchmarks/zkpassport/
+?? examples/falcon_cost_study.rs
+?? examples/falcon_size_breakdown.rs
+?? examples/proof_size_comparison.rs
+?? results/falcon-compact-opening-20261006/
+?? results/falcon-grinding-opt-128-d9b13bdb4/
+?? results/falcon-joint-forest-20261006/size-analysis/
+?? results/falcon-profiles-20261006.csv
+?? results/falcon-profiles-20261006.md
+?? results/falcon-single-core-128-20261008/
+?? results/falcon-single-thread-128-20261008T214640Z/
+?? results/falcon-sumcheck-optimizations-20261008/
+?? results/sumcheck-literature-20261008/

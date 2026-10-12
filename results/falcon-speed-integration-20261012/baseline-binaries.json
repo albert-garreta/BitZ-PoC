@@ -1,0 +1,12 @@
+{
+  "arithmetic": {
+    "source": "target/release/examples/falcon_algebraic",
+    "binary": "/tmp/bitz-falcon-speed-binaries-20261012/baseline-arithmetic",
+    "sha256": "24cff9fb513b2d350b683788a65dfb347bf738598a7267f42b26de166943da9d"
+  },
+  "full": {
+    "source": "target/release/deps/falcon_hybrid-b03093f7b6c40cd3",
+    "binary": "/tmp/bitz-falcon-speed-binaries-20261012/baseline-full",
+    "sha256": "658c3f4c5f9598e3fb03b8146bd6e72b1d90d8b3034736a8aaa7a688171100f9"
+  }
+}

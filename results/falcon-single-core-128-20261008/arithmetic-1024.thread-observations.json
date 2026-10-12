@@ -1,0 +1,132 @@
+[
+  {
+    "elapsed_s": 1.0008111460483633,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 2.0012727710418403,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 3.0017201880109496,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 4.002202411997132,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 5.002750400046352,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 6.0031829890212975,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 15,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      },
+      {
+        "tid": 16,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 7.003615738998633,
+    "tasks": [
+      {
+        "tid": 14,
+        "name": "falcon_algebrai",
+        "cpus": "6"
+      }
+    ]
+  }
+]

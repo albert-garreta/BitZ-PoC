@@ -1,0 +1,318 @@
+{
+  "schema": "bitz/falcon-word-binding/stage-summary/v1",
+  "caveat": "Instrumented seed-42 stage diagnostics only. Tracing changes latency; use untraced measurements for acceptance. Forest is nested within BitZ; stages must not be added indiscriminately.",
+  "aggregation": "Median of the two measured prover spans per execution, excluding the first warmup. Each trace root is matched by execution order to its verified JSONL trial.",
+  "source": {
+    "manifest": "results/falcon-word-binding-20261011/stages/manifest.json",
+    "manifest_sha256": "7597189e3a4201fa763b6f40ecf2231bc9f73734f2a32b2b62f97273e2921f36",
+    "provenance": "results/falcon-word-binding-20261011/provenance.json",
+    "provenance_sha256": "8f128757337766476876b72698622d84f056d4b47f88eae28322806fd5e264aa",
+    "base_commit": "d865c9df5e50a1c78ee4d52885d5381b17fc08c5",
+    "candidate_source_sha256": {
+      "src/hybrid/integer_bridge.rs": "67f82ea48727f0325d00105333372a2801af33673b2b8b353f81a8ae7fa4deb4",
+      "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "0e55d3cdf48cb4456602900822ded64171c9d9a7b9239061832f5d3ec11c31b5",
+      "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "a060ac103b18b637105694533fb47a24b8733ba9d854521cd855a7b5ded9c64f",
+      "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "e92fa9277d6818ee645073a0f7d582aba579db1266bee74962e9c2246e11bc5b",
+      "src/piop/spartan/falcon1024_algebraic/protocol.rs": "d76bd841dacf623b3c93a9df904d14d98d9056c68fab9a8fe2d7fc813aed9799",
+      "src/piop/spartan/falcon1024_algebraic/backend.rs": "12506248a2a521466f683979937f7505d09dc806908ec024a022d734fd846de7",
+      "src/piop/spartan/falcon1024_algebraic/compact_binding.rs": "741527845dfa7d3a141d14af53308c3ea76af486abf63d51d4c82352738fbc98"
+    },
+    "binaries": {
+      "r7": {
+        "path": "/tmp/bitz-arithmetic-v8-r7-qualification-binary",
+        "sha256": "ec1c7b55cfba4b7dbce26e4028913a13ccee6b87795f6b5ddaca58b6327ee141"
+      },
+      "word": {
+        "path": "/home/john-wu/code/BitZ-pcs/target/release/examples/falcon_algebraic",
+        "sha256": "24cff9fb513b2d350b683788a65dfb347bf738598a7267f42b26de166943da9d"
+      }
+    },
+    "features": [
+      "falcon-hybrid"
+    ],
+    "rustflags": "-C target-cpu=native",
+    "profile": "release; LTO; codegen-units=1"
+  },
+  "span_names": {
+    "prove": "falcon_algebraic:prove",
+    "binder": "falcon_algebraic:binding",
+    "bitz": "falcon_algebraic:bitz",
+    "forest": "falcon_bridge:wfbitz_forest",
+    "ring": "falcon_algebraic:ring",
+    "pcs": "falcon_algebraic:pcs"
+  },
+  "comparisons": [
+    {
+      "degree": 512,
+      "batch": 1024,
+      "security": 100,
+      "threads": 1,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/stages/n512-b1024-s100-t1-seed42-r7.stderr",
+          "trace_sha256": "989f8b88351981a7d48d749b181e12f046f7ae14f511fffa47121518b0c212b2",
+          "trials": "results/falcon-word-binding-20261011/stages/n512-b1024-s100-t1-seed42-r7.jsonl",
+          "trials_sha256": "7b4abaf0d197bcd5346c61a7b625e877b6d8585c336fbf84ef61a012d9fec2c4",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/stages/n512-b1024-s100-t1-seed42-word.stderr",
+          "trace_sha256": "8740fc31cd30c6f431fb9d43bf1ed111bb9e8dfa433157d35951579b87942764",
+          "trials": "results/falcon-word-binding-20261011/stages/n512-b1024-s100-t1-seed42-word.jsonl",
+          "trials_sha256": "a56870d7f0acb8b0d43b41705d1214812fe00b82aceda3a88e07d0acec10db44",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 168.92865899999998,
+          "word": 148.247681,
+          "delta_ms": -20.680977999999982,
+          "change_percent": -12.242433061639346
+        },
+        "binder": {
+          "r7": 59.913591499999995,
+          "word": 40.0989465,
+          "delta_ms": -19.814645,
+          "change_percent": -33.072036751460644
+        },
+        "bitz": {
+          "r7": 53.6614565,
+          "word": 53.072571999999994,
+          "delta_ms": -0.588884500000006,
+          "change_percent": -1.0974068510421597
+        },
+        "forest": {
+          "r7": 49.595169999999996,
+          "word": 49.129594,
+          "delta_ms": -0.46557599999999866,
+          "change_percent": -0.9387527051525346
+        },
+        "ring": {
+          "r7": 24.4442815,
+          "word": 23.9685265,
+          "delta_ms": -0.4757549999999995,
+          "change_percent": -1.946283428293849
+        },
+        "pcs": {
+          "r7": 7.063711,
+          "word": 7.1057755,
+          "delta_ms": 0.04206450000000039,
+          "change_percent": 0.5955014297725381
+        }
+      }
+    },
+    {
+      "degree": 1024,
+      "batch": 1024,
+      "security": 100,
+      "threads": 1,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/stages/n1024-b1024-s100-t1-seed42-r7.stderr",
+          "trace_sha256": "e6e59f8c3069612dbcab8fbc14dac0bf24b8dcdede32930ad0541f6bf65df80e",
+          "trials": "results/falcon-word-binding-20261011/stages/n1024-b1024-s100-t1-seed42-r7.jsonl",
+          "trials_sha256": "028b5f8c949359ffc0821b34858eab1d38ac2396a1b0a27a28acab2e601c1ef4",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/stages/n1024-b1024-s100-t1-seed42-word.stderr",
+          "trace_sha256": "28d8e751e5acdbf17f9dff9fbfd66fa604fdf6a88629a5a336d17482e3cb4a6b",
+          "trials": "results/falcon-word-binding-20261011/stages/n1024-b1024-s100-t1-seed42-word.jsonl",
+          "trials_sha256": "4eba8fcb847f7d7649ec3db4d9b4b5c713d28744499ac2a0e3891fa6947b3835",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 329.6159805,
+          "word": 291.05059900000003,
+          "delta_ms": -38.565381499999944,
+          "change_percent": -11.700094589315569
+        },
+        "binder": {
+          "r7": 117.806812,
+          "word": 80.8961055,
+          "delta_ms": -36.91070649999999,
+          "change_percent": -31.33155534333617
+        },
+        "bitz": {
+          "r7": 100.7565765,
+          "word": 99.361713,
+          "delta_ms": -1.3948634999999996,
+          "change_percent": -1.3843895341164147
+        },
+        "forest": {
+          "r7": 92.943724,
+          "word": 91.92503199999999,
+          "delta_ms": -1.0186920000000157,
+          "change_percent": -1.096030970310613
+        },
+        "ring": {
+          "r7": 52.40665799999999,
+          "word": 52.425844,
+          "delta_ms": 0.01918600000000481,
+          "change_percent": 0.03660985212987633
+        },
+        "pcs": {
+          "r7": 13.442075499999998,
+          "word": 13.443894499999999,
+          "delta_ms": 0.0018190000000011253,
+          "change_percent": 0.013532136462113264
+        }
+      }
+    },
+    {
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 8,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/stages/n512-b1024-s128-t8-seed42-r7.stderr",
+          "trace_sha256": "dc4c311ba89489fdf14f1592ecbbaa1840c9d74e69efa39af688ad5000b069e4",
+          "trials": "results/falcon-word-binding-20261011/stages/n512-b1024-s128-t8-seed42-r7.jsonl",
+          "trials_sha256": "d48bfb70410d6c38fe50be464dc4b79fc533a2dcacb82b50f412483c31b8e169",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/stages/n512-b1024-s128-t8-seed42-word.stderr",
+          "trace_sha256": "6897ac62c90188a0e1106639d7e4f7c5a113f9331c98bc1622ab903b8eaa88a2",
+          "trials": "results/falcon-word-binding-20261011/stages/n512-b1024-s128-t8-seed42-word.jsonl",
+          "trials_sha256": "92bd5b87af9f402614ea8d6bce553a12b307dea67971b5ec1c88d91b7aff0cd0",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 52.308742499999994,
+          "word": 51.521167000000005,
+          "delta_ms": -0.7875754999999884,
+          "change_percent": -1.5056288152979214
+        },
+        "binder": {
+          "r7": 9.494303,
+          "word": 8.8264305,
+          "delta_ms": -0.6678724999999996,
+          "change_percent": -7.034455293874653
+        },
+        "bitz": {
+          "r7": 16.236556999999998,
+          "word": 16.245083,
+          "delta_ms": 0.008526000000003364,
+          "change_percent": 0.052511132748178646
+        },
+        "forest": {
+          "r7": 14.8975835,
+          "word": 14.923787999999998,
+          "delta_ms": 0.02620449999999863,
+          "change_percent": 0.17589765481091924
+        },
+        "ring": {
+          "r7": 6.1177565000000005,
+          "word": 6.332152499999999,
+          "delta_ms": 0.21439599999999892,
+          "change_percent": 3.5044873067438864
+        },
+        "pcs": {
+          "r7": 4.7557355,
+          "word": 4.7590415,
+          "delta_ms": 0.003306000000000253,
+          "change_percent": 0.06951606118550391
+        }
+      }
+    },
+    {
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 8,
+      "seed": 42,
+      "measured_trials_per_variant": 2,
+      "inputs": {
+        "r7": {
+          "trace": "results/falcon-word-binding-20261011/stages/n1024-b1024-s128-t8-seed42-r7.stderr",
+          "trace_sha256": "c531fa8853d81b6d683d3389c16f2e4ebe589bf236023f7f0b55723744f2e830",
+          "trials": "results/falcon-word-binding-20261011/stages/n1024-b1024-s128-t8-seed42-r7.jsonl",
+          "trials_sha256": "c6fc4c8bdb36a2e59b350a37e7ce076d3cd0b3c9740beabf255f48de9b5b7f1a",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        },
+        "word": {
+          "trace": "results/falcon-word-binding-20261011/stages/n1024-b1024-s128-t8-seed42-word.stderr",
+          "trace_sha256": "e103c4d167c70a35b0a01a43b8276c2e4092a4be28d79dd5b86f1499e67b1acc",
+          "trials": "results/falcon-word-binding-20261011/stages/n1024-b1024-s128-t8-seed42-word.jsonl",
+          "trials_sha256": "a8706fca520ee439e443525f1444bf0ac05ebce64c01f5ec0ba1a23480dbbd5a",
+          "measured_prove_span_ids": [
+            9007199254740993,
+            15762598695796737
+          ]
+        }
+      },
+      "median_ms": {
+        "prove": {
+          "r7": 89.07698500000001,
+          "word": 88.726056,
+          "delta_ms": -0.3509290000000078,
+          "change_percent": -0.393961470519022
+        },
+        "binder": {
+          "r7": 17.893455000000003,
+          "word": 17.8164595,
+          "delta_ms": -0.07699550000000244,
+          "change_percent": -0.4302997939749642
+        },
+        "bitz": {
+          "r7": 26.453296,
+          "word": 25.945260500000003,
+          "delta_ms": -0.5080354999999983,
+          "change_percent": -1.9204998121973071
+        },
+        "forest": {
+          "r7": 24.350149000000002,
+          "word": 23.8859805,
+          "delta_ms": -0.4641685000000031,
+          "change_percent": -1.9062244752588664
+        },
+        "ring": {
+          "r7": 12.541217,
+          "word": 12.695508499999999,
+          "delta_ms": 0.15429149999999936,
+          "change_percent": 1.2302753393071741
+        },
+        "pcs": {
+          "r7": 5.568111999999999,
+          "word": 5.718045500000001,
+          "delta_ms": 0.14993350000000127,
+          "change_percent": 2.6927170286804802
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,177 @@
+{
+  "git_head": "d9b13bdb43cd2d3a0901b44f0939293f234661b5",
+  "binaries": {
+    "falcon_algebraic": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-opt-128-d9b13bdb4/binaries/falcon_algebraic",
+      "sha256": "1c57ca082e40f0c7e05a9ddcd616b6e89f132c335516321d6ba83e87b5450a5a"
+    },
+    "falcon_hybrid": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-opt-128-d9b13bdb4/binaries/falcon_hybrid",
+      "sha256": "6d314046bfaecaaf745ce3037857cdda58c1404baa5f731d6b3ad91a2ab4de74"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "thread_counts": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "main_cpu": 6,
+  "worker_cpus": {
+    "1": [
+      6
+    ],
+    "2": [
+      6,
+      7
+    ],
+    "4": [
+      6,
+      7,
+      4,
+      5
+    ],
+    "16": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13,
+      10,
+      11,
+      8,
+      9
+    ],
+    "8": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1
+    ]
+  },
+  "governor": "powersave",
+  "timestamp_utc": "2026-10-09T04:02:35Z",
+  "actual_configuration_order": [
+    [
+      "arithmetic",
+      512,
+      1
+    ],
+    [
+      "full",
+      512,
+      1
+    ],
+    [
+      "arithmetic",
+      1024,
+      1
+    ],
+    [
+      "full",
+      1024,
+      1
+    ],
+    [
+      "arithmetic",
+      512,
+      2
+    ],
+    [
+      "full",
+      512,
+      2
+    ],
+    [
+      "arithmetic",
+      1024,
+      2
+    ],
+    [
+      "full",
+      1024,
+      2
+    ],
+    [
+      "arithmetic",
+      512,
+      4
+    ],
+    [
+      "full",
+      512,
+      4
+    ],
+    [
+      "arithmetic",
+      1024,
+      4
+    ],
+    [
+      "full",
+      1024,
+      4
+    ],
+    [
+      "arithmetic",
+      512,
+      16
+    ],
+    [
+      "arithmetic",
+      512,
+      8
+    ],
+    [
+      "full",
+      512,
+      8
+    ],
+    [
+      "arithmetic",
+      1024,
+      8
+    ],
+    [
+      "full",
+      1024,
+      8
+    ],
+    [
+      "full",
+      512,
+      16
+    ],
+    [
+      "arithmetic",
+      1024,
+      16
+    ],
+    [
+      "full",
+      1024,
+      16
+    ]
+  ],
+  "execution_order_threads": [
+    1,
+    2,
+    4,
+    16,
+    8,
+    16
+  ]
+}

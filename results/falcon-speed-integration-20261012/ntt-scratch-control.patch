@@ -1,0 +1,127 @@
+--- a/src/piop/spartan/falcon_polynomial.rs
++++ b/src/piop/spartan/falcon_polynomial.rs
+@@ -8,7 +8,6 @@
+ /// has length `2 * n`, including its zero final coefficient; retaining the high
+ /// coefficients is necessary for the ring-quotient witness.
+ pub(crate) struct PolynomialWorkspace {
+-    output: Vec<i64>,
+     left: Vec<u32>,
+     right: Vec<u32>,
+     tables: &'static NttTables,
+@@ -25,7 +24,6 @@
+         }
+         .get_or_init(|| NttTables::new(2 * n));
+         Self {
+-            output: vec![0; 2 * n],
+             left: vec![0; 2 * n],
+             right: vec![0; 2 * n],
+             tables,
+@@ -33,8 +31,8 @@
+     }
+ 
+     /// Ordinary convolution modulo q, with canonical coefficients in `0..q`.
+-    pub(crate) fn product(&mut self, h: &[u16], s2: &[i16]) -> &[i64] {
+-        let n = self.output.len() / 2;
++    pub(crate) fn product(&mut self, h: &[u16], s2: &[i16]) -> &[u32] {
++        let n = self.left.len() / 2;
+         assert_eq!(h.len(), n);
+         assert_eq!(s2.len(), n);
+         let (left, right) = (&mut self.left, &mut self.right);
+@@ -51,10 +49,7 @@
+             *left = *left * *right % Q;
+         }
+         inverse_ntt(left, self.tables);
+-        for (output, &value) in self.output.iter_mut().zip(left.iter()) {
+-            *output = i64::from(value);
+-        }
+-        &self.output
++        left
+     }
+ }
+ 
+@@ -167,7 +162,7 @@
+         let expected = schoolbook(h, s2);
+         let actual = workspace.product(h, s2);
+         for (&actual, &expected) in actual.iter().zip(&expected) {
+-            assert_eq!(actual, expected.rem_euclid(i64::from(Q)));
++            assert_eq!(i64::from(actual), expected.rem_euclid(i64::from(Q)));
+         }
+         assert_eq!(actual.last(), Some(&0));
+     }
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -132,8 +132,10 @@
+             let mut s1 = [0; N];
+             let mut norm = 0;
+             for j in 0..N {
+-                let centered =
+-                    center(i64::from(public.targets[i][j]) - product[j] + product[N + j]);
++                let centered = center(
++                    i64::from(public.targets[i][j]) - i64::from(product[j])
++                        + i64::from(product[N + j]),
++                );
+                 s1[j] = centered;
+                 norm += i64::from(centered).unsigned_abs().pow(2);
+                 norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
+@@ -166,7 +168,8 @@
+         let slacks = check_norms(&witness)?;
+         map_products(public, &witness.s2, |i, product| {
+             for j in 0..N {
+-                let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
++                let residual = i64::from(public.targets[i][j]) - i64::from(product[j])
++                    + i64::from(product[N + j])
+                     - i64::from(witness.s1[i][j]);
+                 if residual.rem_euclid(Q) != 0 {
+                     return Err(error("invalid algebraic ring witness"));
+@@ -181,7 +184,7 @@
+ fn map_products<T: Send>(
+     public: &FalconAlgebraicStatement,
+     s2: &[[i16; N]],
+-    f: impl Fn(usize, &[i64]) -> Result<T, FalconError> + Send + Sync,
++    f: impl Fn(usize, &[u32]) -> Result<T, FalconError> + Send + Sync,
+ ) -> Result<Vec<T>, FalconError> {
+     #[cfg(feature = "parallel")]
+     {
+@@ -202,8 +205,10 @@
+     }
+ }
+ 
+-fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
+-    std::array::from_fn(|j| center(i64::from(target[j]) - product[j] + product[N + j]))
++fn centered_s1(target: &[u16; N], product: &[u32]) -> [i16; N] {
++    std::array::from_fn(|j| {
++        center(i64::from(target[j]) - i64::from(product[j]) + i64::from(product[N + j]))
++    })
+ }
+ 
+ fn center(value: i64) -> i16 {
+@@ -446,7 +451,7 @@
+         assert_eq!(combined.slacks, data.slacks);
+         assert_eq!(
+             PolynomialWorkspace::new(N).product(&h, &s2),
+-            ordinary.map(|coefficient| coefficient.rem_euclid(Q))
++            ordinary.map(|coefficient| coefficient.rem_euclid(Q) as u32)
+         );
+         assert_eq!(
+             data.slacks[0],
+--- a/src/piop/spartan/falcon/verify.rs
++++ b/src/piop/spartan/falcon/verify.rs
+@@ -48,7 +48,8 @@
+     let mut ring_quotient = Box::new([0u16; N - 1]);
+     let mut norm = 0u64;
+     for i in 0..N {
+-        let difference = i64::from(hash_to_point.point[i]) - product[i] + product[i + N];
++        let difference =
++            i64::from(hash_to_point.point[i]) - i64::from(product[i]) + i64::from(product[i + N]);
+         let residue = difference.rem_euclid(Q);
+         let centered = if residue > Q / 2 {
+             residue - Q
+@@ -59,7 +60,7 @@
+         norm += centered.unsigned_abs().pow(2);
+         norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
+         if i < N - 1 {
+-            ring_quotient[i] = (-product[i + N]).rem_euclid(Q) as u16;
++            ring_quotient[i] = (-i64::from(product[i + N])).rem_euclid(Q) as u16;
+         }
+     }
+     if norm > BETA_SQUARED {

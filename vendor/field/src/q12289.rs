@@ -412,6 +412,56 @@ impl<const K: usize> PowerBasis<K> {
             }
         }
     }
+
+    /// Emit independent power/adjoint pairs with one shared public generator.
+    ///
+    /// Every polynomial and output must have the same length. Coordinates and
+    /// subtraction vectors belong to this basis, and polynomial coefficients
+    /// must be canonical. Interleaving pairs hides recurrence latency on AVX512;
+    /// other targets retain the individual portable recurrences.
+    pub fn fill_powers_adjoint_pairs<const PAIRS: usize>(
+        &self,
+        starts: [[PowerCoordinates<K>; 2]; PAIRS],
+        subtract: [PowerCoordinates<K>; PAIRS],
+        polynomials: [&[u16]; PAIRS],
+        outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    ) {
+        const {
+            assert!(PAIRS > 0);
+        }
+        let len = polynomials[0].len();
+        for i in 0..PAIRS {
+            assert_eq!(polynomials[i].len(), len, "polynomial lengths differ");
+            assert_eq!(outputs[i][0].len(), len, "sequence lengths differ");
+            assert_eq!(outputs[i][1].len(), len, "sequence lengths differ");
+            assert!(
+                polynomials[i].iter().all(|&scalar| u64::from(scalar) < Q),
+                "noncanonical base-field scalar"
+            );
+        }
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "avx512f",
+            target_feature = "avx512bw"
+        ))]
+        if K == 11 {
+            // SAFETY: build features, degree, matching lengths, and canonical
+            // scalars were checked; coordinate constructors preserve their range.
+            unsafe {
+                avx512::fill_powers_adjoint_pairs(
+                    &self.feedback,
+                    starts,
+                    subtract,
+                    polynomials,
+                    outputs,
+                )
+            };
+            return;
+        }
+        for (i, output) in outputs.into_iter().enumerate() {
+            self.fill_powers_adjoint_pair(starts[i], subtract[i], polynomials[i], output);
+        }
+    }
 }
 
 #[inline]
@@ -575,6 +625,95 @@ mod power_basis_tests {
         check_adjoint_pair::<9>();
         check_adjoint_pair::<10>();
         check_adjoint_pair::<11>();
+    }
+
+    fn check_adjoint_pairs<const K: usize>() {
+        let alpha = Q12289Extension(std::array::from_fn(|k| u16::from(k == 1)));
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let fixed: [[Q12289Extension<K>; 2]; 2] = std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
+                Q12289Extension(std::array::from_fn(|k| {
+                    ((i * 311 + j * 79 + k * 101) % Q as usize) as u16
+                }))
+            })
+        });
+        let subtract = fixed.map(|v| v[1]);
+        for len in [0, 1, 3, 17, 513] {
+            let polynomials: [Vec<u16>; 2] = std::array::from_fn(|i| {
+                (0..len)
+                    .map(|j| ((i * 73 + j * 931) % Q as usize) as u16)
+                    .collect()
+            });
+            let mut buffers = vec![[PowerCoordinates::ZERO; 2]; len * 2];
+            // Separate vectors exercise the actual signature-major API layout.
+            let mut a = vec![PowerCoordinates::ZERO; len * 2];
+            let mut b = a.clone();
+            let (a0, a1) = a.split_at_mut(len);
+            let (b0, b1) = b.split_at_mut(len);
+            basis.fill_powers_adjoint_pairs(
+                fixed.map(|v| v.map(|x| basis.encode(x))),
+                subtract.map(|x| basis.encode(x)),
+                [&polynomials[0], &polynomials[1]],
+                [[a0, b0], [a1, b1]],
+            );
+            for i in 0..2 {
+                let [mut first, mut second] = fixed[i];
+                for j in 0..len {
+                    buffers[i * len + j] = [basis.encode(first), basis.encode(second)];
+                    first = first.mul(alpha);
+                    let mut scalar = Q12289Extension::ZERO;
+                    scalar.0[0] = polynomials[i][len - 1 - j];
+                    second = second.mul(alpha).sub(subtract[i].mul(scalar));
+                }
+            }
+            for (j, expected) in buffers.iter().enumerate() {
+                assert_eq!(a[j], expected[0]);
+                assert_eq!(b[j], expected[1]);
+            }
+        }
+    }
+
+    #[test]
+    fn interleaved_dispatch_matches_fixed_basis_reference() {
+        check_adjoint_pairs::<9>();
+        check_adjoint_pairs::<10>();
+        check_adjoint_pairs::<11>();
+    }
+
+    #[test]
+    #[should_panic(expected = "noncanonical base-field scalar")]
+    fn interleaved_pairs_reject_noncanonical_polynomials() {
+        let basis = PowerBasis::try_new(Q12289Extension::<11>(std::array::from_fn(|k| {
+            u16::from(k == 1)
+        })))
+        .unwrap();
+        basis.fill_powers_adjoint_pairs(
+            [[PowerCoordinates::ZERO; 2]; 2],
+            [PowerCoordinates::ZERO; 2],
+            [&[0], &[Q as u16]],
+            [
+                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
+                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
+            ],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "polynomial lengths differ")]
+    fn interleaved_pairs_reject_mismatched_polynomials() {
+        let basis = PowerBasis::try_new(Q12289Extension::<11>(std::array::from_fn(|k| {
+            u16::from(k == 1)
+        })))
+        .unwrap();
+        basis.fill_powers_adjoint_pairs(
+            [[PowerCoordinates::ZERO; 2]; 2],
+            [PowerCoordinates::ZERO; 2],
+            [&[0], &[]],
+            [
+                [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
+                [&mut [], &mut []],
+            ],
+        );
     }
 
     #[test]

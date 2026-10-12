@@ -1,0 +1,19 @@
+{
+  "base_commit": "d865c9df5e50a1c78ee4d52885d5381b17fc08c5",
+  "platform": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
+  "source_sha256": {
+    "src/hybrid/integer_bridge.rs": "67f82ea48727f0325d00105333372a2801af33673b2b8b353f81a8ae7fa4deb4",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "0e55d3cdf48cb4456602900822ded64171c9d9a7b9239061832f5d3ec11c31b5",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "a060ac103b18b637105694533fb47a24b8733ba9d854521cd855a7b5ded9c64f",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "e92fa9277d6818ee645073a0f7d582aba579db1266bee74962e9c2246e11bc5b",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "44c20871f73aa26f40fdfa96b25f985dd6800b39a63449c502afada19ffc05c3",
+    "src/piop/spartan/falcon1024_algebraic/backend.rs": "12506248a2a521466f683979937f7505d09dc806908ec024a022d734fd846de7",
+    "src/piop/spartan/falcon1024_algebraic/compact_binding.rs": "741527845dfa7d3a141d14af53308c3ea76af486abf63d51d4c82352738fbc98"
+  },
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "profile": "release; LTO; codegen-units=1",
+  "note": "Final candidate includes cached public masks, deterministic parallel source scan, parallel verifier coefficient evaluation, and at-most-32-position lane-15 prefix aggregation followed by exact sparse instance projection."
+}

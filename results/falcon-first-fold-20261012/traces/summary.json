@@ -1,0 +1,89 @@
+{
+  "method": "Diagnostic traced seed42 medians: two warmups, nine samples; binding forced optimized in every variant. Not an untraced acceptance benchmark.",
+  "cases": [
+    {
+      "degree": 512,
+      "workers": 12,
+      "mode": "legacy",
+      "fold_ms": 3.615888,
+      "prove_ms": 46.57148
+    },
+    {
+      "degree": 512,
+      "workers": 12,
+      "mode": "prepared",
+      "fold_ms": 2.703953,
+      "prove_ms": 45.678011
+    },
+    {
+      "degree": 512,
+      "workers": 12,
+      "mode": "biased",
+      "fold_ms": 2.501731,
+      "prove_ms": 45.566269
+    },
+    {
+      "degree": 512,
+      "workers": 16,
+      "mode": "legacy",
+      "fold_ms": 3.437591,
+      "prove_ms": 48.10458
+    },
+    {
+      "degree": 512,
+      "workers": 16,
+      "mode": "prepared",
+      "fold_ms": 2.58562,
+      "prove_ms": 47.314575
+    },
+    {
+      "degree": 512,
+      "workers": 16,
+      "mode": "biased",
+      "fold_ms": 2.5842769999999997,
+      "prove_ms": 47.831872999999995
+    },
+    {
+      "degree": 1024,
+      "workers": 12,
+      "mode": "legacy",
+      "fold_ms": 7.423017,
+      "prove_ms": 78.71688999999999
+    },
+    {
+      "degree": 1024,
+      "workers": 12,
+      "mode": "prepared",
+      "fold_ms": 5.767416,
+      "prove_ms": 77.318896
+    },
+    {
+      "degree": 1024,
+      "workers": 12,
+      "mode": "biased",
+      "fold_ms": 5.651337,
+      "prove_ms": 76.874576
+    },
+    {
+      "degree": 1024,
+      "workers": 16,
+      "mode": "legacy",
+      "fold_ms": 6.574942999999999,
+      "prove_ms": 79.89761200000001
+    },
+    {
+      "degree": 1024,
+      "workers": 16,
+      "mode": "prepared",
+      "fold_ms": 5.349677,
+      "prove_ms": 78.610298
+    },
+    {
+      "degree": 1024,
+      "workers": 16,
+      "mode": "biased",
+      "fold_ms": 5.365798,
+      "prove_ms": 78.76953999999999
+    }
+  ]
+}

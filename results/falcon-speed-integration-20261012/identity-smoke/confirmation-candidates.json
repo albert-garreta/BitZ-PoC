@@ -1,0 +1,43 @@
+{
+  "cells": [
+    {
+      "baseline_median_of_seed_medians": 30.349591,
+      "candidate_median_of_seed_medians": 33.890426999999995,
+      "candidate_over_baseline_geomean": 1.116668326765919,
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 1
+      },
+      "metric": "total_prover_ms",
+      "observed_change_percent": 11.666832676591898,
+      "paired_seed_bootstrap_95_percent_interval": null,
+      "review_observed_increase": true,
+      "seed_ratios": [
+        1.116668326765919
+      ]
+    },
+    {
+      "baseline_median_of_seed_medians": 29.651411,
+      "candidate_median_of_seed_medians": 33.040119,
+      "candidate_over_baseline_geomean": 1.1142848817548683,
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 1
+      },
+      "metric": "prove_ms",
+      "observed_change_percent": 11.428488175486828,
+      "paired_seed_bootstrap_95_percent_interval": null,
+      "review_observed_increase": true,
+      "seed_ratios": [
+        1.1142848817548683
+      ]
+    }
+  ],
+  "definition": "Observed total/proof geometric-mean ratio exceeds +3.0%; confirm with new seeds and longer samples. This is not proof of a regression."
+}

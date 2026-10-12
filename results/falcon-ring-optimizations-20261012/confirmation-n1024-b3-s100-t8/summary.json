@@ -1,0 +1,132 @@
+{
+  "cells": [
+    {
+      "cell": {
+        "batch": 3,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 8
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 22382.0,
+          "candidate_median_of_seed_medians": 22472.0,
+          "candidate_over_baseline_geomean": 1.0018701917548898,
+          "observed_change_percent": 0.18701917548897828,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9953797281691459,
+            1.008222592226815
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0056868668917718,
+            0.9861751152073732,
+            1.0120395327942497,
+            1.0149253731343284,
+            0.9925013390465989,
+            0.9989352262644188,
+            1.0057399103139013,
+            0.9992844364937388
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 3.6444565000000004,
+          "candidate_median_of_seed_medians": 3.689296,
+          "candidate_over_baseline_geomean": 1.0034175827216218,
+          "observed_change_percent": 0.3417582721621848,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9962351022767163,
+            1.010089585695657
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.998904735387705,
+            1.0091792471347014,
+            0.9929932873278997,
+            0.9865802981270123,
+            1.0139274156105398,
+            0.9993796953801367,
+            1.0112706241013374,
+            1.0154948870244938
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 3.8173385,
+          "candidate_median_of_seed_medians": 3.836434,
+          "candidate_over_baseline_geomean": 1.0005710318649719,
+          "observed_change_percent": 0.05710318649718715,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9926367684836237,
+            1.0069687753052472
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9988407414393722,
+            1.0112455966525642,
+            0.9909911899760455,
+            0.9788159072276315,
+            1.0048658131967978,
+            1.0020614878133904,
+            1.007274065837833,
+            1.0109032730597214
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 2.443225,
+          "candidate_median_of_seed_medians": 2.4415015,
+          "candidate_over_baseline_geomean": 0.9995130913937416,
+          "observed_change_percent": -0.048690860625844046,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9978793944742159,
+            1.0015255600533826
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9986434780617236,
+            1.005500736217031,
+            0.9985606225814719,
+            0.9982234816973031,
+            0.9954734565646477,
+            0.9992311353866574,
+            0.9999467480683886,
+            1.0005534614971816
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.143451,
+          "candidate_median_of_seed_medians": 0.1390875,
+          "candidate_over_baseline_geomean": 0.9604597895154157,
+          "observed_change_percent": -3.9540210484584337,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9207247014045268,
+            0.9917934615742184
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9705388918917022,
+            0.9906324007898859,
+            0.9594563908480992,
+            0.9610030570817752,
+            0.9662977692034462,
+            0.8455736589600121,
+            0.9671721228461072,
+            1.0336935968908953
+          ]
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ],
+  "completed_pairs": 8,
+  "limitations": "Finite-sample comparison on this machine and these inputs only. Each seed contributes the median of repeated proofs in one process per variant. Reported 95% bootstrap intervals resample paired seed ratios, not individual proofs; three seeds give weak uncertainty estimates and do not establish nonregression. Missing fixture caches are primed in a separate untimed process before either paired measurement. RSS is process lifetime high-water memory, including fixture setup and warmups, not per-proof allocated memory. Preparation and fixture generation are excluded from total_prover_ms."
+}

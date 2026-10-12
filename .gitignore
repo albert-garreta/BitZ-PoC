@@ -5,6 +5,10 @@
 /bench_results/
 /benches/results/
 
+# Generated zkpassport benchmark tools and compiler artifacts.
+/benchmarks/zkpassport/.cache/
+/benchmarks/zkpassport/target/
+
 # Generated benchmark results.
 /benchmarks/results/**/*.json
 /benchmarks/results/**/*.jsonl

@@ -1,0 +1,5637 @@
+[
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 206.296875,
+    "median_ns": 210.0,
+    "min_ns": 200,
+    "max_ns": 211,
+    "mean_attempts": 2.1875,
+    "median_ns_per_logical_attempt": 152.75,
+    "aggregate_ns_per_logical_attempt": 94.30714285714286,
+    "fitted_overhead_ns": 206.296875,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 206.296875,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 211.8125,
+    "median_ns": 210.0,
+    "min_ns": 200,
+    "max_ns": 471,
+    "mean_attempts": 4.984375,
+    "median_ns_per_logical_attempt": 59.875,
+    "aggregate_ns_per_logical_attempt": 42.495297805642636,
+    "fitted_overhead_ns": 204.29119548996852,
+    "fitted_ns_per_logical_attempt": 0.8081454153540043,
+    "expected_ns_at_2pow_bits": 207.52377715138454,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 216.5625,
+    "median_ns": 210.0,
+    "min_ns": 200,
+    "max_ns": 381,
+    "mean_attempts": 7.203125,
+    "median_ns_per_logical_attempt": 31.73809523809524,
+    "aggregate_ns_per_logical_attempt": 30.065075921908893,
+    "fitted_overhead_ns": 198.80447220487196,
+    "fitted_ns_per_logical_attempt": 1.4113991255465337,
+    "expected_ns_at_2pow_bits": 210.09566520924423,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 286.25,
+    "median_ns": 211.0,
+    "min_ns": 200,
+    "max_ns": 721,
+    "mean_attempts": 15.046875,
+    "median_ns_per_logical_attempt": 20.315789473684212,
+    "aggregate_ns_per_logical_attempt": 19.023883696780892,
+    "fitted_overhead_ns": 149.80865135347744,
+    "fitted_ns_per_logical_attempt": 9.072267686433262,
+    "expected_ns_at_2pow_bits": 294.96493433640967,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 336.578125,
+    "median_ns": 240.5,
+    "min_ns": 100,
+    "max_ns": 1032,
+    "mean_attempts": 27.21875,
+    "median_ns_per_logical_attempt": 13.292649727767696,
+    "aggregate_ns_per_logical_attempt": 12.365671641791044,
+    "fitted_overhead_ns": 120.32305812573301,
+    "fitted_ns_per_logical_attempt": 8.310961977478808,
+    "expected_ns_at_2pow_bits": 386.2738414050549,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 431.890625,
+    "median_ns": 340.5,
+    "min_ns": 100,
+    "max_ns": 4679,
+    "mean_attempts": 67.21875,
+    "median_ns_per_logical_attempt": 5.593023255813954,
+    "aggregate_ns_per_logical_attempt": 6.425151092515109,
+    "fitted_overhead_ns": 70.61557454338617,
+    "fitted_ns_per_logical_attempt": 4.421419522612224,
+    "expected_ns_at_2pow_bits": 353.5864239905685,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 568.84375,
+    "median_ns": 450.0,
+    "min_ns": 110,
+    "max_ns": 1953,
+    "mean_attempts": 116.6875,
+    "median_ns_per_logical_attempt": 5.095238095238095,
+    "aggregate_ns_per_logical_attempt": 4.8749330476700585,
+    "fitted_overhead_ns": 80.79125665643278,
+    "fitted_ns_per_logical_attempt": 4.173338663759588,
+    "expected_ns_at_2pow_bits": 614.97860561766,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1154.84375,
+    "median_ns": 781.5,
+    "min_ns": 110,
+    "max_ns": 5059,
+    "mean_attempts": 255.515625,
+    "median_ns_per_logical_attempt": 4.6493973518673295,
+    "aggregate_ns_per_logical_attempt": 4.519660001223017,
+    "fitted_overhead_ns": 84.66355548534011,
+    "fitted_ns_per_logical_attempt": 4.180716881285512,
+    "expected_ns_at_2pow_bits": 1154.9270770944313,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1919.109375,
+    "median_ns": 1548.0,
+    "min_ns": 120,
+    "max_ns": 7324,
+    "mean_attempts": 440.328125,
+    "median_ns_per_logical_attempt": 4.430951266448224,
+    "aggregate_ns_per_logical_attempt": 4.358362016961783,
+    "fitted_overhead_ns": 75.13891232935293,
+    "fitted_ns_per_logical_attempt": 4.1862918618645555,
+    "expected_ns_at_2pow_bits": 2218.5203456040053,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3479.90625,
+    "median_ns": 2480.0,
+    "min_ns": 120,
+    "max_ns": 19617,
+    "mean_attempts": 815.375,
+    "median_ns_per_logical_attempt": 4.291304560101553,
+    "aggregate_ns_per_logical_attempt": 4.267859880423118,
+    "fitted_overhead_ns": 83.99351992563606,
+    "fitted_ns_per_logical_attempt": 4.165117898526656,
+    "expected_ns_at_2pow_bits": 4349.074248016932,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 10296.625,
+    "median_ns": 6672.5,
+    "min_ns": 120,
+    "max_ns": 46488,
+    "mean_attempts": 2443.03125,
+    "median_ns_per_logical_attempt": 4.227323893867459,
+    "aggregate_ns_per_logical_attempt": 4.214692300804584,
+    "fitted_overhead_ns": 81.55521008950018,
+    "fitted_ns_per_logical_attempt": 4.166086093829033,
+    "expected_ns_at_2pow_bits": 8613.69953025136,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 19935.5,
+    "median_ns": 12238.0,
+    "min_ns": 190,
+    "max_ns": 96071,
+    "mean_attempts": 4695.34375,
+    "median_ns_per_logical_attempt": 4.265967881859936,
+    "aggregate_ns_per_logical_attempt": 4.245802024612149,
+    "fitted_overhead_ns": 158.57079117616377,
+    "fitted_ns_per_logical_attempt": 4.2055107955576005,
+    "expected_ns_at_2pow_bits": 17384.343009780096,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 41898.90625,
+    "median_ns": 35487.0,
+    "min_ns": 330,
+    "max_ns": 164792,
+    "mean_attempts": 9910.265625,
+    "median_ns_per_logical_attempt": 4.223482160466534,
+    "aggregate_ns_per_logical_attempt": 4.22782878233902,
+    "fitted_overhead_ns": 134.23189619866753,
+    "fitted_ns_per_logical_attempt": 4.206477427628687,
+    "expected_ns_at_2pow_bits": 34593.69498333287,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 70041.4375,
+    "median_ns": 50881.5,
+    "min_ns": 3687,
+    "max_ns": 283596,
+    "mean_attempts": 16532.15625,
+    "median_ns_per_logical_attempt": 4.2192267421139285,
+    "aggregate_ns_per_logical_attempt": 4.236678896620034,
+    "fitted_overhead_ns": 146.64842122580012,
+    "fitted_ns_per_logical_attempt": 4.205429375327569,
+    "expected_ns_at_2pow_bits": 69048.40330659269,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 142725.703125,
+    "median_ns": 114050.5,
+    "min_ns": 1533,
+    "max_ns": 534902,
+    "mean_attempts": 33823.1875,
+    "median_ns_per_logical_attempt": 4.2132973242826495,
+    "aggregate_ns_per_logical_attempt": 4.219759096477823,
+    "fitted_overhead_ns": 133.95454056972812,
+    "fitted_ns_per_logical_attempt": 4.205947876247654,
+    "expected_ns_at_2pow_bits": 137954.45454945287,
+    "strongly_downweighted_samples": 11,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 253729.28125,
+    "median_ns": 175992.5,
+    "min_ns": 1804,
+    "max_ns": 994722,
+    "mean_attempts": 59861.484375,
+    "median_ns_per_logical_attempt": 4.234386759894388,
+    "aggregate_ns_per_logical_attempt": 4.238606574813991,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 4.234927273071253,
+    "expected_ns_at_2pow_bits": 277540.1937679976,
+    "strongly_downweighted_samples": 12,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 491822.65625,
+    "median_ns": 251196.0,
+    "min_ns": 4759,
+    "max_ns": 2842438,
+    "mean_attempts": 116848.6875,
+    "median_ns_per_logical_attempt": 4.208625826099883,
+    "aggregate_ns_per_logical_attempt": 4.209055889053097,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 4.210087749470468,
+    "expected_ns_at_2pow_bits": 551824.6214985931,
+    "strongly_downweighted_samples": 10,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 1116787.625,
+    "median_ns": 786693.0,
+    "min_ns": 7705,
+    "max_ns": 4704721,
+    "mean_attempts": 265441.046875,
+    "median_ns_per_logical_attempt": 4.207240927800268,
+    "aggregate_ns_per_logical_attempt": 4.207290613670279,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 4.20717412543901,
+    "expected_ns_at_2pow_bits": 1102885.4539390837,
+    "strongly_downweighted_samples": 11,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 2407943.90625,
+    "median_ns": 2038662.0,
+    "min_ns": 44614,
+    "max_ns": 9511616,
+    "mean_attempts": 689171.03125,
+    "median_ns_per_logical_attempt": 3.379825464207385,
+    "aggregate_ns_per_logical_attempt": 3.493971448397266,
+    "fitted_overhead_ns": 546.3431993171107,
+    "fitted_ns_per_logical_attempt": 3.3846724257158227,
+    "expected_ns_at_2pow_bits": 1775089.4799330144,
+    "strongly_downweighted_samples": 7,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 4485682.34375,
+    "median_ns": 3326624.5,
+    "min_ns": 46188,
+    "max_ns": 18963872,
+    "mean_attempts": 1322377.5,
+    "median_ns_per_logical_attempt": 3.39196190520782,
+    "aggregate_ns_per_logical_attempt": 3.392134503006895,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 3.3925190042935176,
+    "expected_ns_at_2pow_bits": 3557314.0074460795,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 5815021.3125,
+    "median_ns": 4019360.5,
+    "min_ns": 35827,
+    "max_ns": 19300789,
+    "mean_attempts": 1709578.8125,
+    "median_ns_per_logical_attempt": 3.40157594385654,
+    "aggregate_ns_per_logical_attempt": 3.4014350610700492,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 3.4017994824619695,
+    "expected_ns_at_2pow_bits": 7134090.588244084,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 18798082,
+    "median_ns": 17261410.5,
+    "min_ns": 602400,
+    "max_ns": 54482967,
+    "mean_attempts": 5517202.84375,
+    "median_ns_per_logical_attempt": 3.407240752363881,
+    "aggregate_ns_per_logical_attempt": 3.4071761601614576,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 3.407399663970009,
+    "expected_ns_at_2pow_bits": 14291670.040188065,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 21813782.03125,
+    "median_ns": 18521885.5,
+    "min_ns": 872551,
+    "max_ns": 62974745,
+    "mean_attempts": 6399521.625,
+    "median_ns_per_logical_attempt": 3.4085403028408594,
+    "aggregate_ns_per_logical_attempt": 3.408658226270155,
+    "fitted_overhead_ns": 1932.3447481170297,
+    "fitted_ns_per_logical_attempt": 3.4081953415863886,
+    "expected_ns_at_2pow_bits": 28591947.05274243,
+    "strongly_downweighted_samples": 6,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "spartan",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 68890462.46875,
+    "median_ns": 50527117.5,
+    "min_ns": 3668081,
+    "max_ns": 343381262,
+    "mean_attempts": 20187872.25,
+    "median_ns_per_logical_attempt": 3.4133752132840165,
+    "aggregate_ns_per_logical_attempt": 3.412467723969771,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 3.4131237028712293,
+    "expected_ns_at_2pow_bits": 57262713.597790435,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 0,
+    "samples": 64,
+    "mean_ns": 178.625,
+    "median_ns": 180.0,
+    "min_ns": 170,
+    "max_ns": 181,
+    "mean_attempts": 1,
+    "median_ns_per_logical_attempt": 180.0,
+    "aggregate_ns_per_logical_attempt": 178.625,
+    "fitted_overhead_ns": 178.625,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 178.625,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 253.296875,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 261,
+    "mean_attempts": 1.890625,
+    "median_ns_per_logical_attempt": 250.0,
+    "aggregate_ns_per_logical_attempt": 133.97520661157026,
+    "fitted_overhead_ns": 252.31599460350773,
+    "fitted_ns_per_logical_attempt": 0.518812771698396,
+    "expected_ns_at_2pow_bits": 253.35362014690452,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 255.3125,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 331,
+    "mean_attempts": 4.546875,
+    "median_ns_per_logical_attempt": 65.125,
+    "aggregate_ns_per_logical_attempt": 56.15120274914089,
+    "fitted_overhead_ns": 246.61794196035328,
+    "fitted_ns_per_logical_attempt": 1.7659503951978648,
+    "expected_ns_at_2pow_bits": 253.68174354114473,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 264.078125,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 401,
+    "mean_attempts": 8.234375,
+    "median_ns_per_logical_attempt": 41.75,
+    "aggregate_ns_per_logical_attempt": 32.07020872865275,
+    "fitted_overhead_ns": 236.75725795027938,
+    "fitted_ns_per_logical_attempt": 3.2779062492623248,
+    "expected_ns_at_2pow_bits": 262.98050794437796,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 289.78125,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 611,
+    "mean_attempts": 14.453125,
+    "median_ns_per_logical_attempt": 26.1,
+    "aggregate_ns_per_logical_attempt": 20.04972972972973,
+    "fitted_overhead_ns": 224.97044195799003,
+    "fitted_ns_per_logical_attempt": 4.5357095929071525,
+    "expected_ns_at_2pow_bits": 297.5417954445045,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 335.671875,
+    "median_ns": 320.5,
+    "min_ns": 250,
+    "max_ns": 801,
+    "mean_attempts": 26.734375,
+    "median_ns_per_logical_attempt": 16.525,
+    "aggregate_ns_per_logical_attempt": 12.555815312682642,
+    "fitted_overhead_ns": 227.3825705342436,
+    "fitted_ns_per_logical_attempt": 4.026475564316666,
+    "expected_ns_at_2pow_bits": 356.2297885923769,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 463.671875,
+    "median_ns": 390.5,
+    "min_ns": 260,
+    "max_ns": 1243,
+    "mean_attempts": 62.09375,
+    "median_ns_per_logical_attempt": 8.568181818181818,
+    "aggregate_ns_per_logical_attempt": 7.467287367891293,
+    "fitted_overhead_ns": 227.0543842585909,
+    "fitted_ns_per_logical_attempt": 3.8106079823846657,
+    "expected_ns_at_2pow_bits": 470.9332951312095,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 675.28125,
+    "median_ns": 501.0,
+    "min_ns": 261,
+    "max_ns": 2715,
+    "mean_attempts": 118.140625,
+    "median_ns_per_logical_attempt": 6.857545045045045,
+    "aggregate_ns_per_logical_attempt": 5.715910593836794,
+    "fitted_overhead_ns": 234.44682387825299,
+    "fitted_ns_per_logical_attempt": 3.732813256127239,
+    "expected_ns_at_2pow_bits": 712.2469206625397,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1211.34375,
+    "median_ns": 1027.0,
+    "min_ns": 271,
+    "max_ns": 3376,
+    "mean_attempts": 263.953125,
+    "median_ns_per_logical_attempt": 4.79790337734263,
+    "aggregate_ns_per_logical_attempt": 4.589238145977624,
+    "fitted_overhead_ns": 237.2014360033179,
+    "fitted_ns_per_logical_attempt": 3.69062044657099,
+    "expected_ns_at_2pow_bits": 1182.0002703254913,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1997.890625,
+    "median_ns": 1242.5,
+    "min_ns": 260,
+    "max_ns": 7134,
+    "mean_attempts": 477.84375,
+    "median_ns_per_logical_attempt": 4.62010101010101,
+    "aggregate_ns_per_logical_attempt": 4.181054214897652,
+    "fitted_overhead_ns": 240.88530488990386,
+    "fitted_ns_per_logical_attempt": 3.6768842159644612,
+    "expected_ns_at_2pow_bits": 2123.450023463708,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3616.25,
+    "median_ns": 2770.0,
+    "min_ns": 271,
+    "max_ns": 14227,
+    "mean_attempts": 918.265625,
+    "median_ns_per_logical_attempt": 4.01172760348324,
+    "aggregate_ns_per_logical_attempt": 3.9381306471098707,
+    "fitted_overhead_ns": 243.0979564146819,
+    "fitted_ns_per_logical_attempt": 3.6733765666413474,
+    "expected_ns_at_2pow_bits": 4004.6355606554216,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 6619.109375,
+    "median_ns": 5555.5,
+    "min_ns": 260,
+    "max_ns": 34035,
+    "mean_attempts": 1738.765625,
+    "median_ns_per_logical_attempt": 3.8344648384078313,
+    "aggregate_ns_per_logical_attempt": 3.8067864235583793,
+    "fitted_overhead_ns": 236.81941621442638,
+    "fitted_ns_per_logical_attempt": 3.6704720981322168,
+    "expected_ns_at_2pow_bits": 7753.946273189206,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 13442.125,
+    "median_ns": 7744.5,
+    "min_ns": 370,
+    "max_ns": 90130,
+    "mean_attempts": 3588.171875,
+    "median_ns_per_logical_attempt": 3.80062052261293,
+    "aggregate_ns_per_logical_attempt": 3.746232195189925,
+    "fitted_overhead_ns": 274.2836013345095,
+    "fitted_ns_per_logical_attempt": 3.6650015738687776,
+    "expected_ns_at_2pow_bits": 15286.130047901022,
+    "strongly_downweighted_samples": 10,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 32497.390625,
+    "median_ns": 27411.5,
+    "min_ns": 1654,
+    "max_ns": 127651,
+    "mean_attempts": 8746.609375,
+    "median_ns_per_logical_attempt": 3.716274349791303,
+    "aggregate_ns_per_logical_attempt": 3.71542722805087,
+    "fitted_overhead_ns": 258.1686949657924,
+    "fitted_ns_per_logical_attempt": 3.6805460797898926,
+    "expected_ns_at_2pow_bits": 30409.202180604592,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 63835.078125,
+    "median_ns": 34480.0,
+    "min_ns": 1833,
+    "max_ns": 307642,
+    "mean_attempts": 17195.78125,
+    "median_ns_per_logical_attempt": 3.72672644041881,
+    "aggregate_ns_per_logical_attempt": 3.712252278447657,
+    "fitted_overhead_ns": 268.50433858539327,
+    "fitted_ns_per_logical_attempt": 3.6906676274271994,
+    "expected_ns_at_2pow_bits": 60736.40274635263,
+    "strongly_downweighted_samples": 9,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 122953.625,
+    "median_ns": 108756.0,
+    "min_ns": 2715,
+    "max_ns": 405176,
+    "mean_attempts": 33204.78125,
+    "median_ns_per_logical_attempt": 3.699032539009405,
+    "aggregate_ns_per_logical_attempt": 3.7028891735282854,
+    "fitted_overhead_ns": 256.28243139665574,
+    "fitted_ns_per_logical_attempt": 3.687609347449833,
+    "expected_ns_at_2pow_bits": 121091.86552863278,
+    "strongly_downweighted_samples": 11,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 240011.09375,
+    "median_ns": 163319.0,
+    "min_ns": 4559,
+    "max_ns": 1276375,
+    "mean_attempts": 64842.609375,
+    "median_ns_per_logical_attempt": 3.6995684352068188,
+    "aggregate_ns_per_logical_attempt": 3.701441013299752,
+    "fitted_overhead_ns": 106.64658006053651,
+    "fitted_ns_per_logical_attempt": 3.696085510094676,
+    "expected_ns_at_2pow_bits": 242333.30656962522,
+    "strongly_downweighted_samples": 14,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 511721.46875,
+    "median_ns": 404455.5,
+    "min_ns": 2375,
+    "max_ns": 2039139,
+    "mean_attempts": 139218.34375,
+    "median_ns_per_logical_attempt": 3.676739508319499,
+    "aggregate_ns_per_logical_attempt": 3.6756755968087,
+    "fitted_overhead_ns": 321.6762450969545,
+    "fitted_ns_per_logical_attempt": 3.673203301115773,
+    "expected_ns_at_2pow_bits": 481775.7793289436,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 995267.078125,
+    "median_ns": 755540.0,
+    "min_ns": 4829,
+    "max_ns": 4372073,
+    "mean_attempts": 270674.71875,
+    "median_ns_per_logical_attempt": 3.676464313990334,
+    "aggregate_ns_per_logical_attempt": 3.6769857292961534,
+    "fitted_overhead_ns": 302.5369168536272,
+    "fitted_ns_per_logical_attempt": 3.675018929631985,
+    "expected_ns_at_2pow_bits": 963686.6992063007,
+    "strongly_downweighted_samples": 7,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 1540327.5625,
+    "median_ns": 1154599.5,
+    "min_ns": 71675,
+    "max_ns": 5659037,
+    "mean_attempts": 419006.1875,
+    "median_ns_per_logical_attempt": 3.675270279954173,
+    "aggregate_ns_per_logical_attempt": 3.6761451464245978,
+    "fitted_overhead_ns": 346.18713335786015,
+    "fitted_ns_per_logical_attempt": 3.6750112863673685,
+    "expected_ns_at_2pow_bits": 1927110.5044403328,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 3786545.1875,
+    "median_ns": 2682009.5,
+    "min_ns": 15169,
+    "max_ns": 9701968,
+    "mean_attempts": 1030273.5,
+    "median_ns_per_logical_attempt": 3.6755872151024005,
+    "aggregate_ns_per_logical_attempt": 3.675281551452114,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 3.6753132249535203,
+    "expected_ns_at_2pow_bits": 3853845.2401688625,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 9164991.6875,
+    "median_ns": 7323687.0,
+    "min_ns": 442487,
+    "max_ns": 32817464,
+    "mean_attempts": 2494134.84375,
+    "median_ns_per_logical_attempt": 3.674162991660176,
+    "aggregate_ns_per_logical_attempt": 3.674617557453383,
+    "fitted_overhead_ns": 1693.903419913724,
+    "fitted_ns_per_logical_attempt": 3.6734432209508494,
+    "expected_ns_at_2pow_bits": 7705462.701123429,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 14385662.03125,
+    "median_ns": 11511105.5,
+    "min_ns": 405578,
+    "max_ns": 62811175,
+    "mean_attempts": 3915394.90625,
+    "median_ns_per_logical_attempt": 3.673567228873545,
+    "aggregate_ns_per_logical_attempt": 3.6741279936505764,
+    "fitted_overhead_ns": 3379.53992081061,
+    "fitted_ns_per_logical_attempt": 3.673046373629723,
+    "expected_ns_at_2pow_bits": 15409252.637021452,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 34913549.21875,
+    "median_ns": 31797944.5,
+    "min_ns": 1449632,
+    "max_ns": 101236800,
+    "mean_attempts": 9496680.125,
+    "median_ns_per_logical_attempt": 3.6767820359283645,
+    "aggregate_ns_per_logical_attempt": 3.676395199080163,
+    "fitted_overhead_ns": 5301.828482955694,
+    "fitted_ns_per_logical_attempt": 3.6758309856952964,
+    "expected_ns_at_2pow_bits": 30840407.041734405,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 1,
+    "kernel": "pcs",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 47796374.53125,
+    "median_ns": 29939794.0,
+    "min_ns": 675097,
+    "max_ns": 175928044,
+    "mean_attempts": 13004434.75,
+    "median_ns_per_logical_attempt": 3.6753234108964383,
+    "aggregate_ns_per_logical_attempt": 3.6753903918238353,
+    "fitted_overhead_ns": 1982.3979643285275,
+    "fitted_ns_per_logical_attempt": 3.675174679916581,
+    "expected_ns_at_2pow_bits": 61661181.84065567,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 83.953125,
+    "median_ns": 80.0,
+    "min_ns": 80,
+    "max_ns": 91,
+    "mean_attempts": 2.1875,
+    "median_ns_per_logical_attempt": 62.75,
+    "aggregate_ns_per_logical_attempt": 38.378571428571426,
+    "fitted_overhead_ns": 83.14643684820393,
+    "fitted_ns_per_logical_attempt": 0.3687717265353418,
+    "expected_ns_at_2pow_bits": 83.88398030127462,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 86.46875,
+    "median_ns": 81.0,
+    "min_ns": 80,
+    "max_ns": 161,
+    "mean_attempts": 4.984375,
+    "median_ns_per_logical_attempt": 24.583333333333336,
+    "aggregate_ns_per_logical_attempt": 17.34796238244514,
+    "fitted_overhead_ns": 81.86588929588913,
+    "fitted_ns_per_logical_attempt": 0.8243162393162757,
+    "expected_ns_at_2pow_bits": 85.16315425315423,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 89.546875,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 150,
+    "mean_attempts": 7.203125,
+    "median_ns_per_logical_attempt": 13.928571428571429,
+    "aggregate_ns_per_logical_attempt": 12.431670281995661,
+    "fitted_overhead_ns": 78.56893191232929,
+    "fitted_ns_per_logical_attempt": 1.3801686456159015,
+    "expected_ns_at_2pow_bits": 89.6102810772565,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 116.546875,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 291,
+    "mean_attempts": 15.046875,
+    "median_ns_per_logical_attempt": 8.114035087719298,
+    "aggregate_ns_per_logical_attempt": 7.745586708203531,
+    "fitted_overhead_ns": 58.80270975962058,
+    "fitted_ns_per_logical_attempt": 3.849291888087601,
+    "expected_ns_at_2pow_bits": 120.3913799690222,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 165.125,
+    "median_ns": 160.0,
+    "min_ns": 80,
+    "max_ns": 481,
+    "mean_attempts": 27.21875,
+    "median_ns_per_logical_attempt": 6.428571428571429,
+    "aggregate_ns_per_logical_attempt": 6.066590126291619,
+    "fitted_overhead_ns": 62.42723622567715,
+    "fitted_ns_per_logical_attempt": 3.7832925940438678,
+    "expected_ns_at_2pow_bits": 183.49259923508092,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 298.34375,
+    "median_ns": 275.5,
+    "min_ns": 80,
+    "max_ns": 1082,
+    "mean_attempts": 67.21875,
+    "median_ns_per_logical_attempt": 4.429401993355482,
+    "aggregate_ns_per_logical_attempt": 4.4384007438400745,
+    "fitted_overhead_ns": 56.24237481145772,
+    "fitted_ns_per_logical_attempt": 3.6049858034339812,
+    "expected_ns_at_2pow_bits": 286.9614662312325,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 462.4375,
+    "median_ns": 365.5,
+    "min_ns": 90,
+    "max_ns": 1573,
+    "mean_attempts": 116.6875,
+    "median_ns_per_logical_attempt": 4.175462763667671,
+    "aggregate_ns_per_logical_attempt": 3.963042313872523,
+    "fitted_overhead_ns": 63.238717919674514,
+    "fitted_ns_per_logical_attempt": 3.4175188263269156,
+    "expected_ns_at_2pow_bits": 500.6811276895197,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 940.34375,
+    "median_ns": 631.0,
+    "min_ns": 90,
+    "max_ns": 4137,
+    "mean_attempts": 255.515625,
+    "median_ns_per_logical_attempt": 3.7652101283629333,
+    "aggregate_ns_per_logical_attempt": 3.6801810065431417,
+    "fitted_overhead_ns": 67.7377717967712,
+    "fitted_ns_per_logical_attempt": 3.410251666996936,
+    "expected_ns_at_2pow_bits": 940.7621985479868,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1620.53125,
+    "median_ns": 1262.5,
+    "min_ns": 91,
+    "max_ns": 7975,
+    "mean_attempts": 440.328125,
+    "median_ns_per_logical_attempt": 3.6490668146811904,
+    "aggregate_ns_per_logical_attempt": 3.6802810404173023,
+    "fitted_overhead_ns": 63.107079690765204,
+    "fitted_ns_per_logical_attempt": 3.407201696266801,
+    "expected_ns_at_2pow_bits": 1807.5943481793672,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 2826.6875,
+    "median_ns": 2014.0,
+    "min_ns": 90,
+    "max_ns": 15940,
+    "mean_attempts": 815.375,
+    "median_ns_per_logical_attempt": 3.4946828533785057,
+    "aggregate_ns_per_logical_attempt": 3.4667330982676683,
+    "fitted_overhead_ns": 67.20750864940874,
+    "fitted_ns_per_logical_attempt": 3.3843056537802485,
+    "expected_ns_at_2pow_bits": 3532.736498120383,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 8262.921875,
+    "median_ns": 5229.5,
+    "min_ns": 90,
+    "max_ns": 37471,
+    "mean_attempts": 2443.03125,
+    "median_ns_per_logical_attempt": 3.3961045704175334,
+    "aggregate_ns_per_logical_attempt": 3.382241580004349,
+    "fitted_overhead_ns": 59.50049660888635,
+    "fitted_ns_per_logical_attempt": 3.3576410191740353,
+    "expected_ns_at_2pow_bits": 6935.949303877311,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 10055.03125,
+    "median_ns": 6442.0,
+    "min_ns": 581,
+    "max_ns": 53241,
+    "mean_attempts": 4695.34375,
+    "median_ns_per_logical_attempt": 2.370478209132828,
+    "aggregate_ns_per_logical_attempt": 2.141489906889139,
+    "fitted_overhead_ns": 1025.509156080937,
+    "fitted_ns_per_logical_attempt": 1.785593461627307,
+    "expected_ns_at_2pow_bits": 8339.299974906386,
+    "strongly_downweighted_samples": 7,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 17969.0625,
+    "median_ns": 15339.0,
+    "min_ns": 982,
+    "max_ns": 68940,
+    "mean_attempts": 9910.265625,
+    "median_ns_per_logical_attempt": 1.8259401993020279,
+    "aggregate_ns_per_logical_attempt": 1.813176677592837,
+    "fitted_overhead_ns": 759.2726292772422,
+    "fitted_ns_per_logical_attempt": 1.7347371626230335,
+    "expected_ns_at_2pow_bits": 14970.239465485132,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 29437.3125,
+    "median_ns": 21591.0,
+    "min_ns": 1894,
+    "max_ns": 119216,
+    "mean_attempts": 16532.15625,
+    "median_ns_per_logical_attempt": 1.7895611805887595,
+    "aggregate_ns_per_logical_attempt": 1.780609380582161,
+    "fitted_overhead_ns": 656.4890762151226,
+    "fitted_ns_per_logical_attempt": 1.738547902347512,
+    "expected_ns_at_2pow_bits": 29140.85790827676,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 59736.734375,
+    "median_ns": 47064.0,
+    "min_ns": 1022,
+    "max_ns": 222491,
+    "mean_attempts": 33823.1875,
+    "median_ns_per_logical_attempt": 1.7703086970020299,
+    "aggregate_ns_per_logical_attempt": 1.7661473914899357,
+    "fitted_overhead_ns": 637.6185690027851,
+    "fitted_ns_per_logical_attempt": 1.74659862979697,
+    "expected_ns_at_2pow_bits": 57870.1624701899,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 105386.28125,
+    "median_ns": 73399.0,
+    "min_ns": 1022,
+    "max_ns": 412451,
+    "mean_attempts": 59861.484375,
+    "median_ns_per_logical_attempt": 1.767199123210178,
+    "aggregate_ns_per_logical_attempt": 1.7605023054525617,
+    "fitted_overhead_ns": 827.6938017081993,
+    "fitted_ns_per_logical_attempt": 1.7446226338684998,
+    "expected_ns_at_2pow_bits": 115163.2827349142,
+    "strongly_downweighted_samples": 7,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 201767.546875,
+    "median_ns": 104798.5,
+    "min_ns": 3667,
+    "max_ns": 1154936,
+    "mean_attempts": 116848.6875,
+    "median_ns_per_logical_attempt": 1.7444614601381871,
+    "aggregate_ns_per_logical_attempt": 1.7267420900641268,
+    "fitted_overhead_ns": 2121.717938317597,
+    "fitted_ns_per_logical_attempt": 1.7084849401369575,
+    "expected_ns_at_2pow_bits": 226056.2560119489,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 455380.859375,
+    "median_ns": 322325.0,
+    "min_ns": 3627,
+    "max_ns": 1910155,
+    "mean_attempts": 265441.046875,
+    "median_ns_per_logical_attempt": 1.7194142347925774,
+    "aggregate_ns_per_logical_attempt": 1.715563077889176,
+    "fitted_overhead_ns": 2270.567107979674,
+    "fitted_ns_per_logical_attempt": 1.7068883092402696,
+    "expected_ns_at_2pow_bits": 449721.0960454609,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 1178585.09375,
+    "median_ns": 983956.5,
+    "min_ns": 21050,
+    "max_ns": 4596577,
+    "mean_attempts": 689171.03125,
+    "median_ns_per_logical_attempt": 1.7111469036935893,
+    "aggregate_ns_per_logical_attempt": 1.7101489184946064,
+    "fitted_overhead_ns": 1856.7239836130757,
+    "fitted_ns_per_logical_attempt": 1.7072154685270047,
+    "expected_ns_at_2pow_bits": 896929.3075466993,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 2261117.03125,
+    "median_ns": 1676327.0,
+    "min_ns": 24557,
+    "max_ns": 9551012,
+    "mean_attempts": 1322377.5,
+    "median_ns_per_logical_attempt": 1.7106059200468509,
+    "aggregate_ns_per_logical_attempt": 1.7098877069898724,
+    "fitted_overhead_ns": 2010.6524878684431,
+    "fitted_ns_per_logical_attempt": 1.7083025987025207,
+    "expected_ns_at_2pow_bits": 1793295.7582249627,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 2922576.09375,
+    "median_ns": 2020293.0,
+    "min_ns": 21430,
+    "max_ns": 9694493,
+    "mean_attempts": 1709578.8125,
+    "median_ns_per_logical_attempt": 1.7098053583265362,
+    "aggregate_ns_per_logical_attempt": 1.7095298984643914,
+    "fitted_overhead_ns": 1927.7170329806395,
+    "fitted_ns_per_logical_attempt": 1.7083769303960359,
+    "expected_ns_at_2pow_bits": 3584653.813366888,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 9431849.1875,
+    "median_ns": 8666908.5,
+    "min_ns": 301030,
+    "max_ns": 27333668,
+    "mean_attempts": 5517202.84375,
+    "median_ns_per_logical_attempt": 1.7096726242132638,
+    "aggregate_ns_per_logical_attempt": 1.7095346055990295,
+    "fitted_overhead_ns": 2374.699951939285,
+    "fitted_ns_per_logical_attempt": 1.7090700126384188,
+    "expected_ns_at_2pow_bits": 7170733.89024131,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 10965920.71875,
+    "median_ns": 9313276.5,
+    "min_ns": 442186,
+    "max_ns": 31660275,
+    "mean_attempts": 6399521.625,
+    "median_ns_per_logical_attempt": 1.7140022824111631,
+    "aggregate_ns_per_logical_attempt": 1.7135531937123503,
+    "fitted_overhead_ns": 1951.5637347437441,
+    "fitted_ns_per_logical_attempt": 1.713555288353251,
+    "expected_ns_at_2pow_bits": 14376295.164057132,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "spartan",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 34552934.46875,
+    "median_ns": 25358300.5,
+    "min_ns": 1841705,
+    "max_ns": 172230858,
+    "mean_attempts": 20187872.25,
+    "median_ns_per_logical_attempt": 1.7111788912990922,
+    "aggregate_ns_per_logical_attempt": 1.7115689083454548,
+    "fitted_overhead_ns": 3637.132042888552,
+    "fitted_ns_per_logical_attempt": 1.710999103031772,
+    "expected_ns_at_2pow_bits": 28709438.65941318,
+    "strongly_downweighted_samples": 8,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 0,
+    "samples": 64,
+    "mean_ns": 179.59375,
+    "median_ns": 180.0,
+    "min_ns": 170,
+    "max_ns": 181,
+    "mean_attempts": 1,
+    "median_ns_per_logical_attempt": 180.0,
+    "aggregate_ns_per_logical_attempt": 179.59375,
+    "fitted_overhead_ns": 179.59375,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 179.59375,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 255.515625,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 310,
+    "mean_attempts": 1.890625,
+    "median_ns_per_logical_attempt": 250.0,
+    "aggregate_ns_per_logical_attempt": 135.1487603305785,
+    "fitted_overhead_ns": 255.0777777777778,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 255.0777777777778,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 255.25,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 351,
+    "mean_attempts": 4.546875,
+    "median_ns_per_logical_attempt": 62.75,
+    "aggregate_ns_per_logical_attempt": 56.13745704467354,
+    "fitted_overhead_ns": 244.8952329833272,
+    "fitted_ns_per_logical_attempt": 2.129563219161998,
+    "expected_ns_at_2pow_bits": 253.4134858599752,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 265.078125,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 411,
+    "mean_attempts": 8.234375,
+    "median_ns_per_logical_attempt": 41.666666666666664,
+    "aggregate_ns_per_logical_attempt": 32.191650853889946,
+    "fitted_overhead_ns": 237.55846667738007,
+    "fitted_ns_per_logical_attempt": 3.265366514382795,
+    "expected_ns_at_2pow_bits": 263.68139879244245,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 290.953125,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 611,
+    "mean_attempts": 14.453125,
+    "median_ns_per_logical_attempt": 26.0,
+    "aggregate_ns_per_logical_attempt": 20.13081081081081,
+    "fitted_overhead_ns": 227.48117845729564,
+    "fitted_ns_per_logical_attempt": 4.4621008029785605,
+    "expected_ns_at_2pow_bits": 298.8747913049526,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 337.109375,
+    "median_ns": 320.5,
+    "min_ns": 250,
+    "max_ns": 802,
+    "mean_attempts": 26.734375,
+    "median_ns_per_logical_attempt": 16.15,
+    "aggregate_ns_per_logical_attempt": 12.60958503798948,
+    "fitted_overhead_ns": 230.5784070396687,
+    "fitted_ns_per_logical_attempt": 3.980994530037497,
+    "expected_ns_at_2pow_bits": 357.9702320008686,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 463.96875,
+    "median_ns": 391.0,
+    "min_ns": 260,
+    "max_ns": 1232,
+    "mean_attempts": 62.09375,
+    "median_ns_per_logical_attempt": 8.673989898989898,
+    "aggregate_ns_per_logical_attempt": 7.4720684448917964,
+    "fitted_overhead_ns": 226.96580432216825,
+    "fitted_ns_per_logical_attempt": 3.814823915466786,
+    "expected_ns_at_2pow_bits": 471.1145349120426,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 674.609375,
+    "median_ns": 501.0,
+    "min_ns": 260,
+    "max_ns": 2725,
+    "mean_attempts": 118.140625,
+    "median_ns_per_logical_attempt": 6.879166666666666,
+    "aggregate_ns_per_logical_attempt": 5.710223515408015,
+    "fitted_overhead_ns": 233.77895487747776,
+    "fitted_ns_per_logical_attempt": 3.7340062558085676,
+    "expected_ns_at_2pow_bits": 711.7317556209744,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1212.921875,
+    "median_ns": 1026.5,
+    "min_ns": 261,
+    "max_ns": 3426,
+    "mean_attempts": 263.953125,
+    "median_ns_per_logical_attempt": 4.798212431390001,
+    "aggregate_ns_per_logical_attempt": 4.5952169537678325,
+    "fitted_overhead_ns": 235.09630676096583,
+    "fitted_ns_per_logical_attempt": 3.704068523863553,
+    "expected_ns_at_2pow_bits": 1183.3378488700355,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1998.25,
+    "median_ns": 1242.5,
+    "min_ns": 260,
+    "max_ns": 7144,
+    "mean_attempts": 477.84375,
+    "median_ns_per_logical_attempt": 4.5820779220779215,
+    "aggregate_ns_per_logical_attempt": 4.181806291282454,
+    "fitted_overhead_ns": 237.71100141770603,
+    "fitted_ns_per_logical_attempt": 3.6830999486981053,
+    "expected_ns_at_2pow_bits": 2123.458175151136,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3664.375,
+    "median_ns": 2765.0,
+    "min_ns": 270,
+    "max_ns": 14297,
+    "mean_attempts": 918.265625,
+    "median_ns_per_logical_attempt": 4.053583381143622,
+    "aggregate_ns_per_logical_attempt": 3.990539229866086,
+    "fitted_overhead_ns": 240.46924827984867,
+    "fitted_ns_per_logical_attempt": 3.682053009302903,
+    "expected_ns_at_2pow_bits": 4010.8915298060215,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 6595,
+    "median_ns": 5510.5,
+    "min_ns": 260,
+    "max_ns": 34065,
+    "mean_attempts": 1738.765625,
+    "median_ns_per_logical_attempt": 3.819568214332163,
+    "aggregate_ns_per_logical_attempt": 3.7929206243653453,
+    "fitted_overhead_ns": 220.7793073803232,
+    "fitted_ns_per_logical_attempt": 3.6673805399142814,
+    "expected_ns_at_2pow_bits": 7731.574653124771,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 10078.578125,
+    "median_ns": 6262.0,
+    "min_ns": 751,
+    "max_ns": 61116,
+    "mean_attempts": 3588.171875,
+    "median_ns_per_logical_attempt": 2.9982228701668565,
+    "aggregate_ns_per_logical_attempt": 2.808833711456478,
+    "fitted_overhead_ns": 1261.9125424946524,
+    "fitted_ns_per_logical_attempt": 2.4433684017239,
+    "expected_ns_at_2pow_bits": 11269.949515955746,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 17243.453125,
+    "median_ns": 14698.0,
+    "min_ns": 1223,
+    "max_ns": 65434,
+    "mean_attempts": 8746.609375,
+    "median_ns_per_logical_attempt": 1.9860499543403385,
+    "aggregate_ns_per_logical_attempt": 1.9714442918059318,
+    "fitted_overhead_ns": 919.163499167651,
+    "fitted_ns_per_logical_attempt": 1.8650159447853927,
+    "expected_ns_at_2pow_bits": 16197.374118849588,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 33060.09375,
+    "median_ns": 18079.5,
+    "min_ns": 1233,
+    "max_ns": 156486,
+    "mean_attempts": 17195.78125,
+    "median_ns_per_logical_attempt": 1.9649920149841564,
+    "aggregate_ns_per_logical_attempt": 1.9225700344379526,
+    "fitted_overhead_ns": 826.6472496882925,
+    "fitted_ns_per_logical_attempt": 1.8710840030174538,
+    "expected_ns_at_2pow_bits": 31482.487555126256,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 63117.0625,
+    "median_ns": 55976.0,
+    "min_ns": 2395,
+    "max_ns": 205048,
+    "mean_attempts": 33204.78125,
+    "median_ns_per_logical_attempt": 1.9034750116051469,
+    "aggregate_ns_per_logical_attempt": 1.900842593263583,
+    "fitted_overhead_ns": 971.2156884994329,
+    "fitted_ns_per_logical_attempt": 1.8696308724772739,
+    "expected_ns_at_2pow_bits": 62235.28011783474,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 122513.640625,
+    "median_ns": 83518.0,
+    "min_ns": 3406,
+    "max_ns": 649388,
+    "mean_attempts": 64842.609375,
+    "median_ns_per_logical_attempt": 1.897948845645153,
+    "aggregate_ns_per_logical_attempt": 1.8894002231846487,
+    "fitted_overhead_ns": 984.1393853399786,
+    "fitted_ns_per_logical_attempt": 1.8728290068438458,
+    "expected_ns_at_2pow_bits": 123721.86117785826,
+    "strongly_downweighted_samples": 6,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 259616.1875,
+    "median_ns": 204993.5,
+    "min_ns": 4067,
+    "max_ns": 1031642,
+    "mean_attempts": 139218.34375,
+    "median_ns_per_logical_attempt": 1.868122753298998,
+    "aggregate_ns_per_logical_attempt": 1.8648130735286097,
+    "fitted_overhead_ns": 1831.2173347011267,
+    "fitted_ns_per_logical_attempt": 1.8516745499232907,
+    "expected_ns_at_2pow_bits": 244533.9039422467,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 501827.359375,
+    "median_ns": 382428.5,
+    "min_ns": 4117,
+    "max_ns": 2201075,
+    "mean_attempts": 270674.71875,
+    "median_ns_per_logical_attempt": 1.8551429632467293,
+    "aggregate_ns_per_logical_attempt": 1.853986813738954,
+    "fitted_overhead_ns": 2165.7680472654174,
+    "fitted_ns_per_logical_attempt": 1.8459633166720288,
+    "expected_ns_at_2pow_bits": 486073.97573293775,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 777578.75,
+    "median_ns": 584160.0,
+    "min_ns": 38102,
+    "max_ns": 2853439,
+    "mean_attempts": 419006.1875,
+    "median_ns_per_logical_attempt": 1.8584981271212384,
+    "aggregate_ns_per_logical_attempt": 1.8557691346741747,
+    "fitted_overhead_ns": 2584.530889138812,
+    "fitted_ns_per_logical_attempt": 1.8496520598655894,
+    "expected_ns_at_2pow_bits": 972334.910051949,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 1906842.21875,
+    "median_ns": 1349348.0,
+    "min_ns": 11703,
+    "max_ns": 4880133,
+    "mean_attempts": 1030273.5,
+    "median_ns_per_logical_attempt": 1.8517676565349723,
+    "aggregate_ns_per_logical_attempt": 1.8508116716095289,
+    "fitted_overhead_ns": 2916.222103569191,
+    "fitted_ns_per_logical_attempt": 1.8479803457644919,
+    "expected_ns_at_2pow_bits": 1940664.061143917,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 4608911.0625,
+    "median_ns": 3676842.0,
+    "min_ns": 224835,
+    "max_ns": 16499429,
+    "mean_attempts": 2494134.84375,
+    "median_ns_per_logical_attempt": 1.8483584435563585,
+    "aggregate_ns_per_logical_attempt": 1.8478997132209485,
+    "fitted_overhead_ns": 2757.379101837054,
+    "fitted_ns_per_logical_attempt": 1.8467248669228944,
+    "expected_ns_at_2pow_bits": 3875620.127218919,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 7230254.0625,
+    "median_ns": 5795205.5,
+    "min_ns": 204838,
+    "max_ns": 31578299,
+    "mean_attempts": 3915394.90625,
+    "median_ns_per_logical_attempt": 1.8466582825613251,
+    "aggregate_ns_per_logical_attempt": 1.8466219208076848,
+    "fitted_overhead_ns": 894.2864306103438,
+    "fitted_ns_per_logical_attempt": 1.8463255139407937,
+    "expected_ns_at_2pow_bits": 7744944.774854537,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 17517941.90625,
+    "median_ns": 15941413.0,
+    "min_ns": 729730,
+    "max_ns": 50809426,
+    "mean_attempts": 9496680.125,
+    "median_ns_per_logical_attempt": 1.8448731924595343,
+    "aggregate_ns_per_logical_attempt": 1.8446385132141112,
+    "fitted_overhead_ns": 3061.6977495532483,
+    "fitted_ns_per_logical_attempt": 1.8442801182082509,
+    "expected_ns_at_2pow_bits": 15474004.651592232,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 2,
+    "kernel": "pcs",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 23992098.78125,
+    "median_ns": 15036015.0,
+    "min_ns": 341016,
+    "max_ns": 88339958,
+    "mean_attempts": 13004434.75,
+    "median_ns_per_logical_attempt": 1.8448636539500376,
+    "aggregate_ns_per_logical_attempt": 1.8449166951489375,
+    "fitted_overhead_ns": 1202.6223641186953,
+    "fitted_ns_per_logical_attempt": 1.8447898792123574,
+    "expected_ns_at_2pow_bits": 30951640.90052375,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 84.515625,
+    "median_ns": 81.0,
+    "min_ns": 80,
+    "max_ns": 91,
+    "mean_attempts": 2.1875,
+    "median_ns_per_logical_attempt": 62.75,
+    "aggregate_ns_per_logical_attempt": 38.635714285714286,
+    "fitted_overhead_ns": 84.515625,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 84.515625,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 85.953125,
+    "median_ns": 81.0,
+    "min_ns": 80,
+    "max_ns": 180,
+    "mean_attempts": 4.984375,
+    "median_ns_per_logical_attempt": 24.583333333333336,
+    "aggregate_ns_per_logical_attempt": 17.244514106583072,
+    "fitted_overhead_ns": 82.53821326821327,
+    "fitted_ns_per_logical_attempt": 0.5033760683760684,
+    "expected_ns_at_2pow_bits": 84.55171754171754,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 89.5625,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 151,
+    "mean_attempts": 7.203125,
+    "median_ns_per_logical_attempt": 13.095238095238095,
+    "aggregate_ns_per_logical_attempt": 12.433839479392624,
+    "fitted_overhead_ns": 78.01031229878008,
+    "fitted_ns_per_logical_attempt": 1.4657401635747522,
+    "expected_ns_at_2pow_bits": 89.7362336073781,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 115.78125,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 301,
+    "mean_attempts": 15.046875,
+    "median_ns_per_logical_attempt": 8.09090909090909,
+    "aggregate_ns_per_logical_attempt": 7.694704049844237,
+    "fitted_overhead_ns": 58.961167771976584,
+    "fitted_ns_per_logical_attempt": 3.7981859531486295,
+    "expected_ns_at_2pow_bits": 119.73214302235465,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 166.328125,
+    "median_ns": 160.0,
+    "min_ns": 80,
+    "max_ns": 481,
+    "mean_attempts": 27.21875,
+    "median_ns_per_logical_attempt": 6.414285714285715,
+    "aggregate_ns_per_logical_attempt": 6.110792192881745,
+    "fitted_overhead_ns": 64.91531252231192,
+    "fitted_ns_per_logical_attempt": 3.7383946463754962,
+    "expected_ns_at_2pow_bits": 184.54394120632782,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 297.53125,
+    "median_ns": 275.0,
+    "min_ns": 90,
+    "max_ns": 1072,
+    "mean_attempts": 67.21875,
+    "median_ns_per_logical_attempt": 4.553030303030303,
+    "aggregate_ns_per_logical_attempt": 4.426313342631334,
+    "fitted_overhead_ns": 57.74928115708167,
+    "fitted_ns_per_logical_attempt": 3.5707262286712127,
+    "expected_ns_at_2pow_bits": 286.27575979203925,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 462.390625,
+    "median_ns": 361.0,
+    "min_ns": 90,
+    "max_ns": 1593,
+    "mean_attempts": 116.6875,
+    "median_ns_per_logical_attempt": 4.144761904761905,
+    "aggregate_ns_per_logical_attempt": 3.962640599892876,
+    "fitted_overhead_ns": 65.24896554823135,
+    "fitted_ns_per_logical_attempt": 3.3945895144422322,
+    "expected_ns_at_2pow_bits": 499.7564233968371,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 936.296875,
+    "median_ns": 636.0,
+    "min_ns": 90,
+    "max_ns": 4118,
+    "mean_attempts": 255.515625,
+    "median_ns_per_logical_attempt": 3.770897264405802,
+    "aggregate_ns_per_logical_attempt": 3.6643429340182228,
+    "fitted_overhead_ns": 67.58889495663175,
+    "fitted_ns_per_logical_attempt": 3.391794231996301,
+    "expected_ns_at_2pow_bits": 935.8882183476848,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1557.875,
+    "median_ns": 1257.5,
+    "min_ns": 100,
+    "max_ns": 5942,
+    "mean_attempts": 440.328125,
+    "median_ns_per_logical_attempt": 3.587257502470484,
+    "aggregate_ns_per_logical_attempt": 3.537986586707356,
+    "fitted_overhead_ns": 61.69728502798762,
+    "fitted_ns_per_logical_attempt": 3.3977730662961037,
+    "expected_ns_at_2pow_bits": 1801.3570949715927,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 2825.953125,
+    "median_ns": 2013.5,
+    "min_ns": 100,
+    "max_ns": 15950,
+    "mean_attempts": 815.375,
+    "median_ns_per_logical_attempt": 3.484277332939744,
+    "aggregate_ns_per_logical_attempt": 3.4658324390617814,
+    "fitted_overhead_ns": 65.5854354222115,
+    "fitted_ns_per_logical_attempt": 3.3860559287344567,
+    "expected_ns_at_2pow_bits": 3532.906706446295,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 8357.71875,
+    "median_ns": 5270.0,
+    "min_ns": 90,
+    "max_ns": 37731,
+    "mean_attempts": 2443.03125,
+    "median_ns_per_logical_attempt": 3.424616965146365,
+    "aggregate_ns_per_logical_attempt": 3.4210445527456925,
+    "fitted_overhead_ns": 59.61656586059871,
+    "fitted_ns_per_logical_attempt": 3.3835126768145893,
+    "expected_ns_at_2pow_bits": 6989.050527976878,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 7025.359375,
+    "median_ns": 4448.0,
+    "min_ns": 662,
+    "max_ns": 27222,
+    "mean_attempts": 4695.34375,
+    "median_ns_per_logical_attempt": 1.6067878585434017,
+    "aggregate_ns_per_logical_attempt": 1.496239625693007,
+    "fitted_overhead_ns": 1615.5738061449665,
+    "fitted_ns_per_logical_attempt": 1.1468958198290826,
+    "expected_ns_at_2pow_bits": 6313.259084164889,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 11162.953125,
+    "median_ns": 9988.5,
+    "min_ns": 1302,
+    "max_ns": 39746,
+    "mean_attempts": 9910.265625,
+    "median_ns_per_logical_attempt": 1.1894418599834538,
+    "aggregate_ns_per_logical_attempt": 1.1264030195961574,
+    "fitted_overhead_ns": 1333.4143221080485,
+    "fitted_ns_per_logical_attempt": 0.9774586669613989,
+    "expected_ns_at_2pow_bits": 9340.755721855829,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 15322.921875,
+    "median_ns": 11416.5,
+    "min_ns": 1373,
+    "max_ns": 58441,
+    "mean_attempts": 16532.15625,
+    "median_ns_per_logical_attempt": 0.9524380792251017,
+    "aggregate_ns_per_logical_attempt": 0.9268556166108096,
+    "fitted_overhead_ns": 1015.1222143672858,
+    "fitted_ns_per_logical_attempt": 0.8643193999407265,
+    "expected_ns_at_2pow_bits": 15176.131262996149,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 30407.234375,
+    "median_ns": 24421.0,
+    "min_ns": 1242,
+    "max_ns": 110630,
+    "mean_attempts": 33823.1875,
+    "median_ns_per_logical_attempt": 0.9048731368179288,
+    "aggregate_ns_per_logical_attempt": 0.8990055823390388,
+    "fitted_overhead_ns": 1085.262931324567,
+    "fitted_ns_per_logical_attempt": 0.8662160792674203,
+    "expected_ns_at_2pow_bits": 29469.431416759395,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 53065.03125,
+    "median_ns": 36739.5,
+    "min_ns": 1383,
+    "max_ns": 204286,
+    "mean_attempts": 59861.484375,
+    "median_ns_per_logical_attempt": 0.8938773603225479,
+    "aggregate_ns_per_logical_attempt": 0.8864636719927645,
+    "fitted_overhead_ns": 1111.5978524385064,
+    "fitted_ns_per_logical_attempt": 0.8662246856118367,
+    "expected_ns_at_2pow_bits": 57880.49884869584,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 102541.25,
+    "median_ns": 53010.0,
+    "min_ns": 3937,
+    "max_ns": 580298,
+    "mean_attempts": 116848.6875,
+    "median_ns_per_logical_attempt": 0.8916437421464778,
+    "aggregate_ns_per_logical_attempt": 0.8775558561579907,
+    "fitted_overhead_ns": 2354.4032986508246,
+    "fitted_ns_per_logical_attempt": 0.8571523477015365,
+    "expected_ns_at_2pow_bits": 114703.07581658661,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 230667.109375,
+    "median_ns": 165969.0,
+    "min_ns": 3857,
+    "max_ns": 966830,
+    "mean_attempts": 265441.046875,
+    "median_ns_per_logical_attempt": 0.8720889684962103,
+    "aggregate_ns_per_logical_attempt": 0.8689956285608851,
+    "fitted_overhead_ns": 2064.349877605884,
+    "fitted_ns_per_logical_attempt": 0.860959493286278,
+    "expected_ns_at_2pow_bits": 227759.71528564394,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 596171.15625,
+    "median_ns": 497010.0,
+    "min_ns": 10980,
+    "max_ns": 2318156,
+    "mean_attempts": 689171.03125,
+    "median_ns_per_logical_attempt": 0.8657297157115077,
+    "aggregate_ns_per_logical_attempt": 0.8650554495430266,
+    "fitted_overhead_ns": 1914.7201199533883,
+    "fitted_ns_per_logical_attempt": 0.8623116566547008,
+    "expected_ns_at_2pow_bits": 454014.37396413315,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 1144752.21875,
+    "median_ns": 849747.5,
+    "min_ns": 14648,
+    "max_ns": 4828095,
+    "mean_attempts": 1322377.5,
+    "median_ns_per_logical_attempt": 0.8670713621672035,
+    "aggregate_ns_per_logical_attempt": 0.8656773264442265,
+    "fitted_overhead_ns": 3033.998885291163,
+    "fitted_ns_per_logical_attempt": 0.8633056808491363,
+    "expected_ns_at_2pow_bits": 908275.6164873551,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 1480638.71875,
+    "median_ns": 1023025.5,
+    "min_ns": 11181,
+    "max_ns": 4911343,
+    "mean_attempts": 1709578.8125,
+    "median_ns_per_logical_attempt": 0.8663591727155677,
+    "aggregate_ns_per_logical_attempt": 0.8660839195736113,
+    "fitted_overhead_ns": 2145.2761422945186,
+    "fitted_ns_per_logical_attempt": 0.8648159382358013,
+    "expected_ns_at_2pow_bits": 1815795.7506453816,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 4776567.15625,
+    "median_ns": 4387732.0,
+    "min_ns": 156847,
+    "max_ns": 13827614,
+    "mean_attempts": 5517202.84375,
+    "median_ns_per_logical_attempt": 0.8659717072907189,
+    "aggregate_ns_per_logical_attempt": 0.8657588440238323,
+    "fitted_overhead_ns": 3147.3077483586967,
+    "fitted_ns_per_logical_attempt": 0.8651505132213825,
+    "expected_ns_at_2pow_bits": 3631851.565954856,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 5551041.65625,
+    "median_ns": 4717997.0,
+    "min_ns": 227291,
+    "max_ns": 16030732,
+    "mean_attempts": 6399521.625,
+    "median_ns_per_logical_attempt": 0.8677063274510567,
+    "aggregate_ns_per_logical_attempt": 0.8674150946790495,
+    "fitted_overhead_ns": 3665.0874522924423,
+    "fitted_ns_per_logical_attempt": 0.8668482952634037,
+    "expected_ns_at_2pow_bits": 7275315.631885243,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "spartan",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 17520526.84375,
+    "median_ns": 12856025.0,
+    "min_ns": 934257,
+    "max_ns": 87372037,
+    "mean_attempts": 20187872.25,
+    "median_ns_per_logical_attempt": 0.8679495891594537,
+    "aggregate_ns_per_logical_attempt": 0.8678738713412455,
+    "fitted_overhead_ns": 521.7791436091065,
+    "fitted_ns_per_logical_attempt": 0.8678445826573643,
+    "expected_ns_at_2pow_bits": 14560537.796816064,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 0,
+    "samples": 64,
+    "mean_ns": 181.125,
+    "median_ns": 180.0,
+    "min_ns": 180,
+    "max_ns": 191,
+    "mean_attempts": 1,
+    "median_ns_per_logical_attempt": 180.0,
+    "aggregate_ns_per_logical_attempt": 181.125,
+    "fitted_overhead_ns": 181.125,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 181.125,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 254.609375,
+    "median_ns": 251.0,
+    "min_ns": 250,
+    "max_ns": 261,
+    "mean_attempts": 1.890625,
+    "median_ns_per_logical_attempt": 250.0,
+    "aggregate_ns_per_logical_attempt": 134.6694214876033,
+    "fitted_overhead_ns": 254.609375,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 254.609375,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 258.6875,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 331,
+    "mean_attempts": 4.546875,
+    "median_ns_per_logical_attempt": 65.25,
+    "aggregate_ns_per_logical_attempt": 56.893470790378004,
+    "fitted_overhead_ns": 251.4846435849407,
+    "fitted_ns_per_logical_attempt": 1.423008391686467,
+    "expected_ns_at_2pow_bits": 257.1766771516866,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 267.28125,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 401,
+    "mean_attempts": 8.234375,
+    "median_ns_per_logical_attempt": 42.583333333333336,
+    "aggregate_ns_per_logical_attempt": 32.45920303605313,
+    "fitted_overhead_ns": 239.43348676507696,
+    "fitted_ns_per_logical_attempt": 3.3275809821162827,
+    "expected_ns_at_2pow_bits": 266.0541346220072,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 294.40625,
+    "median_ns": 261.0,
+    "min_ns": 250,
+    "max_ns": 631,
+    "mean_attempts": 14.453125,
+    "median_ns_per_logical_attempt": 26.6,
+    "aggregate_ns_per_logical_attempt": 20.36972972972973,
+    "fitted_overhead_ns": 229.87931180168226,
+    "fitted_ns_per_logical_attempt": 4.515317126990455,
+    "expected_ns_at_2pow_bits": 302.1243858335296,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 340.125,
+    "median_ns": 330.0,
+    "min_ns": 251,
+    "max_ns": 782,
+    "mean_attempts": 26.734375,
+    "median_ns_per_logical_attempt": 16.55,
+    "aggregate_ns_per_logical_attempt": 12.722384570426652,
+    "fitted_overhead_ns": 230.49190052939804,
+    "fitted_ns_per_logical_attempt": 4.098799640269226,
+    "expected_ns_at_2pow_bits": 361.65348901801326,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 472.1875,
+    "median_ns": 391.0,
+    "min_ns": 260,
+    "max_ns": 1262,
+    "mean_attempts": 62.09375,
+    "median_ns_per_logical_attempt": 8.677777777777777,
+    "aggregate_ns_per_logical_attempt": 7.604428787116255,
+    "fitted_overhead_ns": 229.37109701743336,
+    "fitted_ns_per_logical_attempt": 3.909805955157452,
+    "expected_ns_at_2pow_bits": 479.5986781475103,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 714.484375,
+    "median_ns": 511.0,
+    "min_ns": 270,
+    "max_ns": 2775,
+    "mean_attempts": 118.140625,
+    "median_ns_per_logical_attempt": 7.020833333333333,
+    "aggregate_ns_per_logical_attempt": 6.0477450072741705,
+    "fitted_overhead_ns": 237.36975716522375,
+    "fitted_ns_per_logical_attempt": 3.8019891938547214,
+    "expected_ns_at_2pow_bits": 724.0243739786281,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1228.640625,
+    "median_ns": 1052.0,
+    "min_ns": 270,
+    "max_ns": 3466,
+    "mean_attempts": 263.953125,
+    "median_ns_per_logical_attempt": 4.900187904860802,
+    "aggregate_ns_per_logical_attempt": 4.654768247202983,
+    "fitted_overhead_ns": 236.83571929579205,
+    "fitted_ns_per_logical_attempt": 3.756537475814763,
+    "expected_ns_at_2pow_bits": 1198.5093131043714,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 2025.75,
+    "median_ns": 1277.0,
+    "min_ns": 270,
+    "max_ns": 7234,
+    "mean_attempts": 477.84375,
+    "median_ns_per_logical_attempt": 4.6566305916305915,
+    "aggregate_ns_per_logical_attempt": 4.239356484206396,
+    "fitted_overhead_ns": 243.17021851779987,
+    "fitted_ns_per_logical_attempt": 3.729548035064218,
+    "expected_ns_at_2pow_bits": 2152.6988124706795,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3645.09375,
+    "median_ns": 2770.0,
+    "min_ns": 261,
+    "max_ns": 14397,
+    "mean_attempts": 918.265625,
+    "median_ns_per_logical_attempt": 4.062034849707858,
+    "aggregate_ns_per_logical_attempt": 3.9695417652163556,
+    "fitted_overhead_ns": 239.43643025089614,
+    "fitted_ns_per_logical_attempt": 3.710371387818139,
+    "expected_ns_at_2pow_bits": 4038.8567313766703,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 6684.53125,
+    "median_ns": 5580.5,
+    "min_ns": 260,
+    "max_ns": 34235,
+    "mean_attempts": 1738.765625,
+    "median_ns_per_logical_attempt": 3.8628427444703837,
+    "aggregate_ns_per_logical_attempt": 3.844411894213747,
+    "fitted_overhead_ns": 237.76852982678338,
+    "fitted_ns_per_logical_attempt": 3.6921384119936884,
+    "expected_ns_at_2pow_bits": 7799.267997589857,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 5402.59375,
+    "median_ns": 4468.5,
+    "min_ns": 1403,
+    "max_ns": 24336,
+    "mean_attempts": 3588.171875,
+    "median_ns_per_logical_attempt": 1.7392141879004255,
+    "aggregate_ns_per_logical_attempt": 1.5056674925863187,
+    "fitted_overhead_ns": 1582.3686174833874,
+    "fitted_ns_per_logical_attempt": 0.9340302086230222,
+    "expected_ns_at_2pow_bits": 5408.156352003287,
+    "strongly_downweighted_samples": 11,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 14573.40625,
+    "median_ns": 12509.0,
+    "min_ns": 2515,
+    "max_ns": 53211,
+    "mean_attempts": 8746.609375,
+    "median_ns_per_logical_attempt": 1.7630672944044914,
+    "aggregate_ns_per_logical_attempt": 1.6661777867495082,
+    "fitted_overhead_ns": 1906.1829652102915,
+    "fitted_ns_per_logical_attempt": 1.491548119678339,
+    "expected_ns_at_2pow_bits": 14124.945161615244,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 17462.140625,
+    "median_ns": 9854.0,
+    "min_ns": 1543,
+    "max_ns": 79650,
+    "mean_attempts": 17195.78125,
+    "median_ns_per_logical_attempt": 1.0846884830263614,
+    "aggregate_ns_per_logical_attempt": 1.015489809455444,
+    "fitted_overhead_ns": 1292.0148658053713,
+    "fitted_ns_per_logical_attempt": 0.9407180152890123,
+    "expected_ns_at_2pow_bits": 16704.73882830055,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 32807.46875,
+    "median_ns": 29470.5,
+    "min_ns": 1493,
+    "max_ns": 104788,
+    "mean_attempts": 33204.78125,
+    "median_ns_per_logical_attempt": 0.995898099951781,
+    "aggregate_ns_per_logical_attempt": 0.9880344792212717,
+    "fitted_overhead_ns": 1217.0419607347903,
+    "fitted_ns_per_logical_attempt": 0.9510846707452111,
+    "expected_ns_at_2pow_bits": 32382.184451713867,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 62934.359375,
+    "median_ns": 43241.5,
+    "min_ns": 2635,
+    "max_ns": 329463,
+    "mean_attempts": 64842.609375,
+    "median_ns_per_logical_attempt": 0.9853687751132403,
+    "aggregate_ns_per_logical_attempt": 0.9705710485991681,
+    "fitted_overhead_ns": 1339.6908168212249,
+    "fitted_ns_per_logical_attempt": 0.9489372578902655,
+    "expected_ns_at_2pow_bits": 63529.242949917665,
+    "strongly_downweighted_samples": 6,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 133270.109375,
+    "median_ns": 107573.5,
+    "min_ns": 4298,
+    "max_ns": 520425,
+    "mean_attempts": 139218.34375,
+    "median_ns_per_logical_attempt": 0.9655293483729814,
+    "aggregate_ns_per_logical_attempt": 0.9572740616302584,
+    "fitted_overhead_ns": 3273.941928713466,
+    "fitted_ns_per_logical_attempt": 0.9339321704138176,
+    "expected_ns_at_2pow_bits": 125686.29936919337,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 256019.09375,
+    "median_ns": 194963.5,
+    "min_ns": 4468,
+    "max_ns": 1115691,
+    "mean_attempts": 270674.71875,
+    "median_ns_per_logical_attempt": 0.9493604485127596,
+    "aggregate_ns_per_logical_attempt": 0.9458552129741522,
+    "fitted_overhead_ns": 2497.5474819611118,
+    "fitted_ns_per_logical_attempt": 0.9362469546670338,
+    "expected_ns_at_2pow_bits": 247929.06916619602,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 394571.3125,
+    "median_ns": 295965.5,
+    "min_ns": 19577,
+    "max_ns": 1445866,
+    "mean_attempts": 419006.1875,
+    "median_ns_per_logical_attempt": 0.9431443515565738,
+    "aggregate_ns_per_logical_attempt": 0.9416837370689186,
+    "fitted_overhead_ns": 2791.8249549498432,
+    "fitted_ns_per_logical_attempt": 0.9350125012735551,
+    "expected_ns_at_2pow_bits": 493007.6592226595,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 966709.65625,
+    "median_ns": 685406.5,
+    "min_ns": 8145,
+    "max_ns": 2471506,
+    "mean_attempts": 1030273.5,
+    "median_ns_per_logical_attempt": 0.9392561088018784,
+    "aggregate_ns_per_logical_attempt": 0.9383039127474404,
+    "fitted_overhead_ns": 3175.2028944813646,
+    "fitted_ns_per_logical_attempt": 0.9352977955340431,
+    "expected_ns_at_2pow_bits": 983906.0241443862,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 2335483.5625,
+    "median_ns": 1866175.5,
+    "min_ns": 115578,
+    "max_ns": 8356091,
+    "mean_attempts": 2494134.84375,
+    "median_ns_per_logical_attempt": 0.9370383582831008,
+    "aggregate_ns_per_logical_attempt": 0.9363902550627682,
+    "fitted_overhead_ns": 3451.365304628387,
+    "fitted_ns_per_logical_attempt": 0.934944812163297,
+    "expected_ns_at_2pow_bits": 1964172.748022511,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 3665038.875,
+    "median_ns": 2938980.5,
+    "min_ns": 104337,
+    "max_ns": 15988061,
+    "mean_attempts": 3915394.90625,
+    "median_ns_per_logical_attempt": 0.9363424106476329,
+    "aggregate_ns_per_logical_attempt": 0.9360585490749948,
+    "fitted_overhead_ns": 4266.408247719519,
+    "fitted_ns_per_logical_attempt": 0.9348952166417628,
+    "expected_ns_at_2pow_bits": 3925501.1549891317,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 8884768.0625,
+    "median_ns": 8088003.5,
+    "min_ns": 372164,
+    "max_ns": 25758307,
+    "mean_attempts": 9496680.125,
+    "median_ns_per_logical_attempt": 0.9355773311183104,
+    "aggregate_ns_per_logical_attempt": 0.9355656866983292,
+    "fitted_overhead_ns": 3226.6719542481005,
+    "fitted_ns_per_logical_attempt": 0.9352185701468854,
+    "expected_ns_at_2pow_bits": 7848408.651236972,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 4,
+    "kernel": "pcs",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 12163024.15625,
+    "median_ns": 7624030.5,
+    "min_ns": 178197,
+    "max_ns": 44760531,
+    "mean_attempts": 13004434.75,
+    "median_ns_per_logical_attempt": 0.9354712673146364,
+    "aggregate_ns_per_logical_attempt": 0.9352981802034879,
+    "fitted_overhead_ns": 4297.975451963022,
+    "fitted_ns_per_logical_attempt": 0.934954908878031,
+    "expected_ns_at_2pow_bits": 15690238.431959007,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 86.203125,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 91,
+    "mean_attempts": 2.1875,
+    "median_ns_per_logical_attempt": 62.75,
+    "aggregate_ns_per_logical_attempt": 39.40714285714286,
+    "fitted_overhead_ns": 85.70060834298957,
+    "fitted_ns_per_logical_attempt": 0.2297219003476245,
+    "expected_ns_at_2pow_bits": 86.16005214368482,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 87.765625,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 180,
+    "mean_attempts": 4.984375,
+    "median_ns_per_logical_attempt": 24.583333333333336,
+    "aggregate_ns_per_logical_attempt": 17.608150470219435,
+    "fitted_overhead_ns": 84.14814407814409,
+    "fitted_ns_per_logical_attempt": 0.5529487179487184,
+    "expected_ns_at_2pow_bits": 86.35993894993896,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 90.125,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 170,
+    "mean_attempts": 7.203125,
+    "median_ns_per_logical_attempt": 13.095238095238095,
+    "aggregate_ns_per_logical_attempt": 12.511930585683297,
+    "fitted_overhead_ns": 78.36037476454113,
+    "fitted_ns_per_logical_attempt": 1.4288881951187398,
+    "expected_ns_at_2pow_bits": 89.79148032549105,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 118.46875,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 300,
+    "mean_attempts": 15.046875,
+    "median_ns_per_logical_attempt": 8.285353535353536,
+    "aggregate_ns_per_logical_attempt": 7.87331256490135,
+    "fitted_overhead_ns": 60.48664850152265,
+    "fitted_ns_per_logical_attempt": 3.854957225138397,
+    "expected_ns_at_2pow_bits": 122.165964103737,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 169.4375,
+    "median_ns": 160.0,
+    "min_ns": 80,
+    "max_ns": 481,
+    "mean_attempts": 27.21875,
+    "median_ns_per_logical_attempt": 6.722408026755852,
+    "aggregate_ns_per_logical_attempt": 6.225028702640643,
+    "fitted_overhead_ns": 66.44242196101139,
+    "fitted_ns_per_logical_attempt": 3.7878446296424753,
+    "expected_ns_at_2pow_bits": 187.6534501095706,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 302.296875,
+    "median_ns": 285.5,
+    "min_ns": 90,
+    "max_ns": 1082,
+    "mean_attempts": 67.21875,
+    "median_ns_per_logical_attempt": 4.6184385382059805,
+    "aggregate_ns_per_logical_attempt": 4.49721059972106,
+    "fitted_overhead_ns": 60.14908625998834,
+    "fitted_ns_per_logical_attempt": 3.6080971548635947,
+    "expected_ns_at_2pow_bits": 291.0673041712584,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 468.703125,
+    "median_ns": 371.0,
+    "min_ns": 90,
+    "max_ns": 1603,
+    "mean_attempts": 116.6875,
+    "median_ns_per_logical_attempt": 4.217603668261563,
+    "aggregate_ns_per_logical_attempt": 4.01673808248527,
+    "fitted_overhead_ns": 65.4675855557137,
+    "fitted_ns_per_logical_attempt": 3.4493445817919146,
+    "expected_ns_at_2pow_bits": 506.98369202507877,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 953.671875,
+    "median_ns": 651.5,
+    "min_ns": 90,
+    "max_ns": 4198,
+    "mean_attempts": 255.515625,
+    "median_ns_per_logical_attempt": 3.8532655499069364,
+    "aggregate_ns_per_logical_attempt": 3.732342689414786,
+    "fitted_overhead_ns": 69.485629641429,
+    "fitted_ns_per_logical_attempt": 3.4568926046246546,
+    "expected_ns_at_2pow_bits": 954.4501364253406,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1582.703125,
+    "median_ns": 1277.5,
+    "min_ns": 90,
+    "max_ns": 6041,
+    "mean_attempts": 440.328125,
+    "median_ns_per_logical_attempt": 3.646963463952029,
+    "aggregate_ns_per_logical_attempt": 3.5943720946737163,
+    "fitted_overhead_ns": 61.5361624908503,
+    "fitted_ns_per_logical_attempt": 3.454450685686026,
+    "expected_ns_at_2pow_bits": 1830.2149135620957,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 2872.875,
+    "median_ns": 2054.0,
+    "min_ns": 100,
+    "max_ns": 16231,
+    "mean_attempts": 815.375,
+    "median_ns_per_logical_attempt": 3.5435301668806165,
+    "aggregate_ns_per_logical_attempt": 3.5233788134294035,
+    "fitted_overhead_ns": 67.22153943004969,
+    "fitted_ns_per_logical_attempt": 3.441080597298164,
+    "expected_ns_at_2pow_bits": 3590.88807106337,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 8505.515625,
+    "median_ns": 5355.5,
+    "min_ns": 90,
+    "max_ns": 38393,
+    "mean_attempts": 2443.03125,
+    "median_ns_per_logical_attempt": 3.486223697826837,
+    "aggregate_ns_per_logical_attempt": 3.481541885720864,
+    "fitted_overhead_ns": 62.140819640711925,
+    "fitted_ns_per_logical_attempt": 3.4415888181822027,
+    "expected_ns_at_2pow_bits": 7110.514719277863,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 4302.34375,
+    "median_ns": 2945.5,
+    "min_ns": 1503,
+    "max_ns": 11792,
+    "mean_attempts": 4695.34375,
+    "median_ns_per_logical_attempt": 1.0621346292176652,
+    "aggregate_ns_per_logical_attempt": 0.9163000579031088,
+    "fitted_overhead_ns": 2002.2151109418242,
+    "fitted_ns_per_logical_attempt": 0.4843950993647748,
+    "expected_ns_at_2pow_bits": 3986.297437939942,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 7532.84375,
+    "median_ns": 6387.0,
+    "min_ns": 2375,
+    "max_ns": 23926,
+    "mean_attempts": 9910.265625,
+    "median_ns_per_logical_attempt": 0.7698330237577542,
+    "aggregate_ns_per_logical_attempt": 0.7601051308854297,
+    "fitted_overhead_ns": 2042.6978434407256,
+    "fitted_ns_per_logical_attempt": 0.5425942402513418,
+    "expected_ns_at_2pow_bits": 6487.629859579718,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 9471.03125,
+    "median_ns": 7409.5,
+    "min_ns": 1372,
+    "max_ns": 37461,
+    "mean_attempts": 16532.15625,
+    "median_ns_per_logical_attempt": 0.6006388366297283,
+    "aggregate_ns_per_logical_attempt": 0.5728854183797107,
+    "fitted_overhead_ns": 1534.9916996329284,
+    "fitted_ns_per_logical_attempt": 0.46994522655475185,
+    "expected_ns_at_2pow_bits": 9234.574291505982,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 16460.484375,
+    "median_ns": 13300.0,
+    "min_ns": 1563,
+    "max_ns": 59873,
+    "mean_attempts": 33823.1875,
+    "median_ns_per_logical_attempt": 0.49547345043869373,
+    "aggregate_ns_per_logical_attempt": 0.4866627184383494,
+    "fitted_overhead_ns": 1438.903367756373,
+    "fitted_ns_per_logical_attempt": 0.4432868254702166,
+    "expected_ns_at_2pow_bits": 15964.52606476443,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 28053.375,
+    "median_ns": 19937.5,
+    "min_ns": 1402,
+    "max_ns": 105720,
+    "mean_attempts": 59861.484375,
+    "median_ns_per_logical_attempt": 0.4807227420117739,
+    "aggregate_ns_per_logical_attempt": 0.4686381450927728,
+    "fitted_overhead_ns": 1488.1544684840264,
+    "fitted_ns_per_logical_attempt": 0.44365966409929536,
+    "expected_ns_at_2pow_bits": 30563.834214895447,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 53548.15625,
+    "median_ns": 29060.0,
+    "min_ns": 4078,
+    "max_ns": 295249,
+    "mean_attempts": 116848.6875,
+    "median_ns_per_logical_attempt": 0.4808359318690908,
+    "aggregate_ns_per_logical_attempt": 0.45826921461997594,
+    "fitted_overhead_ns": 2969.652485686136,
+    "fitted_ns_per_logical_attempt": 0.433179483976659,
+    "expected_ns_at_2pow_bits": 59747.353809474786,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 117860.96875,
+    "median_ns": 83874.0,
+    "min_ns": 4228,
+    "max_ns": 487101,
+    "mean_attempts": 265441.046875,
+    "median_ns_per_logical_attempt": 0.4473667810325118,
+    "aggregate_ns_per_logical_attempt": 0.44401937883217596,
+    "fitted_overhead_ns": 2466.8370327889133,
+    "fitted_ns_per_logical_attempt": 0.4343993420397066,
+    "expected_ns_at_2pow_bits": 116342.01815244576,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 302155.9375,
+    "median_ns": 251260.5,
+    "min_ns": 7614,
+    "max_ns": 1170395,
+    "mean_attempts": 689171.03125,
+    "median_ns_per_logical_attempt": 0.43841248264089805,
+    "aggregate_ns_per_logical_attempt": 0.43843389202235855,
+    "fitted_overhead_ns": 2429.5051980427816,
+    "fitted_ns_per_logical_attempt": 0.43488448610603175,
+    "expected_ns_at_2pow_bits": 230434.22264960196,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 578993.84375,
+    "median_ns": 430594.5,
+    "min_ns": 7624,
+    "max_ns": 2438244,
+    "mean_attempts": 1322377.5,
+    "median_ns_per_logical_attempt": 0.43902693310864854,
+    "aggregate_ns_per_logical_attempt": 0.43784308470916966,
+    "fitted_overhead_ns": 2783.083125772886,
+    "fitted_ns_per_logical_attempt": 0.435770289479494,
+    "expected_ns_at_2pow_bits": 459721.35018702276,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 749345.28125,
+    "median_ns": 520349.5,
+    "min_ns": 7654,
+    "max_ns": 2478239,
+    "mean_attempts": 1709578.8125,
+    "median_ns_per_logical_attempt": 0.4388508745547267,
+    "aggregate_ns_per_logical_attempt": 0.43832157708728037,
+    "fitted_overhead_ns": 3822.9615300493315,
+    "fitted_ns_per_logical_attempt": 0.436059816339329,
+    "expected_ns_at_2pow_bits": 918306.6774857058,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 2415597.0625,
+    "median_ns": 2218682.5,
+    "min_ns": 79841,
+    "max_ns": 6987401,
+    "mean_attempts": 5517202.84375,
+    "median_ns_per_logical_attempt": 0.4381286206164574,
+    "aggregate_ns_per_logical_attempt": 0.43783002563272394,
+    "fitted_overhead_ns": 3784.669408911839,
+    "fitted_ns_per_logical_attempt": 0.4371676531638508,
+    "expected_ns_at_2pow_bits": 1837398.705744664,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 2807180.3125,
+    "median_ns": 2382413.5,
+    "min_ns": 118634,
+    "max_ns": 8099956,
+    "mean_attempts": 6399521.625,
+    "median_ns_per_logical_attempt": 0.43887092263113936,
+    "aggregate_ns_per_logical_attempt": 0.43865471155431873,
+    "fitted_overhead_ns": 3567.8371977983043,
+    "fitted_ns_per_logical_attempt": 0.43810974375055195,
+    "expected_ns_at_2pow_bits": 3678698.7385016284,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "spartan",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 8862140.625,
+    "median_ns": 6505364.0,
+    "min_ns": 477394,
+    "max_ns": 44164144,
+    "mean_attempts": 20187872.25,
+    "median_ns_per_logical_attempt": 0.43911035120192377,
+    "aggregate_ns_per_logical_attempt": 0.4389833913774643,
+    "fitted_overhead_ns": 4042.6187829375267,
+    "fitted_ns_per_logical_attempt": 0.438847864783932,
+    "expected_ns_at_2pow_bits": 7366688.037401758,
+    "strongly_downweighted_samples": 6,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 0,
+    "samples": 64,
+    "mean_ns": 182.984375,
+    "median_ns": 181.0,
+    "min_ns": 180,
+    "max_ns": 191,
+    "mean_attempts": 1,
+    "median_ns_per_logical_attempt": 181.0,
+    "aggregate_ns_per_logical_attempt": 182.984375,
+    "fitted_overhead_ns": 182.984375,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 182.984375,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 257.890625,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 261,
+    "mean_attempts": 1.890625,
+    "median_ns_per_logical_attempt": 250.0,
+    "aggregate_ns_per_logical_attempt": 136.40495867768595,
+    "fitted_overhead_ns": 257.890625,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 257.890625,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 259.359375,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 351,
+    "mean_attempts": 4.546875,
+    "median_ns_per_logical_attempt": 65.125,
+    "aggregate_ns_per_logical_attempt": 57.04123711340206,
+    "fitted_overhead_ns": 253.1803692007205,
+    "fitted_ns_per_logical_attempt": 1.0984684383952215,
+    "expected_ns_at_2pow_bits": 257.5742429543014,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 270.5625,
+    "median_ns": 260.0,
+    "min_ns": 250,
+    "max_ns": 431,
+    "mean_attempts": 8.234375,
+    "median_ns_per_logical_attempt": 43.41666666666667,
+    "aggregate_ns_per_logical_attempt": 32.85768500948767,
+    "fitted_overhead_ns": 242.1760380544308,
+    "fitted_ns_per_logical_attempt": 3.3927812778010202,
+    "expected_ns_at_2pow_bits": 269.3182882768389,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 296.828125,
+    "median_ns": 261.0,
+    "min_ns": 250,
+    "max_ns": 611,
+    "mean_attempts": 14.453125,
+    "median_ns_per_logical_attempt": 26.5,
+    "aggregate_ns_per_logical_attempt": 20.537297297297297,
+    "fitted_overhead_ns": 232.6725131219872,
+    "fitted_ns_per_logical_attempt": 4.484257264678995,
+    "expected_ns_at_2pow_bits": 304.4206293568511,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 343.296875,
+    "median_ns": 330.0,
+    "min_ns": 250,
+    "max_ns": 802,
+    "mean_attempts": 26.734375,
+    "median_ns_per_logical_attempt": 16.5,
+    "aggregate_ns_per_logical_attempt": 12.84102863822326,
+    "fitted_overhead_ns": 232.372791530215,
+    "fitted_ns_per_logical_attempt": 4.154729815049266,
+    "expected_ns_at_2pow_bits": 365.32414561179155,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 476.421875,
+    "median_ns": 401.0,
+    "min_ns": 270,
+    "max_ns": 1243,
+    "mean_attempts": 62.09375,
+    "median_ns_per_logical_attempt": 8.82789598108747,
+    "aggregate_ns_per_logical_attempt": 7.672622043281328,
+    "fitted_overhead_ns": 233.44295672747285,
+    "fitted_ns_per_logical_attempt": 3.911005665584467,
+    "expected_ns_at_2pow_bits": 483.74731932487873,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 692.625,
+    "median_ns": 511.0,
+    "min_ns": 270,
+    "max_ns": 2795,
+    "mean_attempts": 118.140625,
+    "median_ns_per_logical_attempt": 7.001313813813814,
+    "aggregate_ns_per_logical_attempt": 5.862716571882026,
+    "fitted_overhead_ns": 240.58527765463788,
+    "fitted_ns_per_logical_attempt": 3.824081824493688,
+    "expected_ns_at_2pow_bits": 730.06775118983,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1240.3125,
+    "median_ns": 1057.0,
+    "min_ns": 261,
+    "max_ns": 3457,
+    "mean_attempts": 263.953125,
+    "median_ns_per_logical_attempt": 4.944271374177916,
+    "aggregate_ns_per_logical_attempt": 4.698987746403836,
+    "fitted_overhead_ns": 241.02822527370915,
+    "fitted_ns_per_logical_attempt": 3.78708349844831,
+    "expected_ns_at_2pow_bits": 1210.5216008764764,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 2046.875,
+    "median_ns": 1288.0,
+    "min_ns": 270,
+    "max_ns": 7324,
+    "mean_attempts": 477.84375,
+    "median_ns_per_logical_attempt": 4.732472137791287,
+    "aggregate_ns_per_logical_attempt": 4.283565496043424,
+    "fitted_overhead_ns": 246.1011745318574,
+    "fitted_ns_per_logical_attempt": 3.768416478844086,
+    "expected_ns_at_2pow_bits": 2175.5304117000296,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3726.75,
+    "median_ns": 2845.0,
+    "min_ns": 271,
+    "max_ns": 14698,
+    "mean_attempts": 918.265625,
+    "median_ns_per_logical_attempt": 4.157201434429157,
+    "aggregate_ns_per_logical_attempt": 4.0584661981657,
+    "fitted_overhead_ns": 248.42877985031555,
+    "fitted_ns_per_logical_attempt": 3.7882150495954865,
+    "expected_ns_at_2pow_bits": 4127.560990636093,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 6854.203125,
+    "median_ns": 5720.5,
+    "min_ns": 271,
+    "max_ns": 35077,
+    "mean_attempts": 1738.765625,
+    "median_ns_per_logical_attempt": 3.9693601094076154,
+    "aggregate_ns_per_logical_attempt": 3.941993691645474,
+    "fitted_overhead_ns": 244.22540561033384,
+    "fitted_ns_per_logical_attempt": 3.7820862385774614,
+    "expected_ns_at_2pow_bits": 7989.938022216975,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 3331.515625,
+    "median_ns": 2700.0,
+    "min_ns": 1613,
+    "max_ns": 13446,
+    "mean_attempts": 3588.171875,
+    "median_ns_per_logical_attempt": 1.2501040119773208,
+    "aggregate_ns_per_logical_attempt": 0.9284715841545356,
+    "fitted_overhead_ns": 1600.794280938455,
+    "fitted_ns_per_logical_attempt": 0.4789171310260608,
+    "expected_ns_at_2pow_bits": 3562.4388496212,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 9116.125,
+    "median_ns": 7849.5,
+    "min_ns": 2785,
+    "max_ns": 28414,
+    "mean_attempts": 8746.609375,
+    "median_ns_per_logical_attempt": 1.1048944926013484,
+    "aggregate_ns_per_logical_attempt": 1.0422467277498602,
+    "fitted_overhead_ns": 2414.848539735888,
+    "fitted_ns_per_logical_attempt": 0.7594484592510672,
+    "expected_ns_at_2pow_bits": 8636.25031792063,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 11495.515625,
+    "median_ns": 7023.5,
+    "min_ns": 1684,
+    "max_ns": 65394,
+    "mean_attempts": 17195.78125,
+    "median_ns_per_logical_attempt": 0.7908976111894263,
+    "aggregate_ns_per_logical_attempt": 0.668507900738735,
+    "fitted_overhead_ns": 1816.619491287841,
+    "fitted_ns_per_logical_attempt": 0.48600184961253934,
+    "expected_ns_at_2pow_bits": 9779.273795339686,
+    "strongly_downweighted_samples": 11,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 17506.109375,
+    "median_ns": 16120.0,
+    "min_ns": 1893,
+    "max_ns": 53612,
+    "mean_attempts": 33204.78125,
+    "median_ns_per_logical_attempt": 0.5359336454602623,
+    "aggregate_ns_per_logical_attempt": 0.5272165247286489,
+    "fitted_overhead_ns": 1661.889218122944,
+    "fitted_ns_per_logical_attempt": 0.47680950302081576,
+    "expected_ns_at_2pow_bits": 17285.983013109035,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 32655.1875,
+    "median_ns": 22898.0,
+    "min_ns": 1944,
+    "max_ns": 167567,
+    "mean_attempts": 64842.609375,
+    "median_ns_per_logical_attempt": 0.5165798822756926,
+    "aggregate_ns_per_logical_attempt": 0.5036069309170981,
+    "fitted_overhead_ns": 1612.8446145505513,
+    "fitted_ns_per_logical_attempt": 0.47869256032309065,
+    "expected_ns_at_2pow_bits": 32984.44024788462,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 69119.6875,
+    "median_ns": 55761.0,
+    "min_ns": 4519,
+    "max_ns": 264160,
+    "mean_attempts": 139218.34375,
+    "median_ns_per_logical_attempt": 0.4976054709264951,
+    "aggregate_ns_per_logical_attempt": 0.4964840525909503,
+    "fitted_overhead_ns": 3149.3853890400496,
+    "fitted_ns_per_logical_attempt": 0.47393456863880357,
+    "expected_ns_at_2pow_bits": 65268.93716966531,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 130980.828125,
+    "median_ns": 99443.5,
+    "min_ns": 4509,
+    "max_ns": 566261,
+    "mean_attempts": 270674.71875,
+    "median_ns_per_logical_attempt": 0.4852814669509211,
+    "aggregate_ns_per_logical_attempt": 0.4839049200083449,
+    "fitted_overhead_ns": 2632.3377166714927,
+    "fitted_ns_per_logical_attempt": 0.47385535406882334,
+    "expected_ns_at_2pow_bits": 126850.67565368912,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 201311.6875,
+    "median_ns": 150635.0,
+    "min_ns": 12293,
+    "max_ns": 733628,
+    "mean_attempts": 419006.1875,
+    "median_ns_per_logical_attempt": 0.48110805431081194,
+    "aggregate_ns_per_logical_attempt": 0.48045039311024496,
+    "fitted_overhead_ns": 3224.3510171200614,
+    "fitted_ns_per_logical_attempt": 0.472717414538608,
+    "expected_ns_at_2pow_bits": 251064.41885073777,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 491133.15625,
+    "median_ns": 347647.5,
+    "min_ns": 4508,
+    "max_ns": 1252530,
+    "mean_attempts": 1030273.5,
+    "median_ns_per_logical_attempt": 0.47732612750800374,
+    "aggregate_ns_per_logical_attempt": 0.4767017265318384,
+    "fitted_overhead_ns": 3381.253330517793,
+    "fitted_ns_per_logical_attempt": 0.4733445789677649,
+    "expected_ns_at_2pow_bits": 499719.0185662208,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 1184406.65625,
+    "median_ns": 946275.0,
+    "min_ns": 58871,
+    "max_ns": 4238039,
+    "mean_attempts": 2494134.84375,
+    "median_ns_per_logical_attempt": 0.4753117327722608,
+    "aggregate_ns_per_logical_attempt": 0.4748767530424346,
+    "fitted_overhead_ns": 3243.259902788559,
+    "fitted_ns_per_logical_attempt": 0.47358228866676,
+    "expected_ns_at_2pow_bits": 996417.3037448616,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 1858750.09375,
+    "median_ns": 1487941.0,
+    "min_ns": 55435,
+    "max_ns": 8102932,
+    "mean_attempts": 3915394.90625,
+    "median_ns_per_logical_attempt": 0.4752219137655832,
+    "aggregate_ns_per_logical_attempt": 0.47472863868289406,
+    "fitted_overhead_ns": 4207.736382831121,
+    "fitted_ns_per_logical_attempt": 0.47357369189568443,
+    "expected_ns_at_2pow_bits": 1990519.766595668,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 4502449.125,
+    "median_ns": 4100463.0,
+    "min_ns": 191252,
+    "max_ns": 13047797,
+    "mean_attempts": 9496680.125,
+    "median_ns_per_logical_attempt": 0.4741924474145116,
+    "aggregate_ns_per_logical_attempt": 0.47410769508254863,
+    "fitted_overhead_ns": 4242.7506858911365,
+    "fitted_ns_per_logical_attempt": 0.4736596688031397,
+    "expected_ns_at_2pow_bits": 3977588.0376852592,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 8,
+    "kernel": "pcs",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 6166207.28125,
+    "median_ns": 3864677.5,
+    "min_ns": 93597,
+    "max_ns": 22682978,
+    "mean_attempts": 13004434.75,
+    "median_ns_per_logical_attempt": 0.47424470341326985,
+    "aggregate_ns_per_logical_attempt": 0.4741618839873067,
+    "fitted_overhead_ns": 5232.041735894047,
+    "fitted_ns_per_logical_attempt": 0.473757853579008,
+    "expected_ns_at_2pow_bits": 7953569.882927285,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 86.578125,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 91,
+    "mean_attempts": 2.1875,
+    "median_ns_per_logical_attempt": 62.5,
+    "aggregate_ns_per_logical_attempt": 39.57857142857143,
+    "fitted_overhead_ns": 86.0502607184241,
+    "fitted_ns_per_logical_attempt": 0.24130938586326764,
+    "expected_ns_at_2pow_bits": 86.53287949015063,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 89.421875,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 170,
+    "mean_attempts": 4.984375,
+    "median_ns_per_logical_attempt": 24.583333333333336,
+    "aggregate_ns_per_logical_attempt": 17.940438871473354,
+    "fitted_overhead_ns": 85.39910052910051,
+    "fitted_ns_per_logical_attempt": 0.6794444444444497,
+    "expected_ns_at_2pow_bits": 88.1168783068783,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 90.015625,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 161,
+    "mean_attempts": 7.203125,
+    "median_ns_per_logical_attempt": 13.333333333333334,
+    "aggregate_ns_per_logical_attempt": 12.496746203904555,
+    "fitted_overhead_ns": 80.34738288538617,
+    "fitted_ns_per_logical_attempt": 1.0940974391612848,
+    "expected_ns_at_2pow_bits": 89.10016239867645,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 119.5625,
+    "median_ns": 90.0,
+    "min_ns": 80,
+    "max_ns": 291,
+    "mean_attempts": 15.046875,
+    "median_ns_per_logical_attempt": 8.257575757575758,
+    "aggregate_ns_per_logical_attempt": 7.9460020768431985,
+    "fitted_overhead_ns": 60.99401546417303,
+    "fitted_ns_per_logical_attempt": 3.9457253688467158,
+    "expected_ns_at_2pow_bits": 124.12562136572049,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 195.734375,
+    "median_ns": 155.0,
+    "min_ns": 80,
+    "max_ns": 1884,
+    "mean_attempts": 27.21875,
+    "median_ns_per_logical_attempt": 7.032967032967033,
+    "aggregate_ns_per_logical_attempt": 7.191159586681975,
+    "fitted_overhead_ns": 65.73160126640973,
+    "fitted_ns_per_logical_attempt": 3.808190209849618,
+    "expected_ns_at_2pow_bits": 187.5936879815975,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 306.5,
+    "median_ns": 291.0,
+    "min_ns": 81,
+    "max_ns": 1092,
+    "mean_attempts": 67.21875,
+    "median_ns_per_logical_attempt": 4.709001782531194,
+    "aggregate_ns_per_logical_attempt": 4.559739655973965,
+    "fitted_overhead_ns": 58.80153346630473,
+    "fitted_ns_per_logical_attempt": 3.6856675412997673,
+    "expected_ns_at_2pow_bits": 294.68425610948987,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 474.984375,
+    "median_ns": 380.5,
+    "min_ns": 90,
+    "max_ns": 1583,
+    "mean_attempts": 116.6875,
+    "median_ns_per_logical_attempt": 4.266996699669967,
+    "aggregate_ns_per_logical_attempt": 4.0705677557579,
+    "fitted_overhead_ns": 66.09505690995377,
+    "fitted_ns_per_logical_attempt": 3.504235030836293,
+    "expected_ns_at_2pow_bits": 514.6371408569993,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 963.15625,
+    "median_ns": 656.5,
+    "min_ns": 90,
+    "max_ns": 4238,
+    "mean_attempts": 255.515625,
+    "median_ns_per_logical_attempt": 3.9155335240409106,
+    "aggregate_ns_per_logical_attempt": 3.769461260930716,
+    "fitted_overhead_ns": 72.15945477380069,
+    "fitted_ns_per_logical_attempt": 3.483288748002518,
+    "expected_ns_at_2pow_bits": 963.8813742624453,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 1603.328125,
+    "median_ns": 1297.0,
+    "min_ns": 101,
+    "max_ns": 6071,
+    "mean_attempts": 440.328125,
+    "median_ns_per_logical_attempt": 3.692190329484255,
+    "aggregate_ns_per_logical_attempt": 3.6412121642241226,
+    "fitted_overhead_ns": 66.53468174944419,
+    "fitted_ns_per_logical_attempt": 3.489933287163548,
+    "expected_ns_at_2pow_bits": 1853.3805247771807,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 2901.703125,
+    "median_ns": 2069.0,
+    "min_ns": 100,
+    "max_ns": 16371,
+    "mean_attempts": 815.375,
+    "median_ns_per_logical_attempt": 3.585614035087719,
+    "aggregate_ns_per_logical_attempt": 3.55873447800092,
+    "fitted_overhead_ns": 70.43862149220604,
+    "fitted_ns_per_logical_attempt": 3.471662990885922,
+    "expected_ns_at_2pow_bits": 3625.42152415939,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 8524.875,
+    "median_ns": 5360.0,
+    "min_ns": 90,
+    "max_ns": 38512,
+    "mean_attempts": 2443.03125,
+    "median_ns_per_logical_attempt": 3.499042301282863,
+    "aggregate_ns_per_logical_attempt": 3.4894662112897654,
+    "fitted_overhead_ns": 62.00835411344087,
+    "fitted_ns_per_logical_attempt": 3.451088295513055,
+    "expected_ns_at_2pow_bits": 7129.837183324177,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 5268.6875,
+    "median_ns": 4864.0,
+    "min_ns": 1924,
+    "max_ns": 11612,
+    "mean_attempts": 4695.34375,
+    "median_ns_per_logical_attempt": 1.8762907171592182,
+    "aggregate_ns_per_logical_attempt": 1.1221090042661945,
+    "fitted_overhead_ns": 3612.8717836604,
+    "fitted_ns_per_logical_attempt": 0.35407744141049385,
+    "expected_ns_at_2pow_bits": 5063.172983677783,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 5640.453125,
+    "median_ns": 5225.0,
+    "min_ns": 1924,
+    "max_ns": 14046,
+    "mean_attempts": 9910.265625,
+    "median_ns_per_logical_attempt": 0.6481777526859239,
+    "aggregate_ns_per_logical_attempt": 0.5691525674923572,
+    "fitted_overhead_ns": 2670.7823910205448,
+    "fitted_ns_per_logical_attempt": 0.2913692973105295,
+    "expected_ns_at_2pow_bits": 5057.679674588402,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 7457.28125,
+    "median_ns": 6176.5,
+    "min_ns": 2795,
+    "max_ns": 21560,
+    "mean_attempts": 16532.15625,
+    "median_ns_per_logical_attempt": 0.5253045249869679,
+    "aggregate_ns_per_logical_attempt": 0.45107735114710157,
+    "fitted_overhead_ns": 2822.837984926011,
+    "fitted_ns_per_logical_attempt": 0.2753206571686376,
+    "expected_ns_at_2pow_bits": 7333.691631976969,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 11470.84375,
+    "median_ns": 9423.0,
+    "min_ns": 2735,
+    "max_ns": 38563,
+    "mean_attempts": 33823.1875,
+    "median_ns_per_logical_attempt": 0.3450992643975357,
+    "aggregate_ns_per_logical_attempt": 0.3391414174078064,
+    "fitted_overhead_ns": 2689.0184005287374,
+    "fitted_ns_per_logical_attempt": 0.259017041823329,
+    "expected_ns_at_2pow_bits": 11176.488826995583,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 18210.4375,
+    "median_ns": 13445.5,
+    "min_ns": 2716,
+    "max_ns": 65975,
+    "mean_attempts": 59861.484375,
+    "median_ns_per_logical_attempt": 0.31973568793074786,
+    "aggregate_ns_per_logical_attempt": 0.3042095880202603,
+    "fitted_overhead_ns": 2660.563938879388,
+    "fitted_ns_per_logical_attempt": 0.258865941689056,
+    "expected_ns_at_2pow_bits": 19625.602293413365,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 30514.890625,
+    "median_ns": 16842.0,
+    "min_ns": 4729,
+    "max_ns": 153260,
+    "mean_attempts": 116848.6875,
+    "median_ns_per_logical_attempt": 0.2901771294280604,
+    "aggregate_ns_per_logical_attempt": 0.2611487666474645,
+    "fitted_overhead_ns": 4725.0130142225935,
+    "fitted_ns_per_logical_attempt": 0.22040130046392467,
+    "expected_ns_at_2pow_bits": 33613.45226863013,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 63835.34375,
+    "median_ns": 46012.0,
+    "min_ns": 5240,
+    "max_ns": 262106,
+    "mean_attempts": 265441.046875,
+    "median_ns_per_logical_attempt": 0.2438758259850038,
+    "aggregate_ns_per_logical_attempt": 0.24048783901933968,
+    "fitted_overhead_ns": 4212.9141569376225,
+    "fitted_ns_per_logical_attempt": 0.22382245617365665,
+    "expected_ns_at_2pow_bits": 62886.62810812467,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 159184,
+    "median_ns": 133182.0,
+    "min_ns": 5541,
+    "max_ns": 608411,
+    "mean_attempts": 689171.03125,
+    "median_ns_per_logical_attempt": 0.2314398508201471,
+    "aggregate_ns_per_logical_attempt": 0.23097894830442353,
+    "fitted_overhead_ns": 4275.754787463869,
+    "fitted_ns_per_logical_attempt": 0.22454606680148465,
+    "expected_ns_at_2pow_bits": 122002.56305868065,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 302845.78125,
+    "median_ns": 223928.5,
+    "min_ns": 5590,
+    "max_ns": 1271105,
+    "mean_attempts": 1322377.5,
+    "median_ns_per_logical_attempt": 0.2305313861950788,
+    "aggregate_ns_per_logical_attempt": 0.2290161328743116,
+    "fitted_overhead_ns": 3132.90789705544,
+    "fitted_ns_per_logical_attempt": 0.22674303000670268,
+    "expected_ns_at_2pow_bits": 240890.2073293637,
+    "strongly_downweighted_samples": 5,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 391481.6875,
+    "median_ns": 270146.0,
+    "min_ns": 6443,
+    "max_ns": 1284871,
+    "mean_attempts": 1709578.8125,
+    "median_ns_per_logical_attempt": 0.22970700744780115,
+    "aggregate_ns_per_logical_attempt": 0.22899306228972113,
+    "fitted_overhead_ns": 3044.5823076781235,
+    "fitted_ns_per_logical_attempt": 0.2269842616692276,
+    "expected_ns_at_2pow_bits": 479065.08063582215,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 1264689.5,
+    "median_ns": 1150296.5,
+    "min_ns": 45386,
+    "max_ns": 3668642,
+    "mean_attempts": 5517202.84375,
+    "median_ns_per_logical_attempt": 0.22882284729655275,
+    "aggregate_ns_per_logical_attempt": 0.22922657292411608,
+    "fitted_overhead_ns": 0,
+    "fitted_ns_per_logical_attempt": 0.2292983957883763,
+    "expected_ns_at_2pow_bits": 961747.1786487699,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 1465700.125,
+    "median_ns": 1241339.0,
+    "min_ns": 64682,
+    "max_ns": 4265811,
+    "mean_attempts": 6399521.625,
+    "median_ns_per_logical_attempt": 0.2293098793046965,
+    "aggregate_ns_per_logical_attempt": 0.2290327638356875,
+    "fitted_overhead_ns": 554.1175523949787,
+    "fitted_ns_per_logical_attempt": 0.22870879910619335,
+    "expected_ns_at_2pow_bits": 1919102.5794050014,
+    "strongly_downweighted_samples": 4,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "spartan",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 4658246.40625,
+    "median_ns": 3417441.0,
+    "min_ns": 251236,
+    "max_ns": 23174338,
+    "mean_attempts": 20187872.25,
+    "median_ns_per_logical_attempt": 0.23101516903561173,
+    "aggregate_ns_per_logical_attempt": 0.23074479313935622,
+    "fitted_overhead_ns": 5315.703352991957,
+    "fitted_ns_per_logical_attempt": 0.23042674016187822,
+    "expected_ns_at_2pow_bits": 3871234.895224698,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 0,
+    "samples": 64,
+    "mean_ns": 185.671875,
+    "median_ns": 190.0,
+    "min_ns": 180,
+    "max_ns": 191,
+    "mean_attempts": 1,
+    "median_ns_per_logical_attempt": 190.0,
+    "aggregate_ns_per_logical_attempt": 185.671875,
+    "fitted_overhead_ns": 185.671875,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 185.671875,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 1,
+    "samples": 64,
+    "mean_ns": 260.6875,
+    "median_ns": 261.0,
+    "min_ns": 250,
+    "max_ns": 271,
+    "mean_attempts": 1.890625,
+    "median_ns_per_logical_attempt": 260.0,
+    "aggregate_ns_per_logical_attempt": 137.88429752066116,
+    "fitted_overhead_ns": 260.6875,
+    "fitted_ns_per_logical_attempt": 0.0,
+    "expected_ns_at_2pow_bits": 260.6875,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 2,
+    "samples": 64,
+    "mean_ns": 263.375,
+    "median_ns": 261.0,
+    "min_ns": 251,
+    "max_ns": 341,
+    "mean_attempts": 4.546875,
+    "median_ns_per_logical_attempt": 65.25,
+    "aggregate_ns_per_logical_attempt": 57.92439862542955,
+    "fitted_overhead_ns": 254.0228452823908,
+    "fitted_ns_per_logical_attempt": 1.9175343716514726,
+    "expected_ns_at_2pow_bits": 261.69298276899667,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 3,
+    "samples": 64,
+    "mean_ns": 273.453125,
+    "median_ns": 261.0,
+    "min_ns": 260,
+    "max_ns": 411,
+    "mean_attempts": 8.234375,
+    "median_ns_per_logical_attempt": 43.41666666666667,
+    "aggregate_ns_per_logical_attempt": 33.208728652751425,
+    "fitted_overhead_ns": 246.23755046391366,
+    "fitted_ns_per_logical_attempt": 3.2328310550794948,
+    "expected_ns_at_2pow_bits": 272.10019890454964,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 4,
+    "samples": 64,
+    "mean_ns": 300.015625,
+    "median_ns": 261.0,
+    "min_ns": 250,
+    "max_ns": 641,
+    "mean_attempts": 14.453125,
+    "median_ns_per_logical_attempt": 26.55,
+    "aggregate_ns_per_logical_attempt": 20.757837837837837,
+    "fitted_overhead_ns": 232.92100034261725,
+    "fitted_ns_per_logical_attempt": 4.67195543342968,
+    "expected_ns_at_2pow_bits": 307.67228727749216,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 5,
+    "samples": 64,
+    "mean_ns": 347.3125,
+    "median_ns": 335.5,
+    "min_ns": 261,
+    "max_ns": 821,
+    "mean_attempts": 26.734375,
+    "median_ns_per_logical_attempt": 17.05,
+    "aggregate_ns_per_logical_attempt": 12.991233196960842,
+    "fitted_overhead_ns": 237.0934246683038,
+    "fitted_ns_per_logical_attempt": 4.104348540115384,
+    "expected_ns_at_2pow_bits": 368.4325779519961,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 6,
+    "samples": 64,
+    "mean_ns": 480.0625,
+    "median_ns": 400.5,
+    "min_ns": 270,
+    "max_ns": 1272,
+    "mean_attempts": 62.09375,
+    "median_ns_per_logical_attempt": 8.803381642512077,
+    "aggregate_ns_per_logical_attempt": 7.731253145445395,
+    "fitted_overhead_ns": 233.0721270636533,
+    "fitted_ns_per_logical_attempt": 3.9760002009276114,
+    "expected_ns_at_2pow_bits": 487.5361399230204,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 7,
+    "samples": 64,
+    "mean_ns": 696.46875,
+    "median_ns": 521.0,
+    "min_ns": 270,
+    "max_ns": 2806,
+    "mean_attempts": 118.140625,
+    "median_ns_per_logical_attempt": 7.091388888888888,
+    "aggregate_ns_per_logical_attempt": 5.895251950800159,
+    "fitted_overhead_ns": 242.4573315485627,
+    "fitted_ns_per_logical_attempt": 3.8464922197250186,
+    "expected_ns_at_2pow_bits": 734.808335673365,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 8,
+    "samples": 64,
+    "mean_ns": 1288.90625,
+    "median_ns": 1067.0,
+    "min_ns": 270,
+    "max_ns": 3907,
+    "mean_attempts": 263.953125,
+    "median_ns_per_logical_attempt": 5.048821548821548,
+    "aggregate_ns_per_logical_attempt": 4.8830876694488845,
+    "fitted_overhead_ns": 247.39574192184227,
+    "fitted_ns_per_logical_attempt": 3.816010615841491,
+    "expected_ns_at_2pow_bits": 1224.294459577264,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 9,
+    "samples": 64,
+    "mean_ns": 2061.84375,
+    "median_ns": 1292.5,
+    "min_ns": 280,
+    "max_ns": 7374,
+    "mean_attempts": 477.84375,
+    "median_ns_per_logical_attempt": 4.732510822510823,
+    "aggregate_ns_per_logical_attempt": 4.31489111241907,
+    "fitted_overhead_ns": 253.5636648972868,
+    "fitted_ns_per_logical_attempt": 3.7845004051929028,
+    "expected_ns_at_2pow_bits": 2191.227872356053,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 10,
+    "samples": 64,
+    "mean_ns": 3732.109375,
+    "median_ns": 2855.0,
+    "min_ns": 281,
+    "max_ns": 14688,
+    "mean_attempts": 918.265625,
+    "median_ns_per_logical_attempt": 4.1715444027191015,
+    "aggregate_ns_per_logical_attempt": 4.064302608518096,
+    "fitted_overhead_ns": 256.7451728695137,
+    "fitted_ns_per_logical_attempt": 3.7848952200753354,
+    "expected_ns_at_2pow_bits": 4132.477878226657,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 11,
+    "samples": 64,
+    "mean_ns": 6858.984375,
+    "median_ns": 5741.5,
+    "min_ns": 270,
+    "max_ns": 35056,
+    "mean_attempts": 1738.765625,
+    "median_ns_per_logical_attempt": 3.972497887238923,
+    "aggregate_ns_per_logical_attempt": 3.9447434872080587,
+    "fitted_overhead_ns": 250.56677848022173,
+    "fitted_ns_per_logical_attempt": 3.7799298118044735,
+    "expected_ns_at_2pow_bits": 7991.8630330557835,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 12,
+    "samples": 64,
+    "mean_ns": 5489.21875,
+    "median_ns": 5165.0,
+    "min_ns": 2255,
+    "max_ns": 13455,
+    "mean_attempts": 3588.171875,
+    "median_ns_per_logical_attempt": 2.4374878486690355,
+    "aggregate_ns_per_logical_attempt": 1.529809312715824,
+    "fitted_overhead_ns": 4212.7871639120085,
+    "fitted_ns_per_logical_attempt": 0.35754757624309064,
+    "expected_ns_at_2pow_bits": 5677.302036203708,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 13,
+    "samples": 64,
+    "mean_ns": 7814.8125,
+    "median_ns": 7203.5,
+    "min_ns": 3848,
+    "max_ns": 17894,
+    "mean_attempts": 8746.609375,
+    "median_ns_per_logical_attempt": 1.0061104368964813,
+    "aggregate_ns_per_logical_attempt": 0.8934676472847514,
+    "fitted_overhead_ns": 4383.043622217549,
+    "fitted_ns_per_logical_attempt": 0.39016344423630167,
+    "expected_ns_at_2pow_bits": 7579.262557401332,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 14,
+    "samples": 64,
+    "mean_ns": 7904.015625,
+    "median_ns": 6136.5,
+    "min_ns": 2295,
+    "max_ns": 27192,
+    "mean_attempts": 17195.78125,
+    "median_ns_per_logical_attempt": 0.6353042095572852,
+    "aggregate_ns_per_logical_attempt": 0.4596485329795644,
+    "fitted_overhead_ns": 3311.9265902260886,
+    "fitted_ns_per_logical_attempt": 0.25662025202980226,
+    "expected_ns_at_2pow_bits": 7516.392799482369,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 15,
+    "samples": 64,
+    "mean_ns": 11628.328125,
+    "median_ns": 10615.0,
+    "min_ns": 2745,
+    "max_ns": 29957,
+    "mean_attempts": 33204.78125,
+    "median_ns_per_logical_attempt": 0.3695073861377196,
+    "aggregate_ns_per_logical_attempt": 0.35020041353231324,
+    "fitted_overhead_ns": 3214.5236697736964,
+    "fitted_ns_per_logical_attempt": 0.25285735356924,
+    "expected_ns_at_2pow_bits": 11500.153431530553,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 16,
+    "samples": 64,
+    "mean_ns": 20021.703125,
+    "median_ns": 14452.5,
+    "min_ns": 3546,
+    "max_ns": 92705,
+    "mean_attempts": 64842.609375,
+    "median_ns_per_logical_attempt": 0.337597129499683,
+    "aggregate_ns_per_logical_attempt": 0.30877386517883326,
+    "fitted_overhead_ns": 3306.67001949091,
+    "fitted_ns_per_logical_attempt": 0.2574811652116923,
+    "expected_ns_at_2pow_bits": 20180.955662804376,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 17,
+    "samples": 64,
+    "mean_ns": 38576.875,
+    "median_ns": 30337.5,
+    "min_ns": 5641,
+    "max_ns": 138142,
+    "mean_attempts": 139218.34375,
+    "median_ns_per_logical_attempt": 0.2801499838922046,
+    "aggregate_ns_per_logical_attempt": 0.2770962070147455,
+    "fitted_overhead_ns": 4841.946113726452,
+    "fitted_ns_per_logical_attempt": 0.2423347063051296,
+    "expected_ns_at_2pow_bits": 36605.2407385524,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 18,
+    "samples": 64,
+    "mean_ns": 70220.3125,
+    "median_ns": 53632.0,
+    "min_ns": 5761,
+    "max_ns": 290941,
+    "mean_attempts": 270674.71875,
+    "median_ns_per_logical_attempt": 0.266730295631773,
+    "aggregate_ns_per_logical_attempt": 0.25942693438191666,
+    "fitted_overhead_ns": 4891.054816600568,
+    "fitted_ns_per_logical_attempt": 0.24118398514397807,
+    "expected_ns_at_2pow_bits": 68115.98941818356,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 19,
+    "samples": 32,
+    "mean_ns": 106279.34375,
+    "median_ns": 79926.5,
+    "min_ns": 9799,
+    "max_ns": 379237,
+    "mean_attempts": 419006.1875,
+    "median_ns_per_logical_attempt": 0.25699561619677064,
+    "aggregate_ns_per_logical_attempt": 0.253646239412634,
+    "fitted_overhead_ns": 4661.560236474354,
+    "fitted_ns_per_logical_attempt": 0.24249824732754077,
+    "expected_ns_at_2pow_bits": 131800.48133133605,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 20,
+    "samples": 32,
+    "mean_ns": 254813.125,
+    "median_ns": 181428.5,
+    "min_ns": 5761,
+    "max_ns": 641955,
+    "mean_attempts": 1030273.5,
+    "median_ns_per_logical_attempt": 0.2488098917516706,
+    "aggregate_ns_per_logical_attempt": 0.24732571011483845,
+    "fitted_overhead_ns": 5135.481717963412,
+    "fitted_ns_per_logical_attempt": 0.24220554690244434,
+    "expected_ns_at_2pow_bits": 259106.40526674088,
+    "strongly_downweighted_samples": 2,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 21,
+    "samples": 32,
+    "mean_ns": 612129.15625,
+    "median_ns": 489591.5,
+    "min_ns": 36359,
+    "max_ns": 2181158,
+    "mean_attempts": 2494134.84375,
+    "median_ns_per_logical_attempt": 0.24582404764093813,
+    "aggregate_ns_per_logical_attempt": 0.24542745063841337,
+    "fitted_overhead_ns": 4802.307188804378,
+    "fitted_ns_per_logical_attempt": 0.24347503012791682,
+    "expected_ns_at_2pow_bits": 515406.4535716254,
+    "strongly_downweighted_samples": 0,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 22,
+    "samples": 32,
+    "mean_ns": 958308.15625,
+    "median_ns": 768333.5,
+    "min_ns": 29967,
+    "max_ns": 4165181,
+    "mean_attempts": 3915394.90625,
+    "median_ns_per_logical_attempt": 0.24544171341283466,
+    "aggregate_ns_per_logical_attempt": 0.24475389563394695,
+    "fitted_overhead_ns": 4907.874696451123,
+    "fitted_ns_per_logical_attempt": 0.24344411827917795,
+    "expected_ns_at_2pow_bits": 1025986.5137712803,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 23,
+    "samples": 32,
+    "mean_ns": 2318952.65625,
+    "median_ns": 2107658.0,
+    "min_ns": 102484,
+    "max_ns": 6727108,
+    "mean_attempts": 9496680.125,
+    "median_ns_per_logical_attempt": 0.24423756217325593,
+    "aggregate_ns_per_logical_attempt": 0.2441856128380443,
+    "fitted_overhead_ns": 5236.9098563482985,
+    "fitted_ns_per_logical_attempt": 0.243609616542355,
+    "expected_ns_at_2pow_bits": 2048782.4880604798,
+    "strongly_downweighted_samples": 1,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  },
+  {
+    "threads": 16,
+    "kernel": "pcs",
+    "bits": 24,
+    "samples": 32,
+    "mean_ns": 3181208.5,
+    "median_ns": 1995240.0,
+    "min_ns": 53671,
+    "max_ns": 11711690,
+    "mean_attempts": 13004434.75,
+    "median_ns_per_logical_attempt": 0.2447304640727247,
+    "aggregate_ns_per_logical_attempt": 0.24462489613399,
+    "fitted_overhead_ns": 3080.2961234799586,
+    "fitted_ns_per_logical_attempt": 0.2444633147339485,
+    "expected_ns_at_2pow_bits": 4104494.1314909165,
+    "strongly_downweighted_samples": 3,
+    "worker_indices": [
+      0
+    ],
+    "cpus": [
+      6
+    ]
+  }
+]

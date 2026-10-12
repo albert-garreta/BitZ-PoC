@@ -1,0 +1,16 @@
+arithmetic-n512-b16-s100-t16-seed45-baseline.cache-prime
+arithmetic-n512-b16-s100-t16-seed45-baseline
+arithmetic-n512-b16-s100-t16-seed45-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 45, "ratios": {"total_prover_ms": 1.008260469277269, "prove_ms": 1.0075713957033712, "witness_commit_ms": 0.9786193183884774, "verify_ms": 0.9919725809693514, "process_peak_rss_kib": 0.9904394757131842}}
+arithmetic-n512-b16-s100-t16-seed46-candidate.cache-prime
+arithmetic-n512-b16-s100-t16-seed46-candidate
+arithmetic-n512-b16-s100-t16-seed46-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 46, "ratios": {"total_prover_ms": 0.9983896731642828, "prove_ms": 0.9981437148645118, "witness_commit_ms": 0.9945409342999705, "verify_ms": 0.9973894792965714, "process_peak_rss_kib": 1.0068911511354737}}
+arithmetic-n512-b16-s100-t16-seed47-baseline.cache-prime
+arithmetic-n512-b16-s100-t16-seed47-baseline
+arithmetic-n512-b16-s100-t16-seed47-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 47, "ratios": {"total_prover_ms": 1.0002873674648702, "prove_ms": 0.9969998349330031, "witness_commit_ms": 1.002424173013419, "verify_ms": 0.9901208760069059, "process_peak_rss_kib": 1.0099828419903292}}
+arithmetic-n512-b16-s100-t16-seed48-candidate.cache-prime
+arithmetic-n512-b16-s100-t16-seed48-candidate
+arithmetic-n512-b16-s100-t16-seed48-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 16, "security_bits": 100, "threads": 16}, "seed": 48, "ratios": {"total_prover_ms": 1.007247323967672, "prove_ms": 1.0078539332067686, "witness_commit_ms": 1.0161797310517693, "verify_ms": 0.990611464766697, "process_peak_rss_kib": 0.9876256767208044}}

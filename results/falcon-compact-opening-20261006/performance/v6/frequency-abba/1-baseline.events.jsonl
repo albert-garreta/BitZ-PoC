@@ -1,0 +1,6 @@
+{"received_ns": 171863591683803, "event": "prepared", "trial": null, "sample": null}
+{"received_ns": 171863659330047, "event": "trial", "trial": "warmup", "sample": null}
+{"received_ns": 171863716484115, "event": "trial", "trial": "sample", "sample": 1}
+{"received_ns": 171863770074783, "event": "trial", "trial": "sample", "sample": 2}
+{"received_ns": 171863816726977, "event": "trial", "trial": "sample", "sample": 3}
+{"received_ns": 171863816763126, "event": "summary", "trial": null, "sample": null}

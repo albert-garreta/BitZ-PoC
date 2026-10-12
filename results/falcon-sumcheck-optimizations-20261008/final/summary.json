@@ -1,0 +1,274 @@
+[
+  {
+    "label": "baseline",
+    "variant": "arithmetic",
+    "degree": 512,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 128.94486324698008,
+    "settings": {},
+    "peak_rss_mib": 128.59375,
+    "sibling_busy_pct": 0.0,
+    "proof_bytes": 263650,
+    "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+    "proof_digest": "f8b386797447e5560a4780e792452772546493e7aa6fae6bd48fb4c07d42f774",
+    "commit_ms": 35.342472,
+    "commit_range_ms": [
+      35.208779,
+      36.066463
+    ],
+    "prover_ms": 292.88699,
+    "prover_range_ms": [
+      292.258109,
+      293.585523
+    ],
+    "commit_plus_prover_ms": 328.26408699999996,
+    "commit_plus_prover_range_ms": [
+      327.913024,
+      329.329685
+    ],
+    "verifier_ms": 55.378944,
+    "verifier_range_ms": [
+      55.272894,
+      55.585615
+    ]
+  },
+  {
+    "label": "candidate",
+    "variant": "arithmetic",
+    "degree": 512,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 128.94486324698008,
+    "settings": {},
+    "peak_rss_mib": 126.64453125,
+    "sibling_busy_pct": 0.0,
+    "proof_bytes": 263650,
+    "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+    "proof_digest": "f8b386797447e5560a4780e792452772546493e7aa6fae6bd48fb4c07d42f774",
+    "commit_ms": 35.178702,
+    "commit_range_ms": [
+      35.060218,
+      35.226572999999995
+    ],
+    "prover_ms": 266.536587,
+    "prover_range_ms": [
+      266.329886,
+      266.90348200000005
+    ],
+    "commit_plus_prover_ms": 301.76326,
+    "commit_plus_prover_range_ms": [
+      301.47491399999996,
+      302.11262100000005
+    ],
+    "verifier_ms": 44.563585,
+    "verifier_range_ms": [
+      44.328739999999996,
+      44.604392
+    ]
+  },
+  {
+    "label": "baseline",
+    "variant": "full",
+    "degree": 512,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 129.47139033919117,
+    "settings": {},
+    "peak_rss_mib": 2299.49609375,
+    "sibling_busy_pct": 0.0,
+    "proof_bytes": 698346,
+    "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+    "proof_digest": "50a0925a72696d7655e1b51051432118f72d6fd9e79525534c8c0bfc276240e0",
+    "commit_ms": 340.687491,
+    "commit_range_ms": [
+      340.155144,
+      341.46387
+    ],
+    "prover_ms": 2312.823687,
+    "prover_range_ms": [
+      2306.852956,
+      2315.281489
+    ],
+    "commit_plus_prover_ms": 2652.978831,
+    "commit_plus_prover_range_ms": [
+      2648.0606310000003,
+      2656.745359
+    ],
+    "verifier_ms": 45.890746,
+    "verifier_range_ms": [
+      45.819531,
+      45.936223
+    ]
+  },
+  {
+    "label": "candidate",
+    "variant": "full",
+    "degree": 512,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 129.47139033919117,
+    "settings": {},
+    "peak_rss_mib": 2299.18359375,
+    "sibling_busy_pct": 0.0,
+    "proof_bytes": 698346,
+    "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+    "proof_digest": "50a0925a72696d7655e1b51051432118f72d6fd9e79525534c8c0bfc276240e0",
+    "commit_ms": 340.390529,
+    "commit_range_ms": [
+      339.136265,
+      342.330952
+    ],
+    "prover_ms": 2069.246954,
+    "prover_range_ms": [
+      2067.010893,
+      2074.711177
+    ],
+    "commit_plus_prover_ms": 2408.418076,
+    "commit_plus_prover_range_ms": [
+      2408.0169160000005,
+      2417.0421290000004
+    ],
+    "verifier_ms": 46.099081,
+    "verifier_range_ms": [
+      45.821064,
+      46.187669
+    ]
+  },
+  {
+    "label": "baseline",
+    "variant": "arithmetic",
+    "degree": 1024,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 128.8651372844124,
+    "settings": {},
+    "peak_rss_mib": 225.8984375,
+    "sibling_busy_pct": 0.0,
+    "proof_bytes": 361386,
+    "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+    "proof_digest": "09a3cc7c732f83c5fe77d4249d6778850fe418501614e520a934fa75cf6c0cb8",
+    "commit_ms": 103.575595,
+    "commit_range_ms": [
+      102.44901200000001,
+      103.860675
+    ],
+    "prover_ms": 543.112286,
+    "prover_range_ms": [
+      541.776337,
+      544.8806529999999
+    ],
+    "commit_plus_prover_ms": 646.7081890000001,
+    "commit_plus_prover_range_ms": [
+      645.165519,
+      648.741448
+    ],
+    "verifier_ms": 109.063322,
+    "verifier_range_ms": [
+      108.657363,
+      144.88024099999998
+    ]
+  },
+  {
+    "label": "candidate",
+    "variant": "arithmetic",
+    "degree": 1024,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 128.8651372844124,
+    "settings": {},
+    "peak_rss_mib": 225.89453125,
+    "sibling_busy_pct": 0.15360983102918588,
+    "proof_bytes": 361386,
+    "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+    "proof_digest": "09a3cc7c732f83c5fe77d4249d6778850fe418501614e520a934fa75cf6c0cb8",
+    "commit_ms": 102.67116399999999,
+    "commit_range_ms": [
+      102.236801,
+      102.938839
+    ],
+    "prover_ms": 455.457994,
+    "prover_range_ms": [
+      455.016218,
+      456.782852
+    ],
+    "commit_plus_prover_ms": 558.124358,
+    "commit_plus_prover_range_ms": [
+      557.687492,
+      559.17122
+    ],
+    "verifier_ms": 87.21747400000001,
+    "verifier_range_ms": [
+      86.775959,
+      87.591292
+    ]
+  },
+  {
+    "label": "baseline",
+    "variant": "full",
+    "degree": 1024,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 129.40858281396686,
+    "settings": {},
+    "peak_rss_mib": 3202.0546875,
+    "sibling_busy_pct": 0.032237266279819474,
+    "proof_bytes": 972210,
+    "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+    "proof_digest": "f58c92d56c2221de53936a09bcb0c7f4fa65dc7b15dff8015314469f10cbd007",
+    "commit_ms": 639.9069360000001,
+    "commit_range_ms": [
+      637.434137,
+      646.377022
+    ],
+    "prover_ms": 4108.849882,
+    "prover_range_ms": [
+      4105.242575,
+      4116.427885
+    ],
+    "commit_plus_prover_ms": 4750.930173,
+    "commit_plus_prover_range_ms": [
+      4744.248056,
+      4757.48562
+    ],
+    "verifier_ms": 80.184894,
+    "verifier_range_ms": [
+      80.124339,
+      80.324218
+    ]
+  },
+  {
+    "label": "candidate",
+    "variant": "full",
+    "degree": 1024,
+    "samples": 5,
+    "trace": false,
+    "security_bits": 129.40858281396686,
+    "settings": {},
+    "peak_rss_mib": 3220.00390625,
+    "sibling_busy_pct": 0.03447087211306446,
+    "proof_bytes": 972210,
+    "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+    "proof_digest": "f58c92d56c2221de53936a09bcb0c7f4fa65dc7b15dff8015314469f10cbd007",
+    "commit_ms": 641.401057,
+    "commit_range_ms": [
+      641.107251,
+      645.767922
+    ],
+    "prover_ms": 3751.6157420000004,
+    "prover_range_ms": [
+      3740.351582,
+      3761.849342
+    ],
+    "commit_plus_prover_ms": 4392.722993,
+    "commit_plus_prover_range_ms": [
+      4381.569049,
+      4407.617264
+    ],
+    "verifier_ms": 80.289529,
+    "verifier_range_ms": [
+      80.116702,
+      80.83536199999999
+    ]
+  }
+]

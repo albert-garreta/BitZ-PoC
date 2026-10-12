@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/costs-external/probe",
+    "16"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "16",
+    "OMP_NUM_THREADS": "16"
+  },
+  "main_cpu": 6,
+  "worker_cpus": [
+    6,
+    7,
+    4,
+    5,
+    2,
+    3,
+    0,
+    1,
+    14,
+    15,
+    12,
+    13,
+    10,
+    11,
+    8,
+    9
+  ],
+  "external_entry": true
+}

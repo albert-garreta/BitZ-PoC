@@ -1,0 +1,35 @@
+{
+  "created_at_utc": "2026-10-12T15:20:17.431115+00:00",
+  "base_snapshot": "/tmp/bitz-falcon-original-candidate-20261012",
+  "base_manifest": "/home/john-wu/code/BitZ-pcs/results/falcon-speed-integration-20261012/candidate-source-sha256.json",
+  "base_reconstruction": "Frozen baseline snapshot plus integration.patch; all 10 touched file SHA256 values match original candidate manifest.",
+  "change": "Return existing canonical u32 NTT output directly; remove redundant i64 output vector and conversion pass; widen before signed arithmetic in consumers.",
+  "changed_files": [
+    "src/piop/spartan/falcon_polynomial.rs",
+    "src/piop/spartan/falcon1024_algebraic/source.rs",
+    "src/piop/spartan/falcon/verify.rs"
+  ],
+  "control_source_sha256": {
+    "src/piop/spartan/falcon_polynomial.rs": "6e8c9f06b50a6755fa022fd2505418674e18139ba0fbf8d363fc0758e485e205",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "7a75a53115136ee8230565ecb5705dcbb95da88e916e13a19643e30b3f6c6b91",
+    "src/piop/spartan/falcon1024_algebraic/source.rs": "571bf16a2ef88e7eafde2a44fe9203bbea4340d4325647c2d2d8fd98f478851a",
+    "src/piop/spartan/falcon/opening.rs": "807aa69e6f2958788b0702aa6ce831315af8aa473712c878bbc0c312ca5628c9",
+    "src/piop/spartan/falcon/verify.rs": "b5df53141157b1bc9b46b6ba3f1e10e92539331ed0ecf378f9e65266f013f813",
+    "src/piop/spartan/falcon/mod.rs": "107fe3ff145328788ab1c9a3c66f9a3c858dbd2c39772e0669de606b79bf70ec",
+    "src/piop/spartan/falcon/source.rs": "0491bdef1d120121fc1d4fa75abef2bfa1ea3df55605c8d4dc32b1a31164104a",
+    "src/piop/spartan/falcon/hash_to_point.rs": "23c0bedd85fee3656930e6bf9687e3c4eda0a76784dd98205de0b9dcdede09e7",
+    "src/piop/spartan/falcon/hybrid.rs": "797cba2f86771190563e1ae787046348b13d4aabac185ee84fe018c7fd74ad30",
+    "src/piop/spartan/falcon/format.rs": "3ca2062a5d69df3558522e21e648ad8abdb18e76c8c6d8c8323f39d48a54e60c"
+  },
+  "workspace_scratch_bytes": {
+    "degree_512": {
+      "before": 16384,
+      "after": 8192
+    },
+    "degree_1024": {
+      "before": 32768,
+      "after": 16384
+    }
+  },
+  "validation": "No build or tests run by this subagent; root owns build 8194 and qualification."
+}

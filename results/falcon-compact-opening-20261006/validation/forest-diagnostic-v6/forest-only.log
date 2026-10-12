@@ -1,0 +1,180 @@
+bitz:     L3 value tables        337.9µs   126.5 MB faulted
+bitz:     levels 5..13 build      68.5µs     0.2 MB faulted
+bitz:   levels ≥4                429.8µs     0.0 MB faulted
+bitz:   level 12                 559.5µs     0.0 MB faulted
+bitz:   level 11                 722.7µs     0.0 MB faulted
+bitz:   level 10                 809.9µs     0.0 MB faulted
+bitz:   level 9                  912.7µs     0.0 MB faulted
+bitz:   level 8                  745.3µs     0.0 MB faulted
+bitz:   level 7                    1.0ms     0.0 MB faulted
+bitz:   level 6                    1.0ms     0.0 MB faulted
+bitz:   level 5                    1.1ms     0.0 MB faulted
+bitz:     L4 rebuild              63.7µs     0.0 MB faulted
+bitz:   level 4                    1.4ms     0.0 MB faulted
+bitz:     L3 tables              341.0ns     0.0 MB faulted
+bitz:     L3 jit round            95.9µs     0.4 MB faulted
+bitz:     L3 jit fold             45.6µs     0.0 MB faulted
+bitz:     L3 dense tail            1.4ms     0.0 MB faulted
+bitz:   level 3                    1.7ms     0.0 MB faulted
+bitz:     L2 bit round 1         214.4µs     4.0 MB faulted
+bitz:     L2 tables              152.7µs     0.3 MB faulted
+bitz:     L2 jit round            73.6µs     0.0 MB faulted
+bitz:     L2 jit fold             49.9µs     0.0 MB faulted
+bitz:     L2 dense tail            1.2ms     0.0 MB faulted
+bitz:   level 2                    2.1ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   154.2µs     0.9 MB faulted
+bitz:     L1 tables              145.3µs     0.2 MB faulted
+bitz:     L1 jit round            77.0µs     0.0 MB faulted
+bitz:     L1 jit fold             50.8µs     0.0 MB faulted
+bitz:     L1 dense tail            1.3ms     0.0 MB faulted
+bitz:   level 1                    2.0ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   116.1µs     0.3 MB faulted
+bitz:     L0 tables              149.5µs     0.0 MB faulted
+bitz:     L0 jit round            85.8µs     0.0 MB faulted
+bitz:     L0 jit fold             47.0µs     0.0 MB faulted
+bitz:     L0 dense tail            1.2ms     0.0 MB faulted
+bitz:   level 0                    2.1ms     0.0 MB faulted
+bitz:     L3 value tables        237.6µs    62.9 MB faulted
+bitz:     levels 5..13 build      35.9µs     0.0 MB faulted
+bitz:   levels ≥4                287.0µs     0.0 MB faulted
+bitz:   level 12                 446.3µs     0.0 MB faulted
+bitz:   level 11                 575.1µs     0.0 MB faulted
+bitz:   level 10                 658.8µs     0.0 MB faulted
+bitz:   level 9                  728.8µs     0.0 MB faulted
+bitz:   level 8                  600.5µs     0.0 MB faulted
+bitz:   level 7                  823.6µs     0.0 MB faulted
+bitz:   level 6                  808.2µs     0.0 MB faulted
+bitz:   level 5                  843.9µs     0.0 MB faulted
+bitz:     L4 rebuild              55.7µs     0.0 MB faulted
+bitz:   level 4                    1.1ms     0.0 MB faulted
+bitz:     L3 tables              210.0ns     0.0 MB faulted
+bitz:     L3 jit round            69.2µs     0.0 MB faulted
+bitz:     L3 jit fold             41.7µs     0.0 MB faulted
+bitz:     L3 dense tail            1.1ms     0.0 MB faulted
+bitz:   level 3                    1.4ms     0.0 MB faulted
+bitz:     L2 bit round 1         208.2µs     4.5 MB faulted
+bitz:     L2 tables              146.3µs     0.0 MB faulted
+bitz:     L2 jit round            66.7µs     0.0 MB faulted
+bitz:     L2 jit fold             42.1µs     0.0 MB faulted
+bitz:     L2 dense tail          986.8µs     0.0 MB faulted
+bitz:   level 2                    1.7ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   121.3µs     0.0 MB faulted
+bitz:     L1 tables              128.9µs     0.0 MB faulted
+bitz:     L1 jit round            67.7µs     0.0 MB faulted
+bitz:     L1 jit fold             43.3µs     0.0 MB faulted
+bitz:     L1 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   102.5µs     0.3 MB faulted
+bitz:     L0 tables              130.8µs     0.0 MB faulted
+bitz:     L0 jit round            78.8µs     0.0 MB faulted
+bitz:     L0 jit fold             48.7µs     0.0 MB faulted
+bitz:     L0 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 0                    1.8ms     0.0 MB faulted
+bitz:     L3 value tables        170.8µs     1.1 MB faulted
+bitz:     levels 5..13 build      54.8µs     0.0 MB faulted
+bitz:   levels ≥4                239.1µs     0.0 MB faulted
+bitz:   level 12                 454.6µs     0.0 MB faulted
+bitz:   level 11                 582.8µs     0.0 MB faulted
+bitz:   level 10                 650.3µs     0.0 MB faulted
+bitz:   level 9                  713.6µs     0.0 MB faulted
+bitz:   level 8                  601.5µs     0.0 MB faulted
+bitz:   level 7                  813.2µs     0.0 MB faulted
+bitz:   level 6                  799.5µs     0.0 MB faulted
+bitz:   level 5                  852.8µs     0.0 MB faulted
+bitz:     L4 rebuild              48.6µs     0.0 MB faulted
+bitz:   level 4                    1.1ms     0.0 MB faulted
+bitz:     L3 tables              221.0ns     0.0 MB faulted
+bitz:     L3 jit round            73.4µs     0.0 MB faulted
+bitz:     L3 jit fold             40.5µs     0.0 MB faulted
+bitz:     L3 dense tail            1.1ms     0.0 MB faulted
+bitz:   level 3                    1.4ms     0.0 MB faulted
+bitz:     L2 bit round 1         170.7µs     0.0 MB faulted
+bitz:     L2 tables              144.8µs     0.0 MB faulted
+bitz:     L2 jit round            71.6µs     0.0 MB faulted
+bitz:     L2 jit fold             46.5µs     0.0 MB faulted
+bitz:     L2 dense tail          987.8µs     0.0 MB faulted
+bitz:   level 2                    1.7ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   128.4µs     0.0 MB faulted
+bitz:     L1 tables              135.7µs     0.0 MB faulted
+bitz:     L1 jit round            66.8µs     0.0 MB faulted
+bitz:     L1 jit fold             47.7µs     0.0 MB faulted
+bitz:     L1 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds    96.1µs     0.0 MB faulted
+bitz:     L0 tables              146.9µs     0.0 MB faulted
+bitz:     L0 jit round            80.5µs     0.0 MB faulted
+bitz:     L0 jit fold             47.0µs     0.0 MB faulted
+bitz:     L0 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 0                    1.8ms     0.0 MB faulted
+bitz:     L3 value tables        144.9µs     0.4 MB faulted
+bitz:     levels 5..13 build      54.0µs     0.0 MB faulted
+bitz:   levels ≥4                212.1µs     0.0 MB faulted
+bitz:   level 12                 451.2µs     0.0 MB faulted
+bitz:   level 11                 577.8µs     0.0 MB faulted
+bitz:   level 10                 663.5µs     0.0 MB faulted
+bitz:   level 9                  725.6µs     0.0 MB faulted
+bitz:   level 8                  615.7µs     0.0 MB faulted
+bitz:   level 7                  821.7µs     0.0 MB faulted
+bitz:   level 6                  808.1µs     0.0 MB faulted
+bitz:   level 5                    3.7ms     0.0 MB faulted
+bitz:     L4 rebuild              48.6µs     0.0 MB faulted
+bitz:   level 4                    6.2ms     0.0 MB faulted
+bitz:     L3 tables              221.0ns     0.0 MB faulted
+bitz:     L3 jit round            72.2µs     0.0 MB faulted
+bitz:     L3 jit fold             41.6µs     0.0 MB faulted
+bitz:     L3 dense tail            5.2ms     0.0 MB faulted
+bitz:   level 3                    6.0ms     0.0 MB faulted
+bitz:     L2 bit round 1         164.2µs     0.0 MB faulted
+bitz:     L2 tables              136.9µs     0.1 MB faulted
+bitz:     L2 jit round            65.9µs     0.0 MB faulted
+bitz:     L2 jit fold             48.2µs     0.0 MB faulted
+bitz:     L2 dense tail          994.9µs     0.0 MB faulted
+bitz:   level 2                    1.7ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   127.4µs     0.2 MB faulted
+bitz:     L1 tables              135.2µs     0.0 MB faulted
+bitz:     L1 jit round            69.7µs     0.0 MB faulted
+bitz:     L1 jit fold             46.2µs     0.0 MB faulted
+bitz:     L1 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds    96.0µs     0.0 MB faulted
+bitz:     L0 tables              156.2µs     0.0 MB faulted
+bitz:     L0 jit round            77.8µs     0.0 MB faulted
+bitz:     L0 jit fold             46.2µs     0.0 MB faulted
+bitz:     L0 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 0                    1.8ms     0.0 MB faulted
+bitz:     L3 value tables        152.2µs     5.1 MB faulted
+bitz:     levels 5..13 build      33.4µs     0.0 MB faulted
+bitz:   levels ≥4                198.5µs     0.0 MB faulted
+bitz:   level 12                 457.3µs     0.0 MB faulted
+bitz:   level 11                 584.7µs     0.0 MB faulted
+bitz:   level 10                 653.8µs     0.0 MB faulted
+bitz:   level 9                  720.5µs     0.0 MB faulted
+bitz:   level 8                  605.1µs     0.0 MB faulted
+bitz:   level 7                  838.2µs     0.0 MB faulted
+bitz:   level 6                  817.1µs     0.0 MB faulted
+bitz:   level 5                  872.0µs     0.0 MB faulted
+bitz:     L4 rebuild              48.3µs     0.0 MB faulted
+bitz:   level 4                    1.1ms     0.0 MB faulted
+bitz:     L3 tables              221.0ns     0.0 MB faulted
+bitz:     L3 jit round            70.1µs     0.0 MB faulted
+bitz:     L3 jit fold             43.8µs     0.0 MB faulted
+bitz:     L3 dense tail            1.1ms     0.0 MB faulted
+bitz:   level 3                    1.4ms     0.0 MB faulted
+bitz:     L2 bit round 1         165.2µs     0.0 MB faulted
+bitz:     L2 tables              133.3µs     0.0 MB faulted
+bitz:     L2 jit round            73.6µs     0.0 MB faulted
+bitz:     L2 jit fold             48.6µs     0.0 MB faulted
+bitz:     L2 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 2                    1.7ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   120.3µs     0.0 MB faulted
+bitz:     L1 tables              139.8µs     0.0 MB faulted
+bitz:     L1 jit round            70.5µs     0.0 MB faulted
+bitz:     L1 jit fold             47.7µs     0.0 MB faulted
+bitz:     L1 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds    98.8µs     0.0 MB faulted
+bitz:     L0 tables              137.9µs     0.0 MB faulted
+bitz:     L0 jit round            68.8µs     0.0 MB faulted
+bitz:     L0 jit fold             43.9µs     0.0 MB faulted
+bitz:     L0 dense tail            1.0ms     0.0 MB faulted
+bitz:   level 0                    1.8ms     0.0 MB faulted

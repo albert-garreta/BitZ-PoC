@@ -1,0 +1,4 @@
+# Preserve exact validation log bytes, including trailing blank lines.
+*.log whitespace=-blank-at-eof
+# Patch context blank lines must retain their leading space.
+*.patch whitespace=-blank-at-eol,-blank-at-eof

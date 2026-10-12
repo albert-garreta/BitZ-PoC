@@ -1,0 +1,701 @@
+{
+  "qualification": false,
+  "estimator": "pooled arithmetic means of 60 same-seed measured repeats per revision, 2 processes per revision, ABBA",
+  "warmups_per_process": 3,
+  "scope": "instrumented Native100B1 seed42; no confidence gate or multi-seed generalization",
+  "timings": {
+    "proof_prove_ms": {
+      "baseline_mean_ms": 19.297125016666666,
+      "candidate_mean_ms": 19.428120183333334,
+      "delta_ms": 0.13099516666666844,
+      "ratio": 1.0067883255434957,
+      "observations_per_revision": 60
+    },
+    "proof_verify_ms": {
+      "baseline_mean_ms": 12.352285216666667,
+      "candidate_mean_ms": 12.3111299,
+      "delta_ms": -0.04115531666666783,
+      "ratio": 0.996668202203497,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:commit/falcon_bench:commit": {
+      "baseline_mean_ms": 0.6957745333333333,
+      "candidate_mean_ms": 0.6938376166666667,
+      "delta_ms": -0.0019369166666666215,
+      "ratio": 0.9972161719438233,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:commit/falcon_hybrid:witness_commit": {
+      "baseline_mean_ms": 0.6797901666666667,
+      "candidate_mean_ms": 0.67819785,
+      "delta_ms": -0.0015923166666667044,
+      "ratio": 0.9976576350398321,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:binding_inner": {
+      "baseline_mean_ms": 5.4149435666666665,
+      "candidate_mean_ms": 5.539877766666667,
+      "delta_ms": 0.12493420000000022,
+      "ratio": 1.0230721148728255,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:binding_target": {
+      "baseline_mean_ms": 0.3590812666666667,
+      "candidate_mean_ms": 0.3578046166666667,
+      "delta_ms": -0.0012766499999999903,
+      "ratio": 0.9964446766832169,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:binding_template": {
+      "baseline_mean_ms": 2.5259031333333333,
+      "candidate_mean_ms": 2.54776095,
+      "delta_ms": 0.02185781666666653,
+      "ratio": 1.008653465914119,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:compaction_forest": {
+      "baseline_mean_ms": 1.1858100666666667,
+      "candidate_mean_ms": 1.1875844833333333,
+      "delta_ms": 0.0017744166666666672,
+      "ratio": 1.0014963751080765,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:compaction_leaf": {
+      "baseline_mean_ms": 0.3240230333333333,
+      "candidate_mean_ms": 0.32763515,
+      "delta_ms": 0.003612116666666665,
+      "ratio": 1.0111477157333775,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:hash_to_point_products": {
+      "baseline_mean_ms": 0.18799071666666667,
+      "candidate_mean_ms": 0.18682668333333333,
+      "delta_ms": -0.001164033333333342,
+      "ratio": 0.9938080275772482,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_arithmetic:norm": {
+      "baseline_mean_ms": 0.1946163,
+      "candidate_mean_ms": 0.19423368333333332,
+      "delta_ms": -0.0003826166666666686,
+      "ratio": 0.9980339947544647,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_bench:prove": {
+      "baseline_mean_ms": 19.297780066666668,
+      "candidate_mean_ms": 19.4291132,
+      "delta_ms": 0.13133313333333163,
+      "ratio": 1.0068056083590768,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_bridge:column_packing": {
+      "baseline_mean_ms": 0.024374066666666666,
+      "candidate_mean_ms": 0.0243938,
+      "delta_ms": 1.9733333333334102e-05,
+      "ratio": 1.0008096036497809,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_bridge:integer_folds": {
+      "baseline_mean_ms": 0.07790888333333333,
+      "candidate_mean_ms": 0.07706518333333333,
+      "delta_ms": -0.0008437000000000028,
+      "ratio": 0.9891706829323913,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_bridge:power_tables": {
+      "baseline_mean_ms": 0.6424596,
+      "candidate_mean_ms": 0.6445963333333333,
+      "delta_ms": 0.002136733333333307,
+      "ratio": 1.0033258641217804,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_bridge:wfbitz_forest": {
+      "baseline_mean_ms": 2.11813385,
+      "candidate_mean_ms": 2.118491816666667,
+      "delta_ms": 0.0003579666666668757,
+      "ratio": 1.0001690009659525,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:arithmetic_prefix": {
+      "baseline_mean_ms": 8.462853816666668,
+      "candidate_mean_ms": 8.587697266666666,
+      "delta_ms": 0.12484344999999841,
+      "ratio": 1.0147519327055057,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:binary_bridge": {
+      "baseline_mean_ms": 3.103259066666667,
+      "candidate_mean_ms": 3.1069366166666668,
+      "delta_ms": 0.0036775499999999184,
+      "ratio": 1.0011850605834047,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:joint_sumcheck": {
+      "baseline_mean_ms": 1.5679829833333334,
+      "candidate_mean_ms": 1.5486586333333334,
+      "delta_ms": -0.01932434999999999,
+      "ratio": 0.9876756634444342,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:keccak_prefix": {
+      "baseline_mean_ms": 3.0010347166666667,
+      "candidate_mean_ms": 2.9899343833333334,
+      "delta_ms": -0.011100333333333268,
+      "ratio": 0.9963011646377544,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:link_coefficients": {
+      "baseline_mean_ms": 1.7561378,
+      "candidate_mean_ms": 1.7872012833333333,
+      "delta_ms": 0.031063483333333197,
+      "ratio": 1.0176885226964154,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_hybrid:shared_opening": {
+      "baseline_mean_ms": 1.3056535166666667,
+      "candidate_mean_ms": 1.30831605,
+      "delta_ms": 0.002662533333333217,
+      "ratio": 1.002039234222055,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_joint:compact": {
+      "baseline_mean_ms": 0.0472137,
+      "candidate_mean_ms": 0.04647821666666667,
+      "delta_ms": -0.0007354833333333283,
+      "ratio": 0.984422247497372,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_joint:dense": {
+      "baseline_mean_ms": 0.016937999999999998,
+      "candidate_mean_ms": 0.01670995,
+      "delta_ms": -0.000228049999999997,
+      "ratio": 0.9865361908135555,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_joint:packed_setup": {
+      "baseline_mean_ms": 0.2876428,
+      "candidate_mean_ms": 0.2861939333333333,
+      "delta_ms": -0.0014488666666666594,
+      "ratio": 0.9949629656411818,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_joint:prepare": {
+      "baseline_mean_ms": 0.047690666666666666,
+      "candidate_mean_ms": 0.0482516,
+      "delta_ms": 0.0005609333333333327,
+      "ratio": 1.0117619100872288,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:carries": {
+      "baseline_mean_ms": 0.0012608833333333333,
+      "candidate_mean_ms": 0.0012704166666666667,
+      "delta_ms": 9.533333333333312e-06,
+      "ratio": 1.0075608369793663,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:certificate": {
+      "baseline_mean_ms": 0.0053442333333333335,
+      "candidate_mean_ms": 0.005421283333333333,
+      "delta_ms": 7.704999999999951e-05,
+      "ratio": 1.0144174094194989,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:collapse": {
+      "baseline_mean_ms": 0.05254966666666667,
+      "candidate_mean_ms": 0.051924083333333336,
+      "delta_ms": -0.0006255833333333322,
+      "ratio": 0.9880953891239399,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:coordinates": {
+      "baseline_mean_ms": 0.06316128333333333,
+      "candidate_mean_ms": 0.06698086666666667,
+      "delta_ms": 0.0038195833333333346,
+      "ratio": 1.060473491540308,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:projection_public": {
+      "baseline_mean_ms": 0.07084861666666667,
+      "candidate_mean_ms": 0.06707086666666667,
+      "delta_ms": -0.0037777499999999964,
+      "ratio": 0.9466785637075483,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/falcon_native:prove": {
+      "baseline_mean_ms": 0.3600656666666667,
+      "candidate_mean_ms": 0.36119571666666667,
+      "delta_ms": 0.0011300499999999936,
+      "ratio": 1.0031384553002831,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/inner_packed:fold_tail": {
+      "baseline_mean_ms": 0.25432611666666666,
+      "candidate_mean_ms": 0.2544415666666667,
+      "delta_ms": 0.00011545000000001693,
+      "ratio": 1.0004539447285759,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/inner_packed:prefix_accumulators": {
+      "baseline_mean_ms": 0.6007904333333334,
+      "candidate_mean_ms": 0.5995587,
+      "delta_ms": -0.0012317333333333735,
+      "ratio": 0.9979498120059945,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/inner_packed:prepare_tail": {
+      "baseline_mean_ms": 1.65237495,
+      "candidate_mean_ms": 1.75882195,
+      "delta_ms": 0.10644699999999996,
+      "ratio": 1.0644206086518075,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/lig:grind_pow": {
+      "baseline_mean_ms": 0.007246433333333333,
+      "candidate_mean_ms": 0.0074726666666666665,
+      "delta_ms": 0.00022623333333333332,
+      "ratio": 1.0312199564843394,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/op:deferred_first_fold": {
+      "baseline_mean_ms": 0.05186333333333333,
+      "candidate_mean_ms": 0.050426033333333335,
+      "delta_ms": -0.0014372999999999955,
+      "ratio": 0.9722867793559998,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/op:extra_bases": {
+      "baseline_mean_ms": 0.2860691833333333,
+      "candidate_mean_ms": 0.28505796666666666,
+      "delta_ms": -0.0010112166666666478,
+      "ratio": 0.9964651324729082,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/op:initial_messages": {
+      "baseline_mean_ms": 0.26055473333333334,
+      "candidate_mean_ms": 0.25909471666666667,
+      "delta_ms": -0.0014600166666666747,
+      "ratio": 0.9943965068375908,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/op:ligerito": {
+      "baseline_mean_ms": 0.7291384333333334,
+      "candidate_mean_ms": 0.72108755,
+      "delta_ms": -0.00805088333333337,
+      "ratio": 0.988958361039168,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:prove/op:ring_switch": {
+      "baseline_mean_ms": 0.2450583,
+      "candidate_mean_ms": 0.24582491666666667,
+      "delta_ms": 0.0007666166666666641,
+      "ratio": 1.0031283032105693,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:verify/falcon_bench:verify": {
+      "baseline_mean_ms": 12.3535089,
+      "candidate_mean_ms": 12.312620683333334,
+      "delta_ms": -0.040888216666665755,
+      "ratio": 0.9966901536237477,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:verify/falcon_native:collapse": {
+      "baseline_mean_ms": 0.05143623333333333,
+      "candidate_mean_ms": 0.05156701666666667,
+      "delta_ms": 0.00013078333333333553,
+      "ratio": 1.0025426304544074,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:verify/falcon_native:coordinates": {
+      "baseline_mean_ms": 0.06248161666666667,
+      "candidate_mean_ms": 0.06239098333333334,
+      "delta_ms": -9.063333333333284e-05,
+      "ratio": 0.9985494400086212,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:verify/falcon_native:projection_public": {
+      "baseline_mean_ms": 0.07068361666666667,
+      "candidate_mean_ms": 0.07061935,
+      "delta_ms": -6.426666666667358e-05,
+      "ratio": 0.9990907841208841,
+      "observations_per_revision": 60
+    },
+    "stage:falcon_bench:verify/falcon_native:verify": {
+      "baseline_mean_ms": 0.31230301666666666,
+      "candidate_mean_ms": 0.31201603333333333,
+      "delta_ms": -0.0002869833333333238,
+      "ratio": 0.99908107409145,
+      "observations_per_revision": 60
+    },
+    "total_prover_ms": {
+      "baseline_mean_ms": 19.992013766666666,
+      "candidate_mean_ms": 20.121024583333334,
+      "delta_ms": 0.1290108166666677,
+      "ratio": 1.0064531176384928,
+      "observations_per_revision": 60
+    },
+    "trace:lcv:build_quirky_eq_table (2^16)": {
+      "baseline_mean_ms": 0.4159271666666667,
+      "candidate_mean_ms": 0.419595,
+      "delta_ms": 0.0036678333333333146,
+      "ratio": 1.0088184509868114,
+      "observations_per_revision": 60
+    },
+    "trace:lcv:circuit.fold_alpha_batched": {
+      "baseline_mean_ms": 0.3395126666666667,
+      "candidate_mean_ms": 0.33518933333333334,
+      "delta_ms": -0.004323333333333346,
+      "ratio": 0.987266061747328,
+      "observations_per_revision": 60
+    },
+    "trace:lcv:final consistency + lagrange_weights_naive": {
+      "baseline_mean_ms": 0.13942033333333334,
+      "candidate_mean_ms": 0.139753,
+      "delta_ms": 0.0003326666666666478,
+      "ratio": 1.002386069941974,
+      "observations_per_revision": 60
+    },
+    "trace:lcv:sumcheck replay + comb_vec fold (10 rounds)": {
+      "baseline_mean_ms": 0.257927,
+      "candidate_mean_ms": 0.25781550000000003,
+      "delta_ms": -0.00011149999999998661,
+      "ratio": 0.9995677071419433,
+      "observations_per_revision": 60
+    },
+    "trace:lig:enforced_sum (eq+dot)": {
+      "baseline_mean_ms": 0.010166666666666668,
+      "candidate_mean_ms": 0.010333333333333333,
+      "delta_ms": 0.00016666666666666566,
+      "ratio": 1.0163934426229506,
+      "observations_per_revision": 60
+    },
+    "trace:lig:eval_b (yr_len positions)": {
+      "baseline_mean_ms": 0.253,
+      "candidate_mean_ms": 0.25133333333333335,
+      "delta_ms": -0.0016666666666666496,
+      "ratio": 0.9934123847167327,
+      "observations_per_revision": 60
+    },
+    "trace:lig:merkle multi-proofs": {
+      "baseline_mean_ms": 0.18,
+      "candidate_mean_ms": 0.18166666666666667,
+      "delta_ms": 0.0016666666666666774,
+      "ratio": 1.0092592592592593,
+      "observations_per_revision": 60
+    },
+    "trace:lig:residual basis eval": {
+      "baseline_mean_ms": 0.6145,
+      "candidate_mean_ms": 0.4706666666666666,
+      "delta_ms": -0.14383333333333342,
+      "ratio": 0.7659343639815567,
+      "observations_per_revision": 60
+    },
+    "trace:lig:sample_distinct_queries": {
+      "baseline_mean_ms": 0.31983333333333336,
+      "candidate_mean_ms": 0.32016666666666665,
+      "delta_ms": 0.0003333333333332966,
+      "ratio": 1.0010422094841063,
+      "observations_per_revision": 60
+    },
+    "trace:lig:total": {
+      "baseline_mean_ms": 1.4061666666666666,
+      "candidate_mean_ms": 1.2661666666666667,
+      "delta_ms": -0.1399999999999999,
+      "ratio": 0.9004385445063412,
+      "observations_per_revision": 60
+    },
+    "trace:vco:bind_statement": {
+      "baseline_mean_ms": 0.0005426666666666667,
+      "candidate_mean_ms": 0.0005173333333333334,
+      "delta_ms": -2.5333333333333262e-05,
+      "ratio": 0.9533169533169534,
+      "observations_per_revision": 60
+    },
+    "trace:vco:lincheck::verify": {
+      "baseline_mean_ms": 1.1687836666666667,
+      "candidate_mean_ms": 1.1689443333333334,
+      "delta_ms": 0.00016066666666669782,
+      "ratio": 1.0001374648459325,
+      "observations_per_revision": 60
+    },
+    "trace:vco:zerocheck::verify": {
+      "baseline_mean_ms": 0.5253551666666667,
+      "candidate_mean_ms": 0.5265125,
+      "delta_ms": 0.0011573333333333435,
+      "ratio": 1.0022029541284927,
+      "observations_per_revision": 60
+    },
+    "witness_commit_ms": {
+      "baseline_mean_ms": 0.69488875,
+      "candidate_mean_ms": 0.6929044,
+      "delta_ms": -0.001984350000000079,
+      "ratio": 0.9971443630365291,
+      "observations_per_revision": 60
+    }
+  },
+  "processes": [
+    {
+      "process": "1-baseline",
+      "means": {
+        "stage:falcon_bench:commit/falcon_hybrid:witness_commit": 0.6798536,
+        "stage:falcon_bench:commit/falcon_bench:commit": 0.6960432,
+        "stage:falcon_bench:prove/falcon_arithmetic:norm": 0.195788,
+        "stage:falcon_bench:prove/falcon_arithmetic:hash_to_point_products": 0.18829006666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_forest": 1.1940639666666666,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_leaf": 0.323439,
+        "stage:falcon_bench:prove/falcon_native:certificate": 0.005327366666666666,
+        "stage:falcon_bench:prove/falcon_native:projection_public": 0.07083116666666667,
+        "stage:falcon_bench:prove/falcon_native:coordinates": 0.06336973333333333,
+        "stage:falcon_bench:prove/falcon_native:carries": 0.0012444,
+        "stage:falcon_bench:prove/falcon_native:collapse": 0.052313066666666665,
+        "stage:falcon_bench:prove/falcon_native:prove": 0.35977376666666666,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_target": 0.3582789333333333,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_template": 2.523767933333333,
+        "stage:falcon_bench:prove/inner_packed:prefix_accumulators": 0.5997687333333334,
+        "stage:falcon_bench:prove/inner_packed:prepare_tail": 1.6493703,
+        "stage:falcon_bench:prove/inner_packed:fold_tail": 0.2506100333333333,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_inner": 5.405423566666666,
+        "stage:falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 8.462648933333334,
+        "stage:falcon_bench:prove/falcon_bridge:integer_folds": 0.0776354,
+        "stage:falcon_bench:prove/falcon_bridge:column_packing": 0.0242963,
+        "stage:falcon_bench:prove/falcon_bridge:power_tables": 0.6412523,
+        "stage:falcon_bench:prove/falcon_bridge:wfbitz_forest": 2.1087919999999998,
+        "stage:falcon_bench:prove/falcon_hybrid:binary_bridge": 3.091537333333333,
+        "stage:falcon_bench:prove/falcon_hybrid:keccak_prefix": 2.9989701666666666,
+        "stage:falcon_bench:prove/falcon_hybrid:link_coefficients": 1.7420958333333334,
+        "stage:falcon_bench:prove/falcon_joint:packed_setup": 0.2845915,
+        "stage:falcon_bench:prove/falcon_joint:prepare": 0.04662276666666667,
+        "stage:falcon_bench:prove/falcon_joint:compact": 0.0470656,
+        "stage:falcon_bench:prove/falcon_joint:dense": 0.0164546,
+        "stage:falcon_bench:prove/falcon_hybrid:joint_sumcheck": 1.5777733333333332,
+        "stage:falcon_bench:prove/op:ring_switch": 0.2445227,
+        "stage:falcon_bench:prove/op:initial_messages": 0.25982893333333335,
+        "stage:falcon_bench:prove/op:extra_bases": 0.2852989,
+        "stage:falcon_bench:prove/op:deferred_first_fold": 0.051878966666666665,
+        "stage:falcon_bench:prove/lig:grind_pow": 0.007184366666666667,
+        "stage:falcon_bench:prove/op:ligerito": 0.7250651,
+        "stage:falcon_bench:prove/falcon_hybrid:shared_opening": 1.3002954,
+        "stage:falcon_bench:prove/falcon_bench:prove": 19.273876166666668,
+        "stage:falcon_bench:verify/falcon_native:projection_public": 0.0705682,
+        "stage:falcon_bench:verify/falcon_native:coordinates": 0.0622635,
+        "stage:falcon_bench:verify/falcon_native:collapse": 0.050611500000000004,
+        "stage:falcon_bench:verify/falcon_native:verify": 0.31044130000000003,
+        "trace:vco:bind_statement": 0.0005513333333333334,
+        "trace:vco:zerocheck::verify": 0.5242506666666666,
+        "trace:lcv:build_quirky_eq_table (2^16)": 0.41538200000000003,
+        "trace:lcv:circuit.fold_alpha_batched": 0.333508,
+        "trace:lcv:sumcheck replay + comb_vec fold (10 rounds)": 0.25669200000000003,
+        "trace:lcv:final consistency + lagrange_weights_naive": 0.139034,
+        "trace:vco:lincheck::verify": 1.161076,
+        "trace:lig:total": 1.402,
+        "trace:lig:merkle multi-proofs": 0.18,
+        "trace:lig:sample_distinct_queries": 0.31966666666666665,
+        "trace:lig:enforced_sum (eq+dot)": 0.010333333333333333,
+        "trace:lig:residual basis eval": 0.6126666666666667,
+        "trace:lig:eval_b (yr_len positions)": 0.25166666666666665,
+        "stage:falcon_bench:verify/falcon_bench:verify": 12.349184966666666,
+        "total_prover_ms": 19.9683906,
+        "proof_verify_ms": 12.347950366666666,
+        "witness_commit_ms": 0.6951790333333333,
+        "proof_prove_ms": 19.273211566666667
+      }
+    },
+    {
+      "process": "2-candidate",
+      "means": {
+        "stage:falcon_bench:commit/falcon_hybrid:witness_commit": 0.6793535333333334,
+        "stage:falcon_bench:commit/falcon_bench:commit": 0.6950031666666666,
+        "stage:falcon_bench:prove/falcon_arithmetic:norm": 0.1932268,
+        "stage:falcon_bench:prove/falcon_arithmetic:hash_to_point_products": 0.18721766666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_forest": 1.1969222666666666,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_leaf": 0.3331361,
+        "stage:falcon_bench:prove/falcon_native:certificate": 0.0053421,
+        "stage:falcon_bench:prove/falcon_native:projection_public": 0.06717793333333333,
+        "stage:falcon_bench:prove/falcon_native:coordinates": 0.06724503333333333,
+        "stage:falcon_bench:prove/falcon_native:carries": 0.0012760666666666667,
+        "stage:falcon_bench:prove/falcon_native:collapse": 0.0520686,
+        "stage:falcon_bench:prove/falcon_native:prove": 0.36059573333333333,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_target": 0.35760573333333334,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_template": 2.5515376,
+        "stage:falcon_bench:prove/inner_packed:prefix_accumulators": 0.5991468666666667,
+        "stage:falcon_bench:prove/inner_packed:prepare_tail": 1.7451897,
+        "stage:falcon_bench:prove/inner_packed:fold_tail": 0.2539659,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_inner": 5.528913866666667,
+        "stage:falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 8.590184966666667,
+        "stage:falcon_bench:prove/falcon_bridge:integer_folds": 0.08033306666666666,
+        "stage:falcon_bench:prove/falcon_bridge:column_packing": 0.024401466666666666,
+        "stage:falcon_bench:prove/falcon_bridge:power_tables": 0.6439764666666666,
+        "stage:falcon_bench:prove/falcon_bridge:wfbitz_forest": 2.124702233333333,
+        "stage:falcon_bench:prove/falcon_hybrid:binary_bridge": 3.1176993,
+        "stage:falcon_bench:prove/falcon_hybrid:keccak_prefix": 2.9873503,
+        "stage:falcon_bench:prove/falcon_hybrid:link_coefficients": 1.7841194333333334,
+        "stage:falcon_bench:prove/falcon_joint:packed_setup": 0.2800749,
+        "stage:falcon_bench:prove/falcon_joint:prepare": 0.04950806666666667,
+        "stage:falcon_bench:prove/falcon_joint:compact": 0.046458400000000004,
+        "stage:falcon_bench:prove/falcon_joint:dense": 0.0171233,
+        "stage:falcon_bench:prove/falcon_hybrid:joint_sumcheck": 1.5259453,
+        "stage:falcon_bench:prove/op:ring_switch": 0.24620843333333334,
+        "stage:falcon_bench:prove/op:initial_messages": 0.25754536666666666,
+        "stage:falcon_bench:prove/op:extra_bases": 0.2835201,
+        "stage:falcon_bench:prove/op:deferred_first_fold": 0.05015496666666667,
+        "stage:falcon_bench:prove/lig:grind_pow": 0.007561866666666667,
+        "stage:falcon_bench:prove/op:ligerito": 0.7237910333333334,
+        "stage:falcon_bench:prove/falcon_hybrid:shared_opening": 1.3098913,
+        "stage:falcon_bench:prove/falcon_bench:prove": 19.415746833333333,
+        "stage:falcon_bench:verify/falcon_native:projection_public": 0.07079143333333333,
+        "stage:falcon_bench:verify/falcon_native:coordinates": 0.0623494,
+        "stage:falcon_bench:verify/falcon_native:collapse": 0.051801766666666665,
+        "stage:falcon_bench:verify/falcon_native:verify": 0.3128049,
+        "trace:vco:bind_statement": 0.000518,
+        "trace:vco:zerocheck::verify": 0.5256726666666667,
+        "trace:lcv:build_quirky_eq_table (2^16)": 0.42248566666666665,
+        "trace:lcv:circuit.fold_alpha_batched": 0.338521,
+        "trace:lcv:sumcheck replay + comb_vec fold (10 rounds)": 0.2579403333333333,
+        "trace:lcv:final consistency + lagrange_weights_naive": 0.13988266666666666,
+        "trace:vco:lincheck::verify": 1.1754886666666666,
+        "trace:lig:total": 1.2546666666666666,
+        "trace:lig:merkle multi-proofs": 0.17033333333333334,
+        "trace:lig:sample_distinct_queries": 0.32,
+        "trace:lig:enforced_sum (eq+dot)": 0.010666666666666666,
+        "trace:lig:residual basis eval": 0.4706666666666666,
+        "trace:lig:eval_b (yr_len positions)": 0.25166666666666665,
+        "stage:falcon_bench:verify/falcon_bench:verify": 12.3058623,
+        "total_prover_ms": 20.108484133333334,
+        "proof_verify_ms": 12.304179333333334,
+        "witness_commit_ms": 0.6940528666666667,
+        "proof_prove_ms": 19.414431266666668
+      }
+    },
+    {
+      "process": "3-candidate",
+      "means": {
+        "stage:falcon_bench:commit/falcon_hybrid:witness_commit": 0.6770421666666666,
+        "stage:falcon_bench:commit/falcon_bench:commit": 0.6926720666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:norm": 0.19524056666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:hash_to_point_products": 0.1864357,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_forest": 1.1782467,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_leaf": 0.3221342,
+        "stage:falcon_bench:prove/falcon_native:certificate": 0.005500466666666667,
+        "stage:falcon_bench:prove/falcon_native:projection_public": 0.0669638,
+        "stage:falcon_bench:prove/falcon_native:coordinates": 0.0667167,
+        "stage:falcon_bench:prove/falcon_native:carries": 0.0012647666666666666,
+        "stage:falcon_bench:prove/falcon_native:collapse": 0.051779566666666665,
+        "stage:falcon_bench:prove/falcon_native:prove": 0.3617957,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_target": 0.3580035,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_template": 2.5439843,
+        "stage:falcon_bench:prove/inner_packed:prefix_accumulators": 0.5999705333333333,
+        "stage:falcon_bench:prove/inner_packed:prepare_tail": 1.7724542,
+        "stage:falcon_bench:prove/inner_packed:fold_tail": 0.2549172333333333,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_inner": 5.550841666666667,
+        "stage:falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 8.585209566666666,
+        "stage:falcon_bench:prove/falcon_bridge:integer_folds": 0.0737973,
+        "stage:falcon_bench:prove/falcon_bridge:column_packing": 0.024386133333333334,
+        "stage:falcon_bench:prove/falcon_bridge:power_tables": 0.6452162,
+        "stage:falcon_bench:prove/falcon_bridge:wfbitz_forest": 2.1122814,
+        "stage:falcon_bench:prove/falcon_hybrid:binary_bridge": 3.096173933333333,
+        "stage:falcon_bench:prove/falcon_hybrid:keccak_prefix": 2.9925184666666667,
+        "stage:falcon_bench:prove/falcon_hybrid:link_coefficients": 1.7902831333333333,
+        "stage:falcon_bench:prove/falcon_joint:packed_setup": 0.2923129666666667,
+        "stage:falcon_bench:prove/falcon_joint:prepare": 0.046995133333333335,
+        "stage:falcon_bench:prove/falcon_joint:compact": 0.046498033333333334,
+        "stage:falcon_bench:prove/falcon_joint:dense": 0.0162966,
+        "stage:falcon_bench:prove/falcon_hybrid:joint_sumcheck": 1.5713719666666666,
+        "stage:falcon_bench:prove/op:ring_switch": 0.2454414,
+        "stage:falcon_bench:prove/op:initial_messages": 0.2606440666666667,
+        "stage:falcon_bench:prove/op:extra_bases": 0.2865958333333333,
+        "stage:falcon_bench:prove/op:deferred_first_fold": 0.0506971,
+        "stage:falcon_bench:prove/lig:grind_pow": 0.007383466666666666,
+        "stage:falcon_bench:prove/op:ligerito": 0.7183840666666667,
+        "stage:falcon_bench:prove/falcon_hybrid:shared_opening": 1.3067408,
+        "stage:falcon_bench:prove/falcon_bench:prove": 19.442479566666666,
+        "stage:falcon_bench:verify/falcon_native:projection_public": 0.07044726666666666,
+        "stage:falcon_bench:verify/falcon_native:coordinates": 0.06243256666666667,
+        "stage:falcon_bench:verify/falcon_native:collapse": 0.05133226666666667,
+        "stage:falcon_bench:verify/falcon_native:verify": 0.31122716666666667,
+        "trace:vco:bind_statement": 0.0005166666666666667,
+        "trace:vco:zerocheck::verify": 0.5273523333333333,
+        "trace:lcv:build_quirky_eq_table (2^16)": 0.41670433333333334,
+        "trace:lcv:circuit.fold_alpha_batched": 0.33185766666666666,
+        "trace:lcv:sumcheck replay + comb_vec fold (10 rounds)": 0.2576906666666667,
+        "trace:lcv:final consistency + lagrange_weights_naive": 0.13962333333333335,
+        "trace:vco:lincheck::verify": 1.1624,
+        "trace:lig:total": 1.2776666666666667,
+        "trace:lig:merkle multi-proofs": 0.193,
+        "trace:lig:sample_distinct_queries": 0.32033333333333336,
+        "trace:lig:enforced_sum (eq+dot)": 0.01,
+        "trace:lig:residual basis eval": 0.4706666666666666,
+        "trace:lig:eval_b (yr_len positions)": 0.251,
+        "stage:falcon_bench:verify/falcon_bench:verify": 12.319379066666666,
+        "total_prover_ms": 20.133565033333333,
+        "proof_verify_ms": 12.318080466666666,
+        "witness_commit_ms": 0.6917559333333333,
+        "proof_prove_ms": 19.4418091
+      }
+    },
+    {
+      "process": "4-baseline",
+      "means": {
+        "stage:falcon_bench:commit/falcon_hybrid:witness_commit": 0.6797267333333333,
+        "stage:falcon_bench:commit/falcon_bench:commit": 0.6955058666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:norm": 0.1934446,
+        "stage:falcon_bench:prove/falcon_arithmetic:hash_to_point_products": 0.18769136666666666,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_forest": 1.1775561666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:compaction_leaf": 0.32460706666666667,
+        "stage:falcon_bench:prove/falcon_native:certificate": 0.0053611,
+        "stage:falcon_bench:prove/falcon_native:projection_public": 0.07086606666666667,
+        "stage:falcon_bench:prove/falcon_native:coordinates": 0.06295283333333333,
+        "stage:falcon_bench:prove/falcon_native:carries": 0.0012773666666666666,
+        "stage:falcon_bench:prove/falcon_native:collapse": 0.052786266666666665,
+        "stage:falcon_bench:prove/falcon_native:prove": 0.3603575666666667,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_target": 0.3598836,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_template": 2.5280383333333334,
+        "stage:falcon_bench:prove/inner_packed:prefix_accumulators": 0.6018121333333333,
+        "stage:falcon_bench:prove/inner_packed:prepare_tail": 1.6553796,
+        "stage:falcon_bench:prove/inner_packed:fold_tail": 0.2580422,
+        "stage:falcon_bench:prove/falcon_arithmetic:binding_inner": 5.424463566666667,
+        "stage:falcon_bench:prove/falcon_hybrid:arithmetic_prefix": 8.4630587,
+        "stage:falcon_bench:prove/falcon_bridge:integer_folds": 0.07818236666666667,
+        "stage:falcon_bench:prove/falcon_bridge:column_packing": 0.024451833333333332,
+        "stage:falcon_bench:prove/falcon_bridge:power_tables": 0.6436669,
+        "stage:falcon_bench:prove/falcon_bridge:wfbitz_forest": 2.1274757,
+        "stage:falcon_bench:prove/falcon_hybrid:binary_bridge": 3.1149808,
+        "stage:falcon_bench:prove/falcon_hybrid:keccak_prefix": 3.0030992666666667,
+        "stage:falcon_bench:prove/falcon_hybrid:link_coefficients": 1.7701797666666668,
+        "stage:falcon_bench:prove/falcon_joint:packed_setup": 0.2906941,
+        "stage:falcon_bench:prove/falcon_joint:prepare": 0.04875856666666667,
+        "stage:falcon_bench:prove/falcon_joint:compact": 0.0473618,
+        "stage:falcon_bench:prove/falcon_joint:dense": 0.0174214,
+        "stage:falcon_bench:prove/falcon_hybrid:joint_sumcheck": 1.5581926333333334,
+        "stage:falcon_bench:prove/op:ring_switch": 0.2455939,
+        "stage:falcon_bench:prove/op:initial_messages": 0.26128053333333334,
+        "stage:falcon_bench:prove/op:extra_bases": 0.28683946666666665,
+        "stage:falcon_bench:prove/op:deferred_first_fold": 0.051847700000000004,
+        "stage:falcon_bench:prove/lig:grind_pow": 0.0073085,
+        "stage:falcon_bench:prove/op:ligerito": 0.7332117666666667,
+        "stage:falcon_bench:prove/falcon_hybrid:shared_opening": 1.3110116333333333,
+        "stage:falcon_bench:prove/falcon_bench:prove": 19.321683966666665,
+        "stage:falcon_bench:verify/falcon_native:projection_public": 0.07079903333333333,
+        "stage:falcon_bench:verify/falcon_native:coordinates": 0.06269973333333334,
+        "stage:falcon_bench:verify/falcon_native:collapse": 0.052260966666666665,
+        "stage:falcon_bench:verify/falcon_native:verify": 0.31416473333333333,
+        "trace:vco:bind_statement": 0.000534,
+        "trace:vco:zerocheck::verify": 0.5264596666666667,
+        "trace:lcv:build_quirky_eq_table (2^16)": 0.41647233333333333,
+        "trace:lcv:circuit.fold_alpha_batched": 0.34551733333333334,
+        "trace:lcv:sumcheck replay + comb_vec fold (10 rounds)": 0.259162,
+        "trace:lcv:final consistency + lagrange_weights_naive": 0.13980666666666666,
+        "trace:vco:lincheck::verify": 1.1764913333333333,
+        "trace:lig:total": 1.4103333333333332,
+        "trace:lig:merkle multi-proofs": 0.18,
+        "trace:lig:sample_distinct_queries": 0.32,
+        "trace:lig:enforced_sum (eq+dot)": 0.01,
+        "trace:lig:residual basis eval": 0.6163333333333333,
+        "trace:lig:eval_b (yr_len positions)": 0.25433333333333336,
+        "stage:falcon_bench:verify/falcon_bench:verify": 12.357832833333333,
+        "total_prover_ms": 20.015636933333333,
+        "proof_verify_ms": 12.356620066666666,
+        "witness_commit_ms": 0.6945984666666667,
+        "proof_prove_ms": 19.321038466666668
+      }
+    }
+  ]
+}

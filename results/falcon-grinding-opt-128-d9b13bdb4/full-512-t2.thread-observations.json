@@ -1,0 +1,327 @@
+[
+  {
+    "elapsed_s": 1.0009122950141318,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 2.00139545701677,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 3.0019877860322595,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 4.002607898029964,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 5.003091040009167,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 6.003808957000729,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 7.00442681403365,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 8.004974327981472,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 30,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 31,
+        "name": "falcon_hybrid",
+        "cpus": "7"
+      },
+      {
+        "tid": 32,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 33,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      },
+      {
+        "tid": 34,
+        "name": "TracingMuxer",
+        "cpus": "6"
+      },
+      {
+        "tid": 35,
+        "name": "flock-verify",
+        "cpus": "6"
+      }
+    ]
+  },
+  {
+    "elapsed_s": 9.005483979999553,
+    "tasks": [
+      {
+        "tid": 29,
+        "name": "falcon_hybrid",
+        "cpus": "6"
+      }
+    ]
+  }
+]

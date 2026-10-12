@@ -1,0 +1,77 @@
+{
+  "cells": [
+    {
+      "baseline_median_of_seed_medians": 4.272779,
+      "candidate_median_of_seed_medians": 5.370334,
+      "candidate_over_baseline_geomean": 1.1727109717026263,
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metric": "total_prover_ms",
+      "observed_change_percent": 17.271097170262628,
+      "paired_seed_bootstrap_95_percent_interval": [
+        0.9944380460585488,
+        1.301548285650026
+      ],
+      "review_observed_increase": true,
+      "seed_ratios": [
+        0.9944380460585488,
+        1.301548285650026,
+        1.2460485067198628
+      ]
+    },
+    {
+      "baseline_median_of_seed_medians": 4.116914,
+      "candidate_median_of_seed_medians": 5.229979,
+      "candidate_over_baseline_geomean": 1.183607362656525,
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metric": "prove_ms",
+      "observed_change_percent": 18.360736265652513,
+      "paired_seed_bootstrap_95_percent_interval": [
+        1.0002725342331658,
+        1.3160013829393198
+      ],
+      "review_observed_increase": true,
+      "seed_ratios": [
+        1.0002725342331658,
+        1.3160013829393198,
+        1.2596453402975454
+      ]
+    },
+    {
+      "baseline_median_of_seed_medians": 16.290501,
+      "candidate_median_of_seed_medians": 16.189901,
+      "candidate_over_baseline_geomean": 1.0150217980958118,
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metric": "prove_ms",
+      "observed_change_percent": 1.5021798095811834,
+      "paired_seed_bootstrap_95_percent_interval": [
+        0.9938246220911192,
+        1.0486300392295538
+      ],
+      "review_observed_increase": true,
+      "seed_ratios": [
+        0.9938246220911192,
+        1.0034461256314713,
+        1.0486300392295538
+      ]
+    }
+  ],
+  "definition": "Observed total/proof geometric-mean ratio exceeds +1.0%; confirm with new seeds and longer samples. This is not proof of a regression."
+}

@@ -1,0 +1,1381 @@
+--- a/src/piop/spartan/falcon_polynomial.rs
++++ b/src/piop/spartan/falcon_polynomial.rs
+@@ -1,28 +1,220 @@
+-/// Exact Karatsuba product of equal, power-of-two length vectors.
+-/// Falcon's 14-bit public and signed15 witness coefficients at degree 1024
+-/// leave ample headroom in i64, including recursive sums.
+-pub(crate) fn integer_polynomial_product(a: &[i64], b: &[i64]) -> Vec<i64> {
+-    let n = a.len();
+-    debug_assert_eq!(n, b.len());
+-    let mut out = vec![0; 2 * n];
+-    if n <= 32 {
+-        for (i, &x) in a.iter().enumerate() {
+-            for (j, &y) in b.iter().enumerate() {
+-                out[i + j] += x * y;
+-            }
+-        }
+-        return out;
+-    }
+-    let h = n / 2;
+-    let lo = integer_polynomial_product(&a[..h], &b[..h]);
+-    let hi = integer_polynomial_product(&a[h..], &b[h..]);
+-    let asum: Vec<_> = (0..h).map(|i| a[i] + a[h + i]).collect();
+-    let bsum: Vec<_> = (0..h).map(|i| b[i] + b[h + i]).collect();
+-    let mid = integer_polynomial_product(&asum, &bsum);
+-    for i in 0..n {
+-        out[i] += lo[i];
+-        out[i + n] += hi[i];
+-        out[i + h] += mid[i] - lo[i] - hi[i];
+-    }
+-    out
+-}
++use std::sync::OnceLock;
++
++const Q: u32 = 12_289;
++
++/// Reusable storage for an ordinary Falcon polynomial product.
++///
++/// Coefficients are congruent to the integer product modulo 12289. The output
++/// has length `2 * n`, including its zero final coefficient; retaining the high
++/// coefficients is necessary for the ring-quotient witness.
++pub(crate) struct PolynomialWorkspace {
++    output: Vec<i64>,
++    left: Vec<u32>,
++    right: Vec<u32>,
++    tables: &'static NttTables,
++}
++
++impl PolynomialWorkspace {
++    pub(crate) fn new(n: usize) -> Self {
++        static TABLES_512: OnceLock<NttTables> = OnceLock::new();
++        static TABLES_1024: OnceLock<NttTables> = OnceLock::new();
++        let tables = match n {
++            512 => &TABLES_512,
++            1024 => &TABLES_1024,
++            _ => panic!("unsupported Falcon polynomial degree"),
++        }
++        .get_or_init(|| NttTables::new(2 * n));
++        Self {
++            output: vec![0; 2 * n],
++            left: vec![0; 2 * n],
++            right: vec![0; 2 * n],
++            tables,
++        }
++    }
++
++    /// Ordinary convolution modulo q, with canonical coefficients in `0..q`.
++    pub(crate) fn product(&mut self, h: &[u16], s2: &[i16]) -> &[i64] {
++        let n = self.output.len() / 2;
++        assert_eq!(h.len(), n);
++        assert_eq!(s2.len(), n);
++        let (left, right) = (&mut self.left, &mut self.right);
++        for i in 0..n {
++            left[i] = u32::from(h[i]) % Q;
++            // Adding 3q makes every i16 nonnegative before reduction.
++            right[i] = (i32::from(s2[i]) + 3 * Q as i32) as u32 % Q;
++        }
++        left[n..].fill(0);
++        right[n..].fill(0);
++        forward_ntt(left, self.tables);
++        forward_ntt(right, self.tables);
++        for (left, right) in left.iter_mut().zip(right.iter()) {
++            *left = *left * *right % Q;
++        }
++        inverse_ntt(left, self.tables);
++        for (output, &value) in self.output.iter_mut().zip(left.iter()) {
++            *output = i64::from(value);
++        }
++        &self.output
++    }
++}
++
++struct NttTables {
++    forward: Vec<Vec<u32>>,
++    inverse: Vec<Vec<u32>>,
++    inverse_len: u32,
++}
++
++impl NttTables {
++    fn new(len: usize) -> Self {
++        // 11 generates F_12289*. Both 1024 and 2048 divide q - 1.
++        let root = power(11, (Q - 1) / len as u32);
++        let inverse_root = power(root, Q - 2);
++        let mut forward = Vec::new();
++        let mut inverse = Vec::new();
++        let mut width = len;
++        while width >= 2 {
++            let powers = |root| {
++                let step = power(root, (len / width) as u32);
++                let mut value = 1;
++                (0..width / 2)
++                    .map(|_| {
++                        let next = value;
++                        value = value * step % Q;
++                        next
++                    })
++                    .collect()
++            };
++            forward.push(powers(root));
++            inverse.push(powers(inverse_root));
++            width /= 2;
++        }
++        inverse.reverse();
++        Self {
++            forward,
++            inverse,
++            inverse_len: power(len as u32, Q - 2),
++        }
++    }
++}
++
++fn power(mut value: u32, mut exponent: u32) -> u32 {
++    let mut result = 1;
++    while exponent != 0 {
++        if exponent & 1 != 0 {
++            result = result * value % Q;
++        }
++        value = value * value % Q;
++        exponent >>= 1;
++    }
++    result
++}
++
++#[inline(always)]
++fn reduce_once(value: u32) -> u32 {
++    let reduced = value.wrapping_sub(Q);
++    reduced.wrapping_add(Q & 0u32.wrapping_sub(reduced >> 31))
++}
++
++fn forward_ntt(values: &mut [u32], tables: &NttTables) {
++    // Decimation in frequency leaves evaluations in bit-reversed order.
++    for twiddles in &tables.forward {
++        let half = twiddles.len();
++        for block in values.chunks_exact_mut(2 * half) {
++            let (lo, hi) = block.split_at_mut(half);
++            for ((lo, hi), &twiddle) in lo.iter_mut().zip(hi).zip(twiddles) {
++                let sum = reduce_once(*lo + *hi);
++                let difference = reduce_once(*lo + Q - *hi);
++                *lo = sum;
++                *hi = difference * twiddle % Q;
++            }
++        }
++    }
++}
++
++fn inverse_ntt(values: &mut [u32], tables: &NttTables) {
++    // Decimation in time consumes that order without a permutation pass.
++    for twiddles in &tables.inverse {
++        let half = twiddles.len();
++        for block in values.chunks_exact_mut(2 * half) {
++            let (lo, hi) = block.split_at_mut(half);
++            for ((lo, hi), &twiddle) in lo.iter_mut().zip(hi).zip(twiddles) {
++                let product = *hi * twiddle % Q;
++                *hi = reduce_once(*lo + Q - product);
++                *lo = reduce_once(*lo + product);
++            }
++        }
++    }
++    for value in values {
++        *value = *value * tables.inverse_len % Q;
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn schoolbook(h: &[u16], s2: &[i16]) -> Vec<i64> {
++        let mut expected = vec![0; 2 * h.len()];
++        for (i, &left) in h.iter().enumerate() {
++            for (j, &right) in s2.iter().enumerate() {
++                expected[i + j] += i64::from(left) * i64::from(right);
++            }
++        }
++        expected
++    }
++
++    fn compare(h: &[u16], s2: &[i16], workspace: &mut PolynomialWorkspace) {
++        let expected = schoolbook(h, s2);
++        let actual = workspace.product(h, s2);
++        for (&actual, &expected) in actual.iter().zip(&expected) {
++            assert_eq!(actual, expected.rem_euclid(i64::from(Q)));
++        }
++        assert_eq!(actual.last(), Some(&0));
++    }
++
++    #[test]
++    fn workspace_products_match_schoolbook_and_clear_reused_storage() {
++        for n in [512, 1024] {
++            let mut workspace = PolynomialWorkspace::new(n);
++            let mut h = vec![Q as u16 - 1; n];
++            let mut s2 = vec![-16384; n];
++            compare(&h, &s2, &mut workspace);
++            s2.fill(16383);
++            compare(&h, &s2, &mut workspace);
++            for i in 0..n {
++                s2[i] = if i & 1 == 0 { -16384 } else { 16383 };
++            }
++            compare(&h, &s2, &mut workspace);
++            h.fill(u16::MAX);
++            for i in 0..n {
++                s2[i] = if i & 1 == 0 { i16::MIN } else { i16::MAX };
++            }
++            compare(&h, &s2, &mut workspace);
++            let mut seed = 0x4641_4c43_4f4e_u64;
++            let mut next = || {
++                seed ^= seed << 13;
++                seed ^= seed >> 7;
++                seed ^= seed << 17;
++                seed
++            };
++            for _ in 0..8 {
++                for i in 0..n {
++                    h[i] = (next() % u64::from(Q)) as u16;
++                    s2[i] = (next() % 32768) as i16 - 16384;
++                }
++                compare(&h, &s2, &mut workspace);
++            }
++            h.fill(0);
++            s2.fill(0);
++            compare(&h, &s2, &mut workspace);
++            for (i, j) in [(0, 0), (n - 1, 1), (n - 1, n - 1)] {
++                h[i] = Q as u16 - 1;
++                s2[j] = -16384;
++                compare(&h, &s2, &mut workspace);
++                h[i] = 0;
++                s2[j] = 0;
++            }
++            compare(&h, &s2, &mut workspace);
++        }
++    }
++}
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -647,11 +647,13 @@
+             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
+         }
+         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
++        let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
+         for (key, target) in public.public_keys.iter().zip(&public.targets) {
+             for coefficient in key.iter().chain(target) {
+-                h.update(&coefficient.to_le_bytes());
+-            }
+-        }
++                coefficients.extend_from_slice(&coefficient.to_le_bytes());
++            }
++        }
++        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
+         h.update(root);
+         h.update(&self.ligerito.digest());
+         for block in &self.pcs_grinding.blocks {
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -2,7 +2,7 @@
+ use crate::pcs::IntegerMatrixLayout;
+ #[cfg(test)]
+ use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
+-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
++use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -45,12 +45,9 @@
+         Layout::new(s2.len())?;
+         statement.validate(s2.len())?;
+         check_coefficients(&s2)?;
+-        let s1 = crate::utils::cfg_into_iter!(0..s2.len())
+-            .map(|i| {
+-                let product = product(&statement.public_keys[i], &s2[i]);
+-                centered_s1(&statement.targets[i], &product)
+-            })
+-            .collect();
++        let s1 = map_products(statement, &s2, |i, product| {
++            Ok(centered_s1(&statement.targets[i], product))
++        })?;
+         let witness = Self { s1, s2 };
+         check_norms(&witness)?;
+         Ok(witness)
+@@ -131,14 +128,18 @@
+         let layout = Layout::new(s2.len())?;
+         public.validate(layout.batch())?;
+         check_coefficients(&s2)?;
+-        let signatures = crate::utils::cfg_into_iter!(0..layout.batch())
+-            .map(|i| {
+-                let product = product(&public.public_keys[i], &s2[i]);
+-                let s1 = centered_s1(&public.targets[i], &product);
+-                let slack = norm_slack(&s1, &s2[i])?;
+-                Ok((s1, slack))
+-            })
+-            .collect::<Result<Vec<_>, FalconError>>()?;
++        let signatures = map_products(public, &s2, |i, product| {
++            let mut s1 = [0; N];
++            let mut norm = 0;
++            for j in 0..N {
++                let centered =
++                    center(i64::from(public.targets[i][j]) - product[j] + product[N + j]);
++                s1[j] = centered;
++                norm += i64::from(centered).unsigned_abs().pow(2);
++                norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
++            }
++            Ok((s1, checked_slack(norm)?))
++        })?;
+         let mut s1 = Vec::with_capacity(layout.batch());
+         let mut slacks = Vec::with_capacity(layout.batch());
+         for (signature_s1, slack) in signatures {
+@@ -163,8 +164,7 @@
+         check_coefficients(&witness.s1)?;
+         check_coefficients(&witness.s2)?;
+         let slacks = check_norms(&witness)?;
+-        crate::utils::cfg_into_iter!(0..layout.batch()).try_for_each(|i| {
+-            let product = product(&public.public_keys[i], &witness.s2[i]);
++        map_products(public, &witness.s2, |i, product| {
+             for j in 0..N {
+                 let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
+                     - i64::from(witness.s1[i][j]);
+@@ -178,21 +178,41 @@
+     }
+ }
+ 
+-fn product(h: &[u16; N], s2: &[i16; N]) -> Vec<i64> {
+-    let left: Vec<_> = h.iter().map(|&x| i64::from(x)).collect();
+-    let right: Vec<_> = s2.iter().map(|&x| i64::from(x)).collect();
+-    integer_polynomial_product(&left, &right)
++fn map_products<T: Send>(
++    public: &FalconAlgebraicStatement,
++    s2: &[[i16; N]],
++    f: impl Fn(usize, &[i64]) -> Result<T, FalconError> + Send + Sync,
++) -> Result<Vec<T>, FalconError> {
++    #[cfg(feature = "parallel")]
++    {
++        (0..s2.len())
++            .into_par_iter()
++            .map_init(
++                || PolynomialWorkspace::new(N),
++                |workspace, i| f(i, workspace.product(&public.public_keys[i], &s2[i])),
++            )
++            .collect()
++    }
++    #[cfg(not(feature = "parallel"))]
++    {
++        let mut workspace = PolynomialWorkspace::new(N);
++        (0..s2.len())
++            .map(|i| f(i, workspace.product(&public.public_keys[i], &s2[i])))
++            .collect()
++    }
+ }
+ 
+ fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
+-    std::array::from_fn(|j| {
+-        let residue = (i64::from(target[j]) - product[j] + product[N + j]).rem_euclid(Q);
+-        (if residue > Q / 2 {
+-            residue - Q
+-        } else {
+-            residue
+-        }) as i16
+-    })
++    std::array::from_fn(|j| center(i64::from(target[j]) - product[j] + product[N + j]))
++}
++
++fn center(value: i64) -> i16 {
++    let residue = value.rem_euclid(Q);
++    (if residue > Q / 2 {
++        residue - Q
++    } else {
++        residue
++    }) as i16
+ }
+ 
+ fn check_coefficients(vectors: &[[i16; N]]) -> Result<(), FalconError> {
+@@ -221,6 +241,10 @@
+         .chain(s2)
+         .map(|&x| i64::from(x).unsigned_abs().pow(2))
+         .sum();
++    checked_slack(norm)
++}
++
++fn checked_slack(norm: u64) -> Result<u64, FalconError> {
+     if norm > BETA_SQUARED {
+         return Err(FalconError::NormTooLarge {
+             actual: norm,
+@@ -420,7 +444,10 @@
+         let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
+         assert_eq!(combined.witness, witness);
+         assert_eq!(combined.slacks, data.slacks);
+-        assert_eq!(product(&h, &s2), ordinary);
++        assert_eq!(
++            PolynomialWorkspace::new(N).product(&h, &s2),
++            ordinary.map(|coefficient| coefficient.rem_euclid(Q))
++        );
+         assert_eq!(
+             data.slacks[0],
+             BETA_SQUARED
+@@ -432,6 +459,73 @@
+         let mut cyclic = public.clone();
+         cyclic.targets[0][0] = ((u32::from(cyclic.targets[0][0]) + 1) % Q as u32) as u16;
+         assert!(check_algebraic_statement(&cyclic, &witness).is_err());
++    }
++
++    #[test]
++    fn batch_derivation_matches_distinct_schoolbook_witnesses() {
++        let batch = 9;
++        let mut public = FalconAlgebraicStatement {
++            public_keys: Vec::new(),
++            targets: Vec::new(),
++        };
++        let mut expected = FalconAlgebraicWitness {
++            s1: Vec::new(),
++            s2: Vec::new(),
++        };
++        for instance in 0..batch {
++            let h = std::array::from_fn(|j| ((j * 71 + instance * 311) % Q as usize) as u16);
++            let s1 = std::array::from_fn(|j| ((j + instance * 3) % 23) as i16 - 11);
++            let s2 = std::array::from_fn(|j| ((j * 7 + instance * 5) % 17) as i16 - 8);
++            let mut product = vec![0_i64; 2 * N];
++            for i in 0..N {
++                for j in 0..N {
++                    product[i + j] += i64::from(h[i]) * i64::from(s2[j]);
++                }
++            }
++            public.public_keys.push(h);
++            public.targets.push(std::array::from_fn(|j| {
++                (i64::from(s1[j]) + product[j] - product[N + j]).rem_euclid(Q) as u16
++            }));
++            expected.s1.push(s1);
++            expected.s2.push(s2);
++        }
++        let check = || {
++            let derived = WitnessData::from_s2(&public, expected.s2.clone()).unwrap();
++            assert_eq!(derived.witness, expected);
++            let expected_slacks: Vec<_> = expected
++                .s1
++                .iter()
++                .zip(&expected.s2)
++                .map(|(s1, s2)| {
++                    BETA_SQUARED
++                        - s1.iter()
++                            .chain(s2)
++                            .map(|&x| i64::from(x) * i64::from(x))
++                            .sum::<i64>() as u64
++                })
++                .collect();
++            assert_eq!(derived.slacks, expected_slacks);
++            let checked = WitnessData::new(&public, expected.clone()).unwrap();
++            assert_eq!(checked.slacks, expected_slacks);
++            assert_eq!(
++                FalconAlgebraicWitness::from_s2(&public, expected.s2.clone()).unwrap(),
++                expected
++            );
++            let layout = Layout::new(batch).unwrap();
++            assert_eq!(
++                Source::new(layout, &derived).rows(),
++                Source::new(layout, &checked).rows()
++            );
++        };
++        check();
++        #[cfg(feature = "parallel")]
++        for workers in [1, 4] {
++            rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap()
++                .install(check);
++        }
+     }
+ 
+     #[test]
+--- a/src/piop/spartan/falcon/opening.rs
++++ b/src/piop/spartan/falcon/opening.rs
+@@ -37,10 +37,13 @@
+ use super::{
+     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
+     FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
+-    decode_signature_ct, encode_signature_ct,
++    decode_signature_ct,
+     hash_to_point_selection::Selection,
+     piop::{FalconPiopClaimRef, security_schedule},
+ };
++
++#[cfg(test)]
++use super::encode_signature_ct;
+ 
+ #[path = "opening_compact.rs"]
+ mod compact;
+@@ -116,7 +119,7 @@
+             }
+         }
+         for signature in &self.signatures {
+-            encode_signature_ct(signature)?;
++            super::format::validate_signature_ct(signature)?;
+         }
+         Ok(())
+     }
+--- a/src/piop/spartan/falcon/verify.rs
++++ b/src/piop/spartan/falcon/verify.rs
+@@ -1,9 +1,9 @@
+-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+ use super::{
+     BETA_SQUARED, FalconError, FalconPublicKey, FalconSignatureCt, N, Q, decode_public_key,
+     decode_signature_ct,
+     hash_to_point::{HashToPointTrace, hash_to_point_ct},
+ };
++use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
+ 
+ /// Native/circuit-mirror witness for one Falcon verification.
+ #[derive(Clone, Debug, Eq, PartialEq)]
+@@ -29,26 +29,78 @@
+     let public_key = decode_public_key(public_key)?;
+     let signature = decode_signature_ct(signature)?;
+     let hash_to_point = hash_to_point_ct(&signature.nonce, message)?;
+-    trace_from_parts(public_key, signature, hash_to_point, false)
++    trace_from_parts(
++        public_key,
++        signature,
++        hash_to_point,
++        &mut PolynomialWorkspace::new(N),
++    )
+ }
+ 
+ pub(super) fn trace_from_parts(
+     public_key: FalconPublicKey,
+     signature: FalconSignatureCt,
+     hash_to_point: HashToPointTrace,
+-    fast_convolution: bool,
++    workspace: &mut PolynomialWorkspace,
+ ) -> Result<FalconVerificationTrace, FalconError> {
+-    let mut convolution = Box::new([0i64; N]);
+-    let mut high_product = Box::new([0i64; N - 1]);
+-    if fast_convolution {
+-        let left: Vec<_> = public_key.h.iter().map(|&h| i64::from(h)).collect();
+-        let right: Vec<_> = signature.s2.iter().map(|&s| i64::from(s)).collect();
+-        let product = integer_polynomial_product(&left, &right);
+-        for i in 0..N {
+-            convolution[i] = product[i] - product[i + N];
+-        }
+-        high_product.copy_from_slice(&product[N..2 * N - 1]);
+-    } else {
++    let product = workspace.product(public_key.h.as_slice(), signature.s2.as_slice());
++    let mut s1 = Box::new([0i16; N]);
++    let mut ring_quotient = Box::new([0u16; N - 1]);
++    let mut norm = 0u64;
++    for i in 0..N {
++        let difference = i64::from(hash_to_point.point[i]) - product[i] + product[i + N];
++        let residue = difference.rem_euclid(Q);
++        let centered = if residue > Q / 2 {
++            residue - Q
++        } else {
++            residue
++        };
++        s1[i] = centered as i16;
++        norm += centered.unsigned_abs().pow(2);
++        norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
++        if i < N - 1 {
++            ring_quotient[i] = (-product[i + N]).rem_euclid(Q) as u16;
++        }
++    }
++    if norm > BETA_SQUARED {
++        return Err(FalconError::NormTooLarge {
++            actual: norm,
++            bound: BETA_SQUARED,
++        });
++    }
++    Ok(FalconVerificationTrace {
++        public_key,
++        signature,
++        hash_to_point,
++        s1,
++        ring_quotient,
++        norm,
++        norm_slack: BETA_SQUARED - norm,
++    })
++}
++
++/// Verifies a Falcon-1024 CT signature.
++pub fn verify_falcon_ct(
++    public_key: &[u8],
++    message: &[u8],
++    signature: &[u8],
++) -> Result<(), FalconError> {
++    verification_trace(public_key, message, signature).map(drop)
++}
++
++#[cfg(test)]
++mod workspace_tests {
++    use super::super::{KeccakTrace, hash_to_point::from_shake_words};
++    use super::*;
++
++    // Independent integer-convolution oracle; never used by production callers.
++    pub(super) fn schoolbook_trace(
++        public_key: FalconPublicKey,
++        signature: FalconSignatureCt,
++        hash_to_point: HashToPointTrace,
++    ) -> Result<FalconVerificationTrace, FalconError> {
++        let mut convolution = Box::new([0i64; N]);
++        let mut high_product = Box::new([0i64; N - 1]);
+         for (i, &h) in public_key.h.iter().enumerate() {
+             for (j, &s) in signature.s2.iter().enumerate() {
+                 let product = i64::from(h) * i64::from(s);
+@@ -61,50 +113,120 @@
+                 }
+             }
+         }
+-    }
+-
+-    let mut s1 = Box::new([0i16; N]);
+-    let mut norm = 0u64;
+-    for i in 0..N {
+-        let difference = i64::from(hash_to_point.point[i]) - convolution[i];
+-        let residue = difference.rem_euclid(Q);
+-        let centered = if residue > Q / 2 {
+-            residue - Q
+-        } else {
+-            residue
++
++        let mut s1 = Box::new([0i16; N]);
++        let mut norm = 0u64;
++        for i in 0..N {
++            let difference = i64::from(hash_to_point.point[i]) - convolution[i];
++            let residue = difference.rem_euclid(Q);
++            let centered = if residue > Q / 2 {
++                residue - Q
++            } else {
++                residue
++            };
++            s1[i] = centered as i16;
++            norm += centered.unsigned_abs().pow(2);
++            norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
++        }
++        if norm > BETA_SQUARED {
++            return Err(FalconError::NormTooLarge {
++                actual: norm,
++                bound: BETA_SQUARED,
++            });
++        }
++
++        Ok(FalconVerificationTrace {
++            public_key,
++            signature,
++            hash_to_point,
++            s1,
++            ring_quotient: Box::new(std::array::from_fn(|j| {
++                (-high_product[j]).rem_euclid(Q) as u16
++            })),
++            norm,
++            norm_slack: BETA_SQUARED - norm,
++        })
++    }
++
++    #[test]
++    fn reused_workspace_matches_schoolbook_trace() {
++        let mut workspace = PolynomialWorkspace::new(N);
++        for seed in 0..4 {
++            let public_key = FalconPublicKey {
++                h: Box::new(std::array::from_fn(|i| {
++                    ((i * 7_919 + seed * 97) % Q as usize) as u16
++                })),
++            };
++            let mut signature = FalconSignatureCt {
++                nonce: [seed as u8; 40],
++                s2: Box::new([0; N]),
++            };
++            signature.s2[0] = 2_047;
++            signature.s2[N / 2] = seed as i16 - 2;
++            signature.s2[N - 1] = -2_047;
++            let mut hash = from_shake_words(
++                Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
++                KeccakTrace::default(),
++            )
++            .unwrap();
++            // Construct small centered residuals independently from the three
++            // nonzero signature coefficients, including the negacyclic wrap.
++            let mut convolution = [0i64; N];
++            for (i, &h) in public_key.h.iter().enumerate() {
++                for j in [0, N / 2, N - 1] {
++                    let term = i64::from(h) * i64::from(signature.s2[j]);
++                    if i + j < N {
++                        convolution[i + j] += term;
++                    } else {
++                        convolution[i + j - N] -= term;
++                    }
++                }
++            }
++            for i in 0..N {
++                hash.point[i] = (convolution[i] + (i % 7) as i64 - 3).rem_euclid(Q) as u16;
++            }
++            let slow =
++                schoolbook_trace(public_key.clone(), signature.clone(), hash.clone()).unwrap();
++            let fast = trace_from_parts(public_key, signature, hash, &mut workspace).unwrap();
++            assert_eq!(fast, slow);
++        }
++    }
++
++    #[test]
++    fn fused_trace_preserves_excessive_norm_error() {
++        let public_key = FalconPublicKey {
++            h: Box::new([0; N]),
+         };
+-        s1[i] = centered as i16;
+-        norm += centered.unsigned_abs().pow(2);
+-        norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
+-    }
+-    if norm > BETA_SQUARED {
+-        return Err(FalconError::NormTooLarge {
+-            actual: norm,
++        let signature = FalconSignatureCt {
++            nonce: [0; 40],
++            s2: Box::new([0; N]),
++        };
++        let mut hash = from_shake_words(
++            Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
++            KeccakTrace::default(),
++        )
++        .unwrap();
++        hash.point.fill((Q / 2) as u16);
++        let expected = Err(FalconError::NormTooLarge {
++            actual: N as u64 * (Q as u64 / 2).pow(2),
+             bound: BETA_SQUARED,
+         });
+-    }
+-
+-    Ok(FalconVerificationTrace {
+-        public_key,
+-        signature,
+-        hash_to_point,
+-        s1,
+-        ring_quotient: Box::new(std::array::from_fn(|j| {
+-            (-high_product[j]).rem_euclid(Q) as u16
+-        })),
+-        norm,
+-        norm_slack: BETA_SQUARED - norm,
+-    })
+-}
+-
+-/// Verifies a Falcon-1024 CT signature.
+-pub fn verify_falcon_ct(
+-    public_key: &[u8],
+-    message: &[u8],
+-    signature: &[u8],
+-) -> Result<(), FalconError> {
+-    verification_trace(public_key, message, signature).map(drop)
+-}
++        assert_eq!(
++            schoolbook_trace(public_key.clone(), signature.clone(), hash.clone()),
++            expected
++        );
++        assert_eq!(
++            trace_from_parts(
++                public_key,
++                signature,
++                hash,
++                &mut PolynomialWorkspace::new(N)
++            ),
++            expected
++        );
++    }
++}
++
+ falcon_tests! {
+ mod tests {
+     use super::*;
+@@ -124,31 +246,30 @@
+     }
+ 
+     #[test]
+-    fn cached_ring_quotient_matches_full_product_and_fast_trace() {
+-        let slow = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+-        let fast = trace_from_parts(
+-            slow.public_key.clone(),
+-            slow.signature.clone(),
+-            slow.hash_to_point.clone(),
+-            true,
++    fn cached_ring_quotient_matches_full_product_and_schoolbook_trace() {
++        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
++        let reference = workspace_tests::schoolbook_trace(
++            trace.public_key.clone(),
++            trace.signature.clone(),
++            trace.hash_to_point.clone(),
+         )
+         .unwrap();
+-        assert_eq!(slow, fast);
++        assert_eq!(trace, reference);
+         let mut product = [0i64; 2 * N - 1];
+-        for (i, &h) in slow.public_key.h.iter().enumerate() {
+-            for (j, &s) in slow.signature.s2.iter().enumerate() {
++        for (i, &h) in trace.public_key.h.iter().enumerate() {
++            for (j, &s) in trace.signature.s2.iter().enumerate() {
+                 product[i + j] += i64::from(h) * i64::from(s);
+             }
+         }
+         for j in 0..2 * N - 1 {
+             let mut residual = -product[j];
+             if j < N {
+-                residual += i64::from(slow.hash_to_point.point[j]) - i64::from(slow.s1[j]);
++                residual += i64::from(trace.hash_to_point.point[j]) - i64::from(trace.s1[j]);
+             }
+             let quotient = if j == N - 1 {
+                 0
+             } else {
+-                slow.ring_quotient[j % N]
++                trace.ring_quotient[j % N]
+             };
+             assert_eq!(residual.rem_euclid(Q), i64::from(quotient));
+         }
+--- a/src/piop/spartan/falcon/mod.rs
++++ b/src/piop/spartan/falcon/mod.rs
+@@ -2,6 +2,16 @@
+ 
+ /// Domain identifier for the full Falcon verification protocol.
+ pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v6";
++
++/// Hash public statement bytes without per-coefficient update overhead.
++#[cfg(feature = "falcon-hybrid")]
++pub(crate) fn hash_statement_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
++    if bytes.len() >= 1 << 17 {
++        hasher.update_rayon(bytes);
++    } else {
++        hasher.update(bytes);
++    }
++}
+ 
+ /// A malformed encoding or failed Falcon verification.
+ #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
+@@ -33,3 +43,49 @@
+     #[error("Falcon PIOP failure: {0}")]
+     Piop(String),
+ }
++
++#[cfg(all(test, feature = "falcon-hybrid"))]
++mod tests {
++    use super::hash_statement_bytes;
++
++    #[test]
++    fn bulk_statement_hash_preserves_streaming_transcript_digest() {
++        let bytes: Vec<u8> = (0..4 * 1024 * 1024)
++            .map(|i| (i * 37 + i / 251) as u8)
++            .collect();
++        for workers in [1, 2, 8] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                for len in [
++                    0,
++                    1,
++                    2048,
++                    (1 << 17) - 1,
++                    1 << 17,
++                    (1 << 17) + 1,
++                    bytes.len(),
++                ] {
++                    // Prefix and suffix represent the surrounding transcript fields;
++                    // the coefficient bytes need not start on a BLAKE3 block boundary.
++                    let mut reference = blake3::Hasher::new();
++                    reference.update(&[0x5a; 173]);
++                    let mut bulk = reference.clone();
++                    for coefficient in bytes[..len].chunks(2) {
++                        reference.update(coefficient);
++                    }
++                    hash_statement_bytes(&mut bulk, &bytes[..len]);
++                    reference.update(b"source-root-and-grinding-schedule");
++                    bulk.update(b"source-root-and-grinding-schedule");
++                    assert_eq!(
++                        reference.finalize(),
++                        bulk.finalize(),
++                        "len={len}, workers={workers}"
++                    );
++                }
++            });
++        }
++    }
++}
+--- a/src/piop/spartan/falcon/source.rs
++++ b/src/piop/spartan/falcon/source.rs
+@@ -76,45 +76,20 @@
+         signatures: &[&[u8]],
+         traces: &[FalconVerificationTrace],
+     ) -> Result<Self, FalconError> {
+-        if messages.len() != layout.batch()
+-            || signatures.len() != layout.batch()
+-            || traces.len() != layout.batch()
+-        {
+-            return Err(FalconError::InvalidBatchCapacity);
+-        }
+         let p = layout.bitz_params();
+-        let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
+         let offsets = layout.offsets();
+-        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
+-
+-        crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
+-            .enumerate()
+-            .take(layout.batch())
+-            .try_for_each(|(instance, rows)| -> Result<(), FalconError> {
++        Self::from_traces_with_signature(
++            layout,
++            messages,
++            signatures.len(),
++            traces,
++            |instance, rows| {
+                 let signature = signatures[instance];
+-                let message = messages[instance];
+-                let trace = &traces[instance];
+-
+                 if signature.len() != super::CT_SIGNATURE_BYTES {
+                     return Err(FalconError::SignatureLength {
+                         expected: super::CT_SIGNATURE_BYTES,
+                     });
+                 }
+-                if message.len() != 32 {
+-                    return Err(FalconError::InvalidBatchCapacity);
+-                }
+-
+-                put_unsigned(rows, &p, offsets.shared_one, 1, 1);
+-                for (byte_index, &byte) in message.iter().enumerate() {
+-                    put_unsigned(
+-                        rows,
+-                        &p,
+-                        offsets.message + 8 * byte_index,
+-                        u64::from(byte),
+-                        8,
+-                    );
+-                }
+-
+                 for (byte_index, &byte) in signature[..1 + super::NONCE_BYTES].iter().enumerate() {
+                     put_unsigned(
+                         rows,
+@@ -147,6 +122,100 @@
+                 }
+                 debug_assert_eq!(acc_len, 0);
+                 debug_assert!(payload.next().is_none());
++                Ok(())
++            },
++        )
++    }
++
++    /// Packs the supplied typed signatures without a serialization round trip.
++    #[cfg(any(feature = "falcon-hybrid", test))]
++    pub(super) fn from_decoded_traces(
++        layout: FalconSourceLayout,
++        messages: &[&[u8]],
++        signatures: &[super::FalconSignatureCt],
++        traces: &[FalconVerificationTrace],
++    ) -> Result<Self, FalconError> {
++        let p = layout.bitz_params();
++        let offsets = layout.offsets();
++        Self::from_traces_with_signature(
++            layout,
++            messages,
++            signatures.len(),
++            traces,
++            |instance, rows| {
++                let signature = &signatures[instance];
++                super::format::validate_signature_ct(signature)?;
++                put_unsigned(
++                    rows,
++                    &p,
++                    offsets.signature_header_nonce,
++                    u64::from(0x50 + super::COEFFICIENT_LOG as u8),
++                    8,
++                );
++                for (index, &byte) in signature.nonce.iter().enumerate() {
++                    put_unsigned(
++                        rows,
++                        &p,
++                        offsets.signature_header_nonce + 8 * (index + 1),
++                        u64::from(byte),
++                        8,
++                    );
++                }
++                for (index, &coefficient) in signature.s2.iter().enumerate() {
++                    let word = (coefficient as u16) & ((1 << super::SIGNATURE_BITS) - 1);
++                    put_unsigned(
++                        rows,
++                        &p,
++                        layout.s2_bit(index, 0),
++                        u64::from(word),
++                        super::SIGNATURE_BITS,
++                    );
++                }
++                Ok(())
++            },
++        )
++    }
++
++    fn from_traces_with_signature(
++        layout: FalconSourceLayout,
++        messages: &[&[u8]],
++        signature_count: usize,
++        traces: &[FalconVerificationTrace],
++        pack_signature: impl Fn(usize, &mut [Vec<u64>]) -> Result<(), FalconError> + Sync,
++    ) -> Result<Self, FalconError> {
++        if messages.len() != layout.batch()
++            || signature_count != layout.batch()
++            || traces.len() != layout.batch()
++        {
++            return Err(FalconError::InvalidBatchCapacity);
++        }
++        let p = layout.bitz_params();
++        let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
++        let offsets = layout.offsets();
++        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
++
++        crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
++            .enumerate()
++            .take(layout.batch())
++            .try_for_each(|(instance, rows)| -> Result<(), FalconError> {
++                let message = messages[instance];
++                let trace = &traces[instance];
++
++                pack_signature(instance, rows)?;
++                if message.len() != 32 {
++                    return Err(FalconError::InvalidBatchCapacity);
++                }
++
++                put_unsigned(rows, &p, offsets.shared_one, 1, 1);
++                for (byte_index, &byte) in message.iter().enumerate() {
++                    put_unsigned(
++                        rows,
++                        &p,
++                        offsets.message + 8 * byte_index,
++                        u64::from(byte),
++                        8,
++                    );
++                }
+ 
+                 for i in 0..HASH_TO_POINT_SAMPLES {
+                     put_unsigned(
+@@ -299,6 +368,85 @@
+         rows[next / words_per_column][next % words_per_column] |= value >> (64 - shift);
+     }
+ }
++#[cfg(test)]
++mod typed_source_tests {
++    use super::super::{FalconPublicKey, FalconSignatureCt, KeccakTrace, encode_signature_ct};
++    use super::*;
++
++    fn trace() -> FalconVerificationTrace {
++        FalconVerificationTrace {
++            public_key: FalconPublicKey {
++                h: Box::new([0; N]),
++            },
++            signature: FalconSignatureCt {
++                nonce: [0; super::super::NONCE_BYTES],
++                s2: Box::new([0; N]),
++            },
++            hash_to_point: super::super::hash_to_point::from_shake_words(
++                Box::new([0; HASH_TO_POINT_SAMPLES]),
++                KeccakTrace::default(),
++            )
++            .unwrap(),
++            s1: Box::new([0; N]),
++            ring_quotient: Box::new([0; N - 1]),
++            norm: 0,
++            norm_slack: BETA_SQUARED,
++        }
++    }
++
++    #[test]
++    fn typed_signature_packing_matches_encoded_source_and_padding() {
++        let limit = 1i16 << (super::super::SIGNATURE_BITS - 1);
++        let coefficients = [-limit + 1, -1, 0, 1, limit - 1];
++        for batch in [1, 3] {
++            let layout = FalconSourceLayout::new(batch).unwrap();
++            let traces = vec![trace(); batch];
++            let signatures: Vec<_> = (0..batch)
++                .map(|instance| FalconSignatureCt {
++                    nonce: std::array::from_fn(|i| (i * 73 + instance * 19) as u8),
++                    s2: Box::new(std::array::from_fn(|i| {
++                        coefficients[(i + instance) % coefficients.len()]
++                    })),
++                })
++                .collect();
++            let encoded: Vec<_> = signatures
++                .iter()
++                .map(|s| encode_signature_ct(s).unwrap())
++                .collect();
++            let bytes: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
++            let messages = vec![[0x5au8; 32]; batch];
++            let messages: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
++            let expected =
++                FalconSourceWitness::from_traces(layout, &messages, &bytes, &traces).unwrap();
++            let actual =
++                FalconSourceWitness::from_decoded_traces(layout, &messages, &signatures, &traces)
++                    .unwrap();
++            // Supplied signatures deliberately differ from the trace copies.
++            assert_eq!(actual, expected);
++        }
++    }
++
++    #[test]
++    fn typed_signature_packing_rejects_noncanonical_coefficients() {
++        let layout = FalconSourceLayout::new(1).unwrap();
++        let trace = trace();
++        let limit = 1i16 << (super::super::SIGNATURE_BITS - 1);
++        for coefficient in [-limit, limit, i16::MIN, i16::MAX] {
++            let mut signature = trace.signature.clone();
++            signature.s2[17] = coefficient;
++            assert_eq!(
++                FalconSourceWitness::from_decoded_traces(
++                    layout,
++                    &[&[0u8; 32]],
++                    &[signature],
++                    std::slice::from_ref(&trace),
++                ),
++                Err(FalconError::SignatureCoefficientOutOfRange { index: 17 }),
++            );
++        }
++    }
++}
++
+ falcon_tests! {
+ mod tests {
+     use super::*;
+--- a/src/piop/spartan/falcon/hash_to_point.rs
++++ b/src/piop/spartan/falcon/hash_to_point.rs
+@@ -21,7 +21,7 @@
+     from_shake_bytes(&bytes, shake)
+ }
+ 
+-/// Arithmetic mirror shared by the prime and binary SHAKE front ends.
++/// Decode the native SHAKE byte stream for the arithmetic mirror.
+ pub(super) fn from_shake_bytes(
+     bytes: &[u8],
+     shake: KeccakTrace,
+@@ -30,7 +30,17 @@
+         return Err(FalconError::Piop("SHAKE sample length".into()));
+     }
+ 
+-    let mut words = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
++    let words = Box::new(std::array::from_fn(|index| {
++        u16::from_be_bytes([bytes[2 * index], bytes[2 * index + 1]])
++    }));
++    from_shake_words(words, shake)
++}
++
++/// Arithmetic mirror shared by the native and binary SHAKE front ends.
++pub(super) fn from_shake_words(
++    words: Box<[u16; HASH_TO_POINT_SAMPLES]>,
++    shake: KeccakTrace,
++) -> Result<HashToPointTrace, FalconError> {
+     let mut quotients = Box::new([0u8; HASH_TO_POINT_SAMPLES]);
+     let mut remainders = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
+     let mut accepted = Box::new([false; HASH_TO_POINT_SAMPLES]);
+@@ -38,11 +48,10 @@
+     let mut count = 0usize;
+ 
+     for index in 0..HASH_TO_POINT_SAMPLES {
+-        let word = u16::from_be_bytes([bytes[2 * index], bytes[2 * index + 1]]);
++        let word = words[index];
+         let quotient = u32::from(word) / Q as u32;
+         let remainder = u32::from(word) - quotient * Q as u32;
+         let keep = u32::from(word) < 5 * Q as u32;
+-        words[index] = word;
+         quotients[index] = quotient as u8;
+         remainders[index] = remainder as u16;
+         accepted[index] = keep;
+@@ -66,6 +75,89 @@
+         point,
+     })
+ }
++
++#[cfg(test)]
++mod word_tests {
++    use super::*;
++
++    fn bytes(words: &[u16; HASH_TO_POINT_SAMPLES]) -> Vec<u8> {
++        words.iter().flat_map(|word| word.to_be_bytes()).collect()
++    }
++
++    #[test]
++    fn word_frontend_preserves_division_boundaries_and_byte_order() {
++        let mut words = Box::new([7; HASH_TO_POINT_SAMPLES]);
++        let boundaries: Vec<_> = std::iter::once(0)
++            .chain((1..=5).flat_map(|q| [q * Q as u16 - 1, q * Q as u16, q * Q as u16 + 1]))
++            .chain([u16::MAX])
++            .collect();
++        words[..boundaries.len()].copy_from_slice(&boundaries);
++        let encoded = bytes(&words);
++        let trace = from_shake_words(words, KeccakTrace::default()).unwrap();
++        assert_eq!(
++            trace,
++            from_shake_bytes(&encoded, KeccakTrace::default()).unwrap()
++        );
++        for i in 0..HASH_TO_POINT_SAMPLES {
++            assert_eq!(trace.quotients[i], (trace.words[i] / Q as u16) as u8);
++            assert_eq!(trace.remainders[i], trace.words[i] % Q as u16);
++            assert_eq!(trace.accepted[i], trace.words[i] < 5 * Q as u16);
++        }
++        let expected: Vec<_> = trace
++            .words
++            .iter()
++            .copied()
++            .filter(|&word| word < 5 * Q as u16)
++            .map(|word| word % Q as u16)
++            .take(N)
++            .collect();
++        assert_eq!(trace.point.as_slice(), expected);
++    }
++
++    #[test]
++    fn word_frontend_keeps_all_acceptance_decisions_after_point_is_full() {
++        let mut words = Box::new([7; HASH_TO_POINT_SAMPLES]);
++        for (i, word) in words[N..].iter_mut().enumerate() {
++            *word = if i % 2 == 0 {
++                5 * Q as u16 - 1
++            } else {
++                5 * Q as u16
++            };
++        }
++        let trace = from_shake_words(words, KeccakTrace::default()).unwrap();
++        assert!(trace.point.iter().all(|&value| value == 7));
++        for i in N..HASH_TO_POINT_SAMPLES {
++            assert_eq!(trace.accepted[i], (i - N) % 2 == 0);
++            assert_eq!(
++                trace.remainders[i],
++                if trace.accepted[i] { Q as u16 - 1 } else { 0 }
++            );
++        }
++    }
++
++    #[test]
++    fn word_frontend_preserves_underflow_and_byte_length_errors() {
++        for accepted in [0, N - 1] {
++            let mut words = Box::new([u16::MAX; HASH_TO_POINT_SAMPLES]);
++            words[..accepted].fill(0);
++            let encoded = bytes(&words);
++            let expected = Err(FalconError::HashToPointUnderflow { accepted });
++            assert_eq!(from_shake_words(words, KeccakTrace::default()), expected);
++            assert_eq!(from_shake_bytes(&encoded, KeccakTrace::default()), expected);
++        }
++        for len in [
++            0,
++            2 * HASH_TO_POINT_SAMPLES - 1,
++            2 * HASH_TO_POINT_SAMPLES + 1,
++        ] {
++            assert_eq!(
++                from_shake_bytes(&vec![0; len], KeccakTrace::default()),
++                Err(FalconError::Piop("SHAKE sample length".into())),
++            );
++        }
++    }
++}
++
+ falcon_tests! {
+ mod tests {
+     use super::*;
+--- a/src/piop/spartan/falcon/hybrid.rs
++++ b/src/piop/spartan/falcon/hybrid.rs
+@@ -429,29 +429,34 @@
+     ) -> Result<CommittedFalconHybrid, FalconError> {
+         let _span = tracing::info_span!("falcon_hybrid:witness_commit").entered();
+         public.validate(self.batch())?;
+-        let encoded = public
+-            .signatures
+-            .iter()
+-            .map(encode_signature_ct)
+-            .collect::<Result<Vec<_>, _>>()?;
+-        let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
+         let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
+         let (keccak_packed, auxiliary, samples) = self.generate_shake(&nonces, &public.messages)?;
+-        let traces = crate::utils::cfg_into_iter!(0..self.batch())
+-            .map(|i| {
+-                let bytes: Vec<_> = samples[i].iter().flat_map(|w| w.to_be_bytes()).collect();
+-                let htp = super::hash_to_point::from_shake_bytes(&bytes, KeccakTrace::default())?;
+-                super::verify::trace_from_parts(
+-                    public.public_keys[i].clone(),
+-                    public.signatures[i].clone(),
+-                    htp,
+-                    true,
+-                )
+-            })
++        let traces = samples
++            .into_par_iter()
++            .enumerate()
++            .map_init(
++                || crate::piop::spartan::falcon_polynomial::PolynomialWorkspace::new(N),
++                |workspace, (i, words)| {
++                    let htp = super::hash_to_point::from_shake_words(
++                        Box::new(words),
++                        KeccakTrace::default(),
++                    )?;
++                    super::verify::trace_from_parts(
++                        public.public_keys[i].clone(),
++                        public.signatures[i].clone(),
++                        htp,
++                        workspace,
++                    )
++                },
++            )
+             .collect::<Result<Vec<_>, FalconError>>()?;
+         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
+-        let arithmetic =
+-            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;
++        let arithmetic = FalconSourceWitness::from_decoded_traces(
++            self.layout,
++            &messages,
++            &public.signatures,
++            &traces,
++        )?;
+         let mut arithmetic_packed = Vec::with_capacity(1 << self.geometry.physical_logs[0]);
+         for row in arithmetic.rows() {
+             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
+@@ -622,6 +627,8 @@
+             h.update(&(n as u64).to_le_bytes());
+         }
+         h.update(&statement.source_root);
++        let mut public =
++            Vec::with_capacity(self.batch() * (2 * N + 32 + super::CT_SIGNATURE_BYTES));
+         for ((pk, msg), signature) in statement
+             .public
+             .public_keys
+@@ -630,11 +637,12 @@
+             .zip(&statement.public.signatures)
+         {
+             for &coefficient in pk.h.iter() {
+-                h.update(&coefficient.to_le_bytes());
+-            }
+-            h.update(msg);
+-            h.update(&encode_signature_ct(signature)?);
+-        }
++                public.extend_from_slice(&coefficient.to_le_bytes());
++            }
++            public.extend_from_slice(msg);
++            public.extend_from_slice(&encode_signature_ct(signature)?);
++        }
++        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &public);
+         h.update(&self.ligerito.digest());
+         for block in &self.pcs_grinding.blocks {
+             h.update(&block.bits.to_le_bytes());
+--- a/src/piop/spartan/falcon/format.rs
++++ b/src/piop/spartan/falcon/format.rs
+@@ -18,14 +18,10 @@
+ pub fn encode_signature_ct(
+     signature: &FalconSignatureCt,
+ ) -> Result<[u8; CT_SIGNATURE_BYTES], FalconError> {
++    validate_signature_ct(signature)?;
+     let mut bytes = [0u8; CT_SIGNATURE_BYTES];
+     bytes[0] = 0x50 + COEFFICIENT_LOG as u8;
+     bytes[1..1 + NONCE_BYTES].copy_from_slice(&signature.nonce);
+-    for (index, &coefficient) in signature.s2.iter().enumerate() {
+-        if coefficient <= -(1 << (SIGNATURE_BITS - 1)) || coefficient >= 1 << (SIGNATURE_BITS - 1) {
+-            return Err(FalconError::SignatureCoefficientOutOfRange { index });
+-        }
+-    }
+     for (i, &coefficient) in signature.s2.iter().enumerate() {
+         for bit in 0..SIGNATURE_BITS {
+             let offset = i * SIGNATURE_BITS + bit;
+@@ -34,6 +30,15 @@
+         }
+     }
+     Ok(bytes)
++}
++
++pub(super) fn validate_signature_ct(signature: &FalconSignatureCt) -> Result<(), FalconError> {
++    for (index, &coefficient) in signature.s2.iter().enumerate() {
++        if coefficient <= -(1 << (SIGNATURE_BITS - 1)) || coefficient >= 1 << (SIGNATURE_BITS - 1) {
++            return Err(FalconError::SignatureCoefficientOutOfRange { index });
++        }
++    }
++    Ok(())
+ }
+ 
+ /// Decodes the `log2(N) || h[0..N]` public-key format.  Coefficients are

@@ -1,0 +1,30 @@
+{
+  "degree": 1024,
+  "seed": 54,
+  "batch": 1024,
+  "cpu": 4,
+  "existed_before": false,
+  "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+  "timing_purpose": "correctness-only, excluded",
+  "verified_proofs": 2,
+  "runs": [
+    {
+      "stage": "generate",
+      "wall_seconds": 11.185954848013353,
+      "input_digest": "ee6a80a9ddc1996a4ed07d4addd2122a952fa021d3df5efcec8035308850a006",
+      "proof_digest": "692d810d6068a54d000d01fa49786e3caf0263aa26dbd8e5ce28fcaee4349ee7",
+      "external_input_ms": 10557.582728
+    },
+    {
+      "stage": "reload",
+      "wall_seconds": 2.8271786930272356,
+      "input_digest": "ee6a80a9ddc1996a4ed07d4addd2122a952fa021d3df5efcec8035308850a006",
+      "proof_digest": "692d810d6068a54d000d01fa49786e3caf0263aa26dbd8e5ce28fcaee4349ee7",
+      "external_input_ms": 2198.453186
+    }
+  ],
+  "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed54.bin",
+  "cache_bytes": 4827296,
+  "cache_sha256": "2fdc3544e36009ab3304067242e16bd251aec0d884b9e530fa8ac72da79681e3",
+  "cache_checksum_validated_by_binary": true
+}

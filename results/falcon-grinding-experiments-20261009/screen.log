@@ -1,0 +1,69 @@
+full-512-t16-s42-weighted_queries120: total=345.00 prove=282.71 verify=32.61 bits=128.093712 sibling=0.76%
+full-512-t16-s42-global: total=348.80 prove=286.25 verify=32.69 bits=128.093110 sibling=1.27%
+full-512-t16-s42-queries116: total=344.85 prove=282.20 verify=32.69 bits=128.093219 sibling=0.76%
+full-512-t16-s42-weighted: total=348.90 prove=287.03 verify=32.73 bits=128.094391 sibling=1.52%
+Discarding noisy timing attempt: full-512-t16-s42-queries124
+full-512-t16-s42-queries124: total=347.82 prove=283.77 verify=32.70 bits=128.093145 sibling=1.52%
+full-512-t16-s42-original: total=347.08 prove=285.36 verify=32.62 bits=128.093112 sibling=0.76%
+full-512-t16-s42-baseline: total=345.99 prove=283.71 verify=32.76 bits=128.093112 sibling=1.01%
+full-512-t16-s42-queries120: total=348.67 prove=286.43 verify=32.70 bits=128.093242 sibling=1.76%
+arithmetic-512-t8-s42-baseline: total=59.61 prove=53.78 verify=20.36 bits=128.093311 sibling=0.00%
+arithmetic-512-t8-s42-weighted: total=59.55 prove=53.71 verify=20.25 bits=128.094500 sibling=0.59%
+arithmetic-512-t8-s42-original: total=60.02 prove=54.19 verify=20.90 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s42-queries124: total=59.54 prove=53.85 verify=19.95 bits=128.093292 sibling=0.00%
+arithmetic-512-t8-s42-global: total=59.98 prove=53.93 verify=20.01 bits=128.093298 sibling=1.14%
+arithmetic-512-t8-s42-queries116: total=60.11 prove=54.16 verify=20.15 bits=128.093165 sibling=0.56%
+arithmetic-512-t8-s42-queries120: total=59.57 prove=53.85 verify=19.89 bits=128.093177 sibling=0.57%
+arithmetic-512-t8-s42-weighted_queries120: total=59.95 prove=54.14 verify=20.12 bits=128.094417 sibling=0.59%
+full-1024-t16-s42-global: total=667.46 prove=550.16 verify=53.84 bits=128.093238 sibling=1.19%
+Discarding noisy timing attempt: full-1024-t16-s42-queries124
+full-1024-t16-s42-queries124: total=671.52 prove=554.17 verify=53.91 bits=128.093110 sibling=1.84%
+full-1024-t16-s42-original: total=667.42 prove=551.21 verify=54.22 bits=128.093148 sibling=1.58%
+full-1024-t16-s42-queries120: total=669.60 prove=552.17 verify=53.84 bits=128.093159 sibling=1.58%
+full-1024-t16-s42-baseline: total=670.36 prove=547.78 verify=53.97 bits=128.093148 sibling=1.32%
+full-1024-t16-s42-weighted_queries120: total=673.13 prove=554.93 verify=53.80 bits=128.093441 sibling=1.96%
+full-1024-t16-s42-weighted: total=667.80 prove=551.57 verify=53.88 bits=128.093732 sibling=1.19%
+Discarding noisy timing attempt: full-1024-t16-s42-queries116
+Discarding noisy timing attempt: full-1024-t16-s42-queries116
+full-1024-t16-s42-queries116: total=663.82 prove=548.73 verify=53.75 bits=128.093231 sibling=1.59%
+arithmetic-1024-t8-s42-baseline: total=116.24 prove=100.76 verify=38.34 bits=128.093245 sibling=0.28%
+arithmetic-1024-t8-s42-queries120: total=115.64 prove=100.00 verify=37.84 bits=128.093534 sibling=0.29%
+arithmetic-1024-t8-s42-queries116: total=115.64 prove=100.20 verify=37.19 bits=128.093823 sibling=0.86%
+arithmetic-1024-t8-s42-global: total=115.99 prove=100.28 verify=38.10 bits=128.093177 sibling=0.57%
+arithmetic-1024-t8-s42-queries124: total=115.89 prove=100.15 verify=37.53 bits=128.093113 sibling=0.86%
+arithmetic-1024-t8-s42-original: total=115.35 prove=100.23 verify=38.05 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s42-weighted: total=115.28 prove=99.72 verify=37.89 bits=128.094010 sibling=0.00%
+arithmetic-1024-t8-s42-weighted_queries120: total=114.68 prove=99.24 verify=37.36 bits=128.093151 sibling=0.29%
+arithmetic-512-t8-s43-queries124: total=59.91 prove=54.14 verify=20.24 bits=128.093292 sibling=0.56%
+arithmetic-512-t8-s43-global: total=59.62 prove=53.91 verify=20.22 bits=128.093298 sibling=1.14%
+arithmetic-512-t8-s43-queries120: total=59.51 prove=53.70 verify=19.88 bits=128.093177 sibling=0.00%
+arithmetic-512-t8-s43-original: total=60.22 prove=54.41 verify=20.65 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s43-baseline: total=59.65 prove=53.85 verify=20.54 bits=128.093311 sibling=0.00%
+arithmetic-512-t8-s43-queries116: total=60.29 prove=54.48 verify=20.03 bits=128.093165 sibling=0.57%
+arithmetic-512-t8-s43-weighted_queries120: total=59.15 prove=53.41 verify=19.78 bits=128.094417 sibling=0.00%
+arithmetic-512-t8-s43-weighted: total=59.61 prove=53.87 verify=20.49 bits=128.094500 sibling=0.59%
+full-512-t16-s43-original: total=346.70 prove=284.66 verify=32.51 bits=128.093112 sibling=1.51%
+Discarding noisy timing attempt: full-512-t16-s43-global
+Discarding noisy timing attempt: full-512-t16-s43-global
+Discarding noisy timing attempt: full-512-t16-s43-global
+full-512-t16-s43-global: total=342.63 prove=280.73 verify=32.71 bits=128.093110 sibling=1.53%
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+Traceback (most recent call last):
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 83, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 81, in main
+    results=[run(args.phase,kind,degree,t,seed,profile,args.reps) for profile in profiles]
+             ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 56, in run
+    return run(phase,kind,degree,threads,seed,profile,reps,attempt+1)
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 56, in run
+    return run(phase,kind,degree,threads,seed,profile,reps,attempt+1)
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 56, in run
+    return run(phase,kind,degree,threads,seed,profile,reps,attempt+1)
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 54, in run
+    assert attempt<3,'four noisy attempts'
+           ^^^^^^^^^
+AssertionError: four noisy attempts

@@ -1,0 +1,63 @@
+{
+  "commit": "d9b13bdb43cd2d3a0901b44f0939293f234661b5",
+  "verified_proofs": 48,
+  "configurations": [
+    {
+      "configuration": "arithmetic-1024-t1",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "arithmetic-1024-t16",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "arithmetic-1024-t8",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "arithmetic-512-t1",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "arithmetic-512-t16",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "arithmetic-512-t8",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-1024-t1",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-1024-t16",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-1024-t8",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-512-t1",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-512-t16",
+      "verified_proofs": 4
+    },
+    {
+      "configuration": "full-512-t8",
+      "verified_proofs": 4
+    }
+  ],
+  "scope": "Diagnostic profiles of existing binaries; hypothetical allocations are analytical only. No modified production prover benchmarked.",
+  "model_checks": "All four reproduced current composed security values to absolute tolerance 1e-10 bits. All candidate allocations retain normalized error <=15/16 in the floating-point model. Exact-rational and protocol integration checks remain necessary before adoption.",
+  "limitations": [
+    "Same input seed 42; repeated trials characterize timing, not nonce-distribution variability.",
+    "Instrumentation adds overhead; use original uninstrumented campaign for latency comparisons.",
+    "Opening work weight retains current source estimate; observed block counts are higher.",
+    "Initial-k survey does not preserve the fixed 16-lane opening geometry and is not a drop-in Falcon configuration.",
+    "Query tradeoff sweep includes prime groups in optimization; its 128-query-target case is the comparison baseline."
+  ]
+}

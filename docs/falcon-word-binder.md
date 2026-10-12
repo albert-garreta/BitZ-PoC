@@ -1,5 +1,13 @@
 # Algebraic Falcon word binder
 
+> **Historical design note.** This document describes earlier full-capacity-only
+> word-binder revisions and their old protocol identifiers. It does not describe
+> the current production API or security schedule. Production now defaults to
+> the v9 word binder for every supported batch, including partial capacities;
+> explicit bit binding retains its v7/v8 domains. See the
+> [current algebraic Falcon specification](../src/piop/spartan/falcon1024_algebraic/README.md)
+> for the active relation, protocol selection, and grinding budget.
+
 The public constructor
 `PreparedFalconAlgebraic::new_with_binding(batch, security, FalconAlgebraicBinding::Words)` selects
 this relation for either algebraic Falcon degree. `protocol_id()` reports the

@@ -1,0 +1,3294 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c5497c66..7eea20a8 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -262,6 +262,10 @@ required-features = ["binius64-bench"]
+ name = "grind_probe"
+ required-features = ["parallel", "span-metrics"]
+ 
++[[example]]
++name = "falcon_size_breakdown"
++required-features = ["falcon-hybrid"]
++
+ [[example]]
+ name = "hybrid_probe"
+ required-features = ["span-metrics", "hybrid"]
+diff --git a/benches/falcon_hybrid.rs b/benches/falcon_hybrid.rs
+index fd3bc6ec..0b548fdd 100644
+--- a/benches/falcon_hybrid.rs
++++ b/benches/falcon_hybrid.rs
+@@ -8,6 +8,8 @@
+ //! outside prover timing, and the same batch is reused across trials.
+ #[path = "common/falcon_inputs.rs"]
+ mod falcon_inputs;
++#[path = "common/falcon_affinity.rs"]
++mod falcon_affinity;
+ use bitz::piop::spartan::falcon1024_ct::{
+     FalconProtocol, FalconPublicStatement, PreparedFalconHybrid,
+ };
+@@ -115,14 +117,7 @@ impl Options {
+ fn main() -> Result<(), Box<dyn Error>> {
+     let options = Options::read()?;
+     reject_fixture_overrides()?;
+-    #[cfg(feature = "parallel")]
+-    rayon::ThreadPoolBuilder::new()
+-        .num_threads(options.threads)
+-        .build_global()?;
+-    #[cfg(not(feature = "parallel"))]
+-    if options.threads != 1 {
+-        return Err("multiple threads require the parallel feature".into());
+-    }
++    let mut cpu_affinity = falcon_affinity::build_global_pool(options.threads)?;
+     if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
+         use tracing_subscriber::prelude::*;
+         tracing_subscriber::registry()
+@@ -194,6 +189,7 @@ fn main() -> Result<(), Box<dyn Error>> {
+             "algebraic_security_bits": security.algebraic_bits,
+             "security_terms": security_terms,
+             "threads": threads,
++            "cpu_affinity": cpu_affinity,
+             "build_rustflags": option_env!("RUSTFLAGS"),
+             "runtime_rustflags": std::env::var("RUSTFLAGS").ok(),
+             "target_arch": std::env::consts::ARCH,
+@@ -249,6 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
+         prepared.verify(&statement, &proof)?;
+         let verify_ms = ms(start);
+         drop(phase);
++        let flock_verifier_affinity = falcon_affinity::verify_after_trial(&mut cpu_affinity)?;
+         // An exact-build comparison aid, not a stable serialization or wire digest.
+         // Stream the complete Debug representation to avoid allocating its string.
+         let mut proof_hash = DebugHasher(blake3::Hasher::new());
+@@ -287,6 +284,7 @@ fn main() -> Result<(), Box<dyn Error>> {
+                 "witness_commit_ms": witness_commit_ms,
+                 "proof_prove_ms": prove_ms,
+                 "proof_verify_ms": verify_ms,
++                "flock_verifier_affinity": flock_verifier_affinity,
+                 "total_prover_ms": witness_commit_ms + prove_ms,
+                 "end_to_end_ms": witness_commit_ms + prove_ms + verify_ms,
+                 "process_peak_rss_kib": process_peak_rss_kib(),
+diff --git a/scripts/qualify_falcon_one_source.py b/scripts/qualify_falcon_one_source.py
+index 9e923aa9..b337eb99 100644
+--- a/scripts/qualify_falcon_one_source.py
++++ b/scripts/qualify_falcon_one_source.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Fixed-sample qualification for Falcon's one-source commitment change.
++"""Fixed-sample qualification for Falcon commitment and encoding changes.
+ 
+ The two immutable builds are supplied in a JSON manifest. Qualification uses
+ exactly seeds 42..101, one warmup and three samples per process, and all sixteen
+@@ -40,6 +40,59 @@ METRICS = TIMINGS + ("witness_commit_ms", "proof_prove_ms")
+ LIMIT = 1.02
+ HEX64 = re.compile(r"[0-9a-f]{64}")
+ BUILD_MATCH = ("rustc", "lock_sha256", "rustflags", "features", "profile", "target_arch")
++CAMPAIGNS = {
++    "one-source": dict(title="Falcon one-source qualification",
++                       baseline="51405193878e15e1e4259216464f2bb856c8b592",
++                       baseline_roots=3, candidate_roots=1, large_shared_payload_limit=.8),
++    "compact-opening": dict(title="Falcon compact-opening qualification",
++                            baseline="9a401286c98db041762b97f48cfe4f1a8d85ce7c",
++                            baseline_roots=1, candidate_roots=1, large_shared_payload_limit=1.0),
++}
++AFFINITY_POLICY = "linux-x86_64-falcon-serial-aux-pinned-v1"
++
++
++def parse_cpu_affinity(value):
++    try:
++        cpus = [int(part.strip()) for part in value.split(",")]
++    except ValueError as error:
++        raise argparse.ArgumentTypeError("CPU affinity must be comma-separated integers") from error
++    if not cpus or any(cpu < 0 for cpu in cpus) or len(set(cpus)) != len(cpus):
++        raise argparse.ArgumentTypeError("CPU affinity must contain distinct nonnegative CPU IDs")
++    return cpus
++
++
++def validate_affinity(header, requested):
++    actual = header.get("cpu_affinity")
++    if requested is None:
++        require(actual is None, "unexpected benchmark CPU affinity")
++        return
++    expected = dict(policy=AFFINITY_POLICY, requested_worker_cpus=requested,
++                    requested_main_cpu=requested[0], observed_worker_cpus=[[cpu] for cpu in requested],
++                    observed_main_cpus=[requested[0]], allowed_cpus=sorted(os.sched_getaffinity(0)),
++                    requested_auxiliary_worker_cpus=[requested[0]] * len(requested),
++                    observed_auxiliary_worker_cpus=[[requested[0]] for _ in requested])
++    require(actual == expected, "requested/observed CPU affinity mismatch")
++
++
++def validate_verifier_affinity(trials, requested):
++    observations = [row.get("flock_verifier_affinity") for row in trials]
++    if requested is None:
++        require(all(observation is None for observation in observations), "unexpected verifier CPU affinity")
++        return
++    require(all(isinstance(observation, dict) and set(observation) == {"tid", "observed_cpus"}
++                and type(observation["tid"]) is int and observation["tid"] > 0
++                and observation["observed_cpus"] == [requested[0]] for observation in observations),
++            "private verifier CPU affinity mismatch")
++    require(len({observation["tid"] for observation in observations}) == 1, "private verifier thread changed")
++
++
++def validate_build_pair(builds, campaign):
++    profile = CAMPAIGNS[campaign]
++    require(set(builds) == {"baseline", "candidate"}, "expected baseline and candidate")
++    require(all(builds["baseline"][k] == builds["candidate"][k] for k in BUILD_MATCH), "unmatched builds")
++    require(builds["baseline"]["revision"] == profile["baseline"], "wrong baseline revision")
++    require(builds["baseline"]["root_count"] == profile["baseline_roots"]
++            and builds["candidate"]["root_count"] == profile["candidate_roots"], "incorrect commitment counts")
+ 
+ 
+ def mean_ratio_interval(baseline, candidate, *, draws=20000):
+@@ -75,7 +128,8 @@ def read_rows(path):
+     return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
+ 
+ 
+-def validate_rows(rows, build, protocol, security, batch, threads, seed, warmup, measured, stages):
++def validate_rows(rows, build, protocol, security, batch, threads, seed, warmup, measured, stages,
++                  cpu_affinity=None):
+     require(len(rows) == warmup + measured + 2, "incomplete process")
+     require(all(row.get("schema") == SCHEMA for row in rows), "unexpected benchmark schema")
+     header, summary = rows[0], rows[-1]
+@@ -85,6 +139,7 @@ def validate_rows(rows, build, protocol, security, batch, threads, seed, warmup,
+                     threads=threads, input_seed=seed, input_count=batch,
+                     warmup_trials=warmup, measured_trials=measured, stage_timings=stages)
+     require(all(header.get(k) == v for k, v in expected.items()), "incorrect workload metadata")
++    validate_affinity(header, cpu_affinity)
+     require(all(k in header for k in MATCHED), "missing matched metadata")
+     require(header["build_rustflags"] == header["runtime_rustflags"] == build["rustflags"], "build flag mismatch")
+     require(header["target_arch"] == build["target_arch"], "target architecture mismatch")
+@@ -102,6 +157,7 @@ def validate_rows(rows, build, protocol, security, batch, threads, seed, warmup,
+     require(math.isclose(-math.log2(error), header["algebraic_security_bits"], rel_tol=1e-12), "security total mismatch")
+     require(HEX64.fullmatch(header["input_digest"]) is not None, "invalid input digest")
+     trials = rows[1:-1]
++    validate_verifier_affinity(trials, cpu_affinity)
+     require([r.get("trial") for r in trials] == ["warmup"] * warmup + ["sample"] * measured, "wrong trial order")
+     require(all(r.get("event") == "trial" and r.get("verified") is True for r in trials), "unverified trial")
+     require(summary.get("verified") is True and summary.get("samples") == measured, "unverified summary")
+@@ -127,11 +183,20 @@ def validate_rows(rows, build, protocol, security, batch, threads, seed, warmup,
+                 peak_rss_kib=max(r["process_peak_rss_kib"] for r in trials))
+ 
+ 
+-def validate_pair(baseline, candidate):
++def validate_pair(baseline, candidate, campaign="one-source"):
+     require(all(baseline["header"][k] == candidate["header"][k] for k in MATCHED), "unmatched workload/build settings")
++    require(baseline["header"].get("cpu_affinity") == candidate["header"].get("cpu_affinity"), "unmatched CPU affinity")
+     # Roots and Fiat-Shamir proof digests MUST be allowed to change.
+     require(baseline["header"]["arithmetic_prime_min"] == candidate["header"]["arithmetic_prime_min"]
+             and baseline["header"]["arithmetic_prime_max"] == candidate["header"]["arithmetic_prime_max"], "prime profile changed")
++    if campaign == "compact-opening":
++        require(baseline["header"]["security_terms"] == candidate["header"]["security_terms"], "encoding changed security ledger")
++        root = baseline["samples"][0].get("source_root")
++        grinding = baseline["samples"][0].get("grinding_diagnostics")
++        require(root is not None and grinding is not None, "missing encoding equivalence evidence")
++        for result in (baseline, candidate):
++            require(all(row.get("source_root") == root for row in result["samples"]), "encoding changed source root")
++            require(all(row.get("grinding_diagnostics") == grinding for row in result["samples"]), "encoding changed grinding diagnostics")
+ 
+ 
+ def verify_build(build):
+@@ -204,7 +269,8 @@ def run_one(args, builds, label, case, seed, index, dest):
+         require(record["status"] == "validated", "incomplete/failed record requires a new campaign: " + stem)
+         require(record["binary_sha256"] == build["sha256"], "resumed record from different binary")
+         require(record["stdout_sha256"] == support.file_hash(output) and record["stderr_sha256"] == support.file_hash(errors), "resumed evidence changed")
+-        result = validate_rows(read_rows(output), build, *case, args.threads, seed, warmup, measured, stages)
++        result = validate_rows(read_rows(output), build, *case, args.threads, seed, warmup, measured, stages,
++                               args.cpu_affinity)
+         if cache_reference:
+             require(result["header"]["input_digest"] == cache_reference["input_digest"], "resumed cached input differs from reference")
+         return result
+@@ -214,6 +280,9 @@ def run_one(args, builds, label, case, seed, index, dest):
+     command = [build["binary"], "--protocol", protocol, "--security", str(security), "--batch", str(batch),
+                "--threads", str(args.threads), "--seed", str(seed), "--warmup", str(warmup), "--iterations", str(measured)]
+     env = environment(args.threads)
++    if args.cpu_affinity is not None:
++        env["BITZ_FALCON_WORKER_CPUS"] = ",".join(map(str, args.cpu_affinity))
++        env["BITZ_FALCON_MAIN_CPU"] = str(args.cpu_affinity[0])
+     if args.case_cache:
+         env["BITZ_FALCON_CASE_CACHE"] = str(args.case_cache.resolve())
+     if stages:
+@@ -228,7 +297,8 @@ def run_one(args, builds, label, case, seed, index, dest):
+     try:
+         with output.open("w") as out, errors.open("w") as err:
+             run_child(command, env, out, err, args.process_timeout, record["swap_before_gib"], args.max_swap_growth)
+-        result = validate_rows(read_rows(output), build, *case, args.threads, seed, warmup, measured, stages)
++        result = validate_rows(read_rows(output), build, *case, args.threads, seed, warmup, measured, stages,
++                               args.cpu_affinity)
+         if cache_reference:
+             require(result["header"]["input_digest"] == cache_reference["input_digest"], "cached input differs from generated reference")
+         record.update(status="validated", stdout_sha256=support.file_hash(output), stderr_sha256=support.file_hash(errors))
+@@ -242,7 +312,8 @@ def run_one(args, builds, label, case, seed, index, dest):
+         support.write_json(record_path, record)
+ 
+ 
+-def summarize(pairs, qualification, complete):
++def summarize(pairs, qualification, complete, campaign="one-source", cpu_affinity=None):
++    profile = CAMPAIGNS[campaign]
+     cells = []
+     verified_proofs = 0
+     measured_counts = set()
+@@ -256,8 +327,8 @@ def summarize(pairs, qualification, complete):
+         baseline_mean_payload = statistics.mean(observations[s]["baseline"]["payload"] for s in seeds)
+         candidate_mean_payload = statistics.mean(observations[s]["candidate"]["payload"] for s in seeds)
+         payload_ratio = candidate_mean_payload / baseline_mean_payload
+-        payload_limit = .8 if protocol == "shared-prime" and batch == 1024 else 1.0
+-        payload_pass = payload_ratio <= .8 if payload_limit == .8 else payload_ratio < 1.0
++        payload_limit = profile["large_shared_payload_limit"] if protocol == "shared-prime" and batch == 1024 else 1.0
++        payload_pass = payload_ratio <= payload_limit if payload_limit < 1.0 else payload_ratio < 1.0
+         verified_proofs += sum(result["header"]["warmup_trials"] + len(result["samples"])
+                                for observation in observations.values() for result in observation.values())
+         measured_counts.update(len(result["samples"])
+@@ -280,7 +351,8 @@ def summarize(pairs, qualification, complete):
+         tuple(c["seeds"]) == SEEDS and c["payload"]["pass_gate"]
+         and all(c["timings"][m]["status"] == "pass" for m in TIMINGS) for c in cells)
+     return dict(status="pass" if passes else ("not_passed" if qualification and complete else "diagnostic"),
+-                complete=complete, qualifying=qualification, timing_limit=LIMIT,
++                complete=complete, qualifying=qualification, timing_limit=LIMIT, campaign=campaign,
++                cpu_affinity=cpu_affinity,
+                 verified_proofs_in_complete_pairs=verified_proofs,
+                 measured_trials_per_seed=sorted(measured_counts),
+                 estimator="ratio of arithmetic means of per-seed process medians",
+@@ -291,11 +363,15 @@ def write_report(path, summary):
+     counts = summary["measured_trials_per_seed"]
+     observation = ("Each timing observation is the median of three measured proofs for one seed. "
+                    if counts == [3] else "These diagnostics use one measured proof per process. ")
+-    lines = ["# Falcon one-source qualification", "", f"Status: **{summary['status']}**.", "",
++    profile = CAMPAIGNS[summary.get("campaign", "one-source")]
++    payload_gate = ("Mean payload must be strictly smaller in every case. "
++                    + ("SharedPrime batch 1,024 additionally requires a ratio at or below 0.8. "
++                       if profile["large_shared_payload_limit"] == .8 else ""))
++    lines = ["# " + profile["title"], "", f"Status: **{summary['status']}**.", "",
+              observation +
+              "Ratios compare arithmetic means across seeds. The upper confidence bound is a paired "
+              "one-sided 95% bootstrap bound. Qualification requires all 60 preselected seeds and "
+-             "both timing bounds at or below 1.02 in every case.", "",
++             "both timing bounds at or below 1.02 in every case. " + payload_gate, "",
+              "| Protocol | Bits | Batch | Seeds | Prover ratio (upper 95%) | Verifier ratio (upper 95%) | Mean payload ratio |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
+     for cell in summary["cells"]:
+@@ -304,11 +380,24 @@ def write_report(path, summary):
+             return "—" if not v else f"{v['ratio']:.4f} ({v['upper_one_sided_95']:.4f})"
+         lines.append(f"| {cell['protocol']} | {cell['security']} | {cell['batch']} | {len(cell['seeds'])} | "
+                      f"{timing('total_prover_ms')} | {timing('proof_verify_ms')} | {cell['payload']['ratio_of_mean_bytes']:.4f} |")
++    invariants = ("Source roots, security ledgers, and grinding diagnostics must match between revisions; "
++                  "stored proof digests may differ because the encoding changes. "
++                  if summary.get("campaign") == "compact-opening" else
++                  "Roots and proof digests are expected to differ between revisions; ")
+     lines += ["", f"These completed pairs contain {summary['verified_proofs_in_complete_pairs']:,} verified proofs including warmups. "
+               "A complete qualification requires 1,920 separate processes and 7,680 proofs. "
+-              "Roots and proof digests are expected to differ between revisions; input digests, public statements, "
++              + invariants + "Input digests, public statements, "
+               "security targets, geometry, compiler settings, and arithmetic profiles must match. "
+               "A diagnostic or incomplete campaign cannot satisfy the gate.", ""]
++    if summary.get("cpu_affinity") is not None:
++        cpus = summary["cpu_affinity"]
++        lines += [f"Explicit CPU placement: worker indices map to CPUs `{','.join(map(str, cpus))}`; "
++                  f"the main thread is pinned to CPU {cpus[0]}. Requested and observed affinity masks "
++                  "must match in both revisions. This is a separately documented measurement environment; "
++                  "the fixed sample count and timing threshold are unchanged. "
++                  f"The auxiliary pool retains {len(cpus)} workers, pinned to CPU {cpus[0]} for its serial "
++                  "Keccak fold job; all actual parallel work retains the global pool. The private "
++                  "flock verifier thread's singleton mask is checked after every trial outside elapsed timers.", ""]
+     lines += ["Peak RSS below is the maximum process-lifetime high-water mark observed in each cell; "
+               "it is a diagnostic, not a per-proof allocation measurement or an acceptance gate.", "",
+               "| Protocol | Bits | Batch | Baseline peak MiB | Candidate peak MiB |",
+@@ -327,8 +416,12 @@ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--builds", type=Path, required=True)
+     parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--campaign", choices=tuple(CAMPAIGNS), default="one-source",
++                        help="fixed baseline, commitment counts, and proof-size gate; timing gate is unchanged")
+     parser.add_argument("--phase", choices=("qualification", "diagnostic", "cold", "stages", "smoke"), default="qualification")
+     parser.add_argument("--threads", type=int, default=16)
++    parser.add_argument("--cpu-affinity", type=parse_cpu_affinity,
++                        help="explicit worker CPU IDs in index order; main thread uses the first CPU; unset preserves scheduling")
+     parser.add_argument("--case-cache", type=Path, help="shared deterministic public input cache, outside timed regions")
+     parser.add_argument("--cache-reference", type=Path, help="prewarm manifest with independently generated input digests")
+     parser.add_argument("--resume", action="store_true")
+@@ -340,6 +433,11 @@ def main():
+     args = parser.parse_args()
+     require(args.phase != "qualification" or args.threads == 16, "qualification is fixed at 16 threads")
+     require(args.threads > 0, "invalid thread count")
++    if args.cpu_affinity is not None:
++        require(sys.platform.startswith("linux") and platform.machine() == "x86_64"
++                and hasattr(os, "sched_getaffinity"), "CPU affinity requires Linux x86_64")
++        require(len(args.cpu_affinity) == args.threads, "CPU affinity count must equal worker count")
++        require(set(args.cpu_affinity) <= os.sched_getaffinity(0), "requested CPU is not currently allowed")
+     require(bool(args.case_cache) == bool(args.cache_reference), "cache and reference must be supplied together")
+     if args.cache_reference:
+         reference = json.loads(args.cache_reference.read_text())
+@@ -348,12 +446,9 @@ def main():
+         args.cache_references = reference["cases"]
+     builds_manifest = json.loads(args.builds.read_text())
+     builds = builds_manifest["binaries"]
+-    require(set(builds) == {"baseline", "candidate"}, "expected baseline and candidate")
++    validate_build_pair(builds, args.campaign)
+     for build in builds.values():
+         verify_build(build)
+-    require(all(builds["baseline"][k] == builds["candidate"][k] for k in BUILD_MATCH), "unmatched builds")
+-    require(builds["baseline"]["revision"] == "51405193878e15e1e4259216464f2bb856c8b592", "wrong baseline revision")
+-    require(builds["baseline"]["root_count"] == 3 and builds["candidate"]["root_count"] == 1, "incorrect commitment counts")
+     seeds = SEEDS if args.phase == "qualification" else ((42, 43) if args.phase == "diagnostic" else (42,))
+     args.output.mkdir(parents=True, exist_ok=True)
+     dest = args.output / args.phase
+@@ -361,10 +456,13 @@ def main():
+     stop_path = dest / "STOP"
+     require(not stop_path.exists(), "campaign STOP marker already exists")
+     manifest_path = dest / "manifest.json"
+-    immutable = dict(builds=builds_manifest, phase=args.phase, seeds=seeds, protocols=PROTOCOLS,
++    immutable = dict(builds=builds_manifest, campaign=args.campaign, campaign_profile=CAMPAIGNS[args.campaign],
++                     phase=args.phase, seeds=seeds, protocols=PROTOCOLS,
+                      security=TARGETS, batches=BATCHES, threads=args.threads,
+                      host=platform.node(), architecture=platform.machine(), cpu_model=support.cpu_name(),
+                      affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
++                     requested_cpu_affinity=args.cpu_affinity,
++                     cpu_affinity_policy=AFFINITY_POLICY if args.cpu_affinity is not None else None,
+                      harness_sha256=support.file_hash(__file__), timing_limit=LIMIT,
+                      case_cache=str(args.case_cache.resolve()) if args.case_cache else None,
+                      cache_reference_sha256=support.file_hash(args.cache_reference) if args.cache_reference else None,
+@@ -379,9 +477,9 @@ def main():
+     signal.signal(signal.SIGTERM, bench_gate.terminate)
+     acquired = False
+     try:
+-        bench_gate.acquire("falcon-one-source-" + args.phase, 10)
++        bench_gate.acquire("falcon-" + args.campaign + "-" + args.phase, 10)
+         acquired = True
+-        bench_gate.wait_idle("falcon-one-source-" + args.phase, args.min_idle, args.idle_hold, 5, args.max_idle_wait)
++        bench_gate.wait_idle("falcon-" + args.campaign + "-" + args.phase, args.min_idle, args.idle_hold, 5, args.max_idle_wait)
+         manifest["status"] = "running"
+         support.write_json(manifest_path, manifest)
+         index = 0
+@@ -393,7 +491,7 @@ def main():
+                 pair = {}
+                 for label in process_order(("baseline", "candidate"), seed_index):
+                     pair[label] = run_one(args, builds, label, case, seed, seed_index, dest)
+-                validate_pair(pair["baseline"], pair["candidate"])
++                validate_pair(pair["baseline"], pair["candidate"], args.campaign)
+                 pairs[case][seed] = pair
+                 index += 1
+                 manifest.update(completed_pairs=index, active_case=list(case), active_seed=seed)
+@@ -403,7 +501,7 @@ def main():
+                 # namespaces and never truncates an in-flight matched pair.
+                 if stop_path.exists():
+                     verify_final_integrity(args, builds, manifest, immutable)
+-                    summary = summarize(pairs, args.phase == "qualification", False)
++                    summary = summarize(pairs, args.phase == "qualification", False, args.campaign, args.cpu_affinity)
+                     summary.update(status="not_qualified", stop_reason=stop_path.read_text().strip()
+                                    or "Stopped by operator at a completed pair boundary.")
+                     support.write_json(dest / "summary.json", summary)
+@@ -412,11 +510,11 @@ def main():
+                                     complete=False, stop_reason=summary["stop_reason"], finished_at=time.time())
+                     print("CAMPAIGN_RESULT not_qualified (stopped)", flush=True)
+                     return 2
+-            summary = summarize(pairs, args.phase == "qualification", False)
++            summary = summarize(pairs, args.phase == "qualification", False, args.campaign, args.cpu_affinity)
+             support.write_json(dest / "summary.json", summary)
+             write_report(dest / "REPORT.md", summary)
+         verify_final_integrity(args, builds, manifest, immutable)
+-        summary = summarize(pairs, args.phase == "qualification", True)
++        summary = summarize(pairs, args.phase == "qualification", True, args.campaign, args.cpu_affinity)
+         support.write_json(dest / "summary.json", summary)
+         write_report(dest / "REPORT.md", summary)
+         manifest.update(status="completed", qualification_status=summary["status"], finished_at=time.time())
+diff --git a/scripts/test_qualify_falcon_one_source.py b/scripts/test_qualify_falcon_one_source.py
+index 99b27f68..3502abd0 100644
+--- a/scripts/test_qualify_falcon_one_source.py
++++ b/scripts/test_qualify_falcon_one_source.py
+@@ -1,4 +1,5 @@
+ import copy
++import argparse
+ import json
+ from pathlib import Path
+ import tempfile
+@@ -33,6 +34,50 @@ class StatisticsTests(unittest.TestCase):
+         self.assertEqual(qualification.timing_status(dict(upper_one_sided_95=1.04, lower_one_sided_95=1.03)), "regression")
+ 
+ 
++class AffinityTests(unittest.TestCase):
++    def test_cpu_list_is_explicit_unique_and_nonnegative(self):
++        self.assertEqual(qualification.parse_cpu_affinity("0, 1,15"), [0, 1, 15])
++        for value in ("", "0,", "1,1", "-1,0", "one,2"):
++            with self.assertRaises(argparse.ArgumentTypeError):
++                qualification.parse_cpu_affinity(value)
++
++    def test_default_preserves_unpinned_historical_records(self):
++        qualification.validate_affinity({}, None)
++        qualification.validate_affinity({"cpu_affinity": None}, None)
++        with self.assertRaisesRegex(ValueError, "unexpected benchmark"):
++            qualification.validate_affinity({"cpu_affinity": {}}, None)
++
++    def test_observed_workers_main_and_original_masks_are_all_checked(self):
++        value = dict(policy=qualification.AFFINITY_POLICY, requested_worker_cpus=[0, 1],
++                     requested_main_cpu=0, observed_worker_cpus=[[0], [1]],
++                     observed_main_cpus=[0], allowed_cpus=[0, 1, 2, 3],
++                     requested_auxiliary_worker_cpus=[0, 0], observed_auxiliary_worker_cpus=[[0], [0]])
++        with mock.patch.object(qualification.os, "sched_getaffinity", return_value={0, 1, 2, 3}):
++            qualification.validate_affinity({"cpu_affinity": value}, [0, 1])
++            for key in value:
++                bad = copy.deepcopy(value)
++                bad[key] = "different"
++                with self.assertRaisesRegex(ValueError, "affinity mismatch"):
++                    qualification.validate_affinity({"cpu_affinity": bad}, [0, 1])
++
++    def test_private_verifier_mask_is_checked_on_every_trial(self):
++        rows = [{"flock_verifier_affinity": {"tid": 123, "observed_cpus": [0]}} for _ in range(4)]
++        qualification.validate_verifier_affinity(rows, [0, 1])
++        for invalid in (None, {"tid": 0, "observed_cpus": [0]},
++                        {"tid": 123, "observed_cpus": [0, 1]}, {"tid": 123, "observed_cpus": [1]}):
++            bad = copy.deepcopy(rows)
++            bad[-1]["flock_verifier_affinity"] = invalid
++            with self.assertRaisesRegex(ValueError, "verifier CPU affinity"):
++                qualification.validate_verifier_affinity(bad, [0, 1])
++        bad = copy.deepcopy(rows)
++        bad[-1]["flock_verifier_affinity"]["tid"] = 124
++        with self.assertRaisesRegex(ValueError, "thread changed"):
++            qualification.validate_verifier_affinity(bad, [0, 1])
++        qualification.validate_verifier_affinity([{}, {"flock_verifier_affinity": None}], None)
++        with self.assertRaisesRegex(ValueError, "unexpected verifier"):
++            qualification.validate_verifier_affinity(rows, None)
++
++
+ class ValidationTests(unittest.TestCase):
+     @classmethod
+     def setUpClass(cls):
+@@ -101,6 +146,69 @@ class ValidationTests(unittest.TestCase):
+         self.assertEqual(cell["payload"]["maximum_ratio"], .81)
+         self.assertTrue(cell["payload"]["pass_gate"])
+ 
++    def test_compact_payload_gate_is_strict_and_keeps_one_source_default(self):
++        baseline = self.validate(copy.deepcopy(self.fixture))
++        baseline["payload"] = 1000
++        candidate = copy.deepcopy(baseline)
++        candidate["payload"] = 940
++        pairs = {("shared-prime", 128, 1024): {42: dict(baseline=baseline, candidate=candidate)}}
++        self.assertFalse(qualification.summarize(pairs, False, True)["cells"][0]["payload"]["pass_gate"])
++        compact = qualification.summarize(pairs, False, True, "compact-opening")
++        self.assertTrue(compact["cells"][0]["payload"]["pass_gate"])
++        self.assertEqual(compact["cells"][0]["payload"]["limit"], 1.0)
++        self.assertTrue(compact["cells"][0]["payload"]["strict"])
++        self.assertEqual(compact["timing_limit"], 1.02)
++        for size in (1000, 1001):
++            candidate["payload"] = size
++            compact = qualification.summarize(pairs, False, True, "compact-opening")
++            self.assertFalse(compact["cells"][0]["payload"]["pass_gate"])
++
++    def test_compact_payload_gate_checks_mean_in_every_case(self):
++        baseline = self.validate(copy.deepcopy(self.fixture))
++        baseline["payload"] = 1000
++        candidates = [copy.deepcopy(baseline), copy.deepcopy(baseline)]
++        candidates[0]["payload"], candidates[1]["payload"] = 1010, 980
++        for protocol in qualification.PROTOCOLS:
++            for security in qualification.TARGETS:
++                for batch in qualification.BATCHES:
++                    pairs = {(protocol, security, batch): {
++                        seed: dict(baseline=baseline, candidate=candidate)
++                        for seed, candidate in zip((42, 43), candidates)}}
++                    with mock.patch.object(qualification, "mean_ratio_interval", return_value={}):
++                        cell = qualification.summarize(pairs, False, True, "compact-opening")["cells"][0]
++                    self.assertEqual(cell["payload"]["ratio_of_mean_bytes"], .995)
++                    self.assertEqual(cell["payload"]["maximum_ratio"], 1.01)
++                    self.assertTrue(cell["payload"]["pass_gate"])
++
++    def test_campaign_requires_its_pinned_baseline_and_root_counts(self):
++        baseline = {key: "matched" for key in qualification.BUILD_MATCH}
++        baseline.update(revision=qualification.CAMPAIGNS["compact-opening"]["baseline"], root_count=1)
++        builds = dict(baseline=baseline, candidate=dict(baseline))
++        qualification.validate_build_pair(builds, "compact-opening")
++        with self.assertRaisesRegex(ValueError, "wrong baseline"):
++            qualification.validate_build_pair(builds, "one-source")
++        builds["baseline"]["root_count"] = 3
++        with self.assertRaisesRegex(ValueError, "commitment counts"):
++            qualification.validate_build_pair(builds, "compact-opening")
++
++    def test_compact_requires_root_security_and_grinding_equivalence(self):
++        baseline = self.validate(copy.deepcopy(self.fixture))
++        for sample in baseline["samples"]:
++            sample["source_root"] = "a" * 64
++            sample["grinding_diagnostics"] = {"categories": [{"category": "binary_bridge", "serial_nonce_prefix_sum": "123"}]}
++        candidate = copy.deepcopy(baseline)
++        candidate["samples"][0]["proof_debug_digest"] = "b" * 64
++        qualification.validate_pair(baseline, candidate, "compact-opening")
++        for changed in ("source_root", "grinding_diagnostics"):
++            bad = copy.deepcopy(candidate)
++            bad["samples"][-1][changed] = "different"
++            with self.assertRaisesRegex(ValueError, "encoding changed"):
++                qualification.validate_pair(baseline, bad, "compact-opening")
++        bad = copy.deepcopy(candidate)
++        bad["header"]["security_terms"][0]["error_bound"] *= .5
++        with self.assertRaisesRegex(ValueError, "encoding changed security"):
++            qualification.validate_pair(baseline, bad, "compact-opening")
++
+     def test_stop_marker_finishes_pair_and_cannot_qualify(self):
+         result = self.validate(copy.deepcopy(self.fixture))
+         with tempfile.TemporaryDirectory() as directory:
+diff --git a/src/hybrid/opening.rs b/src/hybrid/opening.rs
+index 2fb93fd5..1c1a4f78 100644
+--- a/src/hybrid/opening.rs
++++ b/src/hybrid/opening.rs
+@@ -30,6 +30,7 @@ use crate::{
+     transcript::traits::Transcript,
+ };
+ use flock_core::{
++    challenger::Challenger,
+     field::Gf128 as F,
+     merkle::{self, Hash},
+     pcs::{
+@@ -493,6 +494,228 @@ mod geometry_tests {
+         }
+     }
+ 
++    #[test]
++    fn compact_source_rows_reconstruct_canonical_openings() {
++        for (logs, expected_lanes) in [([9, 12, 10], 11), ([10, 13, 12], 13), ([9, 13, 10], 10)] {
++            let geometry = Geometry::new(logs).unwrap();
++            let sources = sources(&geometry);
++            let (root, data) =
++                commit_sources(&geometry, sources.each_ref().map(Vec::as_slice), 1).unwrap();
++            let positions = 1 << (geometry.position_log + 1);
++            let queries = [0, 1, positions / 2, positions - 1];
++            let original = data.open(positions, geometry.lanes(), &queries);
++            let mut compact = original.clone();
++            compact_initial_rows(&geometry, &mut compact).unwrap();
++            let occupied = occupied_lanes(&geometry);
++            assert_eq!(occupied.len(), expected_lanes);
++            assert!(
++                compact
++                    .opened_rows
++                    .iter()
++                    .all(|row| row.len() == occupied.len())
++            );
++            let expanded = expand_initial_rows(&geometry, &compact, queries.len(), 1).unwrap();
++            assert_eq!(expanded, original);
++            let valid = |opening: &RecursiveProof| {
++                expand_initial_rows(&geometry, opening, queries.len(), 1).is_ok_and(|full| {
++                    authenticate_joint(
++                        &geometry,
++                        &root,
++                        positions,
++                        geometry.lanes(),
++                        &queries,
++                        &full,
++                        merkle::HashKind::Blake3,
++                    )
++                })
++            };
++            assert!(valid(&compact));
++            // The former full-width representation is not an accepted encoding.
++            assert!(!valid(&original));
++            let mut wrong = compact.clone();
++            wrong.opened_rows[0].push(F::ZERO);
++            assert!(!valid(&wrong));
++            let mut wrong = compact.clone();
++            wrong.opened_rows[0].pop();
++            assert!(!valid(&wrong));
++            let mut wrong = compact.clone();
++            wrong.opened_rows.pop();
++            assert!(!valid(&wrong));
++            let mut wrong = compact.clone();
++            wrong.opened_rows[0].swap(0, occupied.len() - 1);
++            assert!(!valid(&wrong));
++            for lane in 0..occupied.len() {
++                let mut wrong = compact.clone();
++                wrong.opened_rows[0][lane] += F::ONE;
++                assert!(!valid(&wrong));
++            }
++            let mut wrong = compact.clone();
++            wrong
++                .merkle_proof
++                .resize(queries.len() * (geometry.position_log + 1) + 1, [0; 32]);
++            assert!(!valid(&wrong));
++            let mut nonzero_padding = original;
++            nonzero_padding.opened_rows[0][15] = F::ONE;
++            assert!(compact_initial_rows(&geometry, &mut nonzero_padding).is_err());
++        }
++    }
++
++    #[test]
++    fn compact_source_rows_preserve_gapped_two_source_lanes() {
++        let geometry = Geometry::new([9, 12]).unwrap();
++        let mut row = vec![F::ZERO; 16];
++        row[0] = F::ONE;
++        for (index, value) in row[8..].iter_mut().enumerate() {
++            *value = F {
++                lo: index as u64 + 10,
++                hi: 1,
++            };
++        }
++        let expected = std::iter::once(row[0])
++            .chain(row[8..].iter().copied())
++            .collect::<Vec<_>>();
++        let original = RecursiveProof {
++            opened_rows: vec![row],
++            merkle_proof: Vec::new(),
++        };
++        let mut compact = original.clone();
++        compact_initial_rows(&geometry, &mut compact).unwrap();
++        assert_eq!(compact.opened_rows[0], expected);
++        assert_eq!(
++            expand_initial_rows(&geometry, &compact, 1, 1).unwrap(),
++            original
++        );
++        let mut invalid = original;
++        invalid.opened_rows[0][1] = F::ONE;
++        assert!(compact_initial_rows(&geometry, &mut invalid).is_err());
++    }
++
++    #[test]
++    fn compact_joint_opening_preserves_roots_messages_and_transcript() {
++        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
++
++        for logs in [[9, 12, 10], [10, 13, 12], [9, 14, 10]] {
++            let geometry = Geometry::new(logs).unwrap();
++            let sources = sources(&geometry);
++            let borrowed = sources.each_ref().map(Vec::as_slice);
++            let resolved = LigeritoSelection::MATCHED_UDR
++                .resolve(geometry.packed_log(), 100)
++                .unwrap();
++            let (root, data) =
++                commit_sources(&geometry, borrowed, resolved.prover().log_inv_rates[0]).unwrap();
++            let statement = *blake3::hash(&root).as_bytes();
++            let point: Vec<_> = (0..geometry.bit_log())
++                .map(|i| F {
++                    lo: i as u64 + 37,
++                    hi: 23,
++                })
++                .collect();
++            let value = bit_evaluation(&geometry.virtual_packed(borrowed), &point);
++            let start = || {
++                let mut t = Blake3Transcript::new();
++                t.absorb_slice(&statement);
++                t
++            };
++            let mut full_t = start();
++            let full: JointProof<ligerito::FinalProof> = prove_sources_initial_with_security(
++                &mut full_t,
++                &geometry,
++                &statement,
++                borrowed,
++                None,
++                &resolved,
++                |positions, lanes, queries| data.open(positions, lanes, queries),
++                &point,
++                None,
++            )
++            .unwrap();
++            let mut compact_t = start();
++            let compact = prove_joint_sources_with_security(
++                &mut compact_t,
++                &geometry,
++                &statement,
++                borrowed,
++                None,
++                &resolved,
++                &data,
++                &point,
++                None,
++            )
++            .unwrap();
++            let full_next: F = full_t.get_field_challenge(&());
++            let compact_next: F = compact_t.get_field_challenge(&());
++            assert_eq!(full_next, compact_next);
++            assert_eq!(full.ring.s_v, compact.ring.s_v);
++            let original = &full.ligerito;
++            let encoded = &compact.ligerito;
++            assert_eq!(original.initial_root, encoded.initial_root);
++            assert_eq!(original.recursive_roots, encoded.recursive_roots);
++            assert_eq!(original.recursive_proofs, encoded.recursive_proofs);
++            assert_eq!(original.sumcheck_transcript, encoded.sumcheck_transcript);
++            assert_eq!(original.grinding_nonces, encoded.grinding_nonces);
++            assert_eq!(original.fold_grinding_nonces, encoded.fold_grinding_nonces);
++            assert_eq!(original.ood_values, encoded.ood_values);
++            let vc = resolved.verifier();
++            assert_eq!(
++                original.initial_proof,
++                expand_initial_rows(
++                    &geometry,
++                    &encoded.initial_proof,
++                    vc.queries[0],
++                    vc.log_inv_rates[0]
++                )
++                .unwrap(),
++            );
++            assert!(
++                bincode::serialized_size(encoded).unwrap()
++                    < bincode::serialized_size(original).unwrap()
++            );
++            let mut full_t = start();
++            verify_initial_with_security(
++                &mut full_t,
++                &geometry,
++                &statement,
++                &point,
++                value,
++                None,
++                &resolved,
++                &full.ring,
++                original,
++                &original.initial_proof,
++                |positions, lanes, queries, opening| {
++                    authenticate_joint(
++                        &geometry,
++                        &root,
++                        positions,
++                        lanes,
++                        queries,
++                        opening,
++                        vc.merkle_hash,
++                    )
++                },
++                None,
++            )
++            .unwrap();
++            let mut compact_t = start();
++            verify_joint_with_security(
++                &mut compact_t,
++                &geometry,
++                &statement,
++                &root,
++                &point,
++                value,
++                None,
++                &resolved,
++                &compact,
++                None,
++            )
++            .unwrap();
++            let full_next: F = full_t.get_field_challenge(&());
++            let compact_next: F = compact_t.get_field_challenge(&());
++            assert_eq!(full_next, compact_next);
++        }
++    }
++
+     #[test]
+     fn joint_projection_matches_binary_mle_at_non_boolean_points() {
+         for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
+@@ -937,13 +1160,14 @@ pub(crate) struct Proof<const N: usize = 2> {
+     pub paths: [Vec<Hash>; N],
+ }
+ 
+-/// A shared opening with one initial Merkle multiproof, stored in Ligerito's
+-/// initial proof. The logical source count is independent of this proof shape.
++/// One initial multiproof authenticates rows stored without structural-zero
++/// lanes. The compact terminal stores the complete final pre-fold message.
++/// The logical source count is independent of this proof shape.
+ #[derive(Clone, Debug)]
+-pub(crate) struct JointProof {
++pub(crate) struct JointProof<Final = Vec<F>> {
+     pub ood: Option<OodRound>,
+     pub ring: RingSwitchProof,
+-    pub ligerito: LigeritoProof,
++    pub ligerito: LigeritoProof<Final>,
+ }
+ 
+ pub(crate) struct JointProverData<const N: usize> {
+@@ -968,6 +1192,87 @@ fn validate_geometry<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error
+     Ok(())
+ }
+ 
++/// The transport order is canonical lane order, independent of branch order.
++/// Only entire unused lanes are omitted: padding inside an occupied source
++/// does not imply zero RS evaluations.
++fn occupied_lanes<const N: usize>(geometry: &Geometry<N>) -> Vec<usize> {
++    (0..geometry.lanes())
++        .filter(|&lane| {
++            (0..N).any(|branch| {
++                let start = geometry.offset(branch);
++                (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
++            })
++        })
++        .collect()
++}
++
++fn compact_initial_rows<const N: usize>(
++    geometry: &Geometry<N>,
++    opening: &mut RecursiveProof,
++) -> Result<(), Error> {
++    let occupied = occupied_lanes(geometry);
++    let occupied_prefix = occupied.iter().copied().eq(0..occupied.len());
++    for row in &mut opening.opened_rows {
++        if row.len() != geometry.lanes() {
++            return Err(Error::Invalid("noncanonical initial source row"));
++        }
++        if occupied_prefix {
++            if row[occupied.len()..].iter().any(|&value| value != F::ZERO) {
++                return Err(Error::Invalid("noncanonical initial source row"));
++            }
++        } else {
++            if row
++                .iter()
++                .enumerate()
++                .any(|(lane, &value)| !occupied.contains(&lane) && value != F::ZERO)
++            {
++                return Err(Error::Invalid("noncanonical initial source row"));
++            }
++            for (destination, &lane) in occupied.iter().enumerate() {
++                row[destination] = row[lane];
++            }
++        }
++        row.truncate(occupied.len());
++    }
++    Ok(())
++}
++
++fn expand_initial_rows<const N: usize>(
++    geometry: &Geometry<N>,
++    opening: &RecursiveProof,
++    queries: usize,
++    log_inv_rate: usize,
++) -> Result<RecursiveProof, Error> {
++    let occupied = occupied_lanes(geometry);
++    let max_path_hashes = queries
++        .checked_mul(geometry.position_log + log_inv_rate)
++        .ok_or(Error::Invalid("initial source query shape"))?;
++    if opening.opened_rows.len() != queries
++        || opening.merkle_proof.len() > max_path_hashes
++        || opening
++            .opened_rows
++            .iter()
++            .any(|row| row.len() != occupied.len())
++    {
++        return Err(Error::Invalid("compact initial source opening shape"));
++    }
++    let opened_rows = opening
++        .opened_rows
++        .iter()
++        .map(|row| {
++            let mut full = vec![F::ZERO; geometry.lanes()];
++            for (&lane, &value) in occupied.iter().zip(row) {
++                full[lane] = value;
++            }
++            full
++        })
++        .collect();
++    Ok(RecursiveProof {
++        opened_rows,
++        merkle_proof: opening.merkle_proof.clone(),
++    })
++}
++
+ /// RS-encode populated lanes and build one tree over full canonical virtual
+ /// rows. Zero lanes are synthesized in bounded leaf-hashing buffers.
+ pub(crate) fn commit_sources<const N: usize>(
+@@ -1084,7 +1389,7 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
+     {
+         return Err(Error::Invalid("joint source opening shape"));
+     }
+-    prove_sources_initial_with_security(
++    let mut proof = prove_sources_initial_with_security(
+         t,
+         geometry,
+         statement,
+@@ -1094,7 +1399,9 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
+         |positions, lanes, queries| data.open(positions, lanes, queries),
+         point,
+         security,
+-    )
++    )?;
++    compact_initial_rows(geometry, &mut proof.ligerito.initial_proof)?;
++    Ok(proof)
+ }
+ 
+ fn authenticate_joint<const N: usize>(
+@@ -1157,6 +1464,12 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
+         return Err(Error::Invalid("joint source opening point"));
+     }
+     let vc = resolved.verifier();
++    let initial = expand_initial_rows(
++        geometry,
++        &proof.ligerito.initial_proof,
++        vc.queries[0],
++        vc.log_inv_rates[0],
++    )?;
+     verify_initial_with_security(
+         t,
+         geometry,
+@@ -1167,6 +1480,7 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
+         resolved,
+         &proof.ring,
+         &proof.ligerito,
++        &initial,
+         |positions, lanes, queries, opening| {
+             positions == 1 << (geometry.position_log + vc.log_inv_rates[0])
+                 && authenticate_joint(
+@@ -1352,7 +1666,7 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+-fn prove_sources_initial_with_security<const N: usize>(
++fn prove_sources_initial_with_security<const N: usize, Final: OpeningEncoding>(
+     t: &mut (impl Transcript + Send),
+     geometry: &Geometry<N>,
+     statement: &Hash,
+@@ -1362,7 +1676,7 @@ fn prove_sources_initial_with_security<const N: usize>(
+     open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+     point: &[Gf],
+     security: Option<&mut grinding::GrindingContext<'_>>,
+-) -> Result<JointProof, Error> {
++) -> Result<JointProof<Final>, Error> {
+     let ring_scope = tracing::info_span!("op:ring_switch").entered();
+     let marginal = geometry.ring_marginal(sources, &point[7..]);
+     let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
+@@ -1422,6 +1736,100 @@ enum PreparedInitial<'a> {
+     Deferred(ligerito::DeferredInitial<'a>),
+ }
+ 
++/// Static dispatch keeps the existing separate-source clients and the compact
++/// joint opening on one transcript implementation. Falcon accepts only the
++/// compact type; the proof cannot select an encoding.
++#[allow(clippy::too_many_arguments)]
++trait OpeningEncoding: Sized {
++    fn prove(
++        config: &ligerito::ProverConfig,
++        initial: PreparedInitial<'_>,
++        target: F,
++        statement: Hash,
++        open: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++        challenger: &mut impl Challenger,
++    ) -> LigeritoProof<Self>;
++
++    fn verify(
++        config: &ligerito::VerifierConfig,
++        proof: &LigeritoProof<Self>,
++        initial: &RecursiveProof,
++        log_n: usize,
++        target: F,
++        statement: &Hash,
++        eval: impl Fn(&[F], usize) -> Vec<F>,
++        authenticate: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++        challenger: &mut impl Challenger,
++    ) -> bool;
++}
++
++macro_rules! opening_encoding {
++    ($final:ty, $dense:ident, $precomputed:ident, $deferred:ident, $verify:ident, $initial:ident $(=> $expanded:ident)?) => {
++        impl OpeningEncoding for $final {
++            fn prove(
++                config: &ligerito::ProverConfig,
++                initial: PreparedInitial<'_>,
++                target: F,
++                statement: Hash,
++                open: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++                challenger: &mut impl Challenger,
++            ) -> LigeritoProof<Self> {
++                match initial {
++                    PreparedInitial::Deferred(initial) => ligerito::$deferred(
++                        config, initial, target, statement, open, challenger,
++                    ),
++                    PreparedInitial::Dense {
++                        packed,
++                        basis,
++                        precomputed: Some((message, lookahead)),
++                    } => ligerito::$precomputed(
++                        config, packed, basis, target, statement, open, message,
++                        Some(lookahead), challenger,
++                    ),
++                    PreparedInitial::Dense { packed, basis, precomputed: None } => {
++                        ligerito::$dense(config, packed, basis, target, statement, open, challenger)
++                    }
++                }
++            }
++
++            fn verify(
++                config: &ligerito::VerifierConfig,
++                proof: &LigeritoProof<Self>,
++                $initial: &RecursiveProof,
++                log_n: usize,
++                target: F,
++                statement: &Hash,
++                eval: impl Fn(&[F], usize) -> Vec<F>,
++                authenticate: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++                challenger: &mut impl Challenger,
++            ) -> bool {
++                let _ = $initial;
++                ligerito::$verify(
++                    config, proof, $( $expanded, )? log_n, target, statement,
++                    eval, authenticate, challenger,
++                )
++            }
++        }
++    };
++}
++
++opening_encoding!(
++    ligerito::FinalProof,
++    recursive_prover_with_basis_initial,
++    recursive_prover_with_basis_initial_precomputed_round0,
++    recursive_prover_with_basis_initial_deferred,
++    recursive_verifier_with_basis_initial,
++    initial
++);
++opening_encoding!(
++    Vec<F>,
++    recursive_prover_with_basis_initial_compact,
++    recursive_prover_with_basis_initial_precomputed_round0_compact,
++    recursive_prover_with_basis_initial_deferred_compact,
++    recursive_verifier_with_basis_initial_compact,
++    initial => initial
++);
++
+ #[allow(clippy::too_many_arguments)]
+ fn continue_prove<const N: usize>(
+     t: &mut (impl Transcript + Send),
+@@ -1480,7 +1888,7 @@ fn separate_initial<'a, const N: usize>(
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+-fn continue_prove_with_initial(
++fn continue_prove_with_initial<Final: OpeningEncoding>(
+     t: &mut (impl Transcript + Send),
+     statement: &Hash,
+     initial: PreparedInitial<'_>,
+@@ -1490,52 +1898,11 @@ fn continue_prove_with_initial(
+     resolved: &crate::ligerito_flock::ResolvedLigerito,
+     open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+     security: Option<&mut grinding::GrindingContext<'_>>,
+-) -> Result<JointProof, Error> {
++) -> Result<JointProof<Final>, Error> {
+     let _lig_scope = tracing::info_span!("op:ligerito").entered();
+     let pc = resolved.prover();
+     macro_rules! run {
+-        ($challenger:expr) => {{
+-            match initial {
+-                PreparedInitial::Deferred(initial) => {
+-                    ligerito::recursive_prover_with_basis_initial_deferred(
+-                        &pc,
+-                        initial,
+-                        target,
+-                        *statement,
+-                        open_initial,
+-                        $challenger,
+-                    )
+-                }
+-                PreparedInitial::Dense {
+-                    packed,
+-                    basis,
+-                    precomputed: Some((message, lookahead)),
+-                } => ligerito::recursive_prover_with_basis_initial_precomputed_round0(
+-                    &pc,
+-                    packed,
+-                    basis,
+-                    target,
+-                    *statement,
+-                    open_initial,
+-                    message,
+-                    Some(lookahead),
+-                    $challenger,
+-                ),
+-                PreparedInitial::Dense {
+-                    packed,
+-                    basis,
+-                    precomputed: None,
+-                } => ligerito::recursive_prover_with_basis_initial(
+-                    &pc,
+-                    packed,
+-                    basis,
+-                    target,
+-                    *statement,
+-                    open_initial,
+-                    $challenger,
+-                ),
+-            }
+-        }};
++        ($challenger:expr) => {{ Final::prove(&pc, initial, target, *statement, open_initial, $challenger) }};
+     }
+     let proof = if let Some(security) = security {
+         let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
+@@ -1636,13 +2003,14 @@ pub(crate) fn verify_with_security<const N: usize>(
+         resolved,
+         &proof.ring,
+         &proof.ligerito,
++        &proof.ligerito.initial_proof,
+         authenticate_initial,
+         security,
+     )
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+-fn verify_initial_with_security<const N: usize>(
++fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
+     t: &mut (impl Transcript + Send),
+     geometry: &Geometry<N>,
+     statement: &Hash,
+@@ -1651,7 +2019,8 @@ fn verify_initial_with_security<const N: usize>(
+     ood: Option<&OodVerifierClaim>,
+     resolved: &crate::ligerito_flock::ResolvedLigerito,
+     ring: &RingSwitchProof,
+-    proof: &LigeritoProof,
++    proof: &LigeritoProof<Final>,
++    initial: &RecursiveProof,
+     authenticate_initial: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+     security: Option<&mut grinding::GrindingContext<'_>>,
+ ) -> Result<(), Error> {
+@@ -1687,9 +2056,10 @@ fn verify_initial_with_security<const N: usize>(
+     }
+     macro_rules! run {
+         ($challenger:expr) => {
+-            ligerito::recursive_verifier_with_basis_initial(
++            Final::verify(
+                 &vc,
+                 proof,
++                initial,
+                 geometry.packed_log(),
+                 target,
+                 statement,
+diff --git a/src/piop/spartan/falcon1024_ct/ONE_SOURCE.md b/src/piop/spartan/falcon1024_ct/ONE_SOURCE.md
+index 5da8354c..253be637 100644
+--- a/src/piop/spartan/falcon1024_ct/ONE_SOURCE.md
++++ b/src/piop/spartan/falcon1024_ct/ONE_SOURCE.md
+@@ -32,8 +32,75 @@ Each leaf authenticates all sixteen canonical little-endian K elements,
+ including padding. The implementation encodes only populated source lanes,
+ gathers bounded batches of full rows for hashing, and builds one initial
+ tree. It does not allocate a dense padded joint codeword or three temporary
+-source trees. Query rows are gathered in the same order as the committed
+-rows, and one multiproof authenticates them. Later PCS trees are unchanged.
++source trees. One multiproof authenticates the queried initial rows. The
++proof stores their occupied lanes in ascending lane order; the verifier
++restores the structural zero lanes before hashing or inducing a sumcheck.
++All sixteen lanes therefore remain part of the committed alphabet.
++
++## Compact opening messages
++
++The initial opening stores eleven field elements per query at batch sizes
++2..1024: eight K16 lanes, two K4 lanes, and one arithmetic lane. Batch one
++stores thirteen because its K4 slab needs four lanes. The prepared geometry
++determines these positions and counts. Each row is expanded by
++
++    E_full(q,l) = E_compact(q,rank(l))  if l is an occupied lane,
++                  0                  otherwise.
++
++Only entire structural zero lanes are omitted. An inactive signature, a
++source's physical suffix, or a circuit padding coordinate does not justify
++dropping an encoded field element from an occupied lane. The source root,
++query positions, multiproof hashes, and reconstructed row bytes are unchanged.
++This saves 80 bytes per initial query, or 48 bytes at batch one, before framing.
++
++At the final recursive level, let F(c,l) be the full message of its existing
++commitment, with 32 columns and L lanes. Its stored order is column-major
++with the lane index in the least significant address bits. It is the witness
++table before the last lane folds, not a prefix of the non-systematic RS
++codeword. Previously the proof sent the folded residual y, selected encoded
++rows, and their Merkle multiproof. It now sends F alone. The verifier checks
++
++    E_last(q,l) = sum_c RS_last[q,c] F(c,l),
++    R_last = MerkleRoot_q H_leaf(E_last(q,0) || ... || E_last(q,L-1)),
++    y(c) = sum_l eq(r_last,l) F(c,l).
++
++The recomputed root must equal the last recursive root already bound in the
++transcript. The verifier derives the old residual y from F and retains the
++residual sumcheck check. This authenticates the entire final codeword without
++storing a final multiproof. In both Falcon
++protocols and at both security targets, batches 1/3/32/1024 use respectively
++128/64/64/256 field elements for F: 2,048/1,024/1,024/4,096 bytes. These are
++smaller than even the former residual-plus-row payloads before their hashes
++and framing are counted.
++
++After that full root check, the last induced-query contribution cancels
++exactly. For the same normalized LCH basis used by the RS encoder, write
++Psi_c(q) = product_{j:c_j=1} W_hat_j(q) and a_i = eq(alpha_last,i), with
++the equality table truncated to the number of queries. Then
++
++    B_last(c) = sum_i a_i Psi_c(q_i),
++    e_last = sum_i a_i sum_l eq(r_last,l) E_last(q_i,l)
++           = sum_c y(c) B_last(c).
++
++Consequently the existing final residual equation
++
++    <y, B_prev + beta_last B_last> = t_prev + beta_last e_last
++
++is exactly equivalent to <y,B_prev> = t_prev. The compact verifier uses
++this identity to avoid materializing the final queried rows and evaluating
++their induced basis. It still checks the full final root, derives y by the
++prescribed lane folds, and consumes the original queries, alpha_last, and
++beta_last. Earlier query, padding, and OOD contributions remain in B_prev.
++The legacy final encoding still checks its explicit final query contribution.
++
++These are changes to stored opening messages. The protocol domains, source
++and recursive roots, security parameters, and challenge schedule remain the
++same. The derived residual y is observed at its original transcript position;
++F is authenticated through R_last rather than an extra transcript observation.
++The original grinding, query draws, and final verifier-only batching draws
++are retained. Lengths come from prepared geometry and configuration and are
++checked before reconstruction. Falcon accepts the compact shape directly;
++separate-source clients retain their existing opening representation.
+ 
+ ## Arithmetic and binary claims
+ 
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid.rs b/src/piop/spartan/falcon1024_ct/hybrid.rs
+index be4d9831..680ce2b6 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid.rs
+@@ -930,6 +930,144 @@ mod tests {
+         committed.data = data;
+     }
+ 
++    /// Exercise the compact transport through the complete Falcon verifier,
++    /// including its statement identifier and external grinding nonce frame.
++    fn assert_compact_opening_rejects_mutations(
++        prepared: &PreparedFalconHybrid,
++        statement: &FalconHybridStatement,
++        proof: &FalconHybridProof,
++    ) {
++        let config = prepared.ligerito.verifier();
++        let pcs = &proof.opening.ligerito;
++        let occupied: usize = prepared
++            .geometry
++            .lane_logs
++            .iter()
++            .map(|&log| 1 << log)
++            .sum();
++        assert_eq!(occupied, if prepared.batch() == 1 { 13 } else { 11 });
++        assert_eq!(pcs.initial_proof.opened_rows.len(), config.queries[0]);
++        assert!(
++            pcs.initial_proof
++                .opened_rows
++                .iter()
++                .all(|row| row.len() == occupied)
++        );
++        let last = config.recursive_steps - 1;
++        let final_columns = 1usize << config.recursive_log_msg_cols[last];
++        let final_lanes = 1usize << config.recursive_ks[last];
++        assert_eq!(final_columns, 32);
++        assert_eq!(pcs.final_proof.len(), final_columns * final_lanes);
++        assert_eq!(
++            pcs.final_proof.len(),
++            if prepared.batch() == 1 { 128 } else { 64 }
++        );
++        // Even before counting removed authentication hashes and row framing,
++        // the full committed message is smaller than the former final payload.
++        assert!(pcs.final_proof.len() < final_columns + config.queries[last + 1] * final_lanes);
++        assert_eq!(pcs.initial_root, prepared.transcript(statement).unwrap().1);
++        assert_eq!(pcs.recursive_roots.len(), config.recursive_steps);
++        assert_eq!(pcs.grinding_nonces.len(), config.recursive_steps + 1);
++        assert_eq!(
++            proof
++                .payload_size_breakdown()
++                .iter()
++                .map(|(_, bytes)| bytes)
++                .sum::<usize>(),
++            proof.payload_size_bytes()
++        );
++
++        let reject = |label: &str, altered: &FalconHybridProof| {
++            assert!(
++                prepared.verify(statement, altered).is_err(),
++                "accepted {label}: protocol={:?}, batch={}, target={}",
++                prepared.protocol(),
++                prepared.batch(),
++                prepared.target_bits,
++            );
++        };
++        for branch in 0..3 {
++            let mut altered = proof.clone();
++            altered.opening.ligerito.initial_proof.opened_rows[0]
++                [prepared.geometry.offset(branch)] += Gf::ONE;
++            reject("changed source lane", &altered);
++        }
++        let mutations: &[(&str, fn(&mut FalconHybridProof))] = &[
++            ("short initial row", |p| {
++                p.opening.ligerito.initial_proof.opened_rows[0].pop();
++            }),
++            ("extra initial field", |p| {
++                p.opening.ligerito.initial_proof.opened_rows[0].push(Gf::ZERO);
++            }),
++            ("legacy sixteen-lane row", |p| {
++                p.opening.ligerito.initial_proof.opened_rows[0].resize(16, Gf::ZERO);
++            }),
++            ("missing initial query", |p| {
++                p.opening.ligerito.initial_proof.opened_rows.pop();
++            }),
++            ("extra initial query", |p| {
++                let row = p.opening.ligerito.initial_proof.opened_rows[0].clone();
++                p.opening.ligerito.initial_proof.opened_rows.push(row);
++            }),
++            ("changed initial authentication", |p| {
++                p.opening.ligerito.initial_proof.merkle_proof[0][0] ^= 1;
++            }),
++            ("changed first final-message value", |p| {
++                p.opening.ligerito.final_proof[0] += Gf::ONE;
++            }),
++            ("changed last final-message value", |p| {
++                *p.opening.ligerito.final_proof.last_mut().unwrap() += Gf::ONE;
++            }),
++            ("empty final message", |p| {
++                p.opening.ligerito.final_proof.clear();
++            }),
++            ("short final message", |p| {
++                p.opening.ligerito.final_proof.pop();
++            }),
++            ("extra final-message value", |p| {
++                p.opening.ligerito.final_proof.push(Gf::ZERO);
++            }),
++            ("wrong last recursive root", |p| {
++                p.opening.ligerito.recursive_roots.last_mut().unwrap()[0] ^= 1;
++            }),
++            ("changed final consumed sumcheck", |p| {
++                let rounds = &mut p.opening.ligerito.sumcheck_transcript;
++                let last_consumed = rounds.len() - 2;
++                rounds[last_consumed].u_0 += Gf::ONE;
++            }),
++            ("wrong PCS statement identifier", |p| {
++                p.opening.ligerito.initial_root[0] ^= 1;
++            }),
++            ("missing query nonce", |p| {
++                p.opening.ligerito.grinding_nonces.pop();
++            }),
++            ("extra query nonce", |p| {
++                p.opening.ligerito.grinding_nonces.push(0);
++            }),
++            ("extra fold nonce", |p| {
++                p.opening.ligerito.fold_grinding_nonces.push(0);
++            }),
++            ("extra auxiliary PCS nonce", |p| {
++                p.pcs_nonces.push(0);
++            }),
++        ];
++        for &(label, mutate) in mutations {
++            let mut altered = proof.clone();
++            mutate(&mut altered);
++            reject(label, &altered);
++        }
++        if !pcs.fold_grinding_nonces.is_empty() {
++            let mut altered = proof.clone();
++            altered.opening.ligerito.fold_grinding_nonces.pop();
++            reject("missing fold nonce", &altered);
++        }
++        if !proof.pcs_nonces.is_empty() {
++            let mut altered = proof.clone();
++            altered.pcs_nonces.pop();
++            reject("missing auxiliary PCS nonce", &altered);
++        }
++    }
++
+     #[test]
+     fn hybrid_shake_matches_rustcrypto_samples_and_source_bits() {
+         use rand::{RngExt, SeedableRng, rngs::StdRng};
+@@ -1100,6 +1238,7 @@ mod tests {
+         let statement = committed.statement.clone();
+         let proof = prepared.prove(committed).unwrap();
+         prepared.verify(&statement, &proof).unwrap();
++        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+         let mut changed = statement.clone();
+         changed.public.messages[0][0] ^= 1;
+         assert!(prepared.verify(&changed, &proof).is_err());
+@@ -1208,6 +1347,9 @@ mod tests {
+             let statement = committed.statement.clone();
+             let proof = prepared.prove(committed).unwrap();
+             prepared.verify(&statement, &proof).unwrap();
++            if batch <= 3 {
++                assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
++            }
+             assert!(native.verify(&statement, &proof).is_err());
+             assert!(proof.payload_size_bytes() > 0);
+             assert_eq!(
+@@ -1280,6 +1422,7 @@ mod tests {
+         let statement = committed.statement.clone();
+         let proof = prepared.prove(committed).unwrap();
+         prepared.verify(&statement, &proof).unwrap();
++        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+ 
+         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
+         let mut committed = prepared.commit(public(1)).unwrap();
+@@ -1304,14 +1447,17 @@ mod tests {
+ 
+     #[test]
+     fn hybrid_falcon_128_roundtrip() {
+-        let prepared = PreparedFalconHybrid::new(1, 128).unwrap();
+-        let committed = prepared.commit(public(1)).unwrap();
+-        let statement = committed.statement.clone();
+-        let proof = prepared.prove(committed).unwrap();
+-        prepared.verify(&statement, &proof).unwrap();
+-        let mut changed = proof.clone();
+-        changed.links_nonces.clear();
+-        assert!(prepared.verify(&statement, &changed).is_err());
++        for batch in [1, 3] {
++            let prepared = PreparedFalconHybrid::new(batch, 128).unwrap();
++            let committed = prepared.commit(public(batch)).unwrap();
++            let statement = committed.statement.clone();
++            let proof = prepared.prove(committed).unwrap();
++            prepared.verify(&statement, &proof).unwrap();
++            assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
++            let mut changed = proof.clone();
++            changed.links_nonces.clear();
++            assert!(prepared.verify(&statement, &changed).is_err());
++        }
+     }
+ 
+     #[test]
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid_bridge.rs b/src/piop/spartan/falcon1024_ct/hybrid_bridge.rs
+index 35a1a521..181ee1c1 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid_bridge.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid_bridge.rs
+@@ -25,10 +25,16 @@ use crate::{
+ use field::Uint;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
++use std::sync::OnceLock;
+ 
+ type F = SpartanBitzField;
+ type Cfg = <F as SpartanField>::Config;
+ 
++fn generator_comb() -> &'static FixedBasePow {
++    static COMB: OnceLock<FixedBasePow> = OnceLock::new();
++    COMB.get_or_init(|| FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW))
++}
++
+ /// Selected by the prepared protocol and security target, never by proof data.
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub(super) enum BridgeMode {
+@@ -268,9 +274,9 @@ pub(super) fn prove(
+         }
+     });
+     drop(packing_span);
+-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
++    let comb = generator_comb();
+     let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
+-    let images = row_images(&chunks, &comb);
++    let images = row_images(&chunks, comb);
+     drop(power_span);
+     let mut grinder = ProverBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits);
+     let zeta = root_point(&mut grinder, &p);
+@@ -344,7 +350,7 @@ pub(super) fn verify(
+         return Err(err("bridge prime read-off"));
+     }
+     bind(t, sums);
+-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
++    let comb = generator_comb();
+     let mut grinder =
+         VerifierBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits, &proof.nonces);
+     let zeta = root_point(&mut grinder, &p);
+@@ -367,7 +373,7 @@ pub(super) fn verify(
+     if state.cursor != state.messages.len() {
+         return Err(err("bridge forest trailing messages"));
+     }
+-    let images = row_images(&chunks, &comb);
++    let images = row_images(&chunks, comb);
+     let claim = binary_claim(&p, &images, &point, value);
+     grinder.finish().map_err(|_| err("bridge grinding"))?;
+     Ok(vec![claim])
+@@ -472,7 +478,7 @@ fn prove_unsplit(
+     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
+     let packed_cols = pack_columns_from_rows(&p, source.rows());
+     drop(packing_span);
+-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
++    let comb = generator_comb();
+     let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
+     let images: Vec<_> = row_weights.iter().map(|&weight| comb.pow(weight)).collect();
+     drop(power_span);
+@@ -537,7 +543,7 @@ fn verify_unsplit(
+         return Err(err("bridge prime read-off"));
+     }
+     bind_unsplit(t, sums);
+-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
++    let comb = generator_comb();
+     let mut grinder = VerifierBlockGrindingTranscript::<_, UnsplitBridgeGrinding>::new(
+         t,
+         grinding_bits,
+@@ -572,6 +578,16 @@ mod tests {
+ 
+     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+ 
++    #[test]
++    fn cached_generator_comb_matches_fresh_preparation() {
++        let cached = generator_comb();
++        assert!(std::ptr::eq(cached, generator_comb()));
++        let fresh = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
++        for exponent in [0, 1, (1 << 16) - 1, 1 << 64, (1 << 113) - 1, u128::MAX] {
++            assert_eq!(cached.pow(exponent), fresh.pow(exponent));
++        }
++    }
++
+     fn unsplit_sums(proof: &mut Proof) -> &mut Vec<u128> {
+         let ColumnSums::Unsplit(sums) = &mut proof.sums else {
+             panic!("unsplit sums");
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid_size.rs b/src/piop/spartan/falcon1024_ct/hybrid_size.rs
+index 07c4b5f3..c218a533 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid_size.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid_size.rs
+@@ -175,9 +175,10 @@ impl FalconHybridProof {
+     /// challenge points. Prime/binary fields use 16 bytes, extension elements
+     /// use eleven canonical u16 coordinates, carries/nonces use eight bytes,
+     /// and hashes use 32 bytes. Integer sums use 16 bytes for the lower sum
+-    /// and four bytes for the upper sum when split. Keccak and Ligerito use
+-    /// their existing bincode serialization sizes, including those components'
+-    /// internal framing.
++    /// and four bytes for the upper sum when split. Keccak and compact Ligerito
++    /// use their bincode serialization sizes, including internal framing.
++    /// Ligerito stores only occupied initial lanes and the final pre-fold
++    /// message; reconstructed rows and final paths are not proof payload.
+     ///
+     /// This excludes the public statement and Falcon-level vector lengths,
+     /// option tags, protocol headers, and transport framing. It is a payload
+@@ -230,9 +231,7 @@ impl FalconHybridProof {
+                 .iter()
+                 .map(|proof| proof.merkle_proof.len())
+                 .sum::<usize>();
+-        let final_rows = rows_bytes(&pcs.final_proof.opened_rows);
+-        let final_paths = HASH_BYTES * pcs.final_proof.merkle_proof.len();
+-        let final_polynomial = FIELD_BYTES * pcs.final_proof.yr.len();
++        let final_message = FIELD_BYTES * pcs.final_proof.len();
+         let roots = HASH_BYTES * (1 + pcs.recursive_roots.len());
+         let sumchecks = 2 * FIELD_BYTES * pcs.sumcheck_transcript.len();
+         let ood = FIELD_BYTES * pcs.ood_values.len();
+@@ -241,9 +240,7 @@ impl FalconHybridProof {
+             + initial_paths
+             + recursive_rows
+             + recursive_paths
+-            + final_rows
+-            + final_paths
+-            + final_polynomial
++            + final_message
+             + roots
+             + sumchecks
+             + ood
+@@ -292,9 +289,7 @@ impl FalconHybridProof {
+             ("pcs_initial_opened_rows", initial_rows),
+             ("pcs_recursive_opened_rows", recursive_rows),
+             ("pcs_recursive_authentication", recursive_paths),
+-            ("pcs_final_opened_rows", final_rows),
+-            ("pcs_final_authentication", final_paths),
+-            ("pcs_final_polynomial", final_polynomial),
++            ("pcs_final_message", final_message),
+             ("pcs_roots", roots),
+             ("pcs_sumchecks", sumchecks),
+             ("pcs_ood_values", ood),
+diff --git a/src/piop/spartan/falcon1024_ct/piop.rs b/src/piop/spartan/falcon1024_ct/piop.rs
+index 8115c88c..e059cf34 100644
+--- a/src/piop/spartan/falcon1024_ct/piop.rs
++++ b/src/piop/spartan/falcon1024_ct/piop.rs
+@@ -126,6 +126,24 @@ const fn component_grinding_bits(numerator: usize) -> u32 {
+ /// Allocate one shared 2^-133 budget to cubic relations, weighted quadratic
+ /// forest rounds, and root/line reductions. All arithmetic is exact.
+ const fn compaction_grinding_bits(d: usize) -> (u32, u32, u32) {
++    COMPACTION_GRINDING_BITS[d]
++}
++
++// FalconSourceLayout accepts 1..=1024 signatures and pads capacity to a
++// power of two, so every constructible layout has capacity log in 0..=10.
++// Run the unchanged exact optimizer at compile time, preserving its tie order
++// and all security parameters without repeating its search during proofs.
++const COMPACTION_GRINDING_BITS: [(u32, u32, u32); 11] = {
++    let mut table = [(0, 0, 0); 11];
++    let mut d = 0;
++    while d < table.len() {
++        table[d] = solve_compaction_grinding_bits(d);
++        d += 1;
++    }
++    table
++};
++
++const fn solve_compaction_grinding_bits(d: usize) -> (u32, u32, u32) {
+     let cubic_rounds = 2 * (11 + d);
+     let forest_rounds = 55 + 11 * (d + 1);
+     let claim_draws = 11 + if d == 0 { 0 } else { 1 };
+@@ -1989,6 +2007,23 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn compile_time_compaction_schedule_matches_solver_for_every_capacity() {
++        let largest = FalconSourceLayout::new(1024).unwrap();
++        assert_eq!(
++            COMPACTION_GRINDING_BITS.len(),
++            largest.capacity().ilog2() as usize + 1
++        );
++        assert!(FalconSourceLayout::new(1025).is_err());
++        for d in 0..COMPACTION_GRINDING_BITS.len() {
++            assert_eq!(
++                compaction_grinding_bits(d),
++                solve_compaction_grinding_bits(std::hint::black_box(d)),
++                "capacity log {d}"
++            );
++        }
++    }
++
+     #[test]
+     fn current_grinding_schedule_meets_each_prime_group_budget() {
+         let expected = [
+diff --git a/vendor/field/src/preparation.rs b/vendor/field/src/preparation.rs
+index 56b6fd1a..9b038065 100644
+--- a/vendor/field/src/preparation.rs
++++ b/vendor/field/src/preparation.rs
+@@ -243,23 +243,17 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
+             // The verifier's 128-bit public weights use byte windows. A
+             // balanced product exposes independent field multiplications instead
+             // of putting every table lookup on one long dependency chain.
+-            // Keep the original factor order, including the identity at digit 0.
+-            let mut products = [self.field.one(); 8];
+-            for (i, product) in products.iter_mut().enumerate() {
+-                let word = exponent.0[i / 4];
+-                let shift = (i % 4) * 16;
+-                let low = ((word >> shift) & 255) as usize;
+-                let high = ((word >> (shift + 8)) & 255) as usize;
+-                *product = self.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
+-            }
+-            let mut count = products.len();
+-            while count > 1 {
+-                for i in 0..count / 2 {
+-                    products[i] = self.field.mul(&products[2 * i], &products[2 * i + 1]);
+-                }
+-                count /= 2;
+-            }
+-            return products[0];
++            // A public width chooses a balanced prefix, retaining factor order
++            // and dropping only high windows whose table entry is the identity.
++            return if exponent.0[1] != 0 {
++                self.pow_public_byte_pairs::<8>(rows, exponent)
++            } else if exponent.0[0] >> 32 != 0 {
++                self.pow_public_byte_pairs::<4>(rows, exponent)
++            } else if exponent.0[0] >> 16 != 0 {
++                self.pow_public_byte_pairs::<2>(rows, exponent)
++            } else {
++                self.pow_public_byte_pairs::<1>(rows, exponent)
++            };
+         }
+         let mut value = self.field.one();
+         for (i, row) in rows.iter().enumerate() {
+@@ -276,6 +270,30 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
+         }
+         value
+     }
++
++    #[inline]
++    fn pow_public_byte_pairs<const PAIRS: usize>(
++        &self,
++        rows: &[Vec<C::Elem>],
++        exponent: &Uint<E>,
++    ) -> C::Elem {
++        let mut products = [self.field.one(); PAIRS];
++        for (i, product) in products.iter_mut().enumerate() {
++            let word = exponent.0[i / 4];
++            let shift = (i % 4) * 16;
++            let low = ((word >> shift) & 255) as usize;
++            let high = ((word >> (shift + 8)) & 255) as usize;
++            *product = self.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
++        }
++        let mut count = products.len();
++        while count > 1 {
++            for i in 0..count / 2 {
++                products[i] = self.field.mul(&products[2 * i], &products[2 * i + 1]);
++            }
++            count /= 2;
++        }
++        products[0]
++    }
+ }
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -387,3 +405,218 @@ impl<C> PreparedIntegerProjection<C> {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod public_power_tests {
++    use super::*;
++
++    // Frozen pre-optimization 16-byte algorithm, independent of the new helper.
++    #[inline(never)]
++    fn previous_pow<C: RingOps>(table: &FixedBasePow<C, 2>, exponent: &Uint<2>) -> C::Elem {
++        let PowerTable::Public { rows, window, .. } = &table.table else {
++            panic!("public table required");
++        };
++        assert_eq!(*window, 8);
++        let mut products = [table.field.one(); 8];
++        for (i, product) in products.iter_mut().enumerate() {
++            let word = exponent.0[i / 4];
++            let shift = (i % 4) * 16;
++            let low = ((word >> shift) & 255) as usize;
++            let high = ((word >> (shift + 8)) & 255) as usize;
++            *product = table.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
++        }
++        let mut count = products.len();
++        while count > 1 {
++            for i in 0..count / 2 {
++                products[i] = table.field.mul(&products[2 * i], &products[2 * i + 1]);
++            }
++            count /= 2;
++        }
++        products[0]
++    }
++
++    fn binary_power<C: RingOps>(field: &C, mut base: C::Elem, mut exponent: u128) -> C::Elem {
++        let mut result = field.one();
++        while exponent != 0 {
++            if exponent & 1 != 0 {
++                result = field.mul(&result, &base);
++            }
++            base = field.square(&base);
++            exponent >>= 1;
++        }
++        result
++    }
++
++    fn generator() -> Gf128 {
++        const FACTORS: [u128; 9] = [3, 5, 17, 257, 641, 65537, 274177, 6700417, 67280421310721];
++        (2..)
++            .map(Gf128::from_polynomial_bits)
++            .find(|&base| {
++                FACTORS
++                    .iter()
++                    .all(|&factor| binary_power(&Gf128Ops, base, u128::MAX / factor) != Gf128::ONE)
++            })
++            .unwrap()
++    }
++
++    fn exponents() -> Vec<u128> {
++        let mut values = vec![0, 1, 2, u128::MAX];
++        for bit in [8, 16, 32, 64, 113, 127] {
++            let boundary = 1u128 << bit;
++            values.extend([boundary - 1, boundary, boundary + 1]);
++        }
++        let mut state = 0x437a_20d1_67ba_197fu128;
++        for _ in 0..64 {
++            state ^= state << 13;
++            state ^= state >> 7;
++            state ^= state << 17;
++            values.push(state);
++        }
++        values
++    }
++
++    fn check<C: RingOps>(field: C, base: C::Elem)
++    where
++        C::Elem: std::fmt::Debug + PartialEq,
++    {
++        let table = FixedBasePow::<_, 2>::new_public(&field, base, 8);
++        for exponent in exponents() {
++            let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
++            let expected = binary_power(&field, base, exponent);
++            assert_eq!(table.pow_public(&words), expected, "exponent {exponent}");
++            assert_eq!(previous_pow(&table, &words), expected);
++            assert_eq!(table.pow_ct(&words), expected);
++        }
++    }
++
++    #[test]
++    fn public_byte_buckets_match_binary_power_and_previous_tree() {
++        for base in [
++            Gf128::ZERO,
++            Gf128::ONE,
++            generator(),
++            Gf128::new(0xfabc_3811_dea9_8037, 0x8ef7_920d_0065_ab13),
++        ] {
++            check(Gf128Ops, base);
++        }
++    }
++
++    #[test]
++    fn public_byte_buckets_support_composite_ring_and_prime_providers() {
++        let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
++        for base in [0u64, 1, 2, 7, 9, 17] {
++            check(&ring, ring.from_integer(&base));
++        }
++        let field = create_prime_field(Uint::from_words([17]));
++        for base in [0u64, 1, 3, 16] {
++            check(&field, field.from_integer(&base));
++        }
++    }
++
++    #[test]
++    fn public_fallback_windows_and_private_tables_match_binary_power() {
++        let base = generator();
++        for window in [1, 7, 9, 16] {
++            let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, base, window);
++            for exponent in exponents() {
++                let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
++                assert_eq!(
++                    table.pow_public(&words),
++                    binary_power(&Gf128Ops, base, exponent)
++                );
++            }
++        }
++        let private = FixedBasePow::<_, 2>::new(Gf128Ops, base);
++        for exponent in exponents() {
++            let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
++            let expected = binary_power(&Gf128Ops, base, exponent);
++            assert_eq!(private.pow_ct(&words), expected);
++            assert_eq!(private.pow_public(&words), expected);
++        }
++    }
++
++    #[test]
++    #[ignore = "isolated public exponentiation timing; run on an otherwise idle pinned CPU"]
++    fn public_limb_power_abba_microbenchmark() {
++        use std::{hint::black_box, time::Instant};
++
++        #[inline(never)]
++        fn current_pow(table: &FixedBasePow<Gf128Ops, 2>, exponent: &Uint<2>) -> Gf128 {
++            table.pow_public(exponent)
++        }
++        fn timed(
++            table: &FixedBasePow<Gf128Ops, 2>,
++            exponents: &[Uint<2>],
++            f: fn(&FixedBasePow<Gf128Ops, 2>, &Uint<2>) -> Gf128,
++        ) -> f64 {
++            let start = Instant::now();
++            for _ in 0..16 {
++                for exponent in exponents {
++                    black_box(f(black_box(table), black_box(exponent)));
++                }
++            }
++            start.elapsed().as_secs_f64() * 1000.0 / 16.0
++        }
++
++        let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, generator(), 8);
++        let mut random = 0x875b_2ad9_1ba6_3df1_46c2_1f83_9a07_68d3u128;
++        let mut next = || {
++            random ^= random << 13;
++            random ^= random >> 7;
++            random ^= random << 17;
++            random
++        };
++        // Prime equality weights exercise the same 13-coordinate construction
++        // as Falcon, then the same 113-bit integer split. Setup is not timed.
++        let prime = FpCtx::from_prime_u128(u128::MAX - 158);
++        let mut weights = vec![prime.one()];
++        for _ in 0..13 {
++            let r = prime.from_integer(&next());
++            let complement = prime.sub(&prime.one(), &r);
++            let old_len = weights.len();
++            for i in 0..old_len {
++                weights.push(prime.mul(&weights[i], &r));
++                weights[i] = prime.mul(&weights[i], &complement);
++            }
++        }
++        let full: Vec<_> = weights.iter().map(|w| prime.to_integer(w)).collect();
++        let split: Vec<_> = full
++            .iter()
++            .flat_map(|w| {
++                let value = u128::from(w.0[0]) | (u128::from(w.0[1]) << 64);
++                let low = value & ((1u128 << 113) - 1);
++                [
++                    Uint::from_words([low as u64, (low >> 64) as u64]),
++                    Uint::from_words([(value >> 113) as u64, 0]),
++                ]
++            })
++            .collect();
++        for (label, exponents) in [("8192_split_113_15", &split), ("8192_full_128", &full)] {
++            for exponent in exponents {
++                assert_eq!(
++                    current_pow(&table, exponent),
++                    previous_pow(&table, exponent)
++                );
++            }
++            for _ in 0..4 {
++                black_box(timed(&table, exponents, previous_pow));
++                black_box(timed(&table, exponents, current_pow));
++            }
++            let mut previous = 0.0;
++            let mut current = 0.0;
++            for _ in 0..48 {
++                previous += timed(&table, exponents, previous_pow);
++                current += timed(&table, exponents, current_pow);
++                current += timed(&table, exponents, current_pow);
++                previous += timed(&table, exponents, previous_pow);
++            }
++            previous /= 96.0;
++            current /= 96.0;
++            eprintln!(
++                "{label}: previous_ms={previous:.6} current_ms={current:.6} ratio={:.6} saved_ms={:.6}",
++                current / previous,
++                previous - current
++            );
++        }
++    }
++}
+diff --git a/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs b/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
+index 883d8d15..bc5d3872 100644
+--- a/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
++++ b/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
+@@ -38,6 +38,7 @@ use crate::merkle::{self, Hash, HashKind};
+ use crate::ntt::additive_ntt_f128::AdditiveNttF128;
+ use serde::{Deserialize, Serialize};
+ use std::borrow::Cow;
++use std::sync::OnceLock;
+ 
+ // ===================================================================
+ // Config
+@@ -1527,12 +1528,12 @@ pub struct FinalProof {
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+-pub struct LigeritoProof {
++pub struct LigeritoProof<Final = FinalProof> {
+     pub initial_root: Hash,
+     pub initial_proof: RecursiveProof,
+     pub recursive_roots: Vec<Hash>,
+     pub recursive_proofs: Vec<RecursiveProof>,
+-    pub final_proof: FinalProof,
++    pub final_proof: Final,
+     pub sumcheck_transcript: Vec<SumcheckMessage>,
+     /// Per-level PoW nonces (one entry per query phase). When all
+     /// `grinding_bits` are 0 (the default config), each entry is just 0
+@@ -1552,6 +1553,175 @@ pub struct LigeritoProof {
+     pub fold_grinding_nonces: Vec<u64>,
+ }
+ 
++/// The final pre-fold message replaces the final polynomial, queried rows and
++/// authentication paths. Reconstruction uses the same last commitment and
++/// transcript. Its encoded terminal table is bounded to 2^20 field elements
++/// (16 MiB); the prepared configuration fixes its exact smaller dimensions.
++pub type CompactLigeritoProof = LigeritoProof<Vec<Gf128>>;
++
++const MAX_COMPACT_LOG_CODEWORD_ELEMENTS: usize = 20;
++
++fn compact_terminal_ntt(log_domain_size: usize) -> Option<&'static AdditiveNttF128> {
++    // Public, dimension-only preparation is shared across verifications. Each
++    // dimension pays its setup cost on first use; encoded witness data is never cached.
++    static NTTS: [OnceLock<AdditiveNttF128>; MAX_COMPACT_LOG_CODEWORD_ELEMENTS + 1] =
++        [const { OnceLock::new() }; MAX_COMPACT_LOG_CODEWORD_ELEMENTS + 1];
++    NTTS.get(log_domain_size)
++        .map(|slot| slot.get_or_init(|| AdditiveNttF128::standard(log_domain_size)))
++}
++
++#[derive(Clone, Copy)]
++struct FinalShape {
++    log_msg_cols: usize,
++    log_num_interleaved: usize,
++    log_inv_rate: usize,
++    hash: HashKind,
++}
++
++impl FinalShape {
++    fn dimensions(self) -> Option<(usize, usize, usize)> {
++        let power = |log: usize| 1usize.checked_shl(u32::try_from(log).ok()?);
++        let columns = power(self.log_msg_cols)?;
++        let lanes = power(self.log_num_interleaved)?;
++        let rows = power(self.log_msg_cols.checked_add(self.log_inv_rate)?)?;
++        Some((columns, lanes, rows))
++    }
++
++    fn compact_message_len(self) -> Option<usize> {
++        let (columns, lanes, rows) = self.dimensions()?;
++        if rows.checked_mul(lanes)? > 1 << MAX_COMPACT_LOG_CODEWORD_ELEMENTS {
++            return None;
++        }
++        columns.checked_mul(lanes)
++    }
++}
++
++/// The encoding implementation determines the binding, never a proof flag.
++enum FinalBinding {
++    CompleteMessage,
++    QuerySum(Gf128),
++}
++
++/// Two concrete terminal encodings share the entire protocol implementation.
++/// No proof carries a selector that could choose a weaker verification path.
++trait FinalEncoding: Sized {
++    type Captured;
++
++    fn capture(message: &[Gf128]) -> Self::Captured;
++    fn finish(
++        captured: Self::Captured,
++        yr: Vec<Gf128>,
++        witness: &LigeroWitness,
++        queries: &[usize],
++    ) -> Self;
++    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>>;
++    fn authenticate(
++        &self,
++        shape: FinalShape,
++        root: &Hash,
++        queries: &[usize],
++        folds: &[Gf128],
++        alpha: &[Gf128],
++    ) -> Option<FinalBinding>;
++}
++
++impl FinalEncoding for FinalProof {
++    type Captured = ();
++
++    fn capture(_: &[Gf128]) {}
++
++    fn finish(_: (), yr: Vec<Gf128>, witness: &LigeroWitness, queries: &[usize]) -> Self {
++        Self {
++            yr,
++            opened_rows: queries.iter().map(|&q| witness.row(q).to_vec()).collect(),
++            merkle_proof: merkle_multi_proof_for(&witness.tree, witness.block_len, queries),
++        }
++    }
++
++    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
++        let (columns, _, _) = shape.dimensions()?;
++        (self.yr.len() == columns && folds.len() == shape.log_num_interleaved)
++            .then(|| Cow::Borrowed(self.yr.as_slice()))
++    }
++
++    fn authenticate(
++        &self,
++        shape: FinalShape,
++        root: &Hash,
++        queries: &[usize],
++        folds: &[Gf128],
++        alpha: &[Gf128],
++    ) -> Option<FinalBinding> {
++        let (_, lanes, rows) = shape.dimensions()?;
++        verify_level_opens(
++            root,
++            rows,
++            queries,
++            &self.opened_rows,
++            lanes,
++            &self.merkle_proof,
++            shape.hash,
++        )
++        .then(|| {
++            FinalBinding::QuerySum(induce_sumcheck_enforced_sum(
++                &self.opened_rows,
++                folds,
++                queries,
++                alpha,
++            ))
++        })
++    }
++}
++
++impl FinalEncoding for Vec<Gf128> {
++    type Captured = Self;
++
++    fn capture(message: &[Gf128]) -> Self {
++        message.to_vec()
++    }
++
++    fn finish(captured: Self, _: Vec<Gf128>, _: &LigeroWitness, _: &[usize]) -> Self {
++        captured
++    }
++
++    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
++        if self.len() != shape.compact_message_len()? || folds.len() != shape.log_num_interleaved {
++            return None;
++        }
++        Some(Cow::Owned(partial_eval_lsb(self, folds)))
++    }
++
++    fn authenticate(
++        &self,
++        shape: FinalShape,
++        root: &Hash,
++        queries: &[usize],
++        _: &[Gf128],
++        _: &[Gf128],
++    ) -> Option<FinalBinding> {
++        if self.len() != shape.compact_message_len()? {
++            return None;
++        }
++        let (_, _, rows) = shape.dimensions()?;
++        if queries.iter().any(|&q| q >= rows) {
++            return None;
++        }
++        let ntt = compact_terminal_ntt(shape.log_msg_cols.checked_add(shape.log_inv_rate)?)?;
++        let witness = ligero_commit(
++            self,
++            shape.log_msg_cols,
++            shape.log_num_interleaved,
++            shape.log_inv_rate,
++            ntt,
++            shape.hash,
++        );
++        if witness.root() != *root {
++            return None;
++        }
++        Some(FinalBinding::CompleteMessage)
++    }
++}
++
+ impl LigeritoProof {
+     pub fn size_bytes(&self) -> usize {
+         const ELEM: usize = core::mem::size_of::<Gf128>();
+@@ -3170,7 +3340,9 @@ fn try_sample_distinct_queries<Ch: Challenger>(
+     block_len: usize,
+     count: usize,
+ ) -> Option<Vec<usize>> {
+-    if count > block_len { return None; }
++    if count > block_len {
++        return None;
++    }
+     let mut seen = std::collections::HashSet::new();
+     let mut out = Vec::with_capacity(count);
+     while out.len() < count {
+@@ -3488,6 +3660,36 @@ where
+     )
+ }
+ 
++/// Compact-terminal counterpart of [`recursive_prover_with_basis_initial`].
++#[allow(clippy::too_many_arguments)]
++pub fn recursive_prover_with_basis_initial_compact<'a, Ch, O>(
++    config: &ProverConfig,
++    packed_witness: impl Into<Cow<'a, [Gf128]>>,
++    b_initial: Vec<Gf128>,
++    target: Gf128,
++    initial_root: Hash,
++    open_initial: O,
++    challenger: &mut Ch,
++) -> CompactLigeritoProof
++where
++    Ch: Challenger,
++    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++{
++    recursive_prover_with_basis_initial_impl(
++        config,
++        InitialBasis::Dense {
++            packed: packed_witness.into(),
++            basis: b_initial,
++            first_msg: None,
++            lookahead: None,
++        },
++        target,
++        initial_root,
++        open_initial,
++        challenger,
++    )
++}
++
+ /// Continue an externally authenticated basis opening with the exact first
+ /// sumcheck message and optional next-round coefficients computed while
+ /// constructing the basis. This only skips redundant table passes; transcript
+@@ -3523,6 +3725,38 @@ where
+     )
+ }
+ 
++/// Compact-terminal counterpart with a precomputed initial message.
++#[allow(clippy::too_many_arguments)]
++pub fn recursive_prover_with_basis_initial_precomputed_round0_compact<'a, Ch, O>(
++    config: &ProverConfig,
++    packed_witness: impl Into<Cow<'a, [Gf128]>>,
++    b_initial: Vec<Gf128>,
++    target: Gf128,
++    initial_root: Hash,
++    open_initial: O,
++    first_msg: SumcheckMessage,
++    round1_lookahead: Option<FoldLookahead>,
++    challenger: &mut Ch,
++) -> CompactLigeritoProof
++where
++    Ch: Challenger,
++    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++{
++    recursive_prover_with_basis_initial_impl(
++        config,
++        InitialBasis::Dense {
++            packed: packed_witness.into(),
++            basis: b_initial,
++            first_msg: Some(first_msg),
++            lookahead: round1_lookahead,
++        },
++        target,
++        initial_root,
++        open_initial,
++        challenger,
++    )
++}
++
+ /// Two folded tables and the exact messages produced while constructing them.
+ pub struct DeferredFold {
+     pub f: Vec<Gf128>,
+@@ -3596,18 +3830,43 @@ where
+     )
+ }
+ 
++/// Compact-terminal counterpart with deferred initial tables.
++#[allow(clippy::too_many_arguments)]
++pub fn recursive_prover_with_basis_initial_deferred_compact<'a, Ch, O>(
++    config: &ProverConfig,
++    initial: DeferredInitial<'a>,
++    target: Gf128,
++    initial_root: Hash,
++    open_initial: O,
++    challenger: &mut Ch,
++) -> CompactLigeritoProof
++where
++    Ch: Challenger,
++    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++{
++    recursive_prover_with_basis_initial_impl(
++        config,
++        InitialBasis::Deferred(initial),
++        target,
++        initial_root,
++        open_initial,
++        challenger,
++    )
++}
++
+ #[allow(clippy::too_many_arguments)]
+-fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
++fn recursive_prover_with_basis_initial_impl<'a, Ch, O, Final>(
+     config: &ProverConfig,
+     initial: InitialBasis<'a>,
+     target: Gf128,
+     initial_root: Hash,
+     open_initial: O,
+     challenger: &mut Ch,
+-) -> LigeritoProof
++) -> LigeritoProof<Final>
+ where
+     Ch: Challenger,
+     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++    Final: FinalEncoding,
+ {
+     let log_n = initial.log_n();
+     let r = config.recursive_steps;
+@@ -3872,6 +4131,7 @@ where
+ 
+     for i in 0..r {
+         let k_i = config.recursive_ks[i];
++        let final_message = (i == r - 1).then(|| Final::capture(sc_prover.f()));
+         let mut level_rs = Vec::with_capacity(k_i);
+         let _t = std::time::Instant::now();
+         for j in 0..k_i {
+@@ -3904,12 +4164,12 @@ where
+             let queries_last =
+                 sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_last);
+             let _t = std::time::Instant::now();
+-            let opened_rows_last: Vec<Vec<Gf128>> = queries_last
+-                .iter()
+-                .map(|&q| wtns_prev.row(q).to_vec())
+-                .collect();
+-            let merkle_proof_last =
+-                merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_last);
++            let final_proof = Final::finish(
++                final_message.expect("last iteration captures its message"),
++                yr,
++                &wtns_prev,
++                &queries_last,
++            );
+             if trace {
+                 t_opens += _t.elapsed();
+             }
+@@ -3953,11 +4213,7 @@ where
+                 initial_proof,
+                 recursive_roots,
+                 recursive_proofs,
+-                final_proof: FinalProof {
+-                    yr,
+-                    opened_rows: opened_rows_last,
+-                    merkle_proof: merkle_proof_last,
+-                },
++                final_proof,
+                 sumcheck_transcript,
+                 grinding_nonces,
+                 ood_values,
+@@ -4126,10 +4382,106 @@ where
+     Ch: Challenger,
+     F: Fn(&[Gf128], usize) -> Vec<Gf128>,
+     A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++{
++    recursive_verifier_with_basis_initial_impl(
++        config,
++        proof,
++        &proof.initial_proof,
++        log_n,
++        target,
++        expected_initial_root,
++        eval_b_residual,
++        authenticate_initial,
++        challenger,
++    )
++}
++
++/// Verify a compact terminal message using the unchanged succinct verifier.
++/// `initial_opening` contains the canonical full initial rows reconstructed by
++/// the caller's codec; the authentication callback must bind every entry.
++#[allow(clippy::too_many_arguments)]
++pub fn recursive_verifier_with_basis_initial_compact<Ch, F, A>(
++    config: &VerifierConfig,
++    proof: &CompactLigeritoProof,
++    initial_opening: &RecursiveProof,
++    log_n: usize,
++    target: Gf128,
++    expected_initial_root: &Hash,
++    eval_b_residual: F,
++    authenticate_initial: A,
++    challenger: &mut Ch,
++) -> bool
++where
++    Ch: Challenger,
++    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
++    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++{
++    let r = config.recursive_steps;
++    if r == 0
++        || config.recursive_ks.len() != r
++        || config.log_inv_rates.len() != r + 1
++        || proof.recursive_roots.len() != r
++        || proof.recursive_proofs.len() != r - 1
++        || proof.grinding_nonces.len() != r + 1
++    {
++        return false;
++    }
++    let Some(after_initial) = log_n.checked_sub(config.initial_k) else {
++        return false;
++    };
++    let Some(remaining) = config
++        .recursive_ks
++        .iter()
++        .try_fold(after_initial, |n, &k| n.checked_sub(k))
++    else {
++        return false;
++    };
++    let shape = FinalShape {
++        log_msg_cols: remaining,
++        log_num_interleaved: config.recursive_ks[r - 1],
++        log_inv_rate: config.log_inv_rates[r],
++        hash: config.merkle_hash,
++    };
++    if shape.compact_message_len() != Some(proof.final_proof.len()) {
++        return false;
++    }
++    recursive_verifier_with_basis_initial_impl(
++        config,
++        proof,
++        initial_opening,
++        log_n,
++        target,
++        expected_initial_root,
++        eval_b_residual,
++        authenticate_initial,
++        challenger,
++    )
++}
++
++#[allow(clippy::too_many_arguments)]
++fn recursive_verifier_with_basis_initial_impl<Ch, F, A, Final>(
++    config: &VerifierConfig,
++    proof: &LigeritoProof<Final>,
++    initial_opening: &RecursiveProof,
++    log_n: usize,
++    target: Gf128,
++    expected_initial_root: &Hash,
++    eval_b_residual: F,
++    authenticate_initial: A,
++    challenger: &mut Ch,
++) -> bool
++where
++    Ch: Challenger,
++    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
++    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++    Final: FinalEncoding,
+ {
+     macro_rules! challenge {
+         ($draw:expr) => {
+-            match $draw { Some(value) => value, None => return false }
++            match $draw {
++                Some(value) => value,
++                None => return false,
++            }
+         };
+     }
+     let trace = std::env::var("LIG_VERIFY_TRACE").is_ok();
+@@ -4265,24 +4617,22 @@ where
+ 
+     let num_queries_0 = config.queries[0];
+     let _t = std::time::Instant::now();
+-    let queries_0 = challenge!(try_sample_distinct_queries(challenger, block_len_0, num_queries_0));
++    let queries_0 = challenge!(try_sample_distinct_queries(
++        challenger,
++        block_len_0,
++        num_queries_0
++    ));
+     if trace {
+         t_sample_q += _t.elapsed();
+     }
+     let alpha_0 = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_0)));
+     let _t = std::time::Instant::now();
+-    if proof.initial_proof.opened_rows.len() != queries_0.len()
+-        || proof
+-            .initial_proof
++    if initial_opening.opened_rows.len() != queries_0.len()
++        || initial_opening
+             .opened_rows
+             .iter()
+             .any(|row| row.len() != num_interleaved_0)
+-        || !authenticate_initial(
+-            block_len_0,
+-            num_interleaved_0,
+-            &queries_0,
+-            &proof.initial_proof,
+-        )
++        || !authenticate_initial(block_len_0, num_interleaved_0, &queries_0, initial_opening)
+     {
+         return false;
+     }
+@@ -4296,7 +4646,7 @@ where
+     let n1 = log_n - initial_k;
+     let _t = std::time::Instant::now();
+     let enforced_sum_0 = induce_sumcheck_enforced_sum(
+-        &proof.initial_proof.opened_rows,
++        &initial_opening.opened_rows,
+         &r_lane_fold,
+         &queries_0,
+         &alpha_0,
+@@ -4385,11 +4735,19 @@ where
+             {
+                 return false;
+             }
+-            let yr = &proof.final_proof.yr;
+-            if yr.len() != 1 << n_current {
++            let shape = FinalShape {
++                log_msg_cols: prev_log_msg_cols,
++                log_num_interleaved: prev_log_num_interleaved,
++                log_inv_rate: prev_log_inv_rate,
++                hash: config.merkle_hash,
++            };
++            if shape.log_msg_cols != n_current {
+                 return false;
+             }
+-            for v in yr {
++            let Some(yr) = proof.final_proof.polynomial(shape, &level_rs) else {
++                return false;
++            };
++            for v in yr.iter() {
+                 challenger.observe_f128(*v);
+             }
+             // PoW grinding check for last level's query phase.
+@@ -4405,63 +4763,52 @@ where
+             // (last nonce — nonce_idx is not advanced past it)
+ 
+             let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
+-            let prev_num_interleaved = 1usize << prev_log_num_interleaved;
+             let num_queries_last = config.queries[i + 1];
+             let _t = std::time::Instant::now();
+-            let queries_last =
+-                challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_last));
++            let queries_last = challenge!(try_sample_distinct_queries(
++                challenger,
++                prev_block_len,
++                num_queries_last
++            ));
+             // Basis-induction challenge for the LAST commitment. Sampled here —
+             // after `yr` was observed (top of this branch) and the queries are
+             // fixed — so a forged `yr` cannot be adapted to it. Mirrors `alpha_i`
+             // at every non-final level (see ~line 3377).
+-            let alpha_last = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
++            let alpha_last =
++                challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
+             if trace {
+                 t_sample_q += _t.elapsed();
+             }
+             let _t = std::time::Instant::now();
+-            if !verify_level_opens(
++            let Some(binding) = proof.final_proof.authenticate(
++                shape,
+                 &prev_root,
+-                prev_block_len,
+                 &queries_last,
+-                &proof.final_proof.opened_rows,
+-                prev_num_interleaved,
+-                &proof.final_proof.merkle_proof,
+-                config.merkle_hash,
+-            ) {
++                &level_rs,
++                &alpha_last,
++            ) else {
+                 return false;
+-            }
++            };
+             if trace {
+                 t_merkle += _t.elapsed();
+             }
+ 
+-            // Bind the LAST commitment to `yr`. Every non-final level folds its
+-            // opened rows into the running sumcheck via induce_sumcheck; the
+-            // final level used to only Merkle-check its opened rows, leaving `yr`
+-            // (the claimed final message) constrained by a single scalar equation
+-            // — so a malicious prover could solve for a `yr` that opens the
+-            // commitment to an arbitrary value. We add the same proximity tie as
+-            // the other levels: `enforced_sum_last` is the α-weighted lane-fold
+-            // of the (Merkle-bound) opened rows, batched into `t_r` with a fresh
+-            // `beta_last`; its induced basis is already at the residual dimension
+-            // (zero further folds), so it joins `combined` below via this
+-            // LevelCtx. With `alpha_last` drawn after `yr`, the batched check now
+-            // forces `yr` to agree with the committed codeword at every queried
+-            // column (multilinear Schwartz–Zippel), restoring binding.
+-            let enforced_sum_last = induce_sumcheck_enforced_sum(
+-                &proof.final_proof.opened_rows,
+-                &level_rs,
+-                &queries_last,
+-                &alpha_last,
+-            );
++            // Preserve the final batching draw for both encodings. For a complete
++            // authenticated message F, y = Fold_r(F) and E = RS(F), hence
++            // e_last = <y, B_last> identically by linearity of RS. Its beta term
++            // cancels from both sides of the residual check. Query openings alone
++            // still need the original final binding equation.
+             let beta_last = challenge!(challenger.try_sample_f128());
+-            t_r += beta_last * enforced_sum_last;
+-            level_ctxs.push(LevelCtx {
+-                log_msg_cols: n_current,
+-                queries: queries_last.clone(),
+-                alpha: alpha_last,
+-                ris_start: ris.len(),
+-                beta: beta_last,
+-            });
++            if let FinalBinding::QuerySum(enforced_sum_last) = binding {
++                t_r += beta_last * enforced_sum_last;
++                level_ctxs.push(LevelCtx {
++                    log_msg_cols: n_current,
++                    queries: queries_last,
++                    alpha: alpha_last,
++                    ris_start: ris.len(),
++                    beta: beta_last,
++                });
++            }
+ 
+             // Succinct residual check: per-level induced basis evaluations
+             // via closed-form (no dense materialization).
+@@ -4617,7 +4964,11 @@ where
+         let prev_num_interleaved = 1usize << prev_log_num_interleaved;
+         let num_queries_i = config.queries[i + 1];
+         let _t = std::time::Instant::now();
+-        let queries_i = challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_i));
++        let queries_i = challenge!(try_sample_distinct_queries(
++            challenger,
++            prev_block_len,
++            num_queries_i
++        ));
+         if trace {
+             t_sample_q += _t.elapsed();
+         }
+@@ -5659,6 +6010,450 @@ pub fn recursive_verifier<Ch: Challenger>(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn compact_terminal_codec_matches_dense_oracle_and_rejects_mutations() {
++        let mut rng = crate::challenger::RandomChallenger::new(0xC0DE_C0DE);
++        for hash in [HashKind::Sha256, HashKind::Blake3] {
++            for (log_msg_cols, log_num_interleaved) in [(4, 2), (5, 2), (5, 3)] {
++                let shape = FinalShape {
++                    log_msg_cols,
++                    log_num_interleaved,
++                    log_inv_rate: 6,
++                    hash,
++                };
++                let (columns, lanes, rows) = shape.dimensions().unwrap();
++                let message: Vec<_> = (0..columns * lanes).map(|_| rng.sample_f128()).collect();
++                let folds: Vec<_> = (0..log_num_interleaved)
++                    .map(|_| rng.sample_f128())
++                    .collect();
++                // Independent tensor definition of the lane projection; all challenges
++                // are non-Boolean and both lane and column axes contain distinct data.
++                let weights = build_eq_table(&folds);
++                let expected: Vec<_> = message
++                    .chunks_exact(lanes)
++                    .map(|row| {
++                        row.iter()
++                            .zip(&weights)
++                            .fold(Gf128::ZERO, |sum, (&v, &w)| sum + v * w)
++                    })
++                    .collect();
++                assert_eq!(
++                    message.polynomial(shape, &folds).unwrap().as_ref(),
++                    expected
++                );
++                let ntt = AdditiveNttF128::standard(log_msg_cols + shape.log_inv_rate);
++                let witness = ligero_commit(
++                    &message,
++                    log_msg_cols,
++                    log_num_interleaved,
++                    shape.log_inv_rate,
++                    &ntt,
++                    hash,
++                );
++                let queries = [0, 3, rows / 2, rows - 1];
++                let alpha = rng.sample_f128_vec(2);
++                let full = FinalProof::finish((), expected, &witness, &queries);
++                assert!(matches!(
++                    message.authenticate(shape, &witness.root(), &queries, &folds, &alpha),
++                    Some(FinalBinding::CompleteMessage)
++                ));
++                assert!(matches!(
++                    full.authenticate(shape, &witness.root(), &queries, &folds, &alpha),
++                    Some(FinalBinding::QuerySum(_))
++                ));
++
++                for wrong_len in [message.len() - 1, message.len() + 1] {
++                    let mut bad = message.clone();
++                    bad.resize(wrong_len, Gf128::ZERO);
++                    assert!(bad.polynomial(shape, &folds).is_none());
++                    assert!(
++                        bad.authenticate(shape, &witness.root(), &queries, &folds, &alpha)
++                            .is_none()
++                    );
++                }
++                let mut altered = message.clone();
++                altered[17] += Gf128::ONE;
++                assert!(
++                    altered
++                        .authenticate(shape, &witness.root(), &queries, &folds, &alpha)
++                        .is_none()
++                );
++                let mut permuted = message.clone();
++                for row in permuted.chunks_exact_mut(lanes) {
++                    row.swap(0, 1);
++                }
++                assert!(
++                    permuted
++                        .authenticate(shape, &witness.root(), &queries, &folds, &alpha)
++                        .is_none()
++                );
++                let mut wrong_root = witness.root();
++                wrong_root[0] ^= 1;
++                assert!(
++                    message
++                        .authenticate(shape, &wrong_root, &queries, &folds, &alpha)
++                        .is_none()
++                );
++                assert!(
++                    message
++                        .authenticate(shape, &witness.root(), &[rows], &folds, &alpha)
++                        .is_none()
++                );
++                assert!(
++                    message
++                        .polynomial(shape, &folds[..folds.len() - 1])
++                        .is_none()
++                );
++            }
++        }
++        for log in [21, usize::BITS as usize, usize::MAX] {
++            let shape = FinalShape {
++                log_msg_cols: log,
++                log_num_interleaved: 3,
++                log_inv_rate: 6,
++                hash: HashKind::Sha256,
++            };
++            assert!(shape.compact_message_len().is_none());
++            assert!(vec![Gf128::ZERO].polynomial(shape, &[]).is_none());
++            assert!(
++                vec![Gf128::ZERO]
++                    .authenticate(shape, &[0; 32], &[], &[], &[])
++                    .is_none()
++            );
++        }
++    }
++
++    #[test]
++    fn compact_terminal_query_binding_cancels_exactly() {
++        let mut rng = crate::challenger::RandomChallenger::new(0xE1DE_1717);
++        for (log_msg_cols, log_lanes) in [(4, 2), (5, 2), (5, 3)] {
++            let columns = 1 << log_msg_cols;
++            let lanes = 1 << log_lanes;
++            let message: Vec<_> = (0..columns * lanes).map(|_| rng.sample_f128()).collect();
++            let folds = rng.sample_f128_vec(log_lanes);
++            let lane_weights = build_eq_table(&folds);
++            // Derive the folded message from the mathematical tensor projection,
++            // independently of the compact verifier's partial_eval_lsb routine.
++            let y: Vec<_> = message
++                .chunks_exact(lanes)
++                .map(|row| {
++                    row.iter()
++                        .zip(&lane_weights)
++                        .fold(Gf128::ZERO, |s, (&v, &w)| s + v * w)
++                })
++                .collect();
++            let inner = |a: &[Gf128], b: &[Gf128]| {
++                a.iter().zip(b).fold(Gf128::ZERO, |s, (&a, &b)| s + a * b)
++            };
++            for log_inv_rate in [1, 6] {
++                let ntt = AdditiveNttF128::standard(log_msg_cols + log_inv_rate);
++                let witness = ligero_commit(
++                    &message,
++                    log_msg_cols,
++                    log_lanes,
++                    log_inv_rate,
++                    &ntt,
++                    HashKind::Sha256,
++                );
++                for query_count in [0, 1, 3, 11, 126] {
++                    let query_count = query_count.min(witness.block_len);
++                    let queries: Vec<_> = (0..query_count)
++                        .map(|i| i * witness.block_len / query_count)
++                        .collect();
++                    let alpha = rng.sample_f128_vec(ceil_log2(query_count));
++                    let rows: Vec<_> = queries.iter().map(|&q| witness.row(q).to_vec()).collect();
++                    let e = induce_sumcheck_enforced_sum(&rows, &folds, &queries, &alpha);
++                    let b = induce_sumcheck_evaluate_at_residual(
++                        log_msg_cols,
++                        &eval_sk_at_vks(log_msg_cols),
++                        &queries,
++                        &alpha,
++                        &[],
++                        log_msg_cols,
++                    );
++                    assert_eq!(
++                        e,
++                        inner(&y, &b),
++                        "shape={columns}x{lanes} rate={log_inv_rate} Q={query_count}"
++                    );
++                    let beta = rng.sample_f128();
++                    let prior_basis: Vec<_> = (0..columns).map(|_| rng.sample_f128()).collect();
++                    let prior_claim = rng.sample_f128();
++                    let combined: Vec<_> = prior_basis
++                        .iter()
++                        .zip(&b)
++                        .map(|(&a, &b)| a + beta * b)
++                        .collect();
++                    // Equality of the complete residuals proves equal acceptance,
++                    // including false claims, without relying on honest transcripts.
++                    assert_eq!(
++                        inner(&y, &combined) + prior_claim + beta * e,
++                        inner(&y, &prior_basis) + prior_claim
++                    );
++                    if let Some(j) = b.iter().position(|v| !v.is_zero()) {
++                        let mut forged_y = y.clone();
++                        forged_y[j] += Gf128::ONE;
++                        assert_ne!(
++                            inner(&forged_y, &b),
++                            e,
++                            "cancellation requires y to be derived from the authenticated message"
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn compact_terminal_preserves_expanded_proof_and_fiat_shamir_transcript() {
++        // This reference keeps both the old authenticated terminal proof and its
++        // pre-fold message, allowing an exact expansion comparison with real FS.
++        struct ReferenceFinal {
++            message: Vec<Gf128>,
++            full: FinalProof,
++            queries: Vec<usize>,
++        }
++        impl FinalEncoding for ReferenceFinal {
++            type Captured = Vec<Gf128>;
++            fn capture(message: &[Gf128]) -> Self::Captured {
++                message.to_vec()
++            }
++            fn finish(
++                message: Self::Captured,
++                yr: Vec<Gf128>,
++                witness: &LigeroWitness,
++                queries: &[usize],
++            ) -> Self {
++                Self {
++                    message,
++                    full: FinalProof::finish((), yr, witness, queries),
++                    queries: queries.to_vec(),
++                }
++            }
++            fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
++                self.full.polynomial(shape, folds)
++            }
++            fn authenticate(
++                &self,
++                shape: FinalShape,
++                root: &Hash,
++                queries: &[usize],
++                folds: &[Gf128],
++                alpha: &[Gf128],
++            ) -> Option<FinalBinding> {
++                self.full.authenticate(shape, root, queries, folds, alpha)
++            }
++        }
++        let mut rng = crate::challenger::RandomChallenger::new(0xC0DE_F1A7);
++        for hash in [HashKind::Sha256, HashKind::Blake3] {
++            for (log_n, ks) in [(10, vec![2, 3]), (12, vec![3, 2]), (13, vec![3, 3])] {
++                let initial_k = 2;
++                let mut remaining = log_n - initial_k;
++                let recursive_log_msg_cols: Vec<_> = ks
++                    .iter()
++                    .map(|&k| {
++                        remaining -= k;
++                        remaining
++                    })
++                    .collect();
++                let cfg = ProverConfig {
++                    log_inv_rates: vec![1, 2, 6],
++                    recursive_steps: 2,
++                    initial_log_msg_cols: log_n - initial_k,
++                    initial_log_num_interleaved: initial_k,
++                    initial_k,
++                    recursive_log_msg_cols: recursive_log_msg_cols.clone(),
++                    recursive_ks: ks.clone(),
++                    queries: vec![9, 7, 11],
++                    grinding_bits: vec![1; 3],
++                    fold_grinding_bits: vec![1; 3],
++                    ood_samples: vec![0, 1, 1],
++                    merkle_hash: hash,
++                };
++                let vcfg = VerifierConfig {
++                    log_inv_rates: cfg.log_inv_rates.clone(),
++                    recursive_steps: 2,
++                    initial_log_msg_cols: log_n - initial_k,
++                    initial_log_num_interleaved: initial_k,
++                    initial_k,
++                    recursive_log_msg_cols,
++                    recursive_ks: ks.clone(),
++                    queries: cfg.queries.clone(),
++                    grinding_bits: cfg.grinding_bits.clone(),
++                    fold_grinding_bits: cfg.fold_grinding_bits.clone(),
++                    ood_samples: cfg.ood_samples.clone(),
++                    merkle_hash: hash,
++                };
++                let message: Vec<_> = (0..1usize << log_n).map(|_| rng.sample_f128()).collect();
++                let basis: Vec<_> = (0..message.len()).map(|_| rng.sample_f128()).collect();
++                let target = message
++                    .iter()
++                    .zip(&basis)
++                    .fold(Gf128::ZERO, |s, (&a, &b)| s + a * b);
++                let ntt = AdditiveNttF128::standard(log_n - initial_k + 1);
++                let witness = ligero_commit(&message, log_n - initial_k, initial_k, 1, &ntt, hash);
++                let root = witness.root();
++                let open = |_: usize, _: usize, queries: &[usize]| RecursiveProof {
++                    opened_rows: queries.iter().map(|&q| witness.row(q).to_vec()).collect(),
++                    merkle_proof: merkle_multi_proof_for(&witness.tree, witness.block_len, queries),
++                };
++                let new_ch =
++                    || crate::challenger::FsChallenger::with_hash(b"compact-terminal-test", hash);
++                let mut full_ch = new_ch();
++                let full = recursive_prover_with_basis_initial(
++                    &cfg,
++                    message.as_slice(),
++                    basis.clone(),
++                    target,
++                    root,
++                    open,
++                    &mut full_ch,
++                );
++                let mut compact_ch = new_ch();
++                let compact = recursive_prover_with_basis_initial_compact(
++                    &cfg,
++                    message.as_slice(),
++                    basis.clone(),
++                    target,
++                    root,
++                    open,
++                    &mut compact_ch,
++                );
++                let mut reference_ch = new_ch();
++                let reference: LigeritoProof<ReferenceFinal> =
++                    recursive_prover_with_basis_initial_impl(
++                        &cfg,
++                        InitialBasis::Dense {
++                            packed: message.as_slice().into(),
++                            basis: basis.clone(),
++                            first_msg: None,
++                            lookahead: None,
++                        },
++                        target,
++                        root,
++                        open,
++                        &mut reference_ch,
++                    );
++                let next_challenge = full_ch.sample_f128();
++                assert_eq!(compact_ch.sample_f128(), next_challenge);
++                assert_eq!(reference_ch.sample_f128(), next_challenge);
++                assert_eq!(reference.final_proof.message, compact.final_proof);
++                let shape = FinalShape {
++                    log_msg_cols: remaining,
++                    log_num_interleaved: *ks.last().unwrap(),
++                    log_inv_rate: 6,
++                    hash,
++                };
++                assert_eq!(
++                    compact.final_proof.len(),
++                    shape.compact_message_len().unwrap()
++                );
++                let terminal_ntt =
++                    AdditiveNttF128::standard(shape.log_msg_cols + shape.log_inv_rate);
++                let terminal_witness = ligero_commit(
++                    &compact.final_proof,
++                    shape.log_msg_cols,
++                    shape.log_num_interleaved,
++                    shape.log_inv_rate,
++                    &terminal_ntt,
++                    hash,
++                );
++                assert_eq!(
++                    terminal_witness.root(),
++                    *compact.recursive_roots.last().unwrap()
++                );
++                let expanded_rows: Vec<_> = reference
++                    .final_proof
++                    .queries
++                    .iter()
++                    .map(|&q| terminal_witness.row(q).to_vec())
++                    .collect();
++                assert_eq!(expanded_rows, full.final_proof.opened_rows);
++                let expanded = LigeritoProof {
++                    initial_root: compact.initial_root,
++                    initial_proof: compact.initial_proof.clone(),
++                    recursive_roots: compact.recursive_roots.clone(),
++                    recursive_proofs: compact.recursive_proofs.clone(),
++                    final_proof: reference.final_proof.full,
++                    sumcheck_transcript: compact.sumcheck_transcript.clone(),
++                    grinding_nonces: compact.grinding_nonces.clone(),
++                    ood_values: compact.ood_values.clone(),
++                    fold_grinding_nonces: compact.fold_grinding_nonces.clone(),
++                };
++                assert_eq!(full, expanded);
++                assert_eq!(
++                    bincode::serialize(&full).unwrap(),
++                    bincode::serialize(&expanded).unwrap()
++                );
++                let encoded = bincode::serialize(&compact).unwrap();
++                assert_eq!(
++                    bincode::deserialize::<CompactLigeritoProof>(&encoded).unwrap(),
++                    compact
++                );
++                let authenticate = |rows, lanes, queries: &[usize], p: &RecursiveProof| {
++                    verify_level_opens(
++                        &root,
++                        rows,
++                        queries,
++                        &p.opened_rows,
++                        lanes,
++                        &p.merkle_proof,
++                        hash,
++                    )
++                };
++                let eval_basis = |rs: &[Gf128], _: usize| partial_eval_lsb(&basis, rs);
++                let mut full_verifier = new_ch();
++                assert!(recursive_verifier_with_basis_initial(
++                    &vcfg,
++                    &full,
++                    log_n,
++                    target,
++                    &root,
++                    eval_basis,
++                    authenticate,
++                    &mut full_verifier
++                ));
++                let verify_compact =
++                    |p: &CompactLigeritoProof, ch: &mut crate::challenger::FsChallenger| {
++                        recursive_verifier_with_basis_initial_compact(
++                            &vcfg,
++                            p,
++                            &p.initial_proof,
++                            log_n,
++                            target,
++                            &root,
++                            eval_basis,
++                            authenticate,
++                            ch,
++                        )
++                    };
++                let mut compact_verifier = new_ch();
++                assert!(verify_compact(&compact, &mut compact_verifier));
++                assert_eq!(full_verifier.sample_f128(), compact_verifier.sample_f128());
++                for mutation in 0..8 {
++                    let mut bad = compact.clone();
++                    match mutation {
++                        0 => {
++                            bad.final_proof.pop();
++                        }
++                        1 => bad.final_proof.push(Gf128::ZERO),
++                        2 => bad.final_proof[17] += Gf128::ONE,
++                        3 => bad.final_proof.swap(0, 1),
++                        4 => bad.recursive_roots.last_mut().unwrap()[0] ^= 1,
++                        5 => {
++                            let last_consumed = bad.sumcheck_transcript.len() - 2;
++                            bad.sumcheck_transcript[last_consumed].u_0 += Gf128::ONE;
++                        }
++                        6 => bad.grinding_nonces.push(0),
++                        7 => bad.recursive_roots.push(root),
++                        _ => unreachable!(),
++                    }
++                    assert!(!verify_compact(&bad, &mut new_ch()), "mutation {mutation}");
++                }
++            }
++        }
++    }
++
+     /// Lookahead fold state machine vs the plain per-round fused folds:
+     /// every round message AND the final arrays must be bit-identical
+     /// (exact polynomial identity). Covers even k (drain needed) and odd k.
+diff --git a/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs b/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
+index f6cbd0f9..b1edac3c 100644
+--- a/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
++++ b/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
+@@ -555,6 +555,46 @@ fn apply_phi_t_into(v: &[Gf128], out: &mut [Gf128]) {
+     }
+ }
+ 
++/// The same phi transpose in lane-contiguous order. Rho/pi permutes and rotates
++/// whole 64-element lanes; theta then adds the neighboring column parities.
++fn apply_phi_t_lanes_into(v: &[Gf128], out: &mut [Gf128]) {
++    debug_assert_eq!(v.len(), STATE_BITS);
++    debug_assert_eq!(out.len(), STATE_BITS);
++    for x in 0..5 {
++        for y in 0..5 {
++            let a = (x + 3 * y) % 5;
++            let b = x;
++            let rotation = RHO_OFFSETS[a][b] as usize;
++            let source = &v[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
++            let destination = &mut out[LANE_BITS * (a + 5 * b)..][..LANE_BITS];
++            let split = LANE_BITS - rotation;
++            destination[..split].copy_from_slice(&source[rotation..]);
++            destination[split..].copy_from_slice(&source[..rotation]);
++        }
++    }
++    let mut parity = [[Gf128::ZERO; LANE_BITS]; 5];
++    for x in 0..5 {
++        for y in 0..5 {
++            let lane = &out[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
++            for (p, &value) in parity[x].iter_mut().zip(lane) {
++                *p += value;
++            }
++        }
++    }
++    for x in 0..5 {
++        let mut column = [Gf128::ZERO; LANE_BITS];
++        for z in 0..LANE_BITS {
++            column[z] = parity[(x + 1) % 5][z] + parity[(x + 4) % 5][(z + 1) % LANE_BITS];
++        }
++        for y in 0..5 {
++            let lane = &mut out[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
++            for (value, &delta) in lane.iter_mut().zip(&column) {
++                *value += delta;
++            }
++        }
++    }
++}
++
+ /// Forward-apply φ on a `bool` state — tracks the round-constant accumulator
+ /// `RC_r` (an F_2 state). `out[s_out] = XOR_{s_in ∈ preim(s_out)} in[s_in]`.
+ pub(crate) fn apply_phi_bool(v: &[bool; STATE_BITS]) -> [bool; STATE_BITS] {
+@@ -705,49 +745,50 @@ impl LincheckCircuit for KeccakLincheckCircuit {
+         let mut comb = vec![Gf128::ZERO; K];
+         let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
+ 
+-        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
+-        // contribute alpha * L_24 on A and [Z_CONST] on B.
++        // Keep the reverse recurrence in the witness's lane-contiguous order:
++        // physical coordinate = 64 * (x + 5*y) + z. The external witness and
++        // coefficients retain their existing layout.
+         let mut k = vec![Gf128::ZERO; STATE_BITS];
+-        for s in 0..STATE_BITS {
+-            let input = z_pos_state(0, s);
+-            let output_weight = eq_inner[z_pos_state(24, s)];
+-            comb[input] = alpha * eq_inner[input];
+-            constant += eq_inner[input] + output_weight;
+-            k[s] = alpha * output_weight;
++        for i in 0..STATE_BITS {
++            let input = eq_inner[STATE0_BIT_BASE + i];
++            let output = eq_inner[STATE24_BIT_BASE + i];
++            comb[STATE0_BIT_BASE + i] = alpha * input;
++            constant += input + output;
++            k[i] = alpha * output;
+         }
+ 
+-        // Reverse the *combined* linear form through
+-        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
+-        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
+-        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
+-        // Linearity lets A and B share one transpose recurrence; round
+-        // constants are absorbed where they enter, without expanding RC_r.
++        // Reverse the combined alpha*A+B form through each affine transition.
+         let mut scratch = vec![Gf128::ZERO; STATE_BITS];
+         let mut sum_chi_weights = Gf128::ZERO;
+         for r in (0..N_T).rev() {
+-            for s in 0..STATE_BITS {
+-                comb[z_pos_t(r, s)] = k[s];
+-            }
++            let t_base = T_PACKED_BIT_BASE + r * STATE_SIZE_BITS;
++            comb[t_base..t_base + STATE_BITS].copy_from_slice(&k);
+             let mut rc = ROUND_CONSTANTS[r];
+             while rc != 0 {
+-                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
++                constant += k[rc.trailing_zeros() as usize];
+                 rc &= rc - 1;
+             }
+-            for z in 0..LANE_BITS {
+-                for y in 0..5 {
+-                    for x in 0..5 {
+-                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
++            for y in 0..5 {
++                for x in 0..5 {
++                    let source = t_base + LANE_BITS * (x + 5 * y);
++                    let next = LANE_BITS * ((x + 1) % 5 + 5 * y);
++                    let after_next = LANE_BITS * ((x + 2) % 5 + 5 * y);
++                    for z in 0..LANE_BITS {
++                        let e = eq_inner[source + z];
+                         sum_chi_weights += e;
+-                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
+-                        k[state_idx((x + 2) % 5, y, z)] += e;
++                        k[next + z] += alpha * e;
++                        k[after_next + z] += e;
+                     }
+                 }
+             }
+-            apply_phi_t_into(&k, &mut scratch);
++            apply_phi_t_lanes_into(&k, &mut scratch);
+             std::mem::swap(&mut k, &mut scratch);
+         }
+-        for s in 0..STATE_BITS {
+-            comb[z_pos_state(0, s)] += k[s];
++        for (c, &v) in comb[STATE0_BIT_BASE..STATE0_BIT_BASE + STATE_BITS]
++            .iter_mut()
++            .zip(&k)
++        {
++            *c += v;
+         }
+         comb[Z_CONST] = constant + alpha * sum_chi_weights;
+         comb
+@@ -1581,6 +1622,60 @@ mod tests {
+         s
+     }
+ 
++    // Previous production layout, retained as the direct performance baseline.
++    fn previous_layout_fold_alpha(alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
++        assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
++        let mut comb = vec![Gf128::ZERO; K];
++        let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
++
++        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
++        // contribute alpha * L_24 on A and [Z_CONST] on B.
++        let mut k = vec![Gf128::ZERO; STATE_BITS];
++        for s in 0..STATE_BITS {
++            let input = z_pos_state(0, s);
++            let output_weight = eq_inner[z_pos_state(24, s)];
++            comb[input] = alpha * eq_inner[input];
++            constant += eq_inner[input] + output_weight;
++            k[s] = alpha * output_weight;
++        }
++
++        // Reverse the *combined* linear form through
++        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
++        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
++        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
++        // Linearity lets A and B share one transpose recurrence; round
++        // constants are absorbed where they enter, without expanding RC_r.
++        let mut scratch = vec![Gf128::ZERO; STATE_BITS];
++        let mut sum_chi_weights = Gf128::ZERO;
++        for r in (0..N_T).rev() {
++            for s in 0..STATE_BITS {
++                comb[z_pos_t(r, s)] = k[s];
++            }
++            let mut rc = ROUND_CONSTANTS[r];
++            while rc != 0 {
++                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
++                rc &= rc - 1;
++            }
++            for z in 0..LANE_BITS {
++                for y in 0..5 {
++                    for x in 0..5 {
++                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
++                        sum_chi_weights += e;
++                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
++                        k[state_idx((x + 2) % 5, y, z)] += e;
++                    }
++                }
++            }
++            apply_phi_t_into(&k, &mut scratch);
++            std::mem::swap(&mut k, &mut scratch);
++        }
++        for s in 0..STATE_BITS {
++            comb[z_pos_state(0, s)] += k[s];
++        }
++        comb[Z_CONST] = constant + alpha * sum_chi_weights;
++        comb
++    }
++
+     // Frozen pre-factorization walker: separate A/B recurrences, explicit
+     // eleven-preimage scatters, and forward-expanded round constants. Keep
+     // this independent of apply_phi_t_into as an exact coefficient oracle.
+@@ -1812,6 +1907,8 @@ mod tests {
+     fn factored_phi_transpose_matches_preimages_on_every_basis_vector() {
+         let mut basis = vec![Gf128::ZERO; STATE_BITS];
+         let mut actual = vec![Gf128::ONE; STATE_BITS];
++        let mut lane_basis = vec![Gf128::ZERO; STATE_BITS];
++        let mut lane_actual = vec![Gf128::ONE; STATE_BITS];
+         for s in 0..STATE_BITS {
+             basis[s] = Gf128::ONE;
+             apply_phi_t_into(&basis, &mut actual);
+@@ -1820,6 +1917,16 @@ mod tests {
+                 reference_apply_phi_t(&basis),
+                 "basis coordinate {s}"
+             );
++            lane_basis[within_lane_contiguous(s)] = Gf128::ONE;
++            apply_phi_t_lanes_into(&lane_basis, &mut lane_actual);
++            for j in 0..STATE_BITS {
++                assert_eq!(
++                    lane_actual[within_lane_contiguous(j)],
++                    actual[j],
++                    "lane basis coordinate {s}, output {j}"
++                );
++            }
++            lane_basis[within_lane_contiguous(s)] = Gf128::ZERO;
+             basis[s] = Gf128::ZERO;
+         }
+     }
+@@ -1848,6 +1955,10 @@ mod tests {
+                     KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
+                     reference_fold_alpha_batched(alpha, &weights),
+                 );
++                assert_eq!(
++                    KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
++                    previous_layout_fold_alpha(alpha, &weights),
++                );
+             }
+         }
+     }
+@@ -1908,6 +2019,68 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    #[ignore = "timing benchmark; run alone on an idle machine"]
++    fn lane_contiguous_walker_abba_microbenchmark() {
++        use std::{hint::black_box, time::Instant};
++        let mut rng = Rng::new(0x1A4E_ABBA_2026);
++        let weights: Vec<_> = (0..K)
++            .map(|_| Gf128 {
++                lo: rng.next_u64(),
++                hi: rng.next_u64(),
++            })
++            .collect();
++        let alpha = Gf128 {
++            lo: rng.next_u64(),
++            hi: rng.next_u64(),
++        };
++        assert_eq!(
++            KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
++            previous_layout_fold_alpha(alpha, &weights)
++        );
++        let measure = |previous: bool| {
++            let start = Instant::now();
++            for _ in 0..4 {
++                let coefficients = if previous {
++                    previous_layout_fold_alpha(black_box(alpha), black_box(&weights))
++                } else {
++                    KeccakLincheckCircuit.fold_alpha_batched(black_box(alpha), black_box(&weights))
++                };
++                black_box(coefficients);
++            }
++            start.elapsed().as_secs_f64() / 4.0
++        };
++        for _ in 0..8 {
++            measure(true);
++            measure(false);
++        }
++        let mut previous = Vec::with_capacity(128);
++        let mut contiguous = Vec::with_capacity(128);
++        let mut paired_ratios = Vec::with_capacity(64);
++        for pair in 0..64 {
++            let (a1, b1, b2, a2) = if pair % 2 == 0 {
++                (measure(true), measure(false), measure(false), measure(true))
++            } else {
++                let (b1, a1, a2, b2) =
++                    (measure(false), measure(true), measure(true), measure(false));
++                (a1, b1, b2, a2)
++            };
++            previous.extend([a1, a2]);
++            contiguous.extend([b1, b2]);
++            paired_ratios.push((b1 + b2) / (a1 + a2));
++        }
++        previous.sort_by(f64::total_cmp);
++        contiguous.sort_by(f64::total_cmp);
++        paired_ratios.sort_by(f64::total_cmp);
++        let old_ms = 500.0 * (previous[63] + previous[64]);
++        let new_ms = 500.0 * (contiguous[63] + contiguous[64]);
++        let ratio = (paired_ratios[31] + paired_ratios[32]) * 0.5;
++        eprintln!(
++            "Keccak lane layout,64 ABBA blocks,4 calls/sample: previous_median_ms={old_ms:.6} contiguous_median_ms={new_ms:.6} paired_ratio_median={ratio:.6} saved_ms={:.6}",
++            old_ms - new_ms
++        );
++    }
++
+     // -------- R1CS tests (I/O-aligned layout with state_24 pin).
+ 
+     /// Independent forward application of the real homogeneous Keccak rows.

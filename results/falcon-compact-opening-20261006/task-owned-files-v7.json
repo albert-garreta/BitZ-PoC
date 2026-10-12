@@ -1,0 +1,115 @@
+{
+  "scope": "Task-owned non-results files in frozen V7 compared with original compact-opening baseline; current concurrent parameterization edits are excluded.",
+  "baseline_revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+  "baseline_manifest": "results/falcon-compact-opening-20261006/performance/baseline-source-manifest.json",
+  "baseline_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+  "candidate_manifest": "results/falcon-compact-opening-20261006/performance/candidate-source-manifest-v7.json",
+  "candidate_manifest_sha256": "cece40e49492801a1ecf8ffb33304b75c78534da4e86784e4b9994f34fdbaf7d",
+  "candidate_binary_sha256": "f784b4cdf4a26b657f5390da67c3c0bbb46aa92bb0418cd001b39f486a4c0677",
+  "file_count": 14,
+  "files": [
+    {
+      "path": "benches/common/falcon_affinity.rs",
+      "status": "added",
+      "category": "benchmark/harness",
+      "baseline_sha256": null,
+      "v7_sha256": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+    },
+    {
+      "path": "benches/falcon_hybrid.rs",
+      "status": "modified",
+      "category": "benchmark/harness",
+      "baseline_sha256": "e9a07b33d57d75cb97b8753d7dc2f9b8ece801c4c28614bea08b584afd62ed27",
+      "v7_sha256": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054"
+    },
+    {
+      "path": "scripts/qualify_falcon_one_source.py",
+      "status": "modified",
+      "category": "benchmark/harness",
+      "baseline_sha256": "24395c54d7e8fcd5f8c69230045eeb52354a861de2dd6847bb5f032c1be83d70",
+      "v7_sha256": "5839ec7defd239c847d0fcb71590f7bcecf8819bc71fd5fa30f35fab52a89493"
+    },
+    {
+      "path": "scripts/test_qualify_falcon_one_source.py",
+      "status": "modified",
+      "category": "benchmark/harness",
+      "baseline_sha256": "b6feb3f1fed88d9fc71d7533ef3934281c75f23841e9f7f10f5b7ddd30a954aa",
+      "v7_sha256": "36d6afd7b89001702f2165d89e01b7c98f6445e7c772dc16e185c0a184ac56e5"
+    },
+    {
+      "path": "src/hybrid/opening.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "75db037183d789c8bb7e6a9601c2e7ee3e4404373efba3a48c09bb093cdcf375",
+      "v7_sha256": "ed4bf09d2c9ce9fd2d900fa0904f3006ca2efacc2536acf3031735966ed05f63"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/ONE_SOURCE.md",
+      "status": "modified",
+      "category": "protocol documentation",
+      "baseline_sha256": "68bcd2364e2e28fd5b8b8e7f86de620b0a10360cf352adfeabb820c2f44b8f5c",
+      "v7_sha256": "7352dd7b9dc4446a0b68e8f13534b29cd56bdae8b85e532ddc16dd310b0317a0"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "8e8fbb3a31f2ffba98d84dc49f542a5fa5004f07c440187bd00a1744aee9fef7",
+      "v7_sha256": "02208b1027930fa85378114431e1949708d838d40b642537a91f1a2075dca598"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_bridge.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "6077731ce179edb2cfe2f091c6798e4571bb079b36d9d158ef9405f74f6f905c",
+      "v7_sha256": "64c749edf832fe78ab52adc81b6bb7d28f62da7929ec15db6f2b93169b310f5f"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_size.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "0a02aaf9386547f7913e48c389a1e6793afd2c60f2951ca465bf8c483f7d070a",
+      "v7_sha256": "cc5befda0fe81e0201bc4b5ed4936d438bd2df44192101788e7cfd087345d6dd"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/piop.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "7027a0e121b1849cff7bd176ac843fbbb05cb89aff901aaf4446da0b17fdcde8",
+      "v7_sha256": "35a73e1f7e4becfa2304f09b99f88ddce3e3e27414bc5f4ddd06e2e731f5900c"
+    },
+    {
+      "path": "src/utils/blake3x4/avx512.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "dd6372ca9d1e2261b78213b435510677e63bd182653c05fbdeb288c1bcacd848",
+      "v7_sha256": "29db73960b0485315e041559951c4c117cf64cb6715f473db46d806f3931414a"
+    },
+    {
+      "path": "vendor/field/src/preparation.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "fac352dbc67b130fa4491b67becc2923eb65e4038fcc83974c714def23b7349c",
+      "v7_sha256": "3c05eaee0cccd1a83ddf1ee2a07d38355c50decaf86ff6f4f2515b7a6688451b"
+    },
+    {
+      "path": "vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "a87b34d04e7349b78cf63556194491f4cabbf92b69ffa28b3277a2e442228ddc",
+      "v7_sha256": "31c4fa0d7fe6da95c1819d4ca0ca3d0e54c80824153d52f50f2000d4d9c1ac84"
+    },
+    {
+      "path": "vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs",
+      "status": "modified",
+      "category": "production and focused tests",
+      "baseline_sha256": "cc198b020e8e46cee6bdd6c8bf55f93e8a2ffbfba7c0d4a0cf1a95c0657899a1",
+      "v7_sha256": "edd3cfb66d3713cd3cc0960269c829a10acb7b0da0d66ca09588a9a2c9dc65b4"
+    }
+  ],
+  "exclusions": [
+    "Results/report artifacts are outside both source snapshots.",
+    "Cargo.toml and pre-existing user examples are identical across the two manifests and are not task-owned changes.",
+    "Concurrent Falcon parameterization edits and new files are outside frozen V7 and are not tested by this evidence."
+  ]
+}

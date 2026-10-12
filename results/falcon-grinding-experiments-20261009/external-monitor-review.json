@@ -1,0 +1,35 @@
+{
+  "audit_flag_resolution": "Documented timing-monitor limitations; no security or proof-integrity issue. Primary performance conclusion unchanged in conservative sensitivity.",
+  "disappearing_cwd_events": [
+    {
+      "pid": 3972368,
+      "event_epoch": 1791552163.5290174,
+      "nearest_resources": "confirmation/discarded/full-1024-t16-s50-weighted_external-1791552163579126913/full-1024-t16-s50-weighted_external.resources.json",
+      "event_minus_run_end_seconds": -0.050095319747924805,
+      "interpretation": "cwd disappeared during process termination; likely the ending prover, not independently established as an external competitor. Conservative sensitivity omits this input from full1024 comparisons."
+    },
+    {
+      "pid": 3980089,
+      "event_epoch": 1791552388.8512282,
+      "nearest_resources": "confirmation/full-1024-t16-s53-baseline.resources.json",
+      "event_minus_run_end_seconds": -0.05796170234680176,
+      "interpretation": "cwd disappeared during process termination; likely the ending prover, not independently established as an external competitor. Conservative sensitivity omits this input from full1024 comparisons."
+    }
+  ],
+  "real_external_process": {
+    "event": "observed_start",
+    "epoch": 1791552579.122837,
+    "pid": 3989950,
+    "name": "falcon_hybrid",
+    "cwd": "/home/john-wu/.codex/worktrees/b9a8/BitZ-pcs",
+    "affinity": [
+      14
+    ]
+  },
+  "last_accepted_end_epoch": 1791552575.252233,
+  "observed_after_last_run_seconds": 3.8706040382385254,
+  "poll_interval_seconds": 5,
+  "possible_overlap": "5-second polling cannot exclude about1.13seconds overlap with final arithmetic1024 seed54 original control on different worker cores. The experimental baseline and candidate completed before this poll interval; their primary comparison is unaffected by this final event.",
+  "sensitivity_artifact": "sensitivity-summary.json",
+  "monitor_bug": "Path.resolve(strict=False) returns the unresolved /proc path when cwd vanishes at process exit. Future monitors should use strict resolution and record /proc/stat process start ticks."
+}

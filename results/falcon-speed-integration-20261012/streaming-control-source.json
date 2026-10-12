@@ -1,0 +1,5 @@
+{
+  "base_manifest": "candidate-source-sha256.json",
+  "changed_file": "src/piop/spartan/falcon1024_algebraic/protocol.rs",
+  "sha256": "57ef6819236b66d01ab250bcc49cd35bd93d6a7fa245ef8329adbbd4ea9d6cad"
+}

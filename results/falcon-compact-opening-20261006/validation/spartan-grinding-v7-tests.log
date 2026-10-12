@@ -1,0 +1,14 @@
+
+running 9 tests
+test piop::spartan::grinding::sampling_boundary_tests::field_sampling_retries_share_one_grinding_boundary_and_replay ... ok
+test piop::spartan::grinding::tests::domain_round_and_difficulty_separate_seeds ... ok
+test piop::spartan::grinding::tests::grinding_transcripts_stay_in_lockstep_and_gate_the_nonces ... ok
+test piop::spartan::grinding::tests::internal_sampler_reads_do_not_create_grinding_rounds ... ok
+test piop::spartan::grinding::tests::invalid_boundary_configuration_does_not_mutate_transcript ... ok
+test piop::spartan::grinding::tests::invalid_nonce_is_rejected_and_still_absorbed_canonically ... ok
+test piop::spartan::grinding::tests::parallel_search_returns_the_serial_minimum ... ok
+test piop::spartan::grinding::tests::prover_and_verifier_are_deterministic_and_continue_in_lockstep ... ok
+test piop::spartan::grinding::tests::zero_difficulty_grinding_transcript_is_a_transparent_passthrough ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 683 filtered out; finished in 0.00s
+

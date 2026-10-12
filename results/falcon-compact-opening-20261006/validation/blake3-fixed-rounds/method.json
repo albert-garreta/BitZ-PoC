@@ -1,0 +1,85 @@
+{
+  "benchmark_build_command": "rustc --edition=2024 --cfg 'feature=\"parallel\"' -C target-cpu=native -C opt-level=3 -C codegen-units=1 -L dependency=target/falcon-native/release/deps --extern blake3=target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib --extern rayon=target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib --extern libc=target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench.rs -o results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench",
+  "final_benchmark_build_command": "rustc --edition=2024 --cfg 'feature=\"parallel\"' -C target-cpu=native -C opt-level=3 -C codegen-units=1 -L dependency=target/falcon-native/release/deps --extern blake3=target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib --extern rayon=target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib --extern libc=target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench.rs -o results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench-final",
+  "final_test_build_command": "rustc --test --edition=2024 --cfg 'feature=\"parallel\"' -C target-cpu=native -C opt-level=3 -C codegen-units=1 -L dependency=target/falcon-native/release/deps --extern blake3=target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib --extern rayon=target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib --extern libc=target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/tests.rs -o results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/tests-final",
+  "benchmark_run_command": "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds",
+  "final_test_run_command": "taskset -c 0 results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/tests-final --test-threads=1",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "dependencies": {
+    "libc": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib",
+      "sha256": "f62b9732159f382f5d21384bfdbd6bc58bd213d867d47fda68d971011d105a88"
+    },
+    "rayon": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib",
+      "sha256": "ace8b7ca7046914f2c505eb610e9447cf11b2eacb9d33773938cb53d6cef3a25"
+    },
+    "blake3": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib",
+      "sha256": "d68b14f19f7976398caa21ae57cdac9d8182c23605d31402600a5b9d092fb3ca"
+    }
+  },
+  "main_cpu_ids": [
+    0
+  ],
+  "worker_cpu_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "timed_scanner_execution": "Sequential actual first_pow_nonce calls on main CPU0; global workers initialized/pinned identically, unused during measured scans.",
+  "prefix_lengths": [
+    32,
+    16
+  ],
+  "prefixes_per_length": 64,
+  "difficulty_bits": [
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "blocks_per_case": 4,
+  "observations_per_method_per_case": 8,
+  "block_orders": "ABBA/BAAB alternated by seed+rep parity",
+  "latency_timed_calls": 18432,
+  "oracle_cases": 1152,
+  "throughput_timed_calls": 2048,
+  "throughput_range": [
+    4093,
+    266237
+  ],
+  "throughput_difficulty": 257,
+  "test_result": "19 passed, 0 failed, 4 ignored",
+  "final_production_file": "src/utils/blake3x4/avx512.rs",
+  "hashes": {
+    "src/utils/blake3x4/avx512.rs": "29db73960b0485315e041559951c4c117cf64cb6715f473db46d806f3931414a",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/specialized/avx512.rs": "29db73960b0485315e041559951c4c117cf64cb6715f473db46d806f3931414a",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/original/avx512.rs": "dd6372ca9d1e2261b78213b435510677e63bd182653c05fbdeb288c1bcacd848",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/original.rs": "be4b43abd10fb284f156d5ce3cb90964926617e400cb2f211785be87fd6811c6",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/specialized.rs": "be4b43abd10fb284f156d5ce3cb90964926617e400cb2f211785be87fd6811c6",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench.rs": "c93c04aee722b9d7bb254a03dd3183b5a1f7516790319a7239f0c30983512022",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench": "6ffa81ef3b65c5961d380d39b77db65869edd47cb2ca4f135e8a307860ff9781",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/bench-final": "6ffa81ef3b65c5961d380d39b77db65869edd47cb2ca4f135e8a307860ff9781",
+    "results/falcon-compact-opening-20261006/validation/blake3-fixed-rounds/tests-final": "634315c31e73f5ee70e5bb81b3a79b37397b5457c1114dfb1648230d6a6cfbfb"
+  },
+  "final_benchmark_identical_to_timed_binary": true
+}

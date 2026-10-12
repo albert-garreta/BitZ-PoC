@@ -1,0 +1,70 @@
+{
+  "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+  "binary": "/tmp/falcon-compact-opening-binaries/baseline-v3",
+  "sha256": "e10734eabbacda3da4056b11a311873dab0e3536bc69214e08c49cbf82ba5e41",
+  "source_root": "/tmp/falcon-compact-opening-baseline-v3",
+  "source_manifest": "/tmp/falcon-compact-opening-baseline-v3/source-manifest.json",
+  "source_manifest_sha256": "959a0a95ad8bebb07f486b40af23d03ef38d179d8f4e21bd91040c89c9969d5c",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "profile": "release",
+  "target_arch": "x86_64",
+  "root_count": 1,
+  "protocols": {
+    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+  },
+  "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/falcon-compact-opening-baseline-target cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+  "working_tree": true,
+  "example_overlay_sha256": "5028ea758abab8911f77da68d85acd5f0df89bbf9e32a0844033eac4c72cb11a",
+  "build_log_sha256": "d19d1357f6cb39874b4a6a52692e5300ac2813c2b33b2125b367a9899e57134d",
+  "compiler_artifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///tmp/falcon-compact-opening-baseline-v3#bitz@0.1.0",
+    "manifest_path": "/tmp/falcon-compact-opening-baseline-v3/Cargo.toml",
+    "target": {
+      "kind": [
+        "bench"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "falcon_hybrid",
+      "src_path": "/tmp/falcon-compact-opening-baseline-v3/benches/falcon_hybrid.rs",
+      "edition": "2024",
+      "required-features": [
+        "falcon-hybrid"
+      ],
+      "doc": false,
+      "doctest": false,
+      "test": false
+    },
+    "profile": {
+      "opt_level": "3",
+      "debuginfo": 0,
+      "debug_assertions": false,
+      "overflow_checks": false,
+      "test": true
+    },
+    "features": [
+      "binius64-bench",
+      "default",
+      "falcon",
+      "falcon-hybrid",
+      "hybrid",
+      "parallel",
+      "span-metrics"
+    ],
+    "filenames": [
+      "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9"
+    ],
+    "executable": "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9",
+    "fresh": false
+  },
+  "qualification_status": "unmeasured",
+  "archive_reason": "Placement audit required explicit auxiliary-pool masks before any timing runs."
+}

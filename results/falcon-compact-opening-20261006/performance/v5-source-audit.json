@@ -1,0 +1,28 @@
+{
+  "status": "pass",
+  "snapshot": "/tmp/falcon-compact-opening-candidate-v5",
+  "source_files": 818,
+  "source_manifest_sha256": "47e3d269adf4ef9f885f43b6c00e4f2643af08c2da635c844e66a3aa31067528",
+  "baseline_reuse": "baseline-build-v4.json",
+  "same_affinity_overlay": true,
+  "same_qualification_harness": true,
+  "same_current_and_frozen_sources": true,
+  "changes_versus_candidate_v4": {
+    "src/hybrid/opening.rs": {
+      "v4": "7f6927ee9bea6ca4d0a8e23bd957a9ef410898ad88c696809361680158f66a9d",
+      "v5": "ed4bf09d2c9ce9fd2d900fa0904f3006ca2efacc2536acf3031735966ed05f63"
+    },
+    "src/piop/spartan/falcon1024_ct/hybrid_bridge.rs": {
+      "v4": "6077731ce179edb2cfe2f091c6798e4571bb079b36d9d158ef9405f74f6f905c",
+      "v5": "64c749edf832fe78ab52adc81b6bb7d28f62da7929ec15db6f2b93169b310f5f"
+    },
+    "vendor/field/src/preparation.rs": {
+      "v4": "fac352dbc67b130fa4491b67becc2923eb65e4038fcc83974c714def23b7349c",
+      "v5": "3c05eaee0cccd1a83ddf1ee2a07d38355c50decaf86ff6f4f2515b7a6688451b"
+    },
+    "vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs": {
+      "v4": "cc198b020e8e46cee6bdd6c8bf55f93e8a2ffbfba7c0d4a0cf1a95c0657899a1",
+      "v5": "edd3cfb66d3713cd3cc0960269c829a10acb7b0da0d66ca09588a9a2c9dc65b4"
+    }
+  }
+}

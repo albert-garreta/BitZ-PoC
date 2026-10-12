@@ -1,0 +1,346 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 4.012179257988464,
+  "max_rss_kib": 2476324,
+  "sibling_busy_pct": {
+    "22": 0.0,
+    "23": 0.75,
+    "20": 0.0,
+    "21": 0.0,
+    "18": 0.24937655860349128,
+    "19": 0.9975062344139651,
+    "16": 0.5025125628140703,
+    "17": 0.24937655860349128,
+    "30": 0.75,
+    "31": 1.0,
+    "28": 0.7518796992481203,
+    "29": 1.4962593516209477,
+    "26": 1.4962593516209477,
+    "27": 1.25,
+    "24": 1.75,
+    "25": 0.5
+  },
+  "involuntary_context_switches": 13378,
+  "cpu_state_tick_deltas": {
+    "6": {
+      "user": 331,
+      "nice": 0,
+      "system": 60,
+      "idle": 10,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "7": {
+      "user": 198,
+      "nice": 0,
+      "system": 25,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "4": {
+      "user": 197,
+      "nice": 0,
+      "system": 24,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "5": {
+      "user": 198,
+      "nice": 0,
+      "system": 24,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "2": {
+      "user": 197,
+      "nice": 0,
+      "system": 23,
+      "idle": 178,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "3": {
+      "user": 196,
+      "nice": 1,
+      "system": 23,
+      "idle": 178,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "0": {
+      "user": 195,
+      "nice": 0,
+      "system": 25,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "1": {
+      "user": 198,
+      "nice": 0,
+      "system": 22,
+      "idle": 179,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "14": {
+      "user": 200,
+      "nice": 0,
+      "system": 22,
+      "idle": 176,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "15": {
+      "user": 196,
+      "nice": 0,
+      "system": 25,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "12": {
+      "user": 197,
+      "nice": 0,
+      "system": 25,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "13": {
+      "user": 198,
+      "nice": 0,
+      "system": 24,
+      "idle": 178,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "10": {
+      "user": 200,
+      "nice": 0,
+      "system": 21,
+      "idle": 177,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 1,
+      "steal": 0
+    },
+    "11": {
+      "user": 196,
+      "nice": 0,
+      "system": 25,
+      "idle": 178,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "8": {
+      "user": 194,
+      "nice": 0,
+      "system": 25,
+      "idle": 179,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "9": {
+      "user": 198,
+      "nice": 0,
+      "system": 23,
+      "idle": 178,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "22": {
+      "user": 0,
+      "nice": 0,
+      "system": 0,
+      "idle": 399,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "23": {
+      "user": 2,
+      "nice": 0,
+      "system": 1,
+      "idle": 397,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "20": {
+      "user": 0,
+      "nice": 0,
+      "system": 0,
+      "idle": 400,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "21": {
+      "user": 0,
+      "nice": 0,
+      "system": 0,
+      "idle": 399,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "18": {
+      "user": 1,
+      "nice": 0,
+      "system": 0,
+      "idle": 400,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "19": {
+      "user": 0,
+      "nice": 3,
+      "system": 1,
+      "idle": 397,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "16": {
+      "user": 2,
+      "nice": 0,
+      "system": 0,
+      "idle": 396,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "17": {
+      "user": 0,
+      "nice": 0,
+      "system": 1,
+      "idle": 400,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "30": {
+      "user": 2,
+      "nice": 0,
+      "system": 1,
+      "idle": 397,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "31": {
+      "user": 3,
+      "nice": 0,
+      "system": 1,
+      "idle": 396,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "28": {
+      "user": 2,
+      "nice": 0,
+      "system": 1,
+      "idle": 396,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "29": {
+      "user": 4,
+      "nice": 0,
+      "system": 2,
+      "idle": 395,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "26": {
+      "user": 4,
+      "nice": 0,
+      "system": 2,
+      "idle": 395,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "27": {
+      "user": 4,
+      "nice": 0,
+      "system": 1,
+      "idle": 395,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "24": {
+      "user": 5,
+      "nice": 0,
+      "system": 2,
+      "idle": 393,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "25": {
+      "user": 1,
+      "nice": 0,
+      "system": 1,
+      "idle": 398,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    }
+  }
+}

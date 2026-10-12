@@ -1,0 +1,56 @@
+{
+  "variant": "arithmetic",
+  "degree": 512,
+  "threads": 8,
+  "seed": 49,
+  "profile": "baseline",
+  "security_bits": 128.09331125897418,
+  "verified_proofs": 8,
+  "input_digest": "b7db94043bb23a956f8f5de83cb1fd09750ef0ff3ac304f227c4bcf4f58cb039",
+  "proof_digest": "cd38b41cb1a321d3cc8acdae566f088512265f2832afbd3a92811aa704c5c58f",
+  "proof_bytes": 263746,
+  "max_rss_mib": 117.96484375,
+  "max_sibling_busy_pct": 0.5681818181818182,
+  "phase": "confirmation",
+  "execution_fingerprint": "7c6ee925daa049acbfb07b9971f5bbbcba07f6c831038c901e6f3dda83dab98a",
+  "commit_ms": 5.6237520000000005,
+  "commit_samples_ms": [
+    5.657916,
+    5.588685000000001,
+    5.614504999999999,
+    5.581231,
+    5.6237520000000005,
+    5.880939,
+    6.129619
+  ],
+  "prove_ms": 54.068234,
+  "prove_samples_ms": [
+    53.936414,
+    54.043527,
+    53.889776,
+    54.094423000000006,
+    54.286455999999994,
+    54.068234,
+    54.50531
+  ],
+  "total_ms": 59.675744,
+  "total_samples_ms": [
+    59.594431,
+    59.632301999999996,
+    59.504371,
+    59.675744,
+    59.910298,
+    59.949273,
+    60.635019
+  ],
+  "verify_ms": 20.362603,
+  "verify_samples_ms": [
+    20.475635999999998,
+    20.374916,
+    20.317597,
+    20.462942,
+    20.362603,
+    19.966092,
+    20.337645000000002
+  ]
+}

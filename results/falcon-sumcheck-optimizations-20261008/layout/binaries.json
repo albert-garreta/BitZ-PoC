@@ -1,0 +1,10 @@
+{
+  "arithmetic": {
+    "path": "/tmp/falcon-sumcheck-opt-binaries/layout/falcon_algebraic",
+    "sha256": "15eb0266012709994c65d60a9632c3cdb287fe793a2420d6f1e8d7b9cc4da4bc"
+  },
+  "full": {
+    "path": "/tmp/falcon-sumcheck-opt-binaries/layout/falcon_hybrid",
+    "sha256": "3a02e98aa22add89bd287eb3e239f3a6411f60ed6e9678bcc4a4cd13ba51190b"
+  }
+}

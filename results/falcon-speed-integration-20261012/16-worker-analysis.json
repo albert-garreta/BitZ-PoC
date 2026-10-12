@@ -1,0 +1,1154 @@
+{
+  "batch1024_headlines": [
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 134231.50635884143,
+          "bootstrap95_ratio_interval": [
+            0.9712187434959713,
+            0.9802572539635058
+          ],
+          "candidate_geomean_of_seed_medians": 130979.79525150296,
+          "candidate_over_baseline": 0.9757753511411422,
+          "observed_change_percent": -2.422464885885778
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 51.67973771457955,
+          "bootstrap95_ratio_interval": [
+            0.8555973948751965,
+            0.8712339833389818
+          ],
+          "candidate_geomean_of_seed_medians": 44.5506004671653,
+          "candidate_over_baseline": 0.8620515977308645,
+          "observed_change_percent": -13.794840226913552
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 56.01968336408614,
+          "bootstrap95_ratio_interval": [
+            0.8330442591179233,
+            0.8519747344341914
+          ],
+          "candidate_geomean_of_seed_medians": 47.10983729465168,
+          "candidate_over_baseline": 0.8409515096412261,
+          "observed_change_percent": -15.904849035877389
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 31.321724165078148,
+          "bootstrap95_ratio_interval": [
+            0.8027504822807631,
+            0.8079467318669634
+          ],
+          "candidate_geomean_of_seed_medians": 25.221904322413803,
+          "candidate_over_baseline": 0.8052527437341629,
+          "observed_change_percent": -19.474725626583712
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 4.231495243527658,
+          "bootstrap95_ratio_interval": [
+            0.5688822503236488,
+            0.6166316046654702
+          ],
+          "candidate_geomean_of_seed_medians": 2.519966343800068,
+          "candidate_over_baseline": 0.5955262144402781,
+          "observed_change_percent": -40.44737855597219
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-large-arithmetic",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 135030.64368617805,
+          "bootstrap95_ratio_interval": [
+            0.9803250620039262,
+            0.9899307581239711
+          ],
+          "candidate_geomean_of_seed_medians": 133069.8814250403,
+          "candidate_over_baseline": 0.9854791311985842,
+          "observed_change_percent": -1.4520868801415787
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 55.25597432090901,
+          "bootstrap95_ratio_interval": [
+            0.8700814290382686,
+            0.8753150897968339
+          ],
+          "candidate_geomean_of_seed_medians": 48.20645925660688,
+          "candidate_over_baseline": 0.8724207626244941,
+          "observed_change_percent": -12.757923737550591
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 59.65837204549891,
+          "bootstrap95_ratio_interval": [
+            0.8473144267240769,
+            0.8540950594667142
+          ],
+          "candidate_geomean_of_seed_medians": 50.731769567665474,
+          "candidate_over_baseline": 0.850371336465141,
+          "observed_change_percent": -14.962866353485904
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 32.53578949254349,
+          "bootstrap95_ratio_interval": [
+            0.7879893072158947,
+            0.8118574616054967
+          ],
+          "candidate_geomean_of_seed_medians": 26.026282204404666,
+          "candidate_over_baseline": 0.7999277906063822,
+          "observed_change_percent": -20.00722093936178
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 4.386308001958649,
+          "bootstrap95_ratio_interval": [
+            0.5574740388347994,
+            0.6010679897992817
+          ],
+          "candidate_geomean_of_seed_medians": 2.51531883964392,
+          "candidate_over_baseline": 0.573447837799064,
+          "observed_change_percent": -42.65521622009359
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 216449.13643326669,
+          "bootstrap95_ratio_interval": [
+            1.03288890530359,
+            1.0355489724125162
+          ],
+          "candidate_geomean_of_seed_medians": 223909.1832511284,
+          "candidate_over_baseline": 1.0344655882707186,
+          "observed_change_percent": 3.446558827071855
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 101.3327679403663,
+          "bootstrap95_ratio_interval": [
+            0.8619063803301046,
+            0.8713077981915023
+          ],
+          "candidate_geomean_of_seed_medians": 87.82804898642814,
+          "candidate_over_baseline": 0.8667290035747808,
+          "observed_change_percent": -13.327099642521922
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 110.77512325717598,
+          "bootstrap95_ratio_interval": [
+            0.8273777965550537,
+            0.835276584946383
+          ],
+          "candidate_geomean_of_seed_medians": 92.07196167032872,
+          "candidate_over_baseline": 0.8311609950238926,
+          "observed_change_percent": -16.88390049761074
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 61.3234400584064,
+          "bootstrap95_ratio_interval": [
+            0.787308956315729,
+            0.7911354089495473
+          ],
+          "candidate_geomean_of_seed_medians": 48.43025760419237,
+          "candidate_over_baseline": 0.7897511548286571,
+          "observed_change_percent": -21.02488451713429
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 9.370787346991536,
+          "bootstrap95_ratio_interval": [
+            0.4507502527976894,
+            0.47026139877029
+          ],
+          "candidate_geomean_of_seed_medians": 4.304662101747472,
+          "candidate_over_baseline": 0.45937037543910036,
+          "observed_change_percent": -54.06296245608997
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 215366.59557037978,
+          "bootstrap95_ratio_interval": [
+            1.0371745831321721,
+            1.0398267110425228
+          ],
+          "candidate_geomean_of_seed_medians": 223618.6239073218,
+          "candidate_over_baseline": 1.0383161943712167,
+          "observed_change_percent": 3.8316194371216694
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 105.82139097657047,
+          "bootstrap95_ratio_interval": [
+            0.866380328290637,
+            0.8729351423749132
+          ],
+          "candidate_geomean_of_seed_medians": 91.95477798454114,
+          "candidate_over_baseline": 0.86896209864507,
+          "observed_change_percent": -13.103790135492998
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 115.15657719755707,
+          "bootstrap95_ratio_interval": [
+            0.8297388706553408,
+            0.8382307732660019
+          ],
+          "candidate_geomean_of_seed_medians": 96.0859649892017,
+          "candidate_over_baseline": 0.8343940687327069,
+          "observed_change_percent": -16.560593126729305
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 62.020172758003405,
+          "bootstrap95_ratio_interval": [
+            0.7845184865801733,
+            0.7961722772562292
+          ],
+          "candidate_geomean_of_seed_medians": 48.977076430206864,
+          "candidate_over_baseline": 0.7896959046101109,
+          "observed_change_percent": -21.030409538988913
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 9.340350119869502,
+          "bootstrap95_ratio_interval": [
+            0.417552304591785,
+            0.45384976924723297
+          ],
+          "candidate_geomean_of_seed_medians": 4.119900288843664,
+          "candidate_over_baseline": 0.441086280061333,
+          "observed_change_percent": -55.8913719938667
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 512,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 1951362.601308462,
+          "bootstrap95_ratio_interval": [
+            1.0042782261453531,
+            1.0051015177425373
+          ],
+          "candidate_geomean_of_seed_medians": 1960654.5003573166,
+          "candidate_over_baseline": 1.0047617490683807,
+          "observed_change_percent": 0.4761749068380672
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 221.80155506491081,
+          "bootstrap95_ratio_interval": [
+            0.9393059246925709,
+            0.9483067576673392
+          ],
+          "candidate_geomean_of_seed_medians": 209.04367809874066,
+          "candidate_over_baseline": 0.9424806694324729,
+          "observed_change_percent": -5.751933056752712
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 283.87069867777683,
+          "bootstrap95_ratio_interval": [
+            0.925447084826436,
+            0.9393904353291671
+          ],
+          "candidate_geomean_of_seed_medians": 264.7444592213991,
+          "candidate_over_baseline": 0.9326234107801031,
+          "observed_change_percent": -6.737658921989686
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 30.279443137095512,
+          "bootstrap95_ratio_interval": [
+            0.6191807673488388,
+            0.6298398272020655
+          ],
+          "candidate_geomean_of_seed_medians": 18.961887375645702,
+          "candidate_over_baseline": 0.6262297258834125,
+          "observed_change_percent": -37.377027411658744
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 61.932693194783106,
+          "bootstrap95_ratio_interval": [
+            0.8962126648194937,
+            0.8980287982123515
+          ],
+          "candidate_geomean_of_seed_medians": 55.56945856535862,
+          "candidate_over_baseline": 0.8972556447785721,
+          "observed_change_percent": -10.274435522142788
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 512,
+        "mode": "full",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 1964578.2013797492,
+          "bootstrap95_ratio_interval": [
+            1.0031535728963634,
+            1.0087406993782264
+          ],
+          "candidate_geomean_of_seed_medians": 1976545.3837794114,
+          "candidate_over_baseline": 1.0060914767308606,
+          "observed_change_percent": 0.6091476730860634
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 282.5350110808622,
+          "bootstrap95_ratio_interval": [
+            0.9448491881228079,
+            0.9579149863727132
+          ],
+          "candidate_geomean_of_seed_medians": 269.107665937303,
+          "candidate_over_baseline": 0.952475464572721,
+          "observed_change_percent": -4.752453542727897
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 345.188755647199,
+          "bootstrap95_ratio_interval": [
+            0.9358048243971208,
+            0.9515113677692336
+          ],
+          "candidate_geomean_of_seed_medians": 325.3477567823439,
+          "candidate_over_baseline": 0.94252130598039,
+          "observed_change_percent": -5.747869401961003
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 32.65250752997594,
+          "bootstrap95_ratio_interval": [
+            0.6424636116705832,
+            0.6442626423710583
+          ],
+          "candidate_geomean_of_seed_medians": 21.008720295416186,
+          "candidate_over_baseline": 0.6434029691633815,
+          "observed_change_percent": -35.65970308366185
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 62.260261724150695,
+          "bootstrap95_ratio_interval": [
+            0.8901222611200967,
+            0.9223916524712341
+          ],
+          "candidate_geomean_of_seed_medians": 56.5088757102285,
+          "candidate_over_baseline": 0.9076234847934918,
+          "observed_change_percent": -9.237651520650825
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 3009986.453159241,
+          "bootstrap95_ratio_interval": [
+            0.9994567512930382,
+            1.001130020114358
+          ],
+          "candidate_geomean_of_seed_medians": 3011435.797890983,
+          "candidate_over_baseline": 1.0004815120447557,
+          "observed_change_percent": 0.04815120447556609
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 424.66433521870937,
+          "bootstrap95_ratio_interval": [
+            0.9440568190791679,
+            0.9518525596414105
+          ],
+          "candidate_geomean_of_seed_medians": 402.737473361763,
+          "candidate_over_baseline": 0.9483666038362902,
+          "observed_change_percent": -5.163339616370976
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 541.9392905398623,
+          "bootstrap95_ratio_interval": [
+            0.928377001954299,
+            0.9316078180243854
+          ],
+          "candidate_geomean_of_seed_medians": 504.1739788284158,
+          "candidate_over_baseline": 0.9303144976371315,
+          "observed_change_percent": -6.968550236286852
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 50.908821952738975,
+          "bootstrap95_ratio_interval": [
+            0.5525777574217606,
+            0.5549642617137953
+          ],
+          "candidate_geomean_of_seed_medians": 28.175749240215428,
+          "candidate_over_baseline": 0.5534551411614334,
+          "observed_change_percent": -44.654485883856665
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 116.76469757234578,
+          "bootstrap95_ratio_interval": [
+            0.868290919898354,
+            0.8736568328926799
+          ],
+          "candidate_geomean_of_seed_medians": 101.69073940345994,
+          "candidate_over_baseline": 0.8709031198445376,
+          "observed_change_percent": -12.909688015546239
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1024,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "qualification-16workers",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 3032846.373488309,
+          "bootstrap95_ratio_interval": [
+            0.9983596916642273,
+            1.000211153107118
+          ],
+          "candidate_geomean_of_seed_medians": 3030061.0824552933,
+          "candidate_over_baseline": 0.9990816247544347,
+          "observed_change_percent": -0.09183752455652616
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 552.124467385886,
+          "bootstrap95_ratio_interval": [
+            0.9327662235213079,
+            0.9566418340312125
+          ],
+          "candidate_geomean_of_seed_medians": 522.88688517821,
+          "candidate_over_baseline": 0.9470453060229238,
+          "observed_change_percent": -5.2954693977076195
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 668.7694963408801,
+          "bootstrap95_ratio_interval": [
+            0.9217406359365499,
+            0.9422413676016458
+          ],
+          "candidate_geomean_of_seed_medians": 624.6070550472441,
+          "candidate_over_baseline": 0.9339646297636669,
+          "observed_change_percent": -6.60353702363331
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 53.95713623292864,
+          "bootstrap95_ratio_interval": [
+            0.5828562144025977,
+            0.5836135379842602
+          ],
+          "candidate_geomean_of_seed_medians": 31.46436343809515,
+          "candidate_over_baseline": 0.5831362751030006,
+          "observed_change_percent": -41.68637248969994
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 116.60055699210962,
+          "bootstrap95_ratio_interval": [
+            0.8696748283907215,
+            0.8745524849082269
+          ],
+          "candidate_geomean_of_seed_medians": 101.71989121372938,
+          "candidate_over_baseline": 0.8723791192576614,
+          "observed_change_percent": -12.762088074233857
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    }
+  ],
+  "cohorts": [
+    {
+      "completed_pairs": 120,
+      "iterations": 3,
+      "name": "qualification-16workers",
+      "status": "complete",
+      "warmup": 1
+    },
+    {
+      "completed_pairs": 32,
+      "iterations": 15,
+      "name": "confirmation-16workers-small-arithmetic",
+      "status": "complete",
+      "warmup": 3
+    },
+    {
+      "completed_pairs": 4,
+      "iterations": 9,
+      "name": "confirmation-16workers-large-arithmetic",
+      "status": "complete",
+      "warmup": 3
+    },
+    {
+      "completed_pairs": 8,
+      "iterations": 15,
+      "name": "confirmation-16workers-small-full",
+      "status": "complete",
+      "warmup": 3
+    }
+  ],
+  "cpu_audit": {
+    "auxiliary_pool_policy": "16 workers pinned to main CPU 6, preserving existing serial auxiliary-pool policy",
+    "distinct_physical_cores": 16,
+    "main_cpu": 6,
+    "ordered_worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13,
+      10,
+      11,
+      8,
+      9
+    ],
+    "single_socket": true,
+    "smt_siblings_not_used": true,
+    "topology": [
+      {
+        "core": 6,
+        "cpu": 6,
+        "package": 0,
+        "thread_siblings": "6,22"
+      },
+      {
+        "core": 7,
+        "cpu": 7,
+        "package": 0,
+        "thread_siblings": "7,23"
+      },
+      {
+        "core": 4,
+        "cpu": 4,
+        "package": 0,
+        "thread_siblings": "4,20"
+      },
+      {
+        "core": 5,
+        "cpu": 5,
+        "package": 0,
+        "thread_siblings": "5,21"
+      },
+      {
+        "core": 2,
+        "cpu": 2,
+        "package": 0,
+        "thread_siblings": "2,18"
+      },
+      {
+        "core": 3,
+        "cpu": 3,
+        "package": 0,
+        "thread_siblings": "3,19"
+      },
+      {
+        "core": 0,
+        "cpu": 0,
+        "package": 0,
+        "thread_siblings": "0,16"
+      },
+      {
+        "core": 1,
+        "cpu": 1,
+        "package": 0,
+        "thread_siblings": "1,17"
+      },
+      {
+        "core": 14,
+        "cpu": 14,
+        "package": 0,
+        "thread_siblings": "14,30"
+      },
+      {
+        "core": 15,
+        "cpu": 15,
+        "package": 0,
+        "thread_siblings": "15,31"
+      },
+      {
+        "core": 12,
+        "cpu": 12,
+        "package": 0,
+        "thread_siblings": "12,28"
+      },
+      {
+        "core": 13,
+        "cpu": 13,
+        "package": 0,
+        "thread_siblings": "13,29"
+      },
+      {
+        "core": 10,
+        "cpu": 10,
+        "package": 0,
+        "thread_siblings": "10,26"
+      },
+      {
+        "core": 11,
+        "cpu": 11,
+        "package": 0,
+        "thread_siblings": "11,27"
+      },
+      {
+        "core": 8,
+        "cpu": 8,
+        "package": 0,
+        "thread_siblings": "8,24"
+      },
+      {
+        "core": 9,
+        "cpu": 9,
+        "package": 0,
+        "thread_siblings": "9,25"
+      }
+    ]
+  },
+  "findings": [
+    "Large batches improve consistently. Use the longer N512 arithmetic batch 1024 security 128 confirmation for that headline because the initial third candidate seed had long timing pauses.",
+    "Small arithmetic proof timing is near neutral after confirmation; witness preparation improves. N512 batch 1 security 100 confirmation still includes an anomalously slow baseline seed 45 affecting proof and verification, so its apparent aggregate speedup should not be presented as a stable small-case gain.",
+    "Full N1024 batch 1 security 100 has a confirmed observed 16-worker tradeoff: total prover +2.82%, proof +3.53%, verification +4.17% over eight fresh seeds. Six seeds show stable higher process medians rather than isolated slow samples; two seeds are near neutral. The source of this variation has not been established.",
+    "Arithmetic N1024 batch 1024 process RSS increases consistently by approximately 7\u20138 MiB (3.45\u20133.83%) in the initial campaign; this is a process-lifetime high-water measurement, not a direct per-proof allocation measurement.",
+    "The existing arithmetic BindingForm optimization is enabled only at workers 1 or 8; 16 workers use existing legacy preparation and terminal-weight evaluation. Dense word folds/source scans still parallelize. The harness accepts 16 without changing this policy."
+  ],
+  "historical8_vs16_candidate_observations": [
+    {
+      "batch": 1024,
+      "degree": 512,
+      "mode": "arithmetic",
+      "security_bits": 100,
+      "threads16_candidate_total_ms_geomean": 47.10983729465168,
+      "threads16_over8": 1.3967142061161715,
+      "threads8_candidate_total_ms_geomean": 33.72904570481138
+    },
+    {
+      "batch": 1024,
+      "degree": 512,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads16_candidate_total_ms_geomean": 53.309361540596036,
+      "threads16_over8": 1.4328710331631505,
+      "threads8_candidate_total_ms_geomean": 37.204577597547186
+    },
+    {
+      "batch": 1024,
+      "degree": 512,
+      "mode": "full",
+      "security_bits": 100,
+      "threads16_candidate_total_ms_geomean": 264.7444592213991,
+      "threads16_over8": 0.8239264310937853,
+      "threads8_candidate_total_ms_geomean": 321.3205077909
+    },
+    {
+      "batch": 1024,
+      "degree": 512,
+      "mode": "full",
+      "security_bits": 128,
+      "threads16_candidate_total_ms_geomean": 325.3477567823439,
+      "threads16_over8": 0.80182004999463,
+      "threads8_candidate_total_ms_geomean": 405.7615630645839
+    },
+    {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 100,
+      "threads16_candidate_total_ms_geomean": 92.07196167032872,
+      "threads16_over8": 1.3986453536451764,
+      "threads8_candidate_total_ms_geomean": 65.82938371787316
+    },
+    {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "arithmetic",
+      "security_bits": 128,
+      "threads16_candidate_total_ms_geomean": 96.0859649892017,
+      "threads16_over8": 1.3917728845561543,
+      "threads8_candidate_total_ms_geomean": 69.03853786449083
+    },
+    {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "full",
+      "security_bits": 100,
+      "threads16_candidate_total_ms_geomean": 504.1739788284158,
+      "threads16_over8": 0.8026133300803283,
+      "threads8_candidate_total_ms_geomean": 628.1654688914228
+    },
+    {
+      "batch": 1024,
+      "degree": 1024,
+      "mode": "full",
+      "security_bits": 128,
+      "threads16_candidate_total_ms_geomean": 624.6070550472441,
+      "threads16_over8": 0.7992378151457747,
+      "threads8_candidate_total_ms_geomean": 781.5033813600533
+    }
+  ],
+  "independent_checks": {
+    "all_pair_input_source_proof_payload_identities_match": true,
+    "all_trial_and_worker_affinities_match": true,
+    "binary_metadata_identical_across_cohorts_for_each_mode": true,
+    "main_pairs_with_identity_equal_to_prior8_worker_run": 120,
+    "main_pairs_without_identity_equal_to_prior8_worker_run": [],
+    "raw_process_logs_checked": 328,
+    "verified_trials_including_warmups": 2496
+  },
+  "limitations": [
+    "Results describe these frozen binaries, this machine, fixed CPU placement and sampled inputs; finite-sample bootstrap intervals do not prove universal nonregression.",
+    "Paired geometric means are used consistently: dividing the separately listed geometric means reproduces the geometric mean of per-seed ratios. Median-of-seed-medians totals need not reproduce those ratios.",
+    "The 16-versus-8 observations come from separate campaigns. They include existing worker-dependent algorithm policies and possible temporal effects, so they are not a controlled pure core-scaling experiment.",
+    "Main and auxiliary workers share CPU 6 under the existing benchmark policy. All 16 physical cores are represented by the global worker pool; logical SMT sibling CPUs 16\u201331 are excluded.",
+    "No builds, benchmarks or source edits were performed by this independent analysis task."
+  ],
+  "schema": "falcon-16-worker-independent-analysis/v1",
+  "small_case_confirmations": [
+    {
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-small-arithmetic",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 24748.161816571308,
+          "bootstrap95_ratio_interval": [
+            0.9873285892953135,
+            1.0049028379667113
+          ],
+          "candidate_geomean_of_seed_medians": 24656.08618705244,
+          "candidate_over_baseline": 0.9962794962227367,
+          "observed_change_percent": -0.37205037772632954
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 4.062292484555874,
+          "bootstrap95_ratio_interval": [
+            0.9398963958864073,
+            1.006264323224519
+          ],
+          "candidate_geomean_of_seed_medians": 3.991614970383818,
+          "candidate_over_baseline": 0.9826015693255078,
+          "observed_change_percent": -1.7398430674492205
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 4.229107694313978,
+          "bootstrap95_ratio_interval": [
+            0.9322964642550255,
+            0.9997417317096489
+          ],
+          "candidate_geomean_of_seed_medians": 4.127320654690103,
+          "candidate_over_baseline": 0.9759317929499105,
+          "observed_change_percent": -2.4068207050089496
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 2.5088127422712554,
+          "bootstrap95_ratio_interval": [
+            0.9345640021324041,
+            1.001429523284168
+          ],
+          "candidate_geomean_of_seed_medians": 2.451373658553833,
+          "candidate_over_baseline": 0.9771050733481917,
+          "observed_change_percent": -2.2894926651808256
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 0.1622262624230338,
+          "bootstrap95_ratio_interval": [
+            0.7705925102877171,
+            0.8412694337870432
+          ],
+          "candidate_geomean_of_seed_medians": 0.1322468775793718,
+          "candidate_over_baseline": 0.8152001753853797,
+          "observed_change_percent": -18.47998246146203
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-small-arithmetic",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 24713.734813578125,
+          "bootstrap95_ratio_interval": [
+            0.9930104822809723,
+            1.0077788095019262
+          ],
+          "candidate_geomean_of_seed_medians": 24716.117950274787,
+          "candidate_over_baseline": 1.0000964296458894,
+          "observed_change_percent": 0.00964296458894065
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 5.562096646826146,
+          "bootstrap95_ratio_interval": [
+            0.9998418002954975,
+            1.0043962320731672
+          ],
+          "candidate_geomean_of_seed_medians": 5.57435523985027,
+          "candidate_over_baseline": 1.002203951819341,
+          "observed_change_percent": 0.22039518193410768
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 5.730511729477068,
+          "bootstrap95_ratio_interval": [
+            0.9948446325270349,
+            0.9993173565748936
+          ],
+          "candidate_geomean_of_seed_medians": 5.714160358700314,
+          "candidate_over_baseline": 0.9971466124582478,
+          "observed_change_percent": -0.2853387541752239
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 2.9470990365037966,
+          "bootstrap95_ratio_interval": [
+            0.9962757614845409,
+            1.0016427580482563
+          ],
+          "candidate_geomean_of_seed_medians": 2.9447075894874097,
+          "candidate_over_baseline": 0.9991885420249658,
+          "observed_change_percent": -0.08114579750342354
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 0.16745877249277202,
+          "bootstrap95_ratio_interval": [
+            0.8292208455615259,
+            0.8618473109780621
+          ],
+          "candidate_geomean_of_seed_medians": 0.14193641341726448,
+          "candidate_over_baseline": 0.8475901937200147,
+          "observed_change_percent": -15.240980627998535
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-small-arithmetic",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 24809.42881007555,
+          "bootstrap95_ratio_interval": [
+            1.0022912189455502,
+            1.0124109872340792
+          ],
+          "candidate_geomean_of_seed_medians": 24989.249297269467,
+          "candidate_over_baseline": 1.00724807042397,
+          "observed_change_percent": 0.724807042396991
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 4.18979406322505,
+          "bootstrap95_ratio_interval": [
+            0.9912287452814609,
+            0.9995236552448286
+          ],
+          "candidate_geomean_of_seed_medians": 4.1713395716032835,
+          "candidate_over_baseline": 0.9955953702393762,
+          "observed_change_percent": -0.4404629760623835
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 4.415250644555754,
+          "bootstrap95_ratio_interval": [
+            0.9737744678198021,
+            0.9809155885117711
+          ],
+          "candidate_geomean_of_seed_medians": 4.316649341185036,
+          "candidate_over_baseline": 0.9776680167654129,
+          "observed_change_percent": -2.233198323458707
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 2.5775969221468644,
+          "bootstrap95_ratio_interval": [
+            0.9774150570863482,
+            0.991961936870549
+          ],
+          "candidate_geomean_of_seed_medians": 2.5401436977680714,
+          "candidate_over_baseline": 0.9854697124841386,
+          "observed_change_percent": -1.4530287515861384
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 0.22315007304461823,
+          "bootstrap95_ratio_interval": [
+            0.611706404988285,
+            0.629445354928844
+          ],
+          "candidate_geomean_of_seed_medians": 0.13829389484327664,
+          "candidate_over_baseline": 0.619734929755659,
+          "observed_change_percent": -38.026507024434096
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-small-arithmetic",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 24827.92249533432,
+          "bootstrap95_ratio_interval": [
+            0.9912483829726326,
+            1.0086147238546601
+          ],
+          "candidate_geomean_of_seed_medians": 24828.573724182796,
+          "candidate_over_baseline": 1.0000262296955602,
+          "observed_change_percent": 0.0026229695560209265
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 5.790856665036522,
+          "bootstrap95_ratio_interval": [
+            0.9915574340876435,
+            1.0061787899444343
+          ],
+          "candidate_geomean_of_seed_medians": 5.782245830338249,
+          "candidate_over_baseline": 0.9985130292120229,
+          "observed_change_percent": -0.14869707879771044
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 6.022290181376783,
+          "bootstrap95_ratio_interval": [
+            0.9780357081509906,
+            0.9922431773804592
+          ],
+          "candidate_geomean_of_seed_medians": 5.9308479006069055,
+          "candidate_over_baseline": 0.9848160287837588,
+          "observed_change_percent": -1.5183971216241154
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 3.027647899565535,
+          "bootstrap95_ratio_interval": [
+            0.9875075156577778,
+            1.0014904389834656
+          ],
+          "candidate_geomean_of_seed_medians": 3.0119426712552793,
+          "candidate_over_baseline": 0.9948127296068642,
+          "observed_change_percent": -0.5187270393135823
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 0.2308345967535561,
+          "bootstrap95_ratio_interval": [
+            0.6323152433276711,
+            0.6556069495042541
+          ],
+          "candidate_geomean_of_seed_medians": 0.1491884734016156,
+          "candidate_over_baseline": 0.646300318495552,
+          "observed_change_percent": -35.3699681504448
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "cohort": "confirmation-16workers-small-full",
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_geomean_of_seed_medians": 52789.5450853227,
+          "bootstrap95_ratio_interval": [
+            0.9309728108322978,
+            0.9691053720791617
+          ],
+          "candidate_geomean_of_seed_medians": 50091.97293949093,
+          "candidate_over_baseline": 0.9488995000530558,
+          "observed_change_percent": -5.110049994694421
+        },
+        "prove_ms": {
+          "baseline_geomean_of_seed_medians": 16.04939079620838,
+          "bootstrap95_ratio_interval": [
+            1.0200886242837037,
+            1.0493859350255366
+          ],
+          "candidate_geomean_of_seed_medians": 16.61538735054085,
+          "candidate_over_baseline": 1.03526592139972,
+          "observed_change_percent": 3.5265921399719957
+        },
+        "total_prover_ms": {
+          "baseline_geomean_of_seed_medians": 16.731372578062178,
+          "bootstrap95_ratio_interval": [
+            1.0137467329051129,
+            1.0420320029778618
+          ],
+          "candidate_geomean_of_seed_medians": 17.203380840966364,
+          "candidate_over_baseline": 1.028210970779712,
+          "observed_change_percent": 2.821097077971202
+        },
+        "verify_ms": {
+          "baseline_geomean_of_seed_medians": 11.21172431795061,
+          "bootstrap95_ratio_interval": [
+            1.022954787883071,
+            1.0601316242702659
+          ],
+          "candidate_geomean_of_seed_medians": 11.67888240654555,
+          "candidate_over_baseline": 1.0416669260986906,
+          "observed_change_percent": 4.16669260986906
+        },
+        "witness_commit_ms": {
+          "baseline_geomean_of_seed_medians": 0.6795437870616556,
+          "bootstrap95_ratio_interval": [
+            0.8506533607090908,
+            0.8624537876302244
+          ],
+          "candidate_geomean_of_seed_medians": 0.5822089671102585,
+          "candidate_over_baseline": 0.8567644619748898,
+          "observed_change_percent": -14.323553802511025
+        }
+      },
+      "seeds": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52
+      ]
+    }
+  ]
+}

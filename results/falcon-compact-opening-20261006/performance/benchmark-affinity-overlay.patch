@@ -1,0 +1,319 @@
+--- a/benches/falcon_hybrid.rs
++++ b/benches/falcon_hybrid.rs
+@@ -8,6 +8,8 @@
+ //! outside prover timing, and the same batch is reused across trials.
+ #[path = "common/falcon_inputs.rs"]
+ mod falcon_inputs;
++#[path = "common/falcon_affinity.rs"]
++mod falcon_affinity;
+ use bitz::piop::spartan::falcon1024_ct::{
+     FalconProtocol, FalconPublicStatement, PreparedFalconHybrid,
+ };
+@@ -115,14 +117,7 @@
+ fn main() -> Result<(), Box<dyn Error>> {
+     let options = Options::read()?;
+     reject_fixture_overrides()?;
+-    #[cfg(feature = "parallel")]
+-    rayon::ThreadPoolBuilder::new()
+-        .num_threads(options.threads)
+-        .build_global()?;
+-    #[cfg(not(feature = "parallel"))]
+-    if options.threads != 1 {
+-        return Err("multiple threads require the parallel feature".into());
+-    }
++    let cpu_affinity = falcon_affinity::build_global_pool(options.threads)?;
+     if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
+         use tracing_subscriber::prelude::*;
+         tracing_subscriber::registry()
+@@ -194,6 +189,7 @@
+             "algebraic_security_bits": security.algebraic_bits,
+             "security_terms": security_terms,
+             "threads": threads,
++            "cpu_affinity": cpu_affinity,
+             "build_rustflags": option_env!("RUSTFLAGS"),
+             "runtime_rustflags": std::env::var("RUSTFLAGS").ok(),
+             "target_arch": std::env::consts::ARCH,
+--- /dev/null
++++ b/benches/common/falcon_affinity.rs
+@@ -0,0 +1,281 @@
++//! Optional benchmark-only placement of the main thread and Rayon workers.
++//!
++//! Both variables must be present: `BITZ_FALCON_WORKER_CPUS` is an ordered
++//! comma-separated CPU list and `BITZ_FALCON_MAIN_CPU` selects the main CPU.
++//! No affinity is changed when both are absent.
++
++use serde::Serialize;
++use std::{error::Error, io};
++
++#[derive(Debug, Serialize)]
++pub struct AffinityReport {
++    policy: &'static str,
++    requested_worker_cpus: Vec<usize>,
++    requested_main_cpu: usize,
++    observed_worker_cpus: Vec<Vec<usize>>,
++    observed_main_cpus: Vec<usize>,
++    allowed_cpus: Vec<usize>,
++}
++
++#[derive(Debug, PartialEq, Eq)]
++struct Request {
++    workers: Vec<usize>,
++    main: usize,
++}
++
++fn invalid(message: impl Into<String>) -> io::Error {
++    io::Error::new(io::ErrorKind::InvalidInput, message.into())
++}
++
++impl Request {
++    fn parse(
++        workers: Option<&str>,
++        main: Option<&str>,
++        threads: usize,
++    ) -> io::Result<Option<Self>> {
++        let (workers, main) = match (workers, main) {
++            (None, None) => return Ok(None),
++            (Some(workers), Some(main)) => (workers, main),
++            _ => {
++                return Err(invalid(
++                    "set both BITZ_FALCON_WORKER_CPUS and BITZ_FALCON_MAIN_CPU",
++                ));
++            }
++        };
++        let parse_cpu = |value: &str| {
++            value
++                .trim()
++                .parse::<usize>()
++                .map_err(|_| invalid(format!("invalid benchmark CPU index: {value:?}")))
++        };
++        let workers = workers
++            .split(',')
++            .map(parse_cpu)
++            .collect::<io::Result<Vec<_>>>()?;
++        if workers.len() != threads || threads == 0 {
++            return Err(invalid(
++                "worker CPU count must equal the benchmark thread count",
++            ));
++        }
++        for (index, cpu) in workers.iter().enumerate() {
++            if workers[..index].contains(cpu) {
++                return Err(invalid("worker CPU indices must be unique"));
++            }
++        }
++        Ok(Some(Self {
++            workers,
++            main: parse_cpu(main)?,
++        }))
++    }
++
++    #[cfg(any(target_os = "linux", test))]
++    fn validate_allowed(&self, allowed: &[usize], mask_size: usize) -> io::Result<()> {
++        for &cpu in self.workers.iter().chain(std::iter::once(&self.main)) {
++            if cpu >= mask_size || !allowed.contains(&cpu) {
++                return Err(invalid(format!(
++                    "requested CPU {cpu} is outside the original allowed affinity mask"
++                )));
++            }
++        }
++        Ok(())
++    }
++}
++
++fn optional_env(name: &str) -> Result<Option<String>, std::env::VarError> {
++    match std::env::var(name) {
++        Ok(value) => Ok(Some(value)),
++        Err(std::env::VarError::NotPresent) => Ok(None),
++        Err(error) => Err(error),
++    }
++}
++
++pub fn build_global_pool(threads: usize) -> Result<Option<AffinityReport>, Box<dyn Error>> {
++    let workers = optional_env("BITZ_FALCON_WORKER_CPUS")?;
++    let main = optional_env("BITZ_FALCON_MAIN_CPU")?;
++    let request = Request::parse(workers.as_deref(), main.as_deref(), threads)?;
++    #[cfg(feature = "parallel")]
++    {
++        if let Some(request) = request {
++            #[cfg(target_os = "linux")]
++            return linux::build_pinned_pool(request, threads).map(Some);
++            #[cfg(not(target_os = "linux"))]
++            {
++                let _ = request;
++                return Err(invalid("benchmark CPU affinity is supported only on Linux").into());
++            }
++        }
++        rayon::ThreadPoolBuilder::new()
++            .num_threads(threads)
++            .build_global()?;
++    }
++    #[cfg(not(feature = "parallel"))]
++    {
++        if request.is_some() {
++            return Err(invalid("benchmark worker affinity requires the parallel feature").into());
++        }
++        if threads != 1 {
++            return Err(invalid("multiple threads require the parallel feature").into());
++        }
++    }
++    Ok(None)
++}
++
++#[cfg(target_os = "linux")]
++mod linux {
++    use super::*;
++
++    fn current_affinity() -> io::Result<Vec<usize>> {
++        // SAFETY: cpu_set_t is an integer bitmask; zero initializes all storage.
++        // The kernel receives a writable, correctly sized mask for this thread.
++        let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
++        let result = unsafe {
++            libc::sched_getaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &mut mask)
++        };
++        if result != 0 {
++            return Err(io::Error::last_os_error());
++        }
++        Ok((0..libc::CPU_SETSIZE as usize)
++            // SAFETY: every index is within the initialized fixed-size mask.
++            .filter(|&cpu| unsafe { libc::CPU_ISSET(cpu, &mask) })
++            .collect())
++    }
++
++    fn pin_current(cpu: usize) -> io::Result<Vec<usize>> {
++        if cpu >= libc::CPU_SETSIZE as usize {
++            return Err(invalid("CPU index exceeds cpu_set_t capacity"));
++        }
++        // SAFETY: the zeroed integer mask has space for the checked CPU index;
++        // sched_setaffinity targets only the calling thread (pid = 0).
++        let mut mask: libc::cpu_set_t = unsafe { std::mem::zeroed() };
++        let result = unsafe {
++            libc::CPU_SET(cpu, &mut mask);
++            libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &mask)
++        };
++        if result != 0 {
++            return Err(io::Error::last_os_error());
++        }
++        let observed = current_affinity()?;
++        if observed != [cpu] {
++            return Err(io::Error::other(format!(
++                "CPU affinity readback differs: requested [{cpu}], observed {observed:?}"
++            )));
++        }
++        Ok(observed)
++    }
++
++    #[cfg(feature = "parallel")]
++    pub(super) fn build_pinned_pool(
++        request: Request,
++        threads: usize,
++    ) -> Result<AffinityReport, Box<dyn Error>> {
++        let allowed_cpus = current_affinity()?;
++        request.validate_allowed(&allowed_cpus, libc::CPU_SETSIZE as usize)?;
++        let worker_cpus = request.workers.clone();
++        let (started, receiver) = std::sync::mpsc::channel();
++        rayon::ThreadPoolBuilder::new()
++            .num_threads(threads)
++            .start_handler(move |index| {
++                let observed = pin_current(worker_cpus[index]);
++                let _ = started.send((index, observed));
++            })
++            .build_global()?;
++        let mut observed_worker_cpus = vec![Vec::new(); threads];
++        // Startup errors fail the process before fixture preparation or timing.
++        // All workers acknowledge pinning; no trial can race a late handler.
++        for _ in 0..threads {
++            let (index, observed) = receiver.recv_timeout(std::time::Duration::from_secs(30))?;
++            observed_worker_cpus[index] = observed?;
++        }
++        // Workers were created with the original allowed mask. Pin the main
++        // thread afterwards so their startup cannot inherit a singleton mask.
++        let observed_main_cpus = pin_current(request.main)?;
++        Ok(AffinityReport {
++            policy: "linux-main-rayon-pinned-v1",
++            requested_worker_cpus: request.workers,
++            requested_main_cpu: request.main,
++            observed_worker_cpus,
++            observed_main_cpus,
++            allowed_cpus,
++        })
++    }
++
++    #[cfg(test)]
++    #[test]
++    fn pinning_one_thread_leaves_callers_affinity_unchanged() {
++        let original = current_affinity().unwrap();
++        let cpu = original[0];
++        let child = std::thread::spawn(move || pin_current(cpu).unwrap());
++        assert_eq!(child.join().unwrap(), vec![cpu]);
++        assert_eq!(current_affinity().unwrap(), original);
++        assert!(pin_current(libc::CPU_SETSIZE as usize).is_err());
++    }
++
++    #[cfg(all(test, feature = "parallel"))]
++    #[test]
++    fn pool_acknowledges_each_pinned_worker_before_reporting() {
++        let original = current_affinity().unwrap();
++        let workers: Vec<_> = original.iter().copied().take(2).collect();
++        let requested = workers.clone();
++        let report = std::thread::spawn(move || {
++            build_pinned_pool(
++                Request {
++                    main: workers[0],
++                    workers: workers.clone(),
++                },
++                workers.len(),
++            )
++            .unwrap()
++        })
++        .join()
++        .unwrap();
++        assert_eq!(report.requested_worker_cpus, requested);
++        assert_eq!(
++            report.observed_worker_cpus,
++            requested.iter().map(|&cpu| vec![cpu]).collect::<Vec<_>>()
++        );
++        assert_eq!(report.observed_main_cpus, [requested[0]]);
++        assert_eq!(report.allowed_cpus, original);
++        assert_eq!(current_affinity().unwrap(), original);
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn absent_affinity_preserves_default_and_explicit_order_is_retained() {
++        assert_eq!(Request::parse(None, None, 16).unwrap(), None);
++        let request = Request::parse(Some(" 8, 0, 9, 1 "), Some("8"), 4)
++            .unwrap()
++            .unwrap();
++        assert_eq!(request.workers, [8, 0, 9, 1]);
++        assert_eq!(request.main, 8);
++        request.validate_allowed(&[0, 1, 8, 9], 1024).unwrap();
++    }
++
++    #[test]
++    fn malformed_or_partial_requests_fail() {
++        for (workers, main, threads) in [
++            (Some("0,1"), None, 2),
++            (None, Some("0"), 2),
++            (Some("0,0"), Some("0"), 2),
++            (Some("0,1"), Some("0"), 3),
++            (Some("0,1,"), Some("0"), 3),
++            (Some(""), Some("0"), 1),
++            (Some("0,1"), Some("-1"), 2),
++            (Some("0-3"), Some("0"), 4),
++        ] {
++            assert!(Request::parse(workers, main, threads).is_err());
++        }
++    }
++
++    #[test]
++    fn disallowed_or_unrepresentable_cpus_fail_before_pool_creation() {
++        let request = Request::parse(Some("0,4"), Some("0"), 2).unwrap().unwrap();
++        assert!(request.validate_allowed(&[0, 1], 1024).is_err());
++        assert!(request.validate_allowed(&[0, 4], 4).is_err());
++        let request = Request::parse(Some("0,1"), Some("4"), 2).unwrap().unwrap();
++        assert!(request.validate_allowed(&[0, 1], 1024).is_err());
++    }
++}

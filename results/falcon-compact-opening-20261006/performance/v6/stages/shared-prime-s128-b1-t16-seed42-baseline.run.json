@@ -1,0 +1,33 @@
+{
+  "status": "validated",
+  "command": [
+    "/tmp/falcon-compact-opening-binaries/baseline-v4",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "128",
+    "--batch",
+    "1",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "label": "baseline",
+  "pair_index": 0,
+  "order": [
+    "baseline",
+    "candidate"
+  ],
+  "binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+  "started_at": 1791333081.1319344,
+  "swap_before_gib": 0.22535324096679688,
+  "stdout_sha256": "2e0c004172c1255d7b15d50d6959ebdb445735ae7179f766c57ba8ce6634b2df",
+  "stderr_sha256": "30ce7ac2c64c3f25d429c68efb2d837ac19e590cf5c7a683d0b8147fac3dd7f4",
+  "elapsed_seconds": 0.11438652899232693,
+  "swap_after_gib": 0.22535324096679688
+}

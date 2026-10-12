@@ -1,0 +1,206 @@
+{
+  "latency": [
+    {
+      "prefix_len": 16,
+      "bits": 12,
+      "original_mean_us": 16.138373046875,
+      "specialized_mean_us": 14.76957421875,
+      "ratio": 0.9151835922896794,
+      "original_p95_us": 45.32084999999998,
+      "specialized_p95_us": 41.43663124999998,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 13,
+      "original_mean_us": 31.059087890625,
+      "specialized_mean_us": 28.432544921875,
+      "ratio": 0.9154339954219065,
+      "original_p95_us": 97.35791249999994,
+      "specialized_p95_us": 88.97763124999994,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 14,
+      "original_mean_us": 63.47503125,
+      "specialized_mean_us": 58.117509765625,
+      "ratio": 0.9155963946945674,
+      "original_p95_us": 192.93129374999992,
+      "specialized_p95_us": 176.64897499999992,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 15,
+      "original_mean_us": 113.257462890625,
+      "specialized_mean_us": 103.64839453125,
+      "ratio": 0.9151573051865495,
+      "original_p95_us": 334.742575,
+      "specialized_p95_us": 305.5254625,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 16,
+      "original_mean_us": 218.88565625,
+      "specialized_mean_us": 200.1823828125,
+      "ratio": 0.9145523112024386,
+      "original_p95_us": 645.2141062499999,
+      "specialized_p95_us": 590.4561249999999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 17,
+      "original_mean_us": 503.032693359375,
+      "specialized_mean_us": 460.398724609375,
+      "ratio": 0.915246127512548,
+      "original_p95_us": 1599.622649999999,
+      "specialized_p95_us": 1463.284031249999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 18,
+      "original_mean_us": 843.787802734375,
+      "specialized_mean_us": 772.142630859375,
+      "ratio": 0.9150910079017178,
+      "original_p95_us": 2347.739818749999,
+      "specialized_p95_us": 2148.943124999999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 19,
+      "original_mean_us": 1709.81406640625,
+      "specialized_mean_us": 1564.859265625,
+      "ratio": 0.9152218924681551,
+      "original_p95_us": 5214.836218749999,
+      "specialized_p95_us": 4769.643724999999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 16,
+      "bits": 20,
+      "original_mean_us": 3991.83721875,
+      "specialized_mean_us": 3649.45262890625,
+      "ratio": 0.9142288196934634,
+      "original_p95_us": 10853.056699999988,
+      "specialized_p95_us": 9920.15066874999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 12,
+      "original_mean_us": 15.603748046875,
+      "specialized_mean_us": 14.0026640625,
+      "ratio": 0.8973910640209515,
+      "original_p95_us": 47.33846249999999,
+      "specialized_p95_us": 42.424018749999995,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 13,
+      "original_mean_us": 35.330138671875,
+      "specialized_mean_us": 31.69987890625,
+      "ratio": 0.897247508725039,
+      "original_p95_us": 101.0915,
+      "specialized_p95_us": 90.458075,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 14,
+      "original_mean_us": 74.67109765625,
+      "specialized_mean_us": 67.00417578125,
+      "ratio": 0.8973241037610717,
+      "original_p95_us": 235.55518749999987,
+      "specialized_p95_us": 211.2527999999999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 15,
+      "original_mean_us": 174.258330078125,
+      "specialized_mean_us": 156.22683984374999,
+      "ratio": 0.8965243714530549,
+      "original_p95_us": 573.1755312499995,
+      "specialized_p95_us": 513.7981937499994,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 16,
+      "original_mean_us": 297.684564453125,
+      "specialized_mean_us": 267.127443359375,
+      "ratio": 0.89735066999565,
+      "original_p95_us": 769.4773874999997,
+      "specialized_p95_us": 690.2655999999998,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 17,
+      "original_mean_us": 536.987068359375,
+      "specialized_mean_us": 481.68688671875,
+      "ratio": 0.8970176659754946,
+      "original_p95_us": 1448.158843749999,
+      "specialized_p95_us": 1298.8893812499991,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 18,
+      "original_mean_us": 1098.12792578125,
+      "specialized_mean_us": 985.297560546875,
+      "ratio": 0.8972520754773601,
+      "original_p95_us": 3023.6493625,
+      "specialized_p95_us": 2712.0565874999998,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 19,
+      "original_mean_us": 2252.51078515625,
+      "specialized_mean_us": 2020.53177734375,
+      "ratio": 0.8970131422494351,
+      "original_p95_us": 6319.183737499999,
+      "specialized_p95_us": 5669.503674999998,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 20,
+      "original_mean_us": 4348.193060546875,
+      "specialized_mean_us": 3896.888638671875,
+      "ratio": 0.8962087433582723,
+      "original_p95_us": 15977.715331249998,
+      "specialized_p95_us": 14298.928412499998,
+      "specialized_winning_seeds": 64
+    }
+  ],
+  "throughput": [
+    {
+      "prefix_len": 16,
+      "bits": 257,
+      "original_mean_us": 1066.819412109375,
+      "specialized_mean_us": 975.755123046875,
+      "ratio": 0.9146394525363553,
+      "original_p95_us": 1068.55940625,
+      "specialized_p95_us": 977.1351874999999,
+      "specialized_winning_seeds": 64
+    },
+    {
+      "prefix_len": 32,
+      "bits": 257,
+      "original_mean_us": 1008.766486328125,
+      "specialized_mean_us": 904.47125,
+      "ratio": 0.8966111208672723,
+      "original_p95_us": 1010.44314375,
+      "specialized_p95_us": 906.01713125,
+      "specialized_winning_seeds": 64
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "final_source_manifest": "candidate-source-sha256.json",
+  "final_binary_manifest": "candidate-binaries.json",
+  "correctness_tests_passed": 342,
+  "matched_baseline_pairs": 376,
+  "verified_proof_executions": 5184,
+  "known_performance_regression": "Arithmetic Falcon-512, batch1, one worker: total proving +1.24% at100bits and +1.30% at128bits; approximately0.15ms. Proof-only +1.51%/+1.53%. No zero-performance-regression claim.",
+  "experiments_reverted": [
+    "streaming-control",
+    "scratch-control"
+  ],
+  "qualification": {
+    "cells": 80,
+    "pairs": 240,
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "warmup": 1,
+    "iterations": 3
+  },
+  "confirmation": {
+    "pairs": 136,
+    "seeds": [
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52
+    ],
+    "warmup": 3,
+    "iterations": 9
+  },
+  "limitations": [
+    "Host and finite input sample only.",
+    "First small-confirmation cell partially overlapped main report summary for seeds45-49; clean seeds50-52 still show total+1.34% and proof+1.60%.",
+    "No benchmark overlapped builds or correctness tests.",
+    "Diagnostic traces change absolute timings; use them only for attribution.",
+    "Raw RSS reflects process lifetime, not per-proof allocation."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "libc": {
+    "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib",
+    "sha256": "f62b9732159f382f5d21384bfdbd6bc58bd213d867d47fda68d971011d105a88"
+  },
+  "rayon": {
+    "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib",
+    "sha256": "ace8b7ca7046914f2c505eb610e9447cf11b2eacb9d33773938cb53d6cef3a25"
+  },
+  "blake3": {
+    "path": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/libblake3-b035ef8ef9bbf96b.rlib",
+    "sha256": "d68b14f19f7976398caa21ae57cdac9d8182c23605d31402600a5b9d092fb3ca"
+  }
+}

@@ -1,8 +1,8 @@
 use super::{
-    BETA_SQUARED, COEFFICIENT_LOG, COMPACT_LIVE_BITS, Cfg, FalconAlgebraicBinding,
+    BETA_SQUARED, BIT_PROTOCOL_ID, COEFFICIENT_LOG, COMPACT_LIVE_BITS, Cfg, FalconAlgebraicBinding,
     FalconAlgebraicStatement, FalconAlgebraicWitness, FalconError, LIVE_BITS, Layout, N, PRIME_MAX,
-    PRIME_MIN, PROTOCOL_ID, Q, SLACK_BITS, Schedule, Source, WORD_PROTOCOL_ID, WitnessData,
-    arithmetic, compact, error, ring,
+    PRIME_MIN, PROTOCOL_ID, Q, SLACK_BITS, Schedule, Source, WitnessData, arithmetic, compact,
+    error, ring,
 };
 use crate::{
     hybrid::{
@@ -160,8 +160,8 @@ impl std::fmt::Debug for FalconAlgebraicProof {
             .field("source_root", &self.source_root)
             .field("exceptions", &self.exceptions)
             .field("ring", &self.ring);
-        // Preserve the complete v7 diagnostic encoding for the unchanged raw
-        // proof shape, so benchmark controls can compare every proof component.
+        // Keep the single-bridge diagnostic shape compact. Arithmetic Debug
+        // includes all word terminals and their fresh merge nonce.
         match &self.arithmetic {
             ArithmeticProof::Raw(arithmetic)
                 if self.bridges.len() == 1 && self.bridge_merge_nonces.is_empty() =>
@@ -256,11 +256,10 @@ impl FalconAlgebraicProof {
 }
 
 impl PreparedFalconAlgebraic {
-    /// Use the word binder for Falcon-512 batches of 1024 at 128-bit security,
-    /// and the bit binder for every other configuration.
+    /// Use the word binder for every production batch size and security target.
     pub fn new(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
-        // Compact computation remains an explicit benchmark experiment. Both
-        // production binders use the reduced logical domain and compact commitment.
+        // Compact binding has not passed the proving-time gate. Keep it an
+        // explicit benchmark experiment; production uses the word binder.
         let compute_variant = "padding";
         #[cfg(feature = "bench-internals")]
         let compute_variant = match std::env::var("BITZ_ARITHMETIC_COMPUTE_VARIANT").as_deref() {
@@ -273,16 +272,11 @@ impl PreparedFalconAlgebraic {
         if compute_variant != "padding" {
             return Self::with_compute_variant(batch, target_bits, compute_variant);
         }
-        let binding = if N == 512 && batch == 1024 && target_bits == 128 {
-            FalconAlgebraicBinding::Words
-        } else {
-            FalconAlgebraicBinding::Bits
-        };
-        Self::new_with_binding(batch, target_bits, binding)
+        Self::new_with_binding(batch, target_bits, FalconAlgebraicBinding::Words)
     }
 
-    /// Select the binding relation over the same compact commitment. Words
-    /// require a full logical batch; prover and verifier must select the same mode.
+    /// Select the binding relation over the same compact commitment. Both support
+    /// partial batches; prover and verifier must select the same mode.
     pub fn new_with_binding(
         batch: usize,
         target_bits: usize,
@@ -321,30 +315,22 @@ impl PreparedFalconAlgebraic {
             && compact::is_split(&layout)
             && compute_variant != "padding";
         let word_binding = binding == FalconAlgebraicBinding::Words;
-        if word_binding && (compute_variant != "padding" || layout.batch() != layout.capacity()) {
-            return Err(error(
-                "word binder requires a full-capacity raw computation",
-            ));
+        if word_binding && compute_variant != "padding" {
+            return Err(error("word binder requires raw computation"));
         }
         if !matches!(target_bits, 100 | 128) {
             return Err(error("algebraic security must be 100 or 128 bits"));
         }
         let d = layout.capacity().ilog2() as usize;
+        let (binding_bits, terminal_merge_bits) =
+            binding_grinding(&layout, compact_binding, word_binding, target_bits);
         let schedule = Schedule {
             norm_instance_bits: grind(target_bits, d, 125),
             norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
             merge_bits: grind(target_bits, 3, 125),
-            binding_bits: grind(
-                target_bits,
-                binding_numerator(&layout, compact_binding, word_binding),
-                125,
-            ),
+            binding_bits,
             word_binding,
-            terminal_merge_bits: if word_binding {
-                grind(target_bits, 1, 125)
-            } else {
-                0
-            },
+            terminal_merge_bits,
         };
         let geometry = SourceGeometry::new(&layout)?;
         let ligerito = LigeritoSelection::MATCHED_UDR
@@ -389,14 +375,16 @@ impl PreparedFalconAlgebraic {
     pub fn arithmetic_capacity(&self) -> usize {
         self.layout.capacity()
     }
+    /// Benchmark computation label. Both production binders use `padding`,
+    /// retained from the logical-padding experiment. Use [`Self::protocol_id`]
+    /// to identify the selected relation.
     pub fn compute_variant(&self) -> &'static str {
         self.compute_variant
     }
-    /// Bit computation retains its v7/v8 domain. Word computation over the
-    /// compact commitment uses a separate v9 domain.
+    /// Word computation uses v9; explicit bit computation retains its v7/v8 domain.
     pub fn protocol_id(&self) -> &'static str {
         if self.schedule.word_binding {
-            WORD_PROTOCOL_ID
+            PROTOCOL_ID
         } else if self.uses_legacy_transcript() {
             if N == 1024 {
                 "bitz/falcon1024-algebraic/non-zk/v7"
@@ -404,7 +392,7 @@ impl PreparedFalconAlgebraic {
                 "bitz/falcon512-algebraic/non-zk/v7"
             }
         } else {
-            PROTOCOL_ID
+            BIT_PROTOCOL_ID
         }
     }
 
@@ -418,7 +406,8 @@ impl PreparedFalconAlgebraic {
             && !self.uses_compact_binding()
             && self.layout.capacity() == self.layout.allocation_capacity()
     }
-    /// Bits visited by prime-field source binding and the integer bridges.
+    /// Logical source bits authenticated by the integer bridges. Word binding
+    /// folds sixteen lanes per word before its prime-field binding sumcheck.
     pub fn logical_binding_bits(&self) -> usize {
         self.bridge_layouts()
             .iter()
@@ -660,6 +649,13 @@ impl PreparedFalconAlgebraic {
                 h.update(&(matrix.col_vars as u64).to_le_bytes());
             }
         }
+        if self.schedule.word_binding {
+            h.update(
+                b"word-binder:signed15/lane15/lower-popcount;public-masks;prime-terminal-merge/v9",
+            );
+            let tables = 2 + usize::from(self.batch() < self.arithmetic_capacity());
+            h.update(&(tables as u64).to_le_bytes());
+        }
         for indices in exceptions {
             h.update(&(indices.len() as u16).to_le_bytes());
             for index in indices {
@@ -690,15 +686,16 @@ impl PreparedFalconAlgebraic {
             }
         }
         if self.schedule.word_binding {
-            h.update(b"binding:words;signed15+lane15;full-capacity;terminal-merge-degree1/v1");
             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
         }
         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+        let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
         for (key, target) in public.public_keys.iter().zip(&public.targets) {
             for coefficient in key.iter().chain(target) {
-                h.update(&coefficient.to_le_bytes());
+                coefficients.extend_from_slice(&coefficient.to_le_bytes());
             }
         }
+        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
         h.update(root);
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
@@ -1109,6 +1106,33 @@ fn binding_numerator(layout: &Layout, compact_binding: bool, word_binding: bool)
     }
 }
 
+fn terminal_merge_numerator(layout: &Layout, word_binding: bool) -> usize {
+    if word_binding {
+        1 + usize::from(layout.batch() < layout.capacity())
+    } else {
+        0
+    }
+}
+
+fn binding_grinding(
+    layout: &Layout,
+    compact_binding: bool,
+    word_binding: bool,
+    target_bits: usize,
+) -> (u32, u32) {
+    let numerator = binding_numerator(layout, compact_binding, word_binding);
+    if !word_binding {
+        return (grind(target_bits, numerator, 125), 0);
+    }
+    // Keep the old bit-domain difficulty and fund the terminal merge from
+    // the four removed degree-two rounds: n/2^g + d/2^h <= (n+8)/2^g.
+    let binding_bits = grind(target_bits, numerator + 8, 125);
+    let degree = terminal_merge_numerator(layout, true);
+    let terminal_merge_bits =
+        grind(target_bits, degree, 125).max((binding_bits + degree.ilog2()).saturating_sub(3));
+    (binding_bits, terminal_merge_bits)
+}
+
 #[cfg(any(test, feature = "bench-internals"))]
 fn bind_bridge(t: &mut impl Transcript, index: usize) {
     t.absorb_slice(b"falcon-algebraic/compact-bridge/v8");
@@ -1224,8 +1248,11 @@ fn fixed_terms(
     ];
     if schedule.word_binding {
         terms.push((
-            "word binder terminal merge",
-            prime(1, schedule.terminal_merge_bits),
+            "word terminal claim merge",
+            prime(
+                terminal_merge_numerator(layout, schedule.word_binding),
+                schedule.terminal_merge_bits,
+            ),
         ));
     }
     terms
@@ -1354,6 +1381,8 @@ mod tests {
                     d,
                     3 * (COEFFICIENT_LOG + 1 + d),
                     3,
+                    2 * (COEFFICIENT_LOG + 1 + d),
+                    terminal_merge_numerator(&layout, true),
                     2 * (COEFFICIENT_LOG + 5 + d),
                     10,
                 ] {
@@ -1397,6 +1426,95 @@ mod tests {
     }
 
     #[test]
+    fn word_binding_schedule_preserves_the_removed_lane_round_budget() {
+        for target in [100, 128] {
+            for batch in 1..=1024 {
+                let layout = Layout::new(batch).unwrap();
+                let word_log = COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize;
+                let old_bit_log = layout.bitz_params().row_vars + layout.bitz_params().col_vars;
+                let degree: usize = if batch.is_power_of_two() { 1 } else { 2 };
+                let (binding_bits, terminal_bits) = binding_grinding(&layout, false, true, target);
+                assert_eq!(binding_bits, grind(target, 2 * old_bit_log, 125));
+                assert!(terminal_bits >= grind(target, degree, 125));
+                assert!(terminal_bits >= (binding_bits + degree.ilog2()).saturating_sub(3));
+
+                // Exact common-denominator comparison, independent of the
+                // floating-point composed ledger and PCS configuration.
+                let scale = binding_bits.max(terminal_bits);
+                let combined = (BigUint::from(2 * word_log) << (scale - binding_bits))
+                    + (BigUint::from(degree) << (scale - terminal_bits));
+                let old = BigUint::from(2 * old_bit_log) << (scale - binding_bits);
+                assert!(combined <= old, "target={target}, batch={batch}");
+                assert!(
+                    (combined << (target + 4)) <= (BigUint::from(1u8) << (125 + scale as usize))
+                );
+
+                assert_eq!(
+                    binding_grinding(&layout, true, false, target),
+                    (
+                        grind(target, binding_numerator(&layout, true, false), 125),
+                        0
+                    ),
+                    "compact computation must retain its grinding schedule"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn word_binding_schedule_and_security_are_bound() {
+        for target in [100, 128] {
+            for batch in [1, 3, 16, 17, 65, 1024] {
+                let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                assert_eq!(prepared.protocol_id(), PROTOCOL_ID);
+                let word_log =
+                    COEFFICIENT_LOG + 1 + prepared.arithmetic_capacity().ilog2() as usize;
+                assert_eq!(
+                    binding_numerator(&prepared.layout, false, true),
+                    2 * word_log
+                );
+                assert_eq!(
+                    prepared.schedule.binding_bits,
+                    grind(target, 2 * word_log + 8, 125)
+                );
+                let merge_degree = 1 + usize::from(batch < prepared.arithmetic_capacity());
+                assert_eq!(
+                    terminal_merge_numerator(&prepared.layout, true),
+                    merge_degree
+                );
+                let security = prepared.security();
+                let merge_error = security
+                    .terms
+                    .iter()
+                    .find(|(name, _)| *name == "word terminal claim merge")
+                    .unwrap()
+                    .1;
+                assert_eq!(
+                    merge_error,
+                    merge_degree as f64
+                        * 2f64.powi(-125 - prepared.schedule.terminal_merge_bits as i32)
+                );
+                assert!(security.algebraic_bits >= target as f64 + (16f64 / 15.0).log2() - 1e-9);
+
+                let (public, _) = fixture(batch);
+                let exceptions = if compact::is_split(&prepared.layout) {
+                    vec![Vec::new(); batch]
+                } else {
+                    Vec::new()
+                };
+                let (_, before) = prepared.transcript(&public, &[0; 32], &exceptions).unwrap();
+                let mut altered = prepared;
+                altered.schedule.terminal_merge_bits += 1;
+                let (_, after) = altered.transcript(&public, &[0; 32], &exceptions).unwrap();
+                assert_ne!(
+                    before, after,
+                    "terminal grinding must be configuration-bound"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn end_to_end_and_tampering() {
         for (batch, target) in [100, 128]
             .into_iter()
@@ -1405,8 +1523,39 @@ mod tests {
             let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
             let (public, witness) = fixture(batch);
             let committed = prepared.commit(public.clone(), witness).unwrap();
-            let proof = prepared.prove(committed).unwrap();
-            prepared.verify(&public, &proof).unwrap();
+            let mut prover_next = [0u64; 4];
+            let proof = prepared
+                .prove_observed(committed, |t| {
+                    prover_next = std::array::from_fn(|_| t.get_challenge());
+                })
+                .unwrap();
+            let mut verifier_next = [0u64; 4];
+            prepared
+                .verify_observed(&public, &proof, |t| {
+                    verifier_next = std::array::from_fn(|_| t.get_challenge());
+                })
+                .unwrap();
+            assert_eq!(prover_next, verifier_next);
+            let ArithmeticProof::Raw(arithmetic) = &proof.arithmetic else {
+                panic!("production must use word binding")
+            };
+            assert_eq!(
+                arithmetic.binding.round_polynomials.len(),
+                COEFFICIENT_LOG + 1 + prepared.arithmetic_capacity().ilog2() as usize
+            );
+            assert_eq!(
+                arithmetic.binding_terminal.len(),
+                2 + usize::from(batch < prepared.arithmetic_capacity())
+            );
+            assert_eq!(proof.bridges.len(), 1);
+            assert_eq!(
+                proof.payload_size_bytes(),
+                proof
+                    .payload_size_breakdown()
+                    .iter()
+                    .map(|(_, n)| n)
+                    .sum::<usize>()
+            );
             let mut bad_public = public.clone();
             bad_public.targets[0][1] ^= 1;
             assert!(prepared.verify(&bad_public, &proof).is_err());
@@ -1472,19 +1621,11 @@ mod tests {
                             FalconAlgebraicBinding::Bits,
                         )
                         .unwrap();
-                        let words = N == 512 && batch == 1024 && target == 128;
-                        assert_eq!(prepared.schedule.word_binding, words);
-                        assert_eq!(
-                            prepared.protocol_id(),
-                            if words {
-                                WORD_PROTOCOL_ID
-                            } else {
-                                bits.protocol_id()
-                            }
-                        );
+                        assert!(prepared.schedule.word_binding);
+                        assert_eq!(prepared.protocol_id(), PROTOCOL_ID);
                         let bit_id = if bits.layout.capacity() != bits.layout.allocation_capacity()
                         {
-                            PROTOCOL_ID
+                            BIT_PROTOCOL_ID
                         } else if N == 1024 {
                             "bitz/falcon1024-algebraic/non-zk/v7"
                         } else {
@@ -1510,7 +1651,7 @@ mod tests {
     #[test]
     fn word_binding_security_ledger_and_geometry_are_explicit() {
         for target in [100, 128] {
-            for batch in [1, 32, 64, 256, 1024] {
+            for batch in [1, 3, 32, 33, 64, 256, 1023, 1024] {
                 let words = PreparedFalconAlgebraic::new_with_binding(
                     batch,
                     target,
@@ -1523,8 +1664,8 @@ mod tests {
                     FalconAlgebraicBinding::Bits,
                 )
                 .unwrap();
-                assert_eq!(words.protocol_id(), WORD_PROTOCOL_ID);
-                assert_ne!(bits.protocol_id(), WORD_PROTOCOL_ID);
+                assert_eq!(words.protocol_id(), PROTOCOL_ID);
+                assert_ne!(bits.protocol_id(), PROTOCOL_ID);
                 assert_eq!(
                     words.geometry.physical_logs(),
                     bits.geometry.physical_logs()
@@ -1539,12 +1680,13 @@ mod tests {
                 let ledger = words.security().terms;
                 let merge = ledger
                     .iter()
-                    .find(|(name, _)| *name == "word binder terminal merge")
+                    .find(|(name, _)| *name == "word terminal claim merge")
                     .unwrap()
                     .1;
                 assert_eq!(
                     merge,
-                    2f64.powi(-125 - words.schedule.terminal_merge_bits as i32)
+                    terminal_merge_numerator(&words.layout, true) as f64
+                        * 2f64.powi(-125 - words.schedule.terminal_merge_bits as i32)
                 );
                 assert!(merge <= 2f64.powi(-(target as i32) - 4));
                 assert!(
@@ -1552,19 +1694,9 @@ mod tests {
                         .security()
                         .terms
                         .iter()
-                        .any(|(name, _)| *name == "word binder terminal merge")
+                        .any(|(name, _)| *name == "word terminal claim merge")
                 );
             }
-        }
-        for partial in [3, 33, 1023] {
-            assert!(
-                PreparedFalconAlgebraic::new_with_binding(
-                    partial,
-                    128,
-                    FalconAlgebraicBinding::Words
-                )
-                .is_err()
-            );
         }
     }
 
@@ -1573,7 +1705,7 @@ mod tests {
         let split_batch = (1 << 20) / (32 * N);
         for (batch, target) in [100, 128]
             .into_iter()
-            .flat_map(|target| [1, split_batch].map(|batch| (batch, target)))
+            .flat_map(|target| [1, 3, split_batch, split_batch + 1].map(|batch| (batch, target)))
         {
             let words = PreparedFalconAlgebraic::new_with_binding(
                 batch,
@@ -1588,6 +1720,11 @@ mod tests {
             )
             .unwrap();
             let (public, witness) = fixture(batch);
+            let bit_proof = bits
+                .prove(bits.commit(public.clone(), witness.clone()).unwrap())
+                .unwrap();
+            bits.verify(&public, &bit_proof).unwrap();
+            assert!(words.verify(&public, &bit_proof).is_err());
             let committed = words.commit(public.clone(), witness).unwrap();
             let mut prover_checkpoint = 0u128;
             let proof = words
@@ -1613,17 +1750,19 @@ mod tests {
                 .transcript(&public, proof.source_root(), &proof.exceptions)
                 .unwrap();
             let field = sample_field(&mut t).unwrap();
-            for mutation in 0..4 {
+            let terminals = 2 + usize::from(batch < words.arithmetic_capacity());
+            assert_eq!(arithmetic.binding_terminal.len(), terminals);
+            for mutation in 0..terminals + 2 {
                 let mut bad = proof.clone();
                 let ArithmeticProof::Raw(arithmetic) = &mut bad.arithmetic else {
                     panic!()
                 };
                 match mutation {
-                    0 | 1 => {
+                    index if index < terminals => {
                         let value = &mut arithmetic.binding_terminal[mutation];
                         *value = field.add(value, &field.one());
                     }
-                    2 => {
+                    index if index == terminals => {
                         arithmetic.terminal_merge_nonce =
                             if target == 128 { None } else { Some(0) };
                     }
@@ -1723,7 +1862,7 @@ mod tests {
     }
 
     #[test]
-    fn serial_and_optimized_binding_preserve_complete_proof_contents() {
+    fn serial_and_parallel_binding_preserve_complete_proof_contents() {
         const BATCH: usize = 1024;
         const WORKERS: [usize; 6] = [3, 1, 2, 4, 8, 16];
         let pools = WORKERS.map(|threads| {
@@ -1748,26 +1887,33 @@ mod tests {
                 public.targets[instance][coefficient] = value.rem_euclid(Q) as u16;
             }
         }
-        for target in [100, 128] {
+        for (target, binding) in [100, 128].into_iter().flat_map(|target| {
+            [FalconAlgebraicBinding::Bits, FalconAlgebraicBinding::Words]
+                .map(|binding| (target, binding))
+        }) {
             let run = |pool: &rayon::ThreadPool, threads| {
                 pool.install(|| {
                     assert_eq!(rayon::current_num_threads(), threads);
                     assert_eq!(
                         arithmetic::optimized_binding(BATCH),
-                        matches!(threads, 1 | 8) || (N == 512 && matches!(threads, 2 | 4 | 16))
+                        matches!(threads, 1 | 8 | 16) || (N == 512 && matches!(threads, 2 | 4))
                     );
-                    let prepared = PreparedFalconAlgebraic::new_with_binding(
-                        BATCH,
-                        target,
-                        FalconAlgebraicBinding::Bits,
-                    )
-                    .unwrap();
+                    let prepared =
+                        PreparedFalconAlgebraic::new_with_binding(BATCH, target, binding).unwrap();
                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
                     let root = *committed.source_root();
                     let proof = prepared.prove(committed).unwrap();
                     assert_eq!(proof.source_root(), &root);
                     prepared.verify(&public, &proof).unwrap();
-                    // Debug includes the proof contents and all present nonces.
+                    if threads == 16 {
+                        for index in [0, 2] {
+                            pools[index]
+                                .install(|| prepared.verify(&public, &proof))
+                                .unwrap();
+                        }
+                    }
+                    // Derived Debug includes every proof field, including all
+                    // ring, arithmetic, bridge, joint, opening and PCS nonces.
                     // This compares contents within one build, not a wire codec.
                     (root, format!("{proof:?}"))
                 })
@@ -1777,11 +1923,11 @@ mod tests {
                 let actual = run(pool, threads);
                 assert_eq!(
                     reference.0, actual.0,
-                    "degree={N}, security={target}, threads={threads}"
+                    "degree={N}, security={target}, binding={binding:?}, threads={threads}"
                 );
                 assert_eq!(
                     reference.1, actual.1,
-                    "degree={N}, security={target}, threads={threads}"
+                    "degree={N}, security={target}, binding={binding:?}, threads={threads}"
                 );
             }
         }
@@ -1877,8 +2023,8 @@ mod tests {
         ] {
             let mut source = Source::new(prepared.layout, &data);
             source.flip(index);
-            // Single commits the malformed source unchanged, so rejection must
-            // come from the proof constraints, not a constructor padding scan.
+            // Single commits the malformed source unchanged. The word prover
+            // must reject it, independently of commitment construction.
             let committed = prepared
                 .commit_source(public.clone(), data.clone(), source)
                 .unwrap();
@@ -2000,5 +2146,20 @@ mod tests {
             prepared.verify(&public, &proof).unwrap();
         }
     }
+    }
+
+    #[test]
+    #[ignore = "large end-to-end qualification; run explicitly"]
+    fn large_batches_at_both_security_targets() {
+        for target in [100, 128] {
+            for batch in [32, 512, 513, 1024] {
+                let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                let (public, witness) = fixture(batch);
+                let proof = prepared
+                    .prove(prepared.commit(public.clone(), witness).unwrap())
+                    .unwrap();
+                prepared.verify(&public, &proof).unwrap();
+            }
+        }
     }
 }
