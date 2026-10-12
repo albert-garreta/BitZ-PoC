@@ -1,0 +1,25 @@
+{
+  "command": [
+    ".tmp/falcon-arithmetic-optimization-20261012/candidate-v2",
+    "--degree",
+    "512",
+    "--batch",
+    "1",
+    "--security",
+    "128",
+    "--threads",
+    "1",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "overrides": {
+    "BITZ_ARITHMETIC_RING": "factored",
+    "BITZ_ARITHMETIC_COMPUTE_VARIANT": "compact",
+    "RAYON_NUM_THREADS": "1"
+  },
+  "exit_code": 1,
+  "stderr": "Error: Piop(\"factored ring requires raw word binding\")\n",
+  "expected_rejection": true
+}

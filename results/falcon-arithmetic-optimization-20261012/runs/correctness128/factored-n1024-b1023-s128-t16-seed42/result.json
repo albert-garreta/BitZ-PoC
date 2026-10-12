@@ -1,0 +1,32 @@
+{
+  "job": {
+    "id": "factored-n1024-b1023-s128-t16-seed42",
+    "variant": "arithmetic",
+    "config": "factored",
+    "threads": 16,
+    "seed": 42
+  },
+  "phase": "correctness128",
+  "degree": 1024,
+  "batch": 1023,
+  "security": 128,
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v10-factored-ring",
+      "input_digest": "8a403fbd25c57f396fb8646080e61f343e944d2d6ee8ed4bbd056ea4d22f108b",
+      "source_root": "b8d741ade512ab5538d0763d249a21d7f5fab267ccdd4e52517f8402746031ce",
+      "proof_debug_digest": "0f503b8b865f2070a17269b35f2b38d997ac0f301572ac684a40cf7a3db05717",
+      "total_prover_ms": 2634.190689,
+      "prove_ms": 2473.615631,
+      "witness_commit_ms": 160.574276,
+      "verify_ms": 96.800814,
+      "process_peak_rss_kib": 146872,
+      "proof_payload_bytes": 320190
+    }
+  ],
+  "verified": true,
+  "command_sha256": "6131df1a3f3f8681226d40fbeacee515aa01115897ca1e0f0a8998ce2c84d3fa",
+  "stdout_sha256": "fd73472f52c01732e771b5b5697910807aaee70b13b862287578d7ecd2be26bb",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

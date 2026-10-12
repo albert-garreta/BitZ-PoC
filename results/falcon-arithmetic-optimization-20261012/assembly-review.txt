@@ -1,0 +1,149 @@
+Arithmetic Falcon coordinate kernel assembly review
+Date: 2026-10-12
+
+Inspection only: no build or benchmark was run for this review.
+
+Inspected artifact
+------------------
+Path: /home/john-wu/code/BitZ-pcs/target/release/deps/falcon_algebraic-958bf3d5665f45a1
+SHA256: cf81e439bdea6480ea23b86c0b983513fc8165e6edf5951e06a0c056653a67f9
+The native release binary included the arithmetic coordinate experiments and
+the experimental factored ring implementation. This report describes this
+specific binary; later rebuilds may produce different addresses or register
+allocation.
+
+Commands and extraction method
+------------------------------
+Commands were run from /home/john-wu/code/BitZ-pcs:
+
+  sha256sum target/release/deps/falcon_algebraic-958bf3d5665f45a1
+  nm -C target/release/deps/falcon_algebraic-958bf3d5665f45a1
+  nm -n -C target/release/deps/falcon_algebraic-958bf3d5665f45a1
+  objdump -d -C --no-show-raw-insn --start-address=0x329390 --stop-address=0x32b100 target/release/deps/falcon_algebraic-958bf3d5665f45a1
+
+The broad disassembly was followed by bounded Python subprocess calls to:
+
+  objdump -d --no-show-raw-insn --start-address=START --stop-address=END target/release/deps/falcon_algebraic-958bf3d5665f45a1
+
+The following [START, END) ranges were inspected:
+  0x329390, 0x3299f0: PowerBasis<11>::fill_powers_adjoint_pairs::<2>
+  0x3299f0, 0x32a300: PowerBasis<11>::fill_powers_adjoint_pairs::<4>
+  0x32a300, 0x32b280: PowerBasis<11>::fill_powers_adjoint_pairs::<8>
+  0x328560, 0x329270: Falcon-512 ring public-evaluation closure
+  0x420020, 0x420b50: Falcon-1024 ring public-evaluation closure
+  0x320f30, 0x321860: PowerBasis<11>::fill_adjoint_pairs::<4>
+
+Instruction addresses and mnemonics were parsed from objdump output. Backward
+conditional branches identified loop candidates. For the recurrence functions,
+the large loop containing at least two vpmulhrsw instructions per pair was
+selected. Stack references in that loop were counted separately from stack
+traffic during setup. Distinct ZMM register numbers were also counted.
+
+Canonical recurrence results
+---------------------------
+Group 2:
+  Hot loop: 0x329860 through 0x329981, inclusive.
+  49 static instructions; 17 distinct ZMM registers (0 through 16).
+  No stack references in the hot loop.
+
+Group 4:
+  Hot loop: 0x32a040 through 0x32a285, inclusive.
+  96 static instructions; 24 distinct ZMM registers (0 through 23).
+  Two scalar pointer reloads and no vector stack references:
+    0x32a040: mov 0x38(%rsp),%rsi
+    0x32a057: mov 0x30(%rsp),%rsi
+
+Group 8:
+  Hot loop: 0x32ad60 through 0x32b209, inclusive.
+  195 static instructions; all 32 ZMM registers are used.
+  Fourteen scalar pointer reloads and two vector correction reloads.
+  The vector reloads occur as memory operands:
+    0x32ae9a: vpmulhrsw 0x480(%rsp),%zmm1,%zmm16
+    0x32aea2: vpmullw 0x4c0(%rsp),%zmm1,%zmm1
+  The corresponding 64-byte correction vectors were written to those stack
+  slots during setup. They are read again on every recurrence iteration.
+
+Conclusion: group 8 has observable register pressure relative to groups 2 and
+4. This is a cost mechanism, not a measured performance verdict. Additional
+independent recurrences may still compensate by increasing instruction
+overlap. Do not select a production group from instruction counts alone.
+
+Factored ring adjoint-only recurrence
+------------------------------------
+PowerBasis<11>::fill_adjoint_pairs::<4>:
+  Hot loop: 0x321540 through 0x3217f8, inclusive.
+  112 static instructions, six scalar pointer reloads, no vector stack spills.
+  Scalar reload addresses: 0x321540, 0x32155a, 0x321569, 0x3215cc,
+  0x32161c, 0x321631.
+  This kernel packs eight adjoint signatures into four paired states and
+  shares one correction vector pair across them. It is not the same workload
+  as the canonical kernel, whose pairs contain one ordinary and one adjoint
+  sequence.
+
+Prepared public evaluation
+--------------------------
+Both Falcon degree specializations contain the intended vpmaddwd arithmetic,
+32-bit accumulation, and vpmovsxdq/vpaddq widening before large accumulation.
+
+Falcon-512 examples:
+  0x328959: vpmaddwd 0xf0(%rsp),%zmm2,%zmm4
+  0x328964: vpmaddwd 0x1b0(%rsp),%zmm2,%zmm2
+  0x3289c6: vpmovsxdq %ymm2,%zmm0
+  0x3289d3: vpmovsxdq %ymm1,%zmm1
+  0x3289d9: vpaddq %zmm0,%zmm1,%zmm0
+  This specialization hoists input coefficient vectors and uses some stack
+  operands. The existence of SIMD does not establish that this specialization
+  is faster than the original public evaluation.
+
+Falcon-1024 examples:
+  0x4203ef: vpmaddwd -0x40(%r9,%r14,1),%zmm2,%zmm4
+  0x4203f7: vpmaddwd -0x40(%rsi,%r14,1),%zmm2,%zmm2
+  0x42043b: vpmovsxdq %ymm2,%zmm0
+  0x420448: vpmovsxdq %ymm1,%zmm1
+  0x42044e: vpaddq %zmm0,%zmm1,%zmm0
+  This specialization loads coefficient arrays directly inside its inner loop.
+
+Portable and SIMD bounds review
+-------------------------------
+Source reviewed:
+  vendor/field/src/q12289.rs
+  vendor/field/src/q12289/avx512.rs
+
+PreparedPublicDotProducts checks degree 9, 10, or 11; canonical extension
+weights; and length at most u32::MAX. evaluate_pair checks both input lengths
+and canonical base-field coefficients before entering the SIMD kernel.
+
+For q=12289, every operand lies in [0,12288], also within positive signed16.
+Each vpmaddwd lane contains two products. Four vector multiply-adds per block
+therefore accumulate at most eight products:
+
+  8 * 12288^2 = 1,207,959,552 < 2^31.
+
+Widening to signed64 is consequently exact and nonnegative. The entire dot
+product is also bounded:
+
+  u32::MAX * 12288^2 < 2^60 < 2^64.
+
+Both the SIMD and portable paths accumulate exact nonnegative integer sums
+and perform one remainder modulo q per result coordinate. The portable path
+uses u64 products and sums. Vector loads cover complete 32-element blocks;
+the remainder uses scalar indexing. The AVX512 implementation is restricted
+to x86_64 and the required target features, so its bounded start+128 indexing
+does not approach usize overflow. Empty input performs no vector load.
+
+PowerCoordinates has a private representation. Public construction through
+PowerBasis::encode checks canonical fixed-basis inputs, and ZERO is canonical.
+The new adjoint-only API checks matching polynomial/output lengths and
+canonical polynomial scalars. Degree 9/10 use the portable recurrence; degree
+11 uses AVX512 only when compiled with the required features. Each mutable
+output slice is disjoint through the safe Rust interface.
+
+The adjoint-only SIMD kernel uses the existing reduction bound: both exact
+product remainders lie in [-8448,8448], and the previous coordinate is
+canonical, giving a combined signed16 value in [-16896,29184]. The existing
+reduce_adjoint kernel returns canonical coordinates from that interval.
+
+No correctness or memory-safety defect was identified in this bounded review.
+This report does not claim that all behavior is validated by inspection, and
+does not replace the separately run unit, equivalence, rejection, portable,
+and end-to-end qualification tests.

@@ -102,6 +102,67 @@ enum SourceProverData {
     Split(shared::JointProverData<3>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RingMode {
+    Canonical,
+    #[cfg(any(test, feature = "bench-internals"))]
+    Factored,
+}
+
+impl RingMode {
+    fn projection_degree(self) -> usize {
+        match self {
+            Self::Canonical => 10,
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Factored => 20,
+        }
+    }
+}
+
+#[derive(Clone)]
+enum RingProof {
+    Canonical(ring::Proof),
+    #[cfg(any(test, feature = "bench-internals"))]
+    Factored(super::factored_ring::Proof),
+}
+
+// Delegate canonical Debug unchanged: benchmark digests cover the complete v9 proof.
+impl std::fmt::Debug for RingProof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Canonical(proof) => proof.fmt(f),
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Factored(proof) => f.debug_tuple("FactoredRing").field(proof).finish(),
+        }
+    }
+}
+
+impl RingProof {
+    fn payload_size_bytes(&self) -> usize {
+        match self {
+            Self::Canonical(proof) => proof.payload_size_bytes(),
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Factored(proof) => proof.payload_size_bytes(),
+        }
+    }
+}
+
+enum RingClaim {
+    Canonical(ring::PreparedClaim),
+    #[cfg(any(test, feature = "bench-internals"))]
+    Factored(super::factored_ring::PreparedClaim),
+}
+
+impl RingClaim {
+    #[cfg(any(test, feature = "bench-internals"))]
+    fn canonical(&self) -> Result<&ring::PreparedClaim, FalconError> {
+        match self {
+            Self::Canonical(claim) => Ok(claim),
+            Self::Factored(_) => Err(error("compact computation requires canonical ring")),
+        }
+    }
+}
+
 /// Reusable configuration for 1..=1024 algebraic Falcon statements.
 pub struct PreparedFalconAlgebraic {
     layout: Layout,
@@ -113,6 +174,7 @@ pub struct PreparedFalconAlgebraic {
     grinding: BinaryGrinding,
     compact_binding: bool,
     compute_variant: &'static str,
+    ring_mode: RingMode,
     scratch: Mutex<Scratch>,
 }
 
@@ -143,7 +205,7 @@ impl CommittedFalconAlgebraic {
 pub struct FalconAlgebraicProof {
     source_root: [u8; 32],
     exceptions: Vec<Vec<u16>>,
-    ring: ring::Proof,
+    ring: RingProof,
     arithmetic: ArithmeticProof,
     bridges: Vec<bridge::Proof>,
     bridge_merge_nonces: Vec<u64>,
@@ -269,10 +331,34 @@ impl PreparedFalconAlgebraic {
             Err(std::env::VarError::NotPresent) => compute_variant,
             _ => return Err(error("unknown arithmetic computation benchmark variant")),
         };
+        #[cfg(feature = "bench-internals")]
+        match std::env::var("BITZ_ARITHMETIC_RING").as_deref() {
+            Ok("factored") => {
+                if compute_variant != "padding" {
+                    return Err(error("factored ring requires raw word binding"));
+                }
+                return Self::new_factored_ring(batch, target_bits);
+            }
+            Err(std::env::VarError::NotPresent) | Ok("canonical") => {}
+            _ => return Err(error("BITZ_ARITHMETIC_RING must be canonical or factored")),
+        }
         if compute_variant != "padding" {
             return Self::with_compute_variant(batch, target_bits, compute_variant);
         }
         Self::new_with_binding(batch, target_bits, FalconAlgebraicBinding::Words)
+    }
+
+    /// Experimental degree-20 ring lift; never selected by production builds.
+    #[cfg(any(test, feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn new_factored_ring(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+        Self::with_ring_configuration(
+            batch,
+            target_bits,
+            "padding",
+            FalconAlgebraicBinding::Words,
+            RingMode::Factored,
+        )
     }
 
     /// Select the binding relation over the same compact commitment. Both support
@@ -304,6 +390,27 @@ impl PreparedFalconAlgebraic {
         compute_variant: &'static str,
         binding: FalconAlgebraicBinding,
     ) -> Result<Self, FalconError> {
+        Self::with_ring_configuration(
+            batch,
+            target_bits,
+            compute_variant,
+            binding,
+            RingMode::Canonical,
+        )
+    }
+
+    fn with_ring_configuration(
+        batch: usize,
+        target_bits: usize,
+        compute_variant: &'static str,
+        binding: FalconAlgebraicBinding,
+        ring_mode: RingMode,
+    ) -> Result<Self, FalconError> {
+        if ring_mode != RingMode::Canonical
+            && (binding != FalconAlgebraicBinding::Words || compute_variant != "padding")
+        {
+            return Err(error("factored ring requires raw word binding"));
+        }
         let layout = Layout::new(batch)?;
         #[cfg(any(test, feature = "bench-internals"))]
         let layout = if compute_variant == "compact" {
@@ -343,6 +450,7 @@ impl PreparedFalconAlgebraic {
             &ligerito,
             &schedule,
             target_bits,
+            ring_mode,
         )?;
         for matrix in bridge_matrices(&layout, compact_binding) {
             bridge::validate_layout(&matrix, BridgeMode::TwoLimbs, PRIME_MAX)?;
@@ -357,6 +465,7 @@ impl PreparedFalconAlgebraic {
             grinding,
             compact_binding,
             compute_variant,
+            ring_mode,
             scratch: Mutex::default(),
         };
         if prepared.security().algebraic_bits < target_bits as f64 {
@@ -383,6 +492,14 @@ impl PreparedFalconAlgebraic {
     }
     /// Word computation uses v9; explicit bit computation retains its v7/v8 domain.
     pub fn protocol_id(&self) -> &'static str {
+        #[cfg(any(test, feature = "bench-internals"))]
+        if self.ring_mode == RingMode::Factored {
+            return if N == 1024 {
+                "bitz/falcon1024-algebraic/non-zk/v10-factored-ring"
+            } else {
+                "bitz/falcon512-algebraic/non-zk/v10-factored-ring"
+            };
+        }
         if self.schedule.word_binding {
             PROTOCOL_ID
         } else if self.uses_legacy_transcript() {
@@ -452,6 +569,7 @@ impl PreparedFalconAlgebraic {
             self.uses_compact_binding(),
             self.target_bits,
             &self.schedule,
+            self.ring_mode,
         );
         let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
         for (index, matrix) in self.bridge_layouts().iter().enumerate() {
@@ -496,7 +614,7 @@ impl PreparedFalconAlgebraic {
     }
 
     fn carry_grinding(&self) -> u32 {
-        carry_grinding(self.target_bits)
+        carry_grinding(self.target_bits, self.ring_mode)
     }
 
     /// Validate, pack and commit the algebraic witness. No signature hashing.
@@ -733,14 +851,31 @@ impl PreparedFalconAlgebraic {
         let field = sample_field(&mut t)?;
         let (ring, ring_claim) = {
             let _span = tracing::info_span!("falcon_algebraic:ring").entered();
-            ring::prove(
-                &mut t,
-                &self.layout,
-                &committed.statement,
-                &committed.witness,
-                &field,
-                self.carry_grinding(),
-            )?
+            match self.ring_mode {
+                RingMode::Canonical => {
+                    let (proof, claim) = ring::prove(
+                        &mut t,
+                        &self.layout,
+                        &committed.statement,
+                        &committed.witness,
+                        &field,
+                        self.carry_grinding(),
+                    )?;
+                    (RingProof::Canonical(proof), RingClaim::Canonical(claim))
+                }
+                #[cfg(any(test, feature = "bench-internals"))]
+                RingMode::Factored => {
+                    let (proof, claim) = super::factored_ring::prove(
+                        &mut t,
+                        &self.layout,
+                        &committed.statement,
+                        &committed.witness,
+                        &field,
+                        self.carry_grinding(),
+                    )?;
+                    (RingProof::Factored(proof), RingClaim::Factored(claim))
+                }
+            }
         };
         let (arithmetic, bridges, coefficients, target, bridge_merge_nonces) =
             if self.uses_compact_binding() {
@@ -759,7 +894,7 @@ impl PreparedFalconAlgebraic {
                             &committed.exceptions,
                             &matrices,
                             &field,
-                            &ring_claim,
+                            ring_claim.canonical()?,
                             &self.schedule,
                         )?
                     };
@@ -808,17 +943,28 @@ impl PreparedFalconAlgebraic {
                     .ok_or_else(|| error("missing raw arithmetic source"))?;
                 let (proof, claim) = {
                     let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
-                    arithmetic::prove(
-                        &mut t,
-                        &self.layout,
-                        &committed.witness,
-                        source,
-                        &field,
-                        &ring_claim,
-                        &self.schedule,
-                    )?
+                    match ring_claim {
+                        RingClaim::Canonical(claim) => arithmetic::prove_owned(
+                            &mut t,
+                            &self.layout,
+                            &committed.witness,
+                            source,
+                            &field,
+                            claim,
+                            &self.schedule,
+                        )?,
+                        #[cfg(any(test, feature = "bench-internals"))]
+                        RingClaim::Factored(claim) => arithmetic::prove_factored_ring(
+                            &mut t,
+                            &self.layout,
+                            &committed.witness,
+                            source,
+                            &field,
+                            claim,
+                            &self.schedule,
+                        )?,
+                    }
                 };
-                drop(ring_claim);
                 drop(committed.witness);
                 let (bridge, binary) = {
                     let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
@@ -939,14 +1085,31 @@ impl PreparedFalconAlgebraic {
     ) -> Result<(), FalconError> {
         let (mut t, digest) = self.transcript(public, &proof.source_root, &proof.exceptions)?;
         let field = sample_field(&mut t)?;
-        let ring_claim = ring::verify(
-            &mut t,
-            &self.layout,
-            public,
-            &proof.ring,
-            &field,
-            self.carry_grinding(),
-        )?;
+        let ring_claim = match (&proof.ring, self.ring_mode) {
+            (RingProof::Canonical(proof), RingMode::Canonical) => {
+                RingClaim::Canonical(ring::verify(
+                    &mut t,
+                    &self.layout,
+                    public,
+                    proof,
+                    &field,
+                    self.carry_grinding(),
+                )?)
+            }
+            #[cfg(any(test, feature = "bench-internals"))]
+            (RingProof::Factored(proof), RingMode::Factored) => {
+                RingClaim::Factored(super::factored_ring::verify(
+                    &mut t,
+                    &self.layout,
+                    public,
+                    proof,
+                    &field,
+                    self.carry_grinding(),
+                )?)
+            }
+            #[cfg(any(test, feature = "bench-internals"))]
+            _ => return Err(error("ring proof version mismatch")),
+        };
         let (coefficients, target) = match (&proof.arithmetic, self.uses_compact_binding()) {
             #[cfg(any(test, feature = "bench-internals"))]
             (ArithmeticProof::Compact(arithmetic), true) => {
@@ -960,7 +1123,7 @@ impl PreparedFalconAlgebraic {
                     &proof.exceptions,
                     &matrices,
                     &field,
-                    &ring_claim,
+                    ring_claim.canonical()?,
                     arithmetic,
                     &self.schedule,
                 )?;
@@ -996,14 +1159,25 @@ impl PreparedFalconAlgebraic {
                 if proof.bridges.len() != 1 || !proof.bridge_merge_nonces.is_empty() {
                     return Err(error("raw bridge shape"));
                 }
-                let claim = arithmetic::verify(
-                    &mut t,
-                    &self.layout,
-                    &field,
-                    &ring_claim,
-                    arithmetic,
-                    &self.schedule,
-                )?;
+                let claim = match &ring_claim {
+                    RingClaim::Canonical(claim) => arithmetic::verify(
+                        &mut t,
+                        &self.layout,
+                        &field,
+                        claim,
+                        arithmetic,
+                        &self.schedule,
+                    )?,
+                    #[cfg(any(test, feature = "bench-internals"))]
+                    RingClaim::Factored(claim) => arithmetic::verify_factored_ring(
+                        &mut t,
+                        &self.layout,
+                        &field,
+                        claim,
+                        arithmetic,
+                        &self.schedule,
+                    )?,
+                };
                 drop(ring_claim);
                 let binary = bridge::verify_weighted(
                     &mut t,
@@ -1204,8 +1378,8 @@ fn grind(target: usize, numerator: usize, domain_bits: u32) -> u32 {
     (target as u32 + 4 + numerator.next_power_of_two().ilog2()).saturating_sub(domain_bits)
 }
 
-fn carry_grinding(target_bits: usize) -> u32 {
-    grind(target_bits, 10, 125)
+fn carry_grinding(target_bits: usize, ring_mode: RingMode) -> u32 {
+    grind(target_bits, ring_mode.projection_degree(), 125)
 }
 
 fn binding_rounds(layout: &Layout, word_binding: bool) -> usize {
@@ -1218,6 +1392,7 @@ fn fixed_terms(
     compact_binding: bool,
     target_bits: usize,
     schedule: &Schedule,
+    ring_mode: RingMode,
 ) -> Vec<(&'static str, f64)> {
     let d = layout.capacity().ilog2() as usize;
     let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
@@ -1227,7 +1402,10 @@ fn fixed_terms(
         ("native ring identity", (N - 1 + d) as f64 * 2f64.powi(-149)),
         (
             "ring coordinate projection",
-            prime(10, carry_grinding(target_bits)),
+            prime(
+                ring_mode.projection_degree(),
+                carry_grinding(target_bits, ring_mode),
+            ),
         ),
         (
             "per-signature norm identity",
@@ -1267,6 +1445,7 @@ fn allocate_grinding(
     ligerito: &ResolvedLigerito,
     schedule: &Schedule,
     target_bits: usize,
+    ring_mode: RingMode,
 ) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
     use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
     // Block structure, raw errors and native Flock work do not depend on the
@@ -1308,7 +1487,7 @@ fn allocate_grinding(
         sites: 1.0,
         min_bits: block.native_bits.unwrap_or(0),
     }));
-    let fixed: f64 = fixed_terms(layout, compact_binding, target_bits, schedule)
+    let fixed: f64 = fixed_terms(layout, compact_binding, target_bits, schedule, ring_mode)
         .iter()
         .map(|(_, error)| error)
         .sum();
@@ -1365,6 +1544,109 @@ mod tests {
             s2: vec![s2; batch],
         };
         (public, witness)
+    }
+
+    #[test]
+    fn factored_ring_security_version_and_lift_are_bound() {
+        for target in [100, 128] {
+            for batch in [1, 3, 16, 17, 33, 65, 1024] {
+                let canonical = PreparedFalconAlgebraic::new_with_binding(
+                    batch,
+                    target,
+                    FalconAlgebraicBinding::Words,
+                )
+                .unwrap();
+                let factored = PreparedFalconAlgebraic::new_factored_ring(batch, target).unwrap();
+                assert_ne!(canonical.protocol_id(), factored.protocol_id());
+                assert_eq!(
+                    factored.carry_grinding(),
+                    if target == 128 { 12 } else { 0 }
+                );
+                assert!(
+                    factored.security().algebraic_bits
+                        >= target as f64 + (16f64 / 15.0).log2() - 1e-9
+                );
+                let projection = factored
+                    .security()
+                    .terms
+                    .into_iter()
+                    .find(|(name, _)| *name == "ring coordinate projection")
+                    .unwrap()
+                    .1;
+                assert_eq!(
+                    projection,
+                    20.0 * 2f64.powi(-125 - factored.carry_grinding() as i32)
+                );
+                let (public, _) = fixture(batch);
+                let exceptions = if compact::is_split(&factored.layout) {
+                    vec![Vec::new(); batch]
+                } else {
+                    Vec::new()
+                };
+                let (_, a) = canonical
+                    .transcript(&public, &[0; 32], &exceptions)
+                    .unwrap();
+                let (_, b) = factored.transcript(&public, &[0; 32], &exceptions).unwrap();
+                assert_ne!(a, b);
+            }
+        }
+        assert!(
+            PreparedFalconAlgebraic::with_ring_configuration(
+                1,
+                128,
+                "padding",
+                FalconAlgebraicBinding::Bits,
+                RingMode::Factored
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn factored_ring_end_to_end_and_cross_version_rejection() {
+        for target in [100, 128] {
+            for batch in [1, 3, 33] {
+                let prepared = PreparedFalconAlgebraic::new_factored_ring(batch, target).unwrap();
+                let old = PreparedFalconAlgebraic::new_with_binding(
+                    batch,
+                    target,
+                    FalconAlgebraicBinding::Words,
+                )
+                .unwrap();
+                let (public, witness) = fixture(batch);
+                let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
+                let proof = prepared.prove(committed).unwrap();
+                prepared.verify(&public, &proof).unwrap();
+                assert!(old.verify(&public, &proof).is_err());
+                let old_proof = old
+                    .prove(old.commit(public.clone(), witness).unwrap())
+                    .unwrap();
+                old.verify(&public, &old_proof).unwrap();
+                assert!(prepared.verify(&public, &old_proof).is_err());
+                assert!(proof.payload_size_bytes() * 10 <= old_proof.payload_size_bytes() * 11);
+                assert_eq!(
+                    proof.ring.payload_size_bytes(),
+                    old_proof.ring.payload_size_bytes() + 248
+                );
+                // Adding q preserves the native read-off. The prime-field
+                // binding and the transcript must still reject the changed lift.
+                let mut altered = proof.clone();
+                let RingProof::Factored(ring) = &mut altered.ring else {
+                    unreachable!()
+                };
+                ring.lift[0] += i128::from(Q);
+                assert!(prepared.verify(&public, &altered).is_err());
+                let mut malformed = proof.clone();
+                let RingProof::Factored(ring) = &mut malformed.ring else {
+                    unreachable!()
+                };
+                ring.lift[0] = i128::MIN;
+                assert!(prepared.verify(&public, &malformed).is_err());
+                let mut altered = public.clone();
+                altered.targets[0][0] = (altered.targets[0][0] + 1) % Q as u16;
+                assert!(prepared.verify(&altered, &proof).is_err());
+            }
+        }
     }
 
     #[test]
@@ -1574,7 +1856,10 @@ mod tests {
                             bad.exceptions.push(vec![0]);
                         }
                     }
-                    2 => bad.ring.carries[0] += 1,
+                    2 => match &mut bad.ring {
+                        RingProof::Canonical(ring) => ring.carries[0] += 1,
+                        RingProof::Factored(ring) => ring.lift[0] += 1,
+                    },
                     3 => {
                         if compact::is_split(&prepared.layout) {
                             bad.exceptions.pop();

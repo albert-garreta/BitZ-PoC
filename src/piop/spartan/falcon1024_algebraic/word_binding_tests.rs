@@ -526,3 +526,275 @@ fn parallel_sparse_source_scan_preserves_entries_and_padding_errors() {
         assert_eq!(parallel_error, serial_error);
     }
 }
+
+fn factored_fixture<'a>(
+    layout: &'a Layout,
+    f: &'a Cfg,
+    mode: u8,
+) -> (BindingForm<'a>, WordFactors, BindingForm<'a>) {
+    factored_fixture_with_norm(layout, f, mode, value(-29, f), value(-37, f))
+}
+
+fn factored_fixture_with_norm<'a>(
+    layout: &'a Layout,
+    f: &'a Cfg,
+    mode: u8,
+    eta: F,
+    first: F,
+) -> (BindingForm<'a>, WordFactors, BindingForm<'a>) {
+    let mut ring = form_fixture(layout, f);
+    let mut dense = form_fixture(layout, f);
+    let mut factors = WordFactors::default();
+    if mode & 2 != 0 {
+        let rows: Vec<_> = (0..layout.batch())
+            .map(|i| value(i as i64 * 7 - 11, f))
+            .collect();
+        let columns: Vec<_> = (0..N).map(|j| value(j as i64 % 31 - 17, f)).collect();
+        for i in 0..layout.batch() {
+            for j in 0..N {
+                dense.coefficients[0][i * N + j] = f.mul(&rows[i], &columns[j]);
+            }
+        }
+        ring.coefficients[0].clear();
+        factors.s1 = Some(FactoredS1 { rows, columns });
+    }
+    if mode & 1 != 0 {
+        let norm = NormClaims {
+            instance_point: vec![f.zero(); layout.capacity().ilog2() as usize],
+            point: (0..rounds(layout))
+                .map(|i| {
+                    if i == 0 {
+                        first
+                    } else {
+                        value(i as i64 * 13 - 37, f)
+                    }
+                })
+                .collect(),
+            terminal: f.zero(),
+            slack: f.zero(),
+        };
+        let weights = eq_table(&norm.point, f).unwrap();
+        for side in 0..2 {
+            for i in 0..layout.batch() {
+                for j in 0..N {
+                    let correction = f.mul(&eta, &weights[i * 2 * N + side * N + j]);
+                    dense.coefficients[side][i * N + j] =
+                        f.add(&dense.coefficients[side][i * N + j], &correction);
+                }
+            }
+        }
+        factors.norm = Some(FactoredNorm::new(layout, &norm, eta, f).unwrap());
+    }
+    (ring, factors, dense)
+}
+
+#[test]
+fn deferred_norm_handles_zero_scale_and_boolean_first_coordinate() {
+    let f = test_field();
+    let layout = Layout::new(3).unwrap();
+    let source = source_fixture(&layout);
+    for mode in [1, 3] {
+        for eta in [f.zero(), value(-29, &f)] {
+            for first in [f.zero(), f.one()] {
+                let (form, factors, dense) =
+                    factored_fixture_with_norm(&layout, &f, mode, eta, first);
+                let reference = Reference::new(&dense, &source, &f);
+                let mut initial = f.zero();
+                let mut sums = [f.zero(); 2];
+                for (w, x) in reference.weights[0]
+                    .chunks_exact(2)
+                    .zip(reference.tables[0].chunks_exact(2))
+                {
+                    let even = f.mul(&w[0], &x[0]);
+                    initial = f.add(&initial, &f.add(&even, &f.mul(&w[1], &x[1])));
+                    sums[0] = f.add(&sums[0], &even);
+                    sums[1] = f.add(&sums[1], &f.mul(&f.sub(&w[1], &w[0]), &f.sub(&x[1], &x[0])));
+                }
+                for reuse in [false, true] {
+                    assert_eq!(
+                        first_round_with_factors(&form, &source, &factors, &f, reuse),
+                        (sums, initial),
+                        "mode={mode}, eta={eta:?}, first={first:?}, reuse={reuse}"
+                    );
+                }
+                for r in [f.zero(), f.one(), value(-3, &f)] {
+                    let expected = first_fold_with_factors(
+                        &dense,
+                        &source,
+                        r,
+                        &WordFactors::default(),
+                        &f,
+                        false,
+                    );
+                    for fused in [false, true] {
+                        assert_eq!(
+                            first_fold_with_factors(&form, &source, r, &factors, &f, fused),
+                            expected,
+                            "mode={mode}, eta={eta:?}, first={first:?}, fused={fused}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn factored_word_kernels_match_dense_signed_bit_reference() {
+    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        for batch in [1, 3, 17] {
+            let layout = Layout::new(batch).unwrap();
+            let source = source_fixture(&layout);
+            for mode in 0..4 {
+                let (form, factors, dense) = factored_fixture(&layout, &f, mode);
+                let reference = Reference::new(&dense, &source, &f);
+                let mut initial = f.zero();
+                let mut sums = [f.zero(); 2];
+                for (w, x) in reference.weights[0]
+                    .chunks_exact(2)
+                    .zip(reference.tables[0].chunks_exact(2))
+                {
+                    let even = f.mul(&w[0], &x[0]);
+                    initial = f.add(&initial, &f.add(&even, &f.mul(&w[1], &x[1])));
+                    sums[0] = f.add(&sums[0], &even);
+                    sums[1] = f.add(&sums[1], &f.mul(&f.sub(&w[1], &w[0]), &f.sub(&x[1], &x[0])));
+                }
+                for reuse in [false, true] {
+                    assert_eq!(
+                        first_round_with_factors(&form, &source, &factors, &f, reuse),
+                        (sums, initial)
+                    );
+                }
+                for r in [
+                    f.zero(),
+                    f.one(),
+                    value(-1, &f),
+                    F::from_with_cfg(modulus / 2, &f),
+                ] {
+                    let mut reference = Reference::new(&dense, &source, &f);
+                    reference.fold(r, &f);
+                    let expected: Vec<_> = reference.weights[0]
+                        .iter()
+                        .zip(&reference.tables[0])
+                        .map(|(&w, &d)| [w, d])
+                        .collect();
+                    let expected_sums =
+                        expected
+                            .chunks_exact(2)
+                            .fold([f.zero(); 2], |mut sum, pair| {
+                                sum[0] = f.add(&sum[0], &f.mul(&pair[0][0], &pair[0][1]));
+                                sum[1] = f.add(
+                                    &sum[1],
+                                    &f.mul(
+                                        &f.sub(&pair[1][0], &pair[0][0]),
+                                        &f.sub(&pair[1][1], &pair[0][1]),
+                                    ),
+                                );
+                                sum
+                            });
+                    for fused in [false, true] {
+                        let actual =
+                            first_fold_with_factors(&form, &source, r, &factors, &f, fused);
+                        assert_eq!(
+                            actual.0, expected,
+                            "batch={batch} mode={mode} fused={fused}"
+                        );
+                        assert_eq!(actual.1, expected_sums);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn factored_word_proofs_preserve_transcript_and_reject_tampering() {
+    let f = test_field();
+    for (batch, grinding) in [(1, 0), (3, 0), (3, 2), (16, 0)] {
+        let layout = Layout::new(batch).unwrap();
+        let source = source_fixture(&layout);
+        let schedule = test_schedule(grinding);
+        for mode in 1..4 {
+            let (form, factors, dense) = factored_fixture(&layout, &f, mode);
+            let target = Reference::new(&dense, &source, &f).target(&f);
+            let mut baseline = Blake3Transcript::new();
+            let expected = prove(
+                &mut baseline,
+                &layout,
+                &source,
+                dense,
+                target,
+                dummy_norm(&f),
+                None,
+                &schedule,
+                &f,
+            )
+            .unwrap();
+            let mut transcript = Blake3Transcript::new();
+            let actual = prove_with_correction(
+                &mut transcript,
+                &layout,
+                &source,
+                form,
+                factors,
+                target,
+                dummy_norm(&f),
+                None,
+                &schedule,
+                &f,
+            )
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(transcript.state_digest(), baseline.state_digest());
+            let (form, factors, _) = factored_fixture(&layout, &f, mode);
+            let mut verifier = Blake3Transcript::new();
+            assert_eq!(
+                verify_with_factors(
+                    &mut verifier,
+                    &layout,
+                    &form,
+                    &factors,
+                    target,
+                    &actual.0,
+                    &schedule,
+                    &f
+                )
+                .unwrap(),
+                actual.2
+            );
+            assert_eq!(verifier.state_digest(), transcript.state_digest());
+            let mut altered = actual.0.clone();
+            altered.binding_terminal[0] = f.add(&altered.binding_terminal[0], &f.one());
+            assert!(
+                verify_with_factors(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &form,
+                    &factors,
+                    target,
+                    &altered,
+                    &schedule,
+                    &f
+                )
+                .is_err()
+            );
+            let (form, factors, _) = factored_fixture(&layout, &f, mode);
+            assert!(
+                prove_with_correction(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &source,
+                    form,
+                    factors,
+                    f.add(&target, &f.one()),
+                    dummy_norm(&f),
+                    None,
+                    &schedule,
+                    &f
+                )
+                .is_err()
+            );
+        }
+    }
+}

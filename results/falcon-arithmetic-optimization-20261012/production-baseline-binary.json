@@ -1,0 +1,8 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-binaries-20261012/falcon_algebraic",
+  "sha256": "4be7d3973533007d57e8d67b5a4a2d8aa704b8d6b691fb3ed9b08ca1855f0d08",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "prior_manifest": "results/falcon-poc-performance-20261012/manifest.json"
+}

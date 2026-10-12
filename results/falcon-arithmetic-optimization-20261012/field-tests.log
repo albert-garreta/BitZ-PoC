@@ -1,0 +1,141 @@
+   Compiling unicode-ident v1.0.24
+   Compiling find-msvc-tools v0.1.11
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.13.1
+   Compiling rustix v1.1.4
+   Compiling syn v1.0.109
+   Compiling either v1.18.0
+   Compiling thiserror v1.0.69
+   Compiling hashbrown v0.17.1
+   Compiling paste v1.0.15
+   Compiling generic-array v0.14.7
+   Compiling hybrid-array v0.4.14
+   Compiling clap_lex v1.1.0
+   Compiling binius-utils v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling serde_json v1.0.151
+   Compiling smallvec v1.16.0
+   Compiling condtype v1.3.0
+   Compiling chacha20 v0.10.2
+   Compiling thread_local v1.1.10
+   Compiling regex-lite v0.1.9
+   Compiling num-integer v0.1.47
+   Compiling rand_pcg v0.9.0
+   Compiling proc-macro2 v1.0.107
+   Compiling cc v1.4.4
+   Compiling itertools v0.15.0
+   Compiling rayon v1.12.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling rand v0.10.2
+   Compiling num-bigint v0.4.8
+   Compiling quote v1.0.47
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling crypto-common v0.2.2
+   Compiling inout v0.2.2
+   Compiling indexmap v2.14.2
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling terminal_size v0.4.4
+   Compiling clap_builder v4.6.6
+   Compiling sha2-asm v0.6.4
+   Compiling perfetto-sdk-sys v1.3.0
+   Compiling blake3 v1.8.7
+   Compiling cipher v0.5.2
+   Compiling aes v0.9.3
+   Compiling sha2 v0.10.9
+   Compiling trait-set v0.3.0
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling bytemuck_derive v1.12.1
+   Compiling bytemuck v1.25.2
+   Compiling thiserror v2.0.20
+   Compiling clap v4.6.6
+   Compiling serde v1.0.229
+   Compiling thiserror-impl v1.0.69
+   Compiling tracing-attributes v0.1.31
+   Compiling derive_more-impl v2.1.1
+   Compiling divan-macros v0.1.21
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling bincode v1.3.3
+   Compiling toml_edit v0.22.27
+   Compiling divan v0.1.21
+   Compiling tracing v0.1.44
+   Compiling derive_more v2.1.1
+   Compiling binius-field v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling toml v0.8.23
+   Compiling flock-core v0.1.0 (https://github.com/succinctlabs/flock.git?rev=85fc0e7cc002e7ca4dffdff805ba89976e9a5293#85fc0e7c)
+   Compiling perfetto-sdk v1.1.1
+   Compiling tracing-perfetto-sdk v1.0.0
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+warning: unused import: `num_traits::ConstZero`
+  --> src/gf128/wide.rs:80:9
+   |
+80 |     use num_traits::ConstZero;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `square_n` is never used
+   --> src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib test) generated 6 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 33.01s
+     Running unittests src/lib.rs (.tmp/falcon-poc-push-target/debug/deps/field-77843518caf90ff6)
+
+running 22 tests
+test q12289::avx512::tests::adjoint_recurrence_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::adjoint_reduction_covers_every_permitted_signed_sum ... ok
+test q12289::avx512::tests::interleaved_adjoint_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::paired_recurrence_matches_fixed_basis_multiplication ... ok
+test q12289::avx512::tests::paired_recurrence_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::paired_reduction_exhaustive ... ignored, exhaustive: every feedback/top pair with predecessor endpoints
+test q12289::power_basis_tests::adjoint_pair_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::adjoint_pair_rejects_noncanonical_polynomial - should panic ... ok
+test q12289::power_basis_tests::adjoint_pair_rejects_polynomial_length - should panic ... ok
+test q12289::power_basis_tests::interleaved_dispatch_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::interleaved_pairs_reject_mismatched_polynomials - should panic ... ok
+test q12289::power_basis_tests::interleaved_pairs_reject_noncanonical_polynomials - should panic ... ok
+test q12289::power_basis_tests::paired_dispatch_matches_individual_sequences ... ok
+test q12289::power_basis_tests::paired_sequences_reject_mismatched_lengths - should panic ... ok
+test q12289::power_basis_tests::recurrence_matches_extension_multiplication ... ok
+test q12289::power_basis_tests::rejects_noncanonical_and_nongenerating_elements ... ok
+test q12289::power_basis_tests::shared_adjoint_pairs_match_fixed_basis_with_guarded_tails ... ok
+test q12289::power_basis_tests::shifted_subtraction_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::shifted_subtraction_rejects_noncanonical_scalar - should panic ... ok
+test q12289::tests::prepared_public_dot_products_match_independent_reference ... ok
+test q12289::tests::prepared_public_dot_products_reject_noncanonical_coefficients - should panic ... ok
+test q12289::tests::registered_fields ... ok
+
+test result: ok. 21 passed; 0 failed; 1 ignored; 0 measured; 55 filtered out; finished in 0.06s
+

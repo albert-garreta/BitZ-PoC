@@ -1,0 +1,109 @@
+{
+  "baseline": "ee79186745962e3e285fc5090dae8a95545dda43",
+  "workspace_base": "ba2664e247a82560148085e3572f0aa4da3c0068",
+  "baseline_source": "/tmp/bitz-falcon-poc-push-20261012",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "batch": 1024,
+  "security_bits": 128,
+  "degrees": [
+    512,
+    1024
+  ],
+  "threads": [
+    1,
+    8,
+    16
+  ],
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "worker_cpus": [
+    6,
+    7,
+    4,
+    5,
+    2,
+    3,
+    0,
+    1,
+    14,
+    15,
+    12,
+    13,
+    10,
+    11,
+    8,
+    9
+  ],
+  "main_cpu": 6,
+  "proof_size_growth_limit": 0.1,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "platform": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
+  "latency": {
+    "warmup": 2,
+    "samples_per_seed": 7,
+    "seeds_per_configuration": 3,
+    "samples_per_configuration": 21
+  },
+  "profile_timings": {
+    "warmup": 1,
+    "samples_per_seed": 3
+  },
+  "cpu_model": "AMD Ryzen 9 9950X3D 16-Core Processor",
+  "governors": {
+    "6": "powersave",
+    "7": "powersave",
+    "4": "powersave",
+    "5": "powersave",
+    "2": "powersave",
+    "3": "powersave",
+    "0": "powersave",
+    "1": "powersave",
+    "14": "powersave",
+    "15": "powersave",
+    "12": "powersave",
+    "13": "powersave",
+    "10": "powersave",
+    "11": "powersave",
+    "8": "powersave",
+    "9": "powersave"
+  },
+  "nonperformance_phases": [
+    "smoke",
+    "correctness100",
+    "correctness128"
+  ],
+  "correctness_note": "correctness100/128 deliberately overlap final builds; timings are excluded from performance conclusions.",
+  "production_default": "owned ring coefficient buffers; other v9 experiments disabled; canonical v9 protocol retained",
+  "runner_sha256": "cee383fc08bf55b372aac6fcaabcf22f032fb3f9e31402200edd1aba13456667",
+  "source_helper_hashes": {
+    "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c",
+    "binder_experiments.py": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164"
+  },
+  "final_validation": {
+    "verified_proofs": 3502,
+    "proofs_by_protocol": {
+      "bitz/falcon1024-algebraic/non-zk/v9": 1465,
+      "bitz/falcon512-algebraic/non-zk/v9": 1465,
+      "bitz/falcon1024-algebraic/non-zk/v10-factored-ring": 286,
+      "bitz/falcon512-algebraic/non-zk/v10-factored-ring": 286
+    },
+    "input_source_equality": true,
+    "complete_proof_equality_within_protocol": true,
+    "raw_log_hashes_verified": true,
+    "command_provenance_verified": true,
+    "experimental_payload_limit_percent": 110,
+    "experimental_payload_comparisons": 12,
+    "max_experimental_payload_growth_percent": 0.6429783837861525
+  },
+  "production_runs": [
+    "production",
+    "production_confirm"
+  ]
+}

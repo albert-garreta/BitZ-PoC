@@ -5,7 +5,7 @@
 
 use field::{
     BatchMulAcc, FpSignedLinearAcc, PreparedLinearCombination, Reduce, RingOps,
-    q12289::{PowerBasis, PowerCoordinates},
+    q12289::{PowerBasis, PowerCoordinates, PreparedPublicDotProducts},
 };
 use rayon::prelude::*;
 
@@ -75,8 +75,19 @@ pub(super) fn prove(
     let lambda = instance_weights(transcript, layout)?;
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, alpha)?;
-    let carries = calculate_carries(&coordinates, data)?;
+    let options = CoordinateOptions::current();
+    let (coordinates, totals) = coordinates_with_options(
+        public,
+        &lambda,
+        alpha,
+        options,
+        options.fuse_carries.then_some(data),
+    )?;
+    let carries = if options.fuse_carries {
+        carries_from_totals(totals, &coordinates.target)?
+    } else {
+        calculate_carries(&coordinates, data)?
+    };
     check_carries(&carries, layout.batch())?;
     absorb_carries(transcript, &carries);
     let projection_nonce = if grinding_bits == 0 {
@@ -239,11 +250,11 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
     transcript.absorb_slice(&bytes);
 }
 
-fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
+pub(super) fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
     crate::piop::spartan::falcon_extension::powers(alpha)
 }
 
-fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
+pub(super) fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
     let mut sum = [0u64; EXTENSION_DEGREE];
     for (&coefficient, power) in polynomial.iter().zip(powers) {
         for (total, &coordinate) in sum.iter_mut().zip(&power.0) {
@@ -253,30 +264,131 @@ fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
     Ext::new(sum.map(|x| (x % Q as u64) as u16))
 }
 
-#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
 fn coordinates(
     public: &FalconAlgebraicStatement,
     lambda: &[Ext],
     alpha: Ext,
 ) -> Result<Coordinates, FalconError> {
+    coordinates_with_options(public, lambda, alpha, CoordinateOptions::current(), None)
+        .map(|(coordinates, _)| coordinates)
+}
+
+pub(super) struct PreparedPublicEvaluation(PreparedPublicDotProducts<EXTENSION_DEGREE>);
+
+impl PreparedPublicEvaluation {
+    pub(super) fn new(powers: &[Ext; N + 1]) -> Self {
+        Self(PreparedPublicDotProducts::new(&powers[..N]))
+    }
+
+    pub(super) fn evaluate_pair(&self, h: &[u16; N], target: &[u16; N]) -> [Ext; 2] {
+        self.0.evaluate_pair(h, target)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CoordinateOptions {
+    paired_public: bool,
+    pairs: usize,
+    fuse_carries: bool,
+}
+
+impl CoordinateOptions {
+    fn current() -> Self {
+        #[cfg(not(feature = "bench-internals"))]
+        let defaults = Self {
+            paired_public: false,
+            pairs: 4,
+            fuse_carries: false,
+        };
+        #[cfg(feature = "bench-internals")]
+        {
+            let select = |name: &str, choices: &[&str], default: usize| match std::env::var(name) {
+                Err(std::env::VarError::NotPresent) => default,
+                Ok(value) => choices
+                    .iter()
+                    .position(|&choice| choice == value)
+                    .unwrap_or_else(|| panic!("{name} must be one of {choices:?}")),
+                Err(std::env::VarError::NotUnicode(_)) => panic!("{name} must be valid Unicode"),
+            };
+            Self {
+                paired_public: select("BITZ_ARITHMETIC_PUBLIC_EVAL", &["legacy", "paired"], 0) == 1,
+                pairs: [2, 4, 8][select("BITZ_ARITHMETIC_RECURRENCE_PAIRS", &["2", "4", "8"], 1)],
+                fuse_carries: select("BITZ_ARITHMETIC_CARRY_FUSION", &["off", "on"], 0) == 1,
+            }
+        }
+        #[cfg(not(feature = "bench-internals"))]
+        defaults
+    }
+}
+
+#[derive(Default)]
+struct CoordinateWork {
+    public_eval_ns: u64,
+    recurrence_ns: u64,
+    carry_ns: u64,
+    totals: [i64; EXTENSION_DEGREE],
+}
+
+impl CoordinateWork {
+    fn combine(mut self, rhs: Self) -> Self {
+        self.public_eval_ns += rhs.public_eval_ns;
+        self.recurrence_ns += rhs.recurrence_ns;
+        self.carry_ns += rhs.carry_ns;
+        for (left, right) in self.totals.iter_mut().zip(rhs.totals) {
+            *left += right;
+        }
+        self
+    }
+}
+
+fn elapsed_ns(start: Option<std::time::Instant>) -> u64 {
+    start.map_or(0, |start| start.elapsed().as_nanos() as u64)
+}
+
+#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
+fn coordinates_with_options(
+    public: &FalconAlgebraicStatement,
+    lambda: &[Ext],
+    alpha: Ext,
+    options: CoordinateOptions,
+    witness: Option<&WitnessData>,
+) -> Result<(Coordinates, [i64; EXTENSION_DEGREE]), FalconError> {
+    // A single diagnostic record aggregates worker time. It is not an elapsed
+    // phase breakdown: workers overlap. Disabled tracing makes no timer calls.
+    let diagnostics = tracing::info_span!(
+        "falcon_algebraic_ring:coordinate_work",
+        basis_powers_wall_ns = tracing::field::Empty,
+        buffer_allocation_wall_ns = tracing::field::Empty,
+        public_eval_worker_ns = tracing::field::Empty,
+        recurrence_worker_ns = tracing::field::Empty,
+        carry_worker_ns = tracing::field::Empty,
+    );
+    let profile = !diagnostics.is_disabled();
+    let setup_start = profile.then(std::time::Instant::now);
     // The transcript samples alpha outside F_q. Since 11 is prime, its powers
     // form a basis. Still reject a singular basis rather than assuming invertibility.
     let basis = PowerBasis::try_new(alpha)
         .map_err(|e| error(format!("invalid algebraic ring power basis: {e:?}")))?;
     let powers = powers(alpha);
+    let paired = options
+        .paired_public
+        .then(|| PreparedPublicEvaluation::new(&powers));
+    diagnostics.record("basis_powers_wall_ns", elapsed_ns(setup_start));
     let batch = public.public_keys.len();
     let wrap = powers[N].add(Ext::ONE);
+    let allocation_start = profile.then(std::time::Instant::now);
     let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut targets = vec![Ext::ZERO; batch];
+    diagnostics.record("buffer_allocation_wall_ns", elapsed_ns(allocation_start));
     // Four independent SIMD states hide the dependency chain in each pair.
     // Portable builds keep one signature per task and the existing recurrence.
-    const PAIRS: usize = if cfg!(all(
+    let pairs = if cfg!(all(
         target_arch = "x86_64",
         target_feature = "avx512f",
         target_feature = "avx512bw"
     )) {
-        4
+        options.pairs
     } else {
         1
     };
@@ -285,10 +397,20 @@ fn coordinates(
     #[cfg(not(feature = "parallel"))]
     let workers = 1;
     // Keep at least one independent task per worker for small batches.
-    let group_size = if batch / PAIRS >= workers { PAIRS } else { 1 };
-    let prepare = |i: usize, target: &mut Ext| {
-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
-        *target = lambda[i].mul(eval_public(&public.targets[i], powers.as_slice()));
+    let group_size = if batch / pairs >= workers { pairs } else { 1 };
+    let evaluate = |i: usize| {
+        if let Some(prepared) = &paired {
+            prepared.evaluate_pair(&public.public_keys[i], &public.targets[i])
+        } else {
+            [
+                eval_public(&public.public_keys[i], powers.as_slice()),
+                eval_public(&public.targets[i], powers.as_slice()),
+            ]
+        }
+    };
+    let prepare = |i: usize, evaluations: [Ext; 2], target: &mut Ext| {
+        let lambda_h = lambda[i].mul(evaluations[0]);
+        *target = lambda[i].mul(evaluations[1]);
         // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplication by X gives
         // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j]. Apply lambda first
         // to obtain canonical adjoint coordinates in O(N*K) per signature.
@@ -303,47 +425,120 @@ fn coordinates(
         ),
     )| {
         let start = chunk * group_size;
-        if PAIRS > 1 && targets.len() == PAIRS {
-            let prepared: [_; PAIRS] = std::array::from_fn(|i| prepare(start + i, &mut targets[i]));
-            let mut a = a.chunks_mut(N);
-            let mut b = b.chunks_mut(N);
-            basis.fill_powers_adjoint_pairs(
-                prepared.map(|v| v.0),
-                prepared.map(|v| v.1),
-                std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
-                std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
-            );
+        let mut work = CoordinateWork::default();
+        if targets.len() == group_size && group_size > 1 {
+            match group_size {
+                2 => fill_coordinate_group::<2>(
+                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
+                ),
+                4 => fill_coordinate_group::<4>(
+                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
+                ),
+                8 => fill_coordinate_group::<8>(
+                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
+                ),
+                _ => unreachable!("unsupported recurrence group"),
+            }
         } else {
             for (i, ((a, b), target)) in a
                 .chunks_mut(N)
                 .zip(b.chunks_mut(N))
-                .zip(targets)
+                .zip(targets.iter_mut())
                 .enumerate()
             {
-                let (starts, subtract) = prepare(start + i, target);
+                let before = profile.then(std::time::Instant::now);
+                let evaluations = evaluate(start + i);
+                work.public_eval_ns += elapsed_ns(before);
+                let (starts, subtract) = prepare(start + i, evaluations, target);
+                let before = profile.then(std::time::Instant::now);
                 basis.fill_powers_adjoint_pair(
                     starts,
                     subtract,
                     &public.public_keys[start + i],
                     [a, b],
                 );
+                work.recurrence_ns += elapsed_ns(before);
             }
         }
+        if let Some(data) = witness {
+            let before = profile.then(std::time::Instant::now);
+            work.totals = coordinate_totals(a, b, data, start, targets.len());
+            work.carry_ns = elapsed_ns(before);
+        }
+        work
     };
     #[cfg(feature = "parallel")]
-    s1.par_chunks_mut(group_size * N)
+    let work = s1
+        .par_chunks_mut(group_size * N)
         .zip(s2.par_chunks_mut(group_size * N))
         .zip(targets.par_chunks_mut(group_size))
         .enumerate()
-        .for_each(fill);
+        .map(fill)
+        .reduce(CoordinateWork::default, CoordinateWork::combine);
     #[cfg(not(feature = "parallel"))]
-    s1.chunks_mut(group_size * N)
+    let work = s1
+        .chunks_mut(group_size * N)
         .zip(s2.chunks_mut(group_size * N))
         .zip(targets.chunks_mut(group_size))
         .enumerate()
-        .for_each(fill);
+        .map(fill)
+        .fold(CoordinateWork::default(), CoordinateWork::combine);
+    diagnostics.record("public_eval_worker_ns", work.public_eval_ns);
+    diagnostics.record("recurrence_worker_ns", work.recurrence_ns);
+    diagnostics.record("carry_worker_ns", work.carry_ns);
     let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
-    Ok(Coordinates { s1, s2, target })
+    Ok((Coordinates { s1, s2, target }, work.totals))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_coordinate_group<const PAIRS: usize>(
+    basis: &PowerBasis<EXTENSION_DEGREE>,
+    public: &FalconAlgebraicStatement,
+    start: usize,
+    a: &mut [CoordinatesInAlpha],
+    b: &mut [CoordinatesInAlpha],
+    targets: &mut [Ext],
+    evaluate: &impl Fn(usize) -> [Ext; 2],
+    prepare: &impl Fn(usize, [Ext; 2], &mut Ext) -> ([CoordinatesInAlpha; 2], CoordinatesInAlpha),
+    profile: bool,
+    work: &mut CoordinateWork,
+) {
+    let before = profile.then(std::time::Instant::now);
+    let evaluations: [_; PAIRS] = std::array::from_fn(|i| evaluate(start + i));
+    work.public_eval_ns += elapsed_ns(before);
+    let prepared: [_; PAIRS] =
+        std::array::from_fn(|i| prepare(start + i, evaluations[i], &mut targets[i]));
+    let before = profile.then(std::time::Instant::now);
+    let mut a = a.chunks_mut(N);
+    let mut b = b.chunks_mut(N);
+    basis.fill_powers_adjoint_pairs(
+        prepared.map(|v| v.0),
+        prepared.map(|v| v.1),
+        std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
+        std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
+    );
+    work.recurrence_ns += elapsed_ns(before);
+}
+
+fn coordinate_totals(
+    a: &[CoordinatesInAlpha],
+    b: &[CoordinatesInAlpha],
+    data: &WitnessData,
+    start: usize,
+    count: usize,
+) -> [i64; EXTENSION_DEGREE] {
+    let mut totals = [0i64; EXTENSION_DEGREE];
+    for (weights, witness) in [(a, &data.witness.s1), (b, &data.witness.s2)] {
+        for (weight, &coefficient) in weights
+            .iter()
+            .zip(witness[start..start + count].iter().flatten())
+        {
+            for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
+                *total += i64::from(coordinate) * i64::from(coefficient);
+            }
+        }
+    }
+    totals
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:carries")]
@@ -391,9 +586,16 @@ fn calculate_carries(
     };
     #[cfg(not(feature = "parallel"))]
     let totals = sum(0, batch);
+    carries_from_totals(totals, &coordinates.target)
+}
+
+fn carries_from_totals(
+    totals: [i64; EXTENSION_DEGREE],
+    target: &CoordinatesInAlpha,
+) -> Result<[i64; EXTENSION_DEGREE], FalconError> {
     let mut carries = [0i64; EXTENSION_DEGREE];
     for k in 0..EXTENSION_DEGREE {
-        let difference = totals[k] - i64::from(coordinates.target.coordinates()[k]);
+        let difference = totals[k] - i64::from(target.coordinates()[k]);
         if difference % Q != 0 {
             return Err(error("algebraic ring claim has no integer coordinate lift"));
         }
@@ -688,6 +890,117 @@ mod tests {
             assert_eq!(other.target, reference.target);
         }
         assert!(coordinates(&public, &lambda, Ext::ONE).is_err());
+    }
+
+    #[test]
+    fn coordinate_experiments_preserve_canonical_weights_and_signed_carries() {
+        let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
+        let field = field();
+        for batch in [1, 3, 9, 17, 129] {
+            let (_, mut public, mut data) = fixture(batch);
+            for i in 0..batch {
+                for j in 0..N {
+                    data.witness.s1[i][j] = if (i + j) % 2 == 0 {
+                        -(1 << 14)
+                    } else {
+                        (1 << 14) - 1
+                    };
+                    data.witness.s2[i][j] = if (i + j) % 3 == 0 {
+                        -(1 << 14)
+                    } else {
+                        (1 << 14) - 1
+                    };
+                }
+                // Multiplication by h=X^(N-1) shifts and negates every
+                // nonconstant coefficient; this reference needs no NTT.
+                for j in 0..N {
+                    let product = if j + 1 == N {
+                        i64::from(data.witness.s2[i][0])
+                    } else {
+                        -i64::from(data.witness.s2[i][j + 1])
+                    };
+                    public.targets[i][j] =
+                        (i64::from(data.witness.s1[i][j]) + product).rem_euclid(Q) as u16;
+                }
+            }
+            let lambda: Vec<_> = (0..batch)
+                .map(|i| {
+                    Ext::new(std::array::from_fn(|k| {
+                        ((i * 373 + k * 719 + 1) as i64 % Q) as u16
+                    }))
+                })
+                .collect();
+            let (expected, _) = coordinates_with_options(
+                &public,
+                &lambda,
+                alpha,
+                CoordinateOptions {
+                    paired_public: false,
+                    pairs: 4,
+                    fuse_carries: false,
+                },
+                None,
+            )
+            .unwrap();
+            let expected_carries = calculate_carries(&expected, &data).unwrap();
+            let xi = F::from_with_cfg(97u128, &field);
+            let expected_claim = collapse_claim(&expected, &expected_carries, xi, &field);
+            for workers in [1, 8, 16] {
+                #[cfg(feature = "parallel")]
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(workers)
+                    .build()
+                    .unwrap();
+                for pairs in [2, 4, 8] {
+                    for paired_public in [false, true] {
+                        let run = || {
+                            coordinates_with_options(
+                                &public,
+                                &lambda,
+                                alpha,
+                                CoordinateOptions {
+                                    paired_public,
+                                    pairs,
+                                    fuse_carries: true,
+                                },
+                                Some(&data),
+                            )
+                        };
+                        #[cfg(feature = "parallel")]
+                        let (actual, totals) = pool.install(run).unwrap();
+                        #[cfg(not(feature = "parallel"))]
+                        let (actual, totals) = run().unwrap();
+                        assert_eq!(
+                            actual.s1, expected.s1,
+                            "batch={batch}, workers={workers}, pairs={pairs}"
+                        );
+                        assert_eq!(actual.s2, expected.s2);
+                        assert_eq!(actual.target, expected.target);
+                        let carries = carries_from_totals(totals, &actual.target).unwrap();
+                        assert_eq!(carries, expected_carries);
+                        assert_eq!(
+                            collapse_claim(&actual, &carries, xi, &field),
+                            expected_claim
+                        );
+                    }
+                }
+            }
+            data.witness.s1[0][0] += 1;
+            let (actual, totals) = coordinates_with_options(
+                &public,
+                &lambda,
+                alpha,
+                CoordinateOptions {
+                    paired_public: true,
+                    pairs: 8,
+                    fuse_carries: true,
+                },
+                Some(&data),
+            )
+            .unwrap();
+            assert!(carries_from_totals(totals, &actual.target).is_err());
+            assert!(calculate_carries(&actual, &data).is_err());
+        }
     }
 
     #[test]

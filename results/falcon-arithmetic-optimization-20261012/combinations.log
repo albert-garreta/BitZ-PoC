@@ -1,0 +1,287 @@
+RUN combinations/factored-n1024-b1024-s128-t16-seed44
+OK factored-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_fusion-n1024-b1024-s128-t16-seed44
+OK owned_fusion-n1024-b1024-s128-t16-seed44
+RUN combinations/baseline-n1024-b1024-s128-t16-seed44
+OK baseline-n1024-b1024-s128-t16-seed44
+RUN combinations/factored_fast-n1024-b1024-s128-t16-seed44
+OK factored_fast-n1024-b1024-s128-t16-seed44
+RUN combinations/control-n1024-b1024-s128-t16-seed44
+OK control-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_norm-n1024-b1024-s128-t16-seed44
+OK owned_norm-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_all-n1024-b1024-s128-t16-seed44
+OK owned_all-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_carries-n1024-b1024-s128-t16-seed44
+OK owned_carries-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_initial-n1024-b1024-s128-t16-seed44
+OK owned_initial-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_public-n1024-b1024-s128-t16-seed44
+OK owned_public-n1024-b1024-s128-t16-seed44
+RUN combinations/owned-n1024-b1024-s128-t16-seed44
+OK owned-n1024-b1024-s128-t16-seed44
+RUN combinations/owned_all-n512-b1024-s128-t16-seed44
+OK owned_all-n512-b1024-s128-t16-seed44
+RUN combinations/factored_fast-n512-b1024-s128-t16-seed44
+OK factored_fast-n512-b1024-s128-t16-seed44
+RUN combinations/owned_initial-n512-b1024-s128-t16-seed44
+OK owned_initial-n512-b1024-s128-t16-seed44
+RUN combinations/owned_carries-n512-b1024-s128-t16-seed44
+OK owned_carries-n512-b1024-s128-t16-seed44
+RUN combinations/owned_public-n512-b1024-s128-t16-seed44
+OK owned_public-n512-b1024-s128-t16-seed44
+RUN combinations/factored-n512-b1024-s128-t16-seed44
+OK factored-n512-b1024-s128-t16-seed44
+RUN combinations/baseline-n512-b1024-s128-t16-seed44
+OK baseline-n512-b1024-s128-t16-seed44
+RUN combinations/owned_norm-n512-b1024-s128-t16-seed44
+OK owned_norm-n512-b1024-s128-t16-seed44
+RUN combinations/control-n512-b1024-s128-t16-seed44
+OK control-n512-b1024-s128-t16-seed44
+RUN combinations/owned_fusion-n512-b1024-s128-t16-seed44
+OK owned_fusion-n512-b1024-s128-t16-seed44
+RUN combinations/owned-n512-b1024-s128-t16-seed44
+OK owned-n512-b1024-s128-t16-seed44
+RUN combinations/baseline-n1024-b1024-s128-t16-seed42
+OK baseline-n1024-b1024-s128-t16-seed42
+RUN combinations/factored-n1024-b1024-s128-t16-seed42
+OK factored-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_public-n1024-b1024-s128-t16-seed42
+OK owned_public-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_fusion-n1024-b1024-s128-t16-seed42
+OK owned_fusion-n1024-b1024-s128-t16-seed42
+RUN combinations/owned-n1024-b1024-s128-t16-seed42
+OK owned-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_carries-n1024-b1024-s128-t16-seed42
+OK owned_carries-n1024-b1024-s128-t16-seed42
+RUN combinations/control-n1024-b1024-s128-t16-seed42
+OK control-n1024-b1024-s128-t16-seed42
+RUN combinations/factored_fast-n1024-b1024-s128-t16-seed42
+OK factored_fast-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_initial-n1024-b1024-s128-t16-seed42
+OK owned_initial-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_all-n1024-b1024-s128-t16-seed42
+OK owned_all-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_norm-n1024-b1024-s128-t16-seed42
+OK owned_norm-n1024-b1024-s128-t16-seed42
+RUN combinations/owned_norm-n1024-b1024-s128-t16-seed43
+OK owned_norm-n1024-b1024-s128-t16-seed43
+RUN combinations/owned_initial-n1024-b1024-s128-t16-seed43
+OK owned_initial-n1024-b1024-s128-t16-seed43
+RUN combinations/owned_public-n1024-b1024-s128-t16-seed43
+OK owned_public-n1024-b1024-s128-t16-seed43
+RUN combinations/baseline-n1024-b1024-s128-t16-seed43
+OK baseline-n1024-b1024-s128-t16-seed43
+RUN combinations/factored-n1024-b1024-s128-t16-seed43
+OK factored-n1024-b1024-s128-t16-seed43
+RUN combinations/owned_fusion-n1024-b1024-s128-t16-seed43
+OK owned_fusion-n1024-b1024-s128-t16-seed43
+RUN combinations/control-n1024-b1024-s128-t16-seed43
+OK control-n1024-b1024-s128-t16-seed43
+RUN combinations/owned_carries-n1024-b1024-s128-t16-seed43
+OK owned_carries-n1024-b1024-s128-t16-seed43
+RUN combinations/factored_fast-n1024-b1024-s128-t16-seed43
+OK factored_fast-n1024-b1024-s128-t16-seed43
+RUN combinations/owned-n1024-b1024-s128-t16-seed43
+OK owned-n1024-b1024-s128-t16-seed43
+RUN combinations/owned_all-n1024-b1024-s128-t16-seed43
+OK owned_all-n1024-b1024-s128-t16-seed43
+RUN combinations/owned-n512-b1024-s128-t16-seed43
+OK owned-n512-b1024-s128-t16-seed43
+RUN combinations/control-n512-b1024-s128-t16-seed43
+OK control-n512-b1024-s128-t16-seed43
+RUN combinations/owned_fusion-n512-b1024-s128-t16-seed43
+OK owned_fusion-n512-b1024-s128-t16-seed43
+RUN combinations/factored-n512-b1024-s128-t16-seed43
+OK factored-n512-b1024-s128-t16-seed43
+RUN combinations/owned_all-n512-b1024-s128-t16-seed43
+OK owned_all-n512-b1024-s128-t16-seed43
+RUN combinations/baseline-n512-b1024-s128-t16-seed43
+OK baseline-n512-b1024-s128-t16-seed43
+RUN combinations/owned_carries-n512-b1024-s128-t16-seed43
+OK owned_carries-n512-b1024-s128-t16-seed43
+RUN combinations/owned_initial-n512-b1024-s128-t16-seed43
+OK owned_initial-n512-b1024-s128-t16-seed43
+RUN combinations/owned_public-n512-b1024-s128-t16-seed43
+OK owned_public-n512-b1024-s128-t16-seed43
+RUN combinations/factored_fast-n512-b1024-s128-t16-seed43
+OK factored_fast-n512-b1024-s128-t16-seed43
+RUN combinations/owned_norm-n512-b1024-s128-t16-seed43
+OK owned_norm-n512-b1024-s128-t16-seed43
+RUN combinations/owned-n512-b1024-s128-t16-seed42
+OK owned-n512-b1024-s128-t16-seed42
+RUN combinations/factored_fast-n512-b1024-s128-t16-seed42
+OK factored_fast-n512-b1024-s128-t16-seed42
+RUN combinations/owned_carries-n512-b1024-s128-t16-seed42
+OK owned_carries-n512-b1024-s128-t16-seed42
+RUN combinations/owned_all-n512-b1024-s128-t16-seed42
+OK owned_all-n512-b1024-s128-t16-seed42
+RUN combinations/owned_public-n512-b1024-s128-t16-seed42
+OK owned_public-n512-b1024-s128-t16-seed42
+RUN combinations/baseline-n512-b1024-s128-t16-seed42
+OK baseline-n512-b1024-s128-t16-seed42
+RUN combinations/owned_initial-n512-b1024-s128-t16-seed42
+OK owned_initial-n512-b1024-s128-t16-seed42
+RUN combinations/factored-n512-b1024-s128-t16-seed42
+OK factored-n512-b1024-s128-t16-seed42
+RUN combinations/control-n512-b1024-s128-t16-seed42
+OK control-n512-b1024-s128-t16-seed42
+RUN combinations/owned_fusion-n512-b1024-s128-t16-seed42
+OK owned_fusion-n512-b1024-s128-t16-seed42
+RUN combinations/owned_norm-n512-b1024-s128-t16-seed42
+OK owned_norm-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/baseline-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/carries-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/control-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/factored-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/fusion-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/initial-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/norm-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/owned-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs2-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/pairs8-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n1024-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n1024-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n1024-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n512-b1024-s128-t16-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n512-b1024-s128-t16-seed43
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/screen/public-n512-b1024-s128-t16-seed44
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/baseline-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/baseline-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/carries-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/carries-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/control-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/control-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/factored-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/factored-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/fusion-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/fusion-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/initial-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/initial-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/norm-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/norm-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/owned-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/owned-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/pairs2-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/pairs2-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/pairs8-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/pairs8-n512-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/public-n1024-b3-s128-t1-seed42
+MIGRATED command provenance /home/john-wu/code/BitZ-pcs/results/falcon-arithmetic-optimization-20261012/runs/smoke/public-n512-b3-s128-t1-seed42
+{'verified_proofs': 1210, 'proofs_by_protocol': {'bitz/falcon1024-algebraic/non-zk/v9': 523, 'bitz/falcon512-algebraic/non-zk/v9': 523, 'bitz/falcon1024-algebraic/non-zk/v10-factored-ring': 82, 'bitz/falcon512-algebraic/non-zk/v10-factored-ring': 82}, 'input_source_equality': True, 'complete_proof_equality_within_protocol': True, 'raw_log_hashes_verified': True, 'command_provenance_verified': True, 'experimental_payload_limit_percent': 110, 'experimental_payload_comparisons': 8, 'max_experimental_payload_growth_percent': 0.5883327809081962}
+combinations   baseline     N= 512 t=16 total=34.515 prove=32.168 verify=11.174 rss=99576
+combinations   baseline     N=1024 t=16 total=61.821 prove=57.911 verify=18.598 rss=192428
+combinations   control      N= 512 t=16 total=34.661 prove=32.383 verify=10.608 rss=99912
+combinations   control      N=1024 t=16 total=61.592 prove=57.675 verify=18.604 rss=192168
+combinations   factored     N= 512 t=16 total=30.139 prove=27.791 verify=7.670 rss=87132
+combinations   factored     N=1024 t=16 total=51.072 prove=47.246 verify=9.833 rss=185864
+combinations   factored_fast N= 512 t=16 total=30.028 prove=27.656 verify=7.778 rss=86740
+combinations   factored_fast N=1024 t=16 total=51.088 prove=47.273 verify=9.754 rss=185828
+combinations   owned        N= 512 t=16 total=31.797 prove=29.469 verify=11.261 rss=90084
+combinations   owned        N=1024 t=16 total=54.373 prove=50.472 verify=17.170 rss=179668
+combinations   owned_all    N= 512 t=16 total=32.184 prove=29.855 verify=11.285 rss=89036
+combinations   owned_all    N=1024 t=16 total=54.229 prove=50.449 verify=16.847 rss=179964
+combinations   owned_carries N= 512 t=16 total=31.737 prove=29.291 verify=11.390 rss=89452
+combinations   owned_carries N=1024 t=16 total=53.655 prove=49.814 verify=17.186 rss=180020
+combinations   owned_fusion N= 512 t=16 total=31.922 prove=29.576 verify=11.263 rss=89076
+combinations   owned_fusion N=1024 t=16 total=54.371 prove=50.579 verify=17.279 rss=179924
+combinations   owned_initial N= 512 t=16 total=31.696 prove=29.456 verify=11.230 rss=89512
+combinations   owned_initial N=1024 t=16 total=54.281 prove=50.473 verify=17.180 rss=179676
+combinations   owned_norm   N= 512 t=16 total=32.240 prove=29.912 verify=11.454 rss=89920
+combinations   owned_norm   N=1024 t=16 total=55.039 prove=51.206 verify=16.993 rss=179636
+combinations   owned_public N= 512 t=16 total=31.718 prove=29.410 verify=10.927 rss=112440
+combinations   owned_public N=1024 t=16 total=54.423 prove=50.612 verify=17.165 rss=179844
+screen         baseline     N= 512 t=16 total=34.734 prove=32.276 verify=10.525 rss=99476
+screen         baseline     N=1024 t=16 total=61.718 prove=57.702 verify=18.672 rss=191980
+screen         carries      N= 512 t=16 total=34.342 prove=31.996 verify=11.075 rss=99840
+screen         carries      N=1024 t=16 total=61.159 prove=57.283 verify=18.641 rss=191620
+screen         control      N= 512 t=16 total=34.632 prove=32.317 verify=10.448 rss=99968
+screen         control      N=1024 t=16 total=61.785 prove=57.878 verify=18.550 rss=191652
+screen         factored     N= 512 t=16 total=30.050 prove=27.727 verify=7.776 rss=86716
+screen         factored     N=1024 t=16 total=51.494 prove=47.597 verify=9.672 rss=185216
+screen         fusion       N= 512 t=16 total=34.435 prove=32.119 verify=10.858 rss=100084
+screen         fusion       N=1024 t=16 total=61.923 prove=57.925 verify=18.601 rss=191864
+screen         initial      N= 512 t=16 total=34.632 prove=32.190 verify=11.080 rss=99892
+screen         initial      N=1024 t=16 total=61.786 prove=57.960 verify=18.587 rss=192044
+screen         norm         N= 512 t=16 total=35.160 prove=32.856 verify=11.306 rss=99840
+screen         norm         N=1024 t=16 total=62.365 prove=58.573 verify=18.300 rss=191520
+screen         owned        N= 512 t=16 total=32.093 prove=29.678 verify=11.321 rss=89436
+screen         owned        N=1024 t=16 total=54.490 prove=50.682 verify=17.169 rss=180176
+screen         pairs2       N= 512 t=16 total=34.910 prove=32.508 verify=11.205 rss=99704
+screen         pairs2       N=1024 t=16 total=61.614 prove=57.687 verify=18.802 rss=192620
+screen         pairs8       N= 512 t=16 total=35.118 prove=32.766 verify=10.587 rss=100096
+screen         pairs8       N=1024 t=16 total=61.809 prove=57.753 verify=18.482 rss=191656
+screen         public       N= 512 t=16 total=35.336 prove=32.931 verify=11.419 rss=103668
+screen         public       N=1024 t=16 total=62.000 prove=58.149 verify=18.640 rss=191984
+smoke          baseline     N= 512 t= 1 total=13.597 prove=13.417 verify=2.794 rss=16588
+smoke          baseline     N=1024 t= 1 total=14.233 prove=14.029 verify=2.983 rss=17216
+smoke          carries      N= 512 t= 1 total=13.590 prove=13.417 verify=2.780 rss=16388
+smoke          carries      N=1024 t= 1 total=14.324 prove=14.128 verify=2.965 rss=17292
+smoke          control      N= 512 t= 1 total=13.556 prove=13.387 verify=2.780 rss=16896
+smoke          control      N=1024 t= 1 total=14.289 prove=14.094 verify=2.972 rss=17036
+smoke          factored     N= 512 t= 1 total=13.545 prove=13.371 verify=2.873 rss=16660
+smoke          factored     N=1024 t= 1 total=14.435 prove=14.239 verify=2.891 rss=17188
+smoke          fusion       N= 512 t= 1 total=14.452 prove=14.263 verify=2.799 rss=17216
+smoke          fusion       N=1024 t= 1 total=14.272 prove=14.071 verify=2.987 rss=17200
+smoke          initial      N= 512 t= 1 total=13.579 prove=13.407 verify=2.779 rss=16368
+smoke          initial      N=1024 t= 1 total=14.297 prove=14.101 verify=2.968 rss=16720
+smoke          norm         N= 512 t= 1 total=13.603 prove=13.425 verify=2.814 rss=16372
+smoke          norm         N=1024 t= 1 total=14.221 prove=14.026 verify=2.961 rss=17144
+smoke          owned        N= 512 t= 1 total=13.596 prove=13.423 verify=2.781 rss=16632
+smoke          owned        N=1024 t= 1 total=14.277 prove=14.074 verify=2.972 rss=17176
+smoke          pairs2       N= 512 t= 1 total=13.559 prove=13.387 verify=2.777 rss=16880
+smoke          pairs2       N=1024 t= 1 total=14.242 prove=14.047 verify=2.960 rss=17560
+smoke          pairs8       N= 512 t= 1 total=13.583 prove=13.413 verify=2.803 rss=16884
+smoke          pairs8       N=1024 t= 1 total=14.254 prove=14.047 verify=2.972 rss=17228
+smoke          public       N= 512 t= 1 total=13.574 prove=13.401 verify=2.790 rss=16828
+smoke          public       N=1024 t= 1 total=14.278 prove=14.082 verify=2.968 rss=17176

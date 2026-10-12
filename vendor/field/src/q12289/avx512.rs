@@ -13,6 +13,50 @@ const SHIFT_INDICES: [u16; 32] = [
     25, 26, 27, 28, 29, 30,
 ];
 
+/// Two exact public dot products over a coordinate-major table.
+///
+/// # Safety
+/// AVX512F+BW must be available. Every input is canonical, all slices have the
+/// same length, and their length is at most u32::MAX. Four multiply-adds put at
+/// most eight products in each signed32 lane: 8*12288^2 < 2^31. Widen each block
+/// before accumulating; the complete sum fits u64 under the length bound.
+#[target_feature(enable = "avx512f,avx512bw")]
+pub(super) unsafe fn evaluate_public_pair<const K: usize>(
+    coordinates: &[Vec<u16>; K],
+    a: &[u16],
+    b: &[u16],
+) -> [[u16; K]; 2] {
+    let mut result = [[0; K]; 2];
+    for k in 0..K {
+        let weights = &coordinates[k];
+        let mut totals = [0u64; 2];
+        let vector_len = a.len() / 32 * 32;
+        for start in (0..vector_len).step_by(128) {
+            let mut sums = [_mm512_setzero_si512(); 2];
+            for offset in (start..(start + 128).min(vector_len)).step_by(32) {
+                // A vector is 32 u16 entries, entirely within each input.
+                let w = unsafe { _mm512_loadu_si512(weights.as_ptr().add(offset).cast()) };
+                let x = unsafe { _mm512_loadu_si512(a.as_ptr().add(offset).cast()) };
+                let y = unsafe { _mm512_loadu_si512(b.as_ptr().add(offset).cast()) };
+                sums[0] = _mm512_add_epi32(sums[0], _mm512_madd_epi16(w, x));
+                sums[1] = _mm512_add_epi32(sums[1], _mm512_madd_epi16(w, y));
+            }
+            for (total, sum) in totals.iter_mut().zip(sums) {
+                let low = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum));
+                let high = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64::<1>(sum));
+                *total += _mm512_reduce_add_epi64(_mm512_add_epi64(low, high)) as u64;
+            }
+        }
+        for j in vector_len..a.len() {
+            totals[0] += u64::from(weights[j]) * u64::from(a[j]);
+            totals[1] += u64::from(weights[j]) * u64::from(b[j]);
+        }
+        result[0][k] = (totals[0] % u64::from(Q)) as u16;
+        result[1][k] = (totals[1] % u64::from(Q)) as u16;
+    }
+    result
+}
+
 #[target_feature(enable = "avx512f,avx512bw")]
 unsafe fn load_starts<const K: usize>(starts: [PowerCoordinates<K>; 2]) -> __m512i {
     let mut packed = [0u16; 32];
@@ -253,6 +297,83 @@ pub(super) unsafe fn fill_powers_adjoint_pairs<const K: usize, const PAIRS: usiz
             let sum = _mm512_sub_epi16(_mm512_add_epi16(remainder, shifted), subtract);
             // As in fill_pair: each remainder lies in [-8448,8448] and the
             // predecessor is canonical, giving sum in [-16896,29184].
+            values[pair] = unsafe { reduce_adjoint(sum, q) };
+        }
+    }
+}
+
+/// Pack two adjoint sequences per vector, sharing their public correction.
+///
+/// # Safety
+/// AVX512F+BW are available, K=11, PAIRS>0, and all polynomials and outputs
+/// have equal lengths. All input coordinates and polynomial coefficients are
+/// canonical. Mutable outputs are disjoint slices supplied by the caller.
+#[target_feature(enable = "avx512f,avx512bw")]
+pub(super) unsafe fn fill_adjoint_pairs<const K: usize, const PAIRS: usize>(
+    feedback: &[u16; K],
+    starts: [[PowerCoordinates<K>; 2]; PAIRS],
+    subtract: PowerCoordinates<K>,
+    polynomials: [[&[u16]; 2]; PAIRS],
+    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+) {
+    assert_eq!(K, 11);
+    assert!(PAIRS > 0);
+    let len = polynomials[0][0].len();
+    for pair in 0..PAIRS {
+        for side in 0..2 {
+            assert_eq!(polynomials[pair][side].len(), len);
+            assert_eq!(outputs[pair][side].len(), len);
+        }
+    }
+    let mut feedback_coefficients = [0i16; 32];
+    let mut feedback_quotients = [0i16; 32];
+    let mut subtract_coefficients = [0i16; 32];
+    let mut subtract_quotients = [0i16; 32];
+    for i in 0..11 {
+        for offset in [0, 16] {
+            (
+                feedback_coefficients[offset + i],
+                feedback_quotients[offset + i],
+            ) = centered_multiplier(feedback[i]);
+            (
+                subtract_coefficients[offset + i],
+                subtract_quotients[offset + i],
+            ) = centered_multiplier(subtract.0[i]);
+        }
+    }
+    // Each source is a full 64-byte array.
+    let feedback = unsafe { _mm512_loadu_si512(feedback_coefficients.as_ptr().cast()) };
+    let quotients = unsafe { _mm512_loadu_si512(feedback_quotients.as_ptr().cast()) };
+    let correction = unsafe { _mm512_loadu_si512(subtract_coefficients.as_ptr().cast()) };
+    let correction_quotients = unsafe { _mm512_loadu_si512(subtract_quotients.as_ptr().cast()) };
+    let mut values = starts.map(|start| unsafe { load_starts(start) });
+    let q = _mm512_set1_epi16(Q as i16);
+    let top_indices = unsafe { _mm512_loadu_si512(TOP_INDICES.as_ptr().cast()) };
+    let shift_indices = unsafe { _mm512_loadu_si512(SHIFT_INDICES.as_ptr().cast()) };
+    for j in 0..len {
+        for pair in 0..PAIRS {
+            let [a, b] = &mut outputs[pair];
+            unsafe { store(values[pair], &mut a[j], &mut b[j]) };
+        }
+        if j + 1 == len {
+            break;
+        }
+        for pair in 0..PAIRS {
+            let value = values[pair];
+            let top = _mm512_permutexvar_epi16(top_indices, value);
+            let quotient = _mm512_mulhrs_epi16(top, quotients);
+            let product = _mm512_mullo_epi16(top, feedback);
+            let remainder = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
+            let shifted = _mm512_maskz_permutexvar_epi16(SHIFT, shift_indices, value);
+            let left = _mm512_set1_epi16(polynomials[pair][0][len - 1 - j] as i16);
+            let right = _mm512_set1_epi16(polynomials[pair][1][len - 1 - j] as i16);
+            let scalar = _mm512_mask_blend_epi16(0xffff0000, left, right);
+            let quotient = _mm512_mulhrs_epi16(scalar, correction_quotients);
+            let product = _mm512_mullo_epi16(scalar, correction);
+            let subtract = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
+            let sum = _mm512_sub_epi16(_mm512_add_epi16(remainder, shifted), subtract);
+            // Both exact remainders are in [-8448,8448], with a canonical
+            // predecessor, so the same [-16896,29184] reduction bound applies.
             values[pair] = unsafe { reduce_adjoint(sum, q) };
         }
     }

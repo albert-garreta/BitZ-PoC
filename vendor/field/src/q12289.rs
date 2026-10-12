@@ -27,6 +27,71 @@ pub const fn extension_constant(k: usize) -> u16 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Q12289Extension<const K: usize>(pub [u16; K]);
 
+/// Shared public extension weights, transposed for two base-field dot products.
+///
+/// Preparation and evaluation validate canonical inputs. Accumulation is exact
+/// in integers until the single reduction of each result coordinate.
+#[derive(Clone, Debug)]
+pub struct PreparedPublicDotProducts<const K: usize> {
+    coordinates: [Vec<u16>; K],
+    len: usize,
+}
+
+impl<const K: usize> PreparedPublicDotProducts<K> {
+    pub fn new(weights: &[Q12289Extension<K>]) -> Self {
+        assert!(matches!(K, 9 | 10 | 11), "unsupported extension degree");
+        assert!(
+            weights.iter().all(|value| value.canonical()),
+            "noncanonical weight"
+        );
+        // This length bound also proves every complete u64 accumulator fits.
+        assert!(
+            weights.len() <= u32::MAX as usize,
+            "public dot product too long"
+        );
+        Self {
+            coordinates: std::array::from_fn(|k| weights.iter().map(|value| value.0[k]).collect()),
+            len: weights.len(),
+        }
+    }
+
+    pub fn evaluate_pair(&self, a: &[u16], b: &[u16]) -> [Q12289Extension<K>; 2] {
+        assert_eq!(a.len(), self.len, "public dot product length differs");
+        assert_eq!(b.len(), self.len, "public dot product length differs");
+        assert!(
+            a.iter().chain(b).all(|&value| u64::from(value) < Q),
+            "noncanonical coefficient"
+        );
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "avx512f",
+            target_feature = "avx512bw"
+        ))]
+        {
+            // SAFETY: build features and canonical equal-length arrays satisfy
+            // the kernel contract. The constructor bounds the final u64 sum.
+            return unsafe { avx512::evaluate_public_pair(&self.coordinates, a, b) }
+                .map(Q12289Extension);
+        }
+        #[allow(unreachable_code)]
+        self.evaluate_pair_portable(a, b)
+    }
+
+    fn evaluate_pair_portable(&self, a: &[u16], b: &[u16]) -> [Q12289Extension<K>; 2] {
+        let mut result = [[0; K]; 2];
+        for k in 0..K {
+            let mut sums = [0u64; 2];
+            for ((&weight, &a), &b) in self.coordinates[k].iter().zip(a).zip(b) {
+                sums[0] += u64::from(weight) * u64::from(a);
+                sums[1] += u64::from(weight) * u64::from(b);
+            }
+            result[0][k] = (sums[0] % Q) as u16;
+            result[1][k] = (sums[1] % Q) as u16;
+        }
+        result.map(Q12289Extension)
+    }
+}
+
 impl<const K: usize> Q12289Extension<K> {
     pub const ZERO: Self = Self([0; K]);
     pub const ONE: Self = {
@@ -86,6 +151,71 @@ impl<const K: usize> Q12289Extension<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepared_public_dot_products_match_independent_reference() {
+        fn check<const K: usize>() {
+            for len in [0, 1, 31, 32, 33, 127, 128, 129, 511, 512, 1024] {
+                for maximal in [false, true] {
+                    let weights: Vec<_> = (0..len)
+                        .map(|i| {
+                            Q12289Extension::new(std::array::from_fn(|k| {
+                                if maximal {
+                                    (Q - 1) as u16
+                                } else {
+                                    ((i * 97 + k * 53) as u64 % Q) as u16
+                                }
+                            }))
+                        })
+                        .collect();
+                    let a: Vec<_> = (0..len)
+                        .map(|i| {
+                            if maximal {
+                                (Q - 1) as u16
+                            } else {
+                                (i as u64 * 137 % Q) as u16
+                            }
+                        })
+                        .collect();
+                    let b: Vec<_> = (0..len)
+                        .map(|i| ((i as u64 * 23 + Q - 1) % Q) as u16)
+                        .collect();
+                    let prepared = PreparedPublicDotProducts::new(&weights);
+                    let expected = [&a, &b].map(|input| {
+                        let mut sums = [0u64; K];
+                        for (&coefficient, weight) in input.iter().zip(&weights) {
+                            for (total, &coordinate) in sums.iter_mut().zip(&weight.0) {
+                                *total += u64::from(coefficient) * u64::from(coordinate);
+                            }
+                        }
+                        Q12289Extension::new(sums.map(|sum| (sum % Q) as u16))
+                    });
+                    assert_eq!(prepared.evaluate_pair(&a, &b), expected, "K={K}, len={len}");
+                    assert_eq!(prepared.evaluate_pair_portable(&a, &b), expected);
+                    #[cfg(target_arch = "x86_64")]
+                    if std::arch::is_x86_feature_detected!("avx512f")
+                        && std::arch::is_x86_feature_detected!("avx512bw")
+                    {
+                        // SAFETY: runtime features checked; construction above uses
+                        // canonical coordinates and equal bounded lengths.
+                        let actual =
+                            unsafe { avx512::evaluate_public_pair(&prepared.coordinates, &a, &b) };
+                        assert_eq!(actual.map(Q12289Extension), expected);
+                    }
+                }
+            }
+        }
+        check::<9>();
+        check::<10>();
+        check::<11>();
+    }
+
+    #[test]
+    #[should_panic(expected = "noncanonical coefficient")]
+    fn prepared_public_dot_products_reject_noncanonical_coefficients() {
+        let prepared = PreparedPublicDotProducts::new(&[Q12289Extension::<11>::ONE]);
+        prepared.evaluate_pair(&[Q as u16], &[0]);
+    }
     fn trim(p: &mut Vec<u64>) {
         while p.last() == Some(&0) {
             p.pop();
@@ -413,6 +543,68 @@ impl<const K: usize> PowerBasis<K> {
         }
     }
 
+    /// Emit pairs of adjoint sequences with one shared subtraction vector.
+    ///
+    /// Every polynomial and output has the same length. All coordinates belong
+    /// to this basis, and polynomial coefficients must be canonical. The degree
+    /// eleven SIMD path packs two distinct public polynomials in each vector.
+    pub fn fill_adjoint_pairs<const PAIRS: usize>(
+        &self,
+        starts: [[PowerCoordinates<K>; 2]; PAIRS],
+        subtract: PowerCoordinates<K>,
+        polynomials: [[&[u16]; 2]; PAIRS],
+        outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    ) {
+        const {
+            assert!(PAIRS > 0);
+        }
+        let len = polynomials[0][0].len();
+        for pair in 0..PAIRS {
+            for side in 0..2 {
+                assert_eq!(
+                    polynomials[pair][side].len(),
+                    len,
+                    "polynomial lengths differ"
+                );
+                assert_eq!(outputs[pair][side].len(), len, "sequence lengths differ");
+                assert!(
+                    polynomials[pair][side]
+                        .iter()
+                        .all(|&scalar| u64::from(scalar) < Q),
+                    "noncanonical base-field scalar"
+                );
+            }
+        }
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "avx512f",
+            target_feature = "avx512bw"
+        ))]
+        if K == 11 {
+            // SAFETY: target features, degree, lengths and canonical scalars
+            // were checked; PowerCoordinates preserves canonical coordinates.
+            unsafe {
+                avx512::fill_adjoint_pairs(&self.feedback, starts, subtract, polynomials, outputs)
+            };
+            return;
+        }
+        for (pair, outputs) in outputs.into_iter().enumerate() {
+            for (side, output) in outputs.into_iter().enumerate() {
+                let mut value = starts[pair][side];
+                for (j, slot) in output.iter_mut().enumerate() {
+                    *slot = value;
+                    if j + 1 < len {
+                        self.advance_sub_scaled(
+                            &mut value,
+                            polynomials[pair][side][len - 1 - j],
+                            subtract,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Emit independent power/adjoint pairs with one shared public generator.
     ///
     /// Every polynomial and output must have the same length. Coordinates and
@@ -496,6 +688,107 @@ fn inverse_mod_q(value: u16) -> u32 {
 #[cfg(test)]
 mod power_basis_tests {
     use super::*;
+
+    fn check_shared_adjoint_pairs<const K: usize, const PAIRS: usize>() {
+        let mut alpha = Q12289Extension::<K>::ONE;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let subtract = Q12289Extension([12288; K]);
+        let fixed_starts: [[Q12289Extension<K>; 2]; PAIRS] = std::array::from_fn(|pair| {
+            std::array::from_fn(|side| {
+                Q12289Extension(std::array::from_fn(|k| {
+                    ((pair * 1237 + side * 731 + k * 193) as u64 % Q) as u16
+                }))
+            })
+        });
+        let starts = fixed_starts.map(|pair| pair.map(|value| basis.encode(value)));
+        for len in [0, 1, 2, 31, 32, 33, 127, 128, 129, 1024] {
+            let polynomials: [[Vec<u16>; 2]; PAIRS] = std::array::from_fn(|pair| {
+                std::array::from_fn(|side| {
+                    (0..len)
+                        .map(|j| [0, 1, 6144, 6145, 12287, 12288][(pair + side + j) % 6])
+                        .collect()
+                })
+            });
+            let expected: [[Vec<PowerCoordinates<K>>; 2]; PAIRS] = std::array::from_fn(|pair| {
+                std::array::from_fn(|side| {
+                    let mut value = fixed_starts[pair][side];
+                    (0..len)
+                        .map(|j| {
+                            let out = basis.encode(value);
+                            let mut scalar = Q12289Extension::ZERO;
+                            scalar.0[0] = polynomials[pair][side][len - 1 - j];
+                            value = alpha.mul(value).sub(scalar.mul(subtract));
+                            out
+                        })
+                        .collect()
+                })
+            });
+            let sentinel = PowerCoordinates([u16::MAX; K]);
+            let mut actual: [[Vec<PowerCoordinates<K>>; 2]; PAIRS] =
+                std::array::from_fn(|_| std::array::from_fn(|_| vec![sentinel; len + 4]));
+            let mut slots = actual.iter_mut();
+            let outputs = std::array::from_fn(|_| {
+                let [a, b] = slots.next().unwrap();
+                [&mut a[2..len + 2], &mut b[2..len + 2]]
+            });
+            let polynomials = std::array::from_fn(|pair| {
+                std::array::from_fn(|side| polynomials[pair][side].as_slice())
+            });
+            basis.fill_adjoint_pairs(starts, basis.encode(subtract), polynomials, outputs);
+            for (pair, reference) in actual.iter().zip(&expected) {
+                for (output, reference) in pair.iter().zip(reference) {
+                    assert_eq!(&output[2..len + 2], reference);
+                    assert_eq!(&output[..2], &[sentinel; 2]);
+                    assert_eq!(&output[len + 2..], &[sentinel; 2]);
+                }
+            }
+            #[cfg(target_arch = "x86_64")]
+            if K == 11
+                && std::arch::is_x86_feature_detected!("avx512f")
+                && std::arch::is_x86_feature_detected!("avx512bw")
+            {
+                for pair in &mut actual {
+                    for output in pair {
+                        output.fill(sentinel);
+                    }
+                }
+                let mut slots = actual.iter_mut();
+                let outputs = std::array::from_fn(|_| {
+                    let [a, b] = slots.next().unwrap();
+                    [&mut a[2..len + 2], &mut b[2..len + 2]]
+                });
+                // SAFETY: runtime feature/degree checks above and canonical
+                // equal-length inputs; the mutable slices remain disjoint.
+                unsafe {
+                    avx512::fill_adjoint_pairs(
+                        &basis.feedback,
+                        starts,
+                        basis.encode(subtract),
+                        polynomials,
+                        outputs,
+                    )
+                };
+                for (pair, reference) in actual.iter().zip(&expected) {
+                    for (output, reference) in pair.iter().zip(reference) {
+                        assert_eq!(&output[2..len + 2], reference);
+                        assert_eq!(&output[..2], &[sentinel; 2]);
+                        assert_eq!(&output[len + 2..], &[sentinel; 2]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_adjoint_pairs_match_fixed_basis_with_guarded_tails() {
+        check_shared_adjoint_pairs::<9, 2>();
+        check_shared_adjoint_pairs::<10, 2>();
+        check_shared_adjoint_pairs::<11, 1>();
+        check_shared_adjoint_pairs::<11, 2>();
+        check_shared_adjoint_pairs::<11, 4>();
+        check_shared_adjoint_pairs::<11, 8>();
+    }
 
     fn check<const K: usize>() {
         for seed in 0..12 {

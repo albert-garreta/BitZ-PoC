@@ -1,0 +1,67 @@
+RUN smoke/fusion-n512-b3-s128-t1-seed42
+OK fusion-n512-b3-s128-t1-seed42
+RUN smoke/norm-n512-b3-s128-t1-seed42
+OK norm-n512-b3-s128-t1-seed42
+RUN smoke/factored-n512-b3-s128-t1-seed42
+OK factored-n512-b3-s128-t1-seed42
+RUN smoke/owned-n512-b3-s128-t1-seed42
+OK owned-n512-b3-s128-t1-seed42
+RUN smoke/control-n512-b3-s128-t1-seed42
+OK control-n512-b3-s128-t1-seed42
+RUN smoke/baseline-n512-b3-s128-t1-seed42
+OK baseline-n512-b3-s128-t1-seed42
+RUN smoke/carries-n512-b3-s128-t1-seed42
+OK carries-n512-b3-s128-t1-seed42
+RUN smoke/pairs2-n512-b3-s128-t1-seed42
+OK pairs2-n512-b3-s128-t1-seed42
+RUN smoke/initial-n512-b3-s128-t1-seed42
+OK initial-n512-b3-s128-t1-seed42
+RUN smoke/public-n512-b3-s128-t1-seed42
+OK public-n512-b3-s128-t1-seed42
+RUN smoke/pairs8-n512-b3-s128-t1-seed42
+OK pairs8-n512-b3-s128-t1-seed42
+RUN smoke/baseline-n1024-b3-s128-t1-seed42
+OK baseline-n1024-b3-s128-t1-seed42
+RUN smoke/factored-n1024-b3-s128-t1-seed42
+OK factored-n1024-b3-s128-t1-seed42
+RUN smoke/pairs2-n1024-b3-s128-t1-seed42
+OK pairs2-n1024-b3-s128-t1-seed42
+RUN smoke/norm-n1024-b3-s128-t1-seed42
+OK norm-n1024-b3-s128-t1-seed42
+RUN smoke/control-n1024-b3-s128-t1-seed42
+OK control-n1024-b3-s128-t1-seed42
+RUN smoke/initial-n1024-b3-s128-t1-seed42
+OK initial-n1024-b3-s128-t1-seed42
+RUN smoke/pairs8-n1024-b3-s128-t1-seed42
+OK pairs8-n1024-b3-s128-t1-seed42
+RUN smoke/owned-n1024-b3-s128-t1-seed42
+OK owned-n1024-b3-s128-t1-seed42
+RUN smoke/public-n1024-b3-s128-t1-seed42
+OK public-n1024-b3-s128-t1-seed42
+RUN smoke/carries-n1024-b3-s128-t1-seed42
+OK carries-n1024-b3-s128-t1-seed42
+RUN smoke/fusion-n1024-b3-s128-t1-seed42
+OK fusion-n1024-b3-s128-t1-seed42
+{'verified_proofs': 22, 'proofs_by_protocol': {'bitz/falcon1024-algebraic/non-zk/v9': 10, 'bitz/falcon512-algebraic/non-zk/v9': 10, 'bitz/falcon1024-algebraic/non-zk/v10-factored-ring': 1, 'bitz/falcon512-algebraic/non-zk/v10-factored-ring': 1}, 'input_source_equality': True, 'complete_proof_equality_within_protocol': True, 'raw_log_hashes_verified': True}
+smoke          baseline     N= 512 t= 1 total=13.597 prove=13.417 verify=2.794 rss=16588
+smoke          baseline     N=1024 t= 1 total=14.233 prove=14.029 verify=2.983 rss=17216
+smoke          carries      N= 512 t= 1 total=13.590 prove=13.417 verify=2.780 rss=16388
+smoke          carries      N=1024 t= 1 total=14.324 prove=14.128 verify=2.965 rss=17292
+smoke          control      N= 512 t= 1 total=13.556 prove=13.387 verify=2.780 rss=16896
+smoke          control      N=1024 t= 1 total=14.289 prove=14.094 verify=2.972 rss=17036
+smoke          factored     N= 512 t= 1 total=13.545 prove=13.371 verify=2.873 rss=16660
+smoke          factored     N=1024 t= 1 total=14.435 prove=14.239 verify=2.891 rss=17188
+smoke          fusion       N= 512 t= 1 total=14.452 prove=14.263 verify=2.799 rss=17216
+smoke          fusion       N=1024 t= 1 total=14.272 prove=14.071 verify=2.987 rss=17200
+smoke          initial      N= 512 t= 1 total=13.579 prove=13.407 verify=2.779 rss=16368
+smoke          initial      N=1024 t= 1 total=14.297 prove=14.101 verify=2.968 rss=16720
+smoke          norm         N= 512 t= 1 total=13.603 prove=13.425 verify=2.814 rss=16372
+smoke          norm         N=1024 t= 1 total=14.221 prove=14.026 verify=2.961 rss=17144
+smoke          owned        N= 512 t= 1 total=13.596 prove=13.423 verify=2.781 rss=16632
+smoke          owned        N=1024 t= 1 total=14.277 prove=14.074 verify=2.972 rss=17176
+smoke          pairs2       N= 512 t= 1 total=13.559 prove=13.387 verify=2.777 rss=16880
+smoke          pairs2       N=1024 t= 1 total=14.242 prove=14.047 verify=2.960 rss=17560
+smoke          pairs8       N= 512 t= 1 total=13.583 prove=13.413 verify=2.803 rss=16884
+smoke          pairs8       N=1024 t= 1 total=14.254 prove=14.047 verify=2.972 rss=17228
+smoke          public       N= 512 t= 1 total=13.574 prove=13.401 verify=2.790 rss=16828
+smoke          public       N=1024 t= 1 total=14.278 prove=14.082 verify=2.968 rss=17176

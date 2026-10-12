@@ -1,0 +1,9 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-push-target/debug/deps/bitz-d75c877f61e79eb9",
+    "falcon",
+    "--test-threads=1"
+  ],
+  "RAYON_NUM_THREADS": 8,
+  "experiment_environment_cleared": true
+}

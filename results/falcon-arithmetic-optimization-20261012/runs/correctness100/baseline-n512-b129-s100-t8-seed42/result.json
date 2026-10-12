@@ -1,0 +1,32 @@
+{
+  "job": {
+    "id": "baseline-n512-b129-s100-t8-seed42",
+    "variant": "arithmetic",
+    "config": "baseline",
+    "threads": 8,
+    "seed": 42
+  },
+  "phase": "correctness100",
+  "degree": 512,
+  "batch": 129,
+  "security": 100,
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v9",
+      "input_digest": "408e2ab6d671f29c2a9f3dc5a4a408075b9592d894cefaadd917f4a839bcf080",
+      "source_root": "92c4e0ddc466e6386830774ac2eaac64f0cf364442f9b26e4cdeafe07b7a7d7e",
+      "proof_debug_digest": "e1f5f75c7b082897ecf18552e75282571eafc6efc127200f3fb5215f41e45c7c",
+      "total_prover_ms": 10.118443,
+      "prove_ms": 9.421586,
+      "witness_commit_ms": 0.696787,
+      "verify_ms": 3.007167,
+      "process_peak_rss_kib": 30768,
+      "proof_payload_bytes": 136802
+    }
+  ],
+  "verified": true,
+  "command_sha256": "ce412025ce0b03e8a945c471bdfbdc1d85ecfd8f4719e02bb5f1051c954e4861",
+  "stdout_sha256": "257fd6f1729a3a360856f2222ec9d2d0a8dee1c5a8ed7b1304c5f7ef0ff68223",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

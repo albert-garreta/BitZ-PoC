@@ -1,0 +1,34 @@
+{
+  "owned_initial": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_WORD_INITIAL": "on"
+  },
+  "owned_fusion": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_WORD_FUSION": "on"
+  },
+  "owned_norm": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_NORM_FACTORED": "on"
+  },
+  "owned_carries": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_CARRY_FUSION": "on"
+  },
+  "owned_all": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_WORD_INITIAL": "on",
+    "BITZ_ARITHMETIC_WORD_FUSION": "on",
+    "BITZ_ARITHMETIC_NORM_FACTORED": "on",
+    "BITZ_ARITHMETIC_CARRY_FUSION": "on"
+  },
+  "owned_public": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_PUBLIC_EVAL": "paired"
+  },
+  "factored_fast": {
+    "BITZ_ARITHMETIC_RING": "factored",
+    "BITZ_ARITHMETIC_WORD_INITIAL": "on",
+    "BITZ_ARITHMETIC_WORD_FUSION": "on"
+  }
+}

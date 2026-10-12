@@ -1,0 +1,5 @@
+{
+  "production": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on"
+  }
+}

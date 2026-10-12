@@ -1,0 +1,213 @@
+RUN correctness128/owned-n512-b1023-s128-t8-seed42
+OK owned-n512-b1023-s128-t8-seed42
+RUN correctness128/baseline-n512-b1023-s128-t8-seed42
+OK baseline-n512-b1023-s128-t8-seed42
+RUN correctness128/factored-n512-b1023-s128-t8-seed42
+OK factored-n512-b1023-s128-t8-seed42
+RUN correctness128/owned-n1024-b1023-s128-t1-seed42
+OK owned-n1024-b1023-s128-t1-seed42
+RUN correctness128/baseline-n1024-b1023-s128-t1-seed42
+OK baseline-n1024-b1023-s128-t1-seed42
+RUN correctness128/factored-n1024-b1023-s128-t1-seed42
+OK factored-n1024-b1023-s128-t1-seed42
+RUN correctness128/baseline-n1024-b1023-s128-t8-seed42
+OK baseline-n1024-b1023-s128-t8-seed42
+RUN correctness128/owned-n1024-b1023-s128-t8-seed42
+OK owned-n1024-b1023-s128-t8-seed42
+RUN correctness128/factored-n1024-b1023-s128-t8-seed42
+OK factored-n1024-b1023-s128-t8-seed42
+RUN correctness128/owned-n512-b1023-s128-t16-seed42
+OK owned-n512-b1023-s128-t16-seed42
+RUN correctness128/baseline-n512-b1023-s128-t16-seed42
+OK baseline-n512-b1023-s128-t16-seed42
+RUN correctness128/factored-n512-b1023-s128-t16-seed42
+OK factored-n512-b1023-s128-t16-seed42
+RUN correctness128/baseline-n1024-b1023-s128-t16-seed42
+OK baseline-n1024-b1023-s128-t16-seed42
+RUN correctness128/owned-n1024-b1023-s128-t16-seed42
+OK owned-n1024-b1023-s128-t16-seed42
+RUN correctness128/factored-n1024-b1023-s128-t16-seed42
+OK factored-n1024-b1023-s128-t16-seed42
+RUN correctness128/baseline-n512-b1023-s128-t1-seed42
+OK baseline-n512-b1023-s128-t1-seed42
+RUN correctness128/factored-n512-b1023-s128-t1-seed42
+OK factored-n512-b1023-s128-t1-seed42
+RUN correctness128/owned-n512-b1023-s128-t1-seed42
+OK owned-n512-b1023-s128-t1-seed42
+{'verified_proofs': 2854, 'proofs_by_protocol': {'bitz/falcon1024-algebraic/non-zk/v9': 1141, 'bitz/falcon512-algebraic/non-zk/v9': 1141, 'bitz/falcon1024-algebraic/non-zk/v10-factored-ring': 286, 'bitz/falcon512-algebraic/non-zk/v10-factored-ring': 286}, 'input_source_equality': True, 'complete_proof_equality_within_protocol': True, 'raw_log_hashes_verified': True, 'command_provenance_verified': True, 'experimental_payload_limit_percent': 110, 'experimental_payload_comparisons': 12, 'max_experimental_payload_growth_percent': 0.6429783837861525}
+combinations   baseline     N= 512 t=16 total=34.515 prove=32.168 verify=11.174 rss=99576
+combinations   baseline     N=1024 t=16 total=61.821 prove=57.911 verify=18.598 rss=192428
+combinations   control      N= 512 t=16 total=34.661 prove=32.383 verify=10.608 rss=99912
+combinations   control      N=1024 t=16 total=61.592 prove=57.675 verify=18.604 rss=192168
+combinations   factored     N= 512 t=16 total=30.139 prove=27.791 verify=7.670 rss=87132
+combinations   factored     N=1024 t=16 total=51.072 prove=47.246 verify=9.833 rss=185864
+combinations   factored_fast N= 512 t=16 total=30.028 prove=27.656 verify=7.778 rss=86740
+combinations   factored_fast N=1024 t=16 total=51.088 prove=47.273 verify=9.754 rss=185828
+combinations   owned        N= 512 t=16 total=31.797 prove=29.469 verify=11.261 rss=90084
+combinations   owned        N=1024 t=16 total=54.373 prove=50.472 verify=17.170 rss=179668
+combinations   owned_all    N= 512 t=16 total=32.184 prove=29.855 verify=11.285 rss=89036
+combinations   owned_all    N=1024 t=16 total=54.229 prove=50.449 verify=16.847 rss=179964
+combinations   owned_carries N= 512 t=16 total=31.737 prove=29.291 verify=11.390 rss=89452
+combinations   owned_carries N=1024 t=16 total=53.655 prove=49.814 verify=17.186 rss=180020
+combinations   owned_fusion N= 512 t=16 total=31.922 prove=29.576 verify=11.263 rss=89076
+combinations   owned_fusion N=1024 t=16 total=54.371 prove=50.579 verify=17.279 rss=179924
+combinations   owned_initial N= 512 t=16 total=31.696 prove=29.456 verify=11.230 rss=89512
+combinations   owned_initial N=1024 t=16 total=54.281 prove=50.473 verify=17.180 rss=179676
+combinations   owned_norm   N= 512 t=16 total=32.240 prove=29.912 verify=11.454 rss=89920
+combinations   owned_norm   N=1024 t=16 total=55.039 prove=51.206 verify=16.993 rss=179636
+combinations   owned_public N= 512 t=16 total=31.718 prove=29.410 verify=10.927 rss=112440
+combinations   owned_public N=1024 t=16 total=54.423 prove=50.612 verify=17.165 rss=179844
+confirm        baseline     N= 512 t= 1 total=140.906 prove=131.996 verify=30.486 rss=93692
+confirm        baseline     N= 512 t= 8 total=33.746 prove=31.846 verify=10.581 rss=97316
+confirm        baseline     N= 512 t=16 total=34.476 prove=32.110 verify=10.591 rss=99992
+confirm        baseline     N=1024 t= 1 total=276.047 prove=259.043 verify=59.690 rss=206824
+confirm        baseline     N=1024 t= 8 total=63.790 prove=60.156 verify=19.824 rss=187836
+confirm        baseline     N=1024 t=16 total=62.199 prove=58.249 verify=18.524 rss=192400
+confirm        factored     N= 512 t= 1 total=128.671 prove=119.688 verify=13.728 rss=82744
+confirm        factored     N= 512 t= 8 total=29.012 prove=27.104 verify=6.654 rss=84404
+confirm        factored     N= 512 t=16 total=30.048 prove=27.678 verify=7.681 rss=87300
+confirm        factored     N=1024 t= 1 total=241.744 prove=225.122 verify=23.640 rss=171348
+confirm        factored     N=1024 t= 8 total=52.129 prove=48.604 verify=9.481 rss=182168
+confirm        factored     N=1024 t=16 total=51.239 prove=47.322 verify=9.822 rss=185428
+confirm        owned        N= 512 t= 1 total=139.189 prove=130.230 verify=30.546 rss=83608
+confirm        owned        N= 512 t= 8 total=31.894 prove=30.003 verify=10.382 rss=85712
+confirm        owned        N= 512 t=16 total=31.864 prove=29.500 verify=10.681 rss=87724
+confirm        owned        N=1024 t= 1 total=270.129 prove=253.128 verify=59.965 rss=206952
+confirm        owned        N=1024 t= 8 total=56.193 prove=52.568 verify=18.565 rss=176020
+confirm        owned        N=1024 t=16 total=54.318 prove=50.420 verify=17.207 rss=179740
+confirm        owned_carries N= 512 t= 1 total=139.342 prove=130.384 verify=30.540 rss=83464
+confirm        owned_carries N= 512 t= 8 total=31.383 prove=29.589 verify=10.419 rss=85360
+confirm        owned_carries N= 512 t=16 total=31.496 prove=29.150 verify=11.373 rss=89424
+confirm        owned_carries N=1024 t= 1 total=271.065 prove=254.151 verify=60.049 rss=206952
+confirm        owned_carries N=1024 t= 8 total=56.042 prove=52.351 verify=18.549 rss=175620
+confirm        owned_carries N=1024 t=16 total=53.596 prove=49.795 verify=17.323 rss=179752
+correctness100 baseline     N= 512 t= 1 total=38.590 prove=36.868 verify=5.802 rss=29152
+correctness100 baseline     N= 512 t= 8 total=10.118 prove=9.422 verify=3.007 rss=30768
+correctness100 baseline     N= 512 t=16 total=12.687 prove=11.732 verify=3.293 rss=31940
+correctness100 baseline     N=1024 t= 1 total=65.092 prove=61.576 verify=8.877 rss=43140
+correctness100 baseline     N=1024 t= 8 total=18.251 prove=17.060 verify=3.827 rss=44528
+correctness100 baseline     N=1024 t=16 total=19.628 prove=17.753 verify=4.156 rss=44612
+correctness100 factored     N= 512 t= 1 total=37.081 prove=35.351 verify=3.879 rss=29356
+correctness100 factored     N= 512 t= 8 total=10.294 prove=9.404 verify=2.738 rss=30576
+correctness100 factored     N= 512 t=16 total=12.239 prove=11.267 verify=3.036 rss=31560
+correctness100 factored     N=1024 t= 1 total=62.802 prove=59.274 verify=5.487 rss=44004
+correctness100 factored     N=1024 t= 8 total=15.515 prove=14.171 verify=3.537 rss=44556
+correctness100 factored     N=1024 t=16 total=19.044 prove=17.152 verify=3.972 rss=45164
+correctness100 owned        N= 512 t= 1 total=40.022 prove=38.279 verify=5.843 rss=29368
+correctness100 owned        N= 512 t= 8 total=9.791 prove=9.223 verify=3.013 rss=30512
+correctness100 owned        N= 512 t=16 total=16.186 prove=15.332 verify=3.269 rss=32144
+correctness100 owned        N=1024 t= 1 total=67.113 prove=63.551 verify=8.952 rss=43440
+correctness100 owned        N=1024 t= 8 total=15.713 prove=14.511 verify=3.848 rss=44600
+correctness100 owned        N=1024 t=16 total=26.127 prove=24.121 verify=4.175 rss=45768
+correctness128 baseline     N= 512 t= 1 total=245.892 prove=229.654 verify=52.325 rss=78328
+correctness128 baseline     N= 512 t= 8 total=38.974 prove=35.934 verify=20.002 rss=81484
+correctness128 baseline     N= 512 t=16 total=53.958 prove=50.754 verify=9.598 rss=83748
+correctness128 baseline     N=1024 t= 1 total=287.803 prove=269.157 verify=59.839 rss=151072
+correctness128 baseline     N=1024 t= 8 total=68.807 prove=63.354 verify=18.551 rss=156608
+correctness128 baseline     N=1024 t=16 total=2769.697 prove=2616.672 verify=224.865 rss=163432
+correctness128 factored     N= 512 t= 1 total=156.335 prove=140.921 verify=13.939 rss=74608
+correctness128 factored     N= 512 t= 8 total=34.595 prove=31.389 verify=7.042 rss=75912
+correctness128 factored     N= 512 t=16 total=48.630 prove=45.431 verify=7.703 rss=75780
+correctness128 factored     N=1024 t= 1 total=254.500 prove=235.686 verify=25.701 rss=134744
+correctness128 factored     N=1024 t= 8 total=63.347 prove=58.131 verify=13.665 rss=140636
+correctness128 factored     N=1024 t=16 total=2634.191 prove=2473.616 verify=96.801 rss=146872
+correctness128 owned        N= 512 t= 1 total=147.924 prove=137.645 verify=30.771 rss=75348
+correctness128 owned        N= 512 t= 8 total=42.422 prove=39.355 verify=11.850 rss=75776
+correctness128 owned        N= 512 t=16 total=42.688 prove=38.152 verify=9.595 rss=83244
+correctness128 owned        N=1024 t= 1 total=284.519 prove=265.502 verify=60.890 rss=135568
+correctness128 owned        N=1024 t= 8 total=66.984 prove=61.527 verify=19.303 rss=141240
+correctness128 owned        N=1024 t=16 total=2473.497 prove=2305.703 verify=207.914 rss=144860
+profile        control      N= 512 t= 1 total=143.097 prove=134.071 verify=30.899 rss=93884
+profile        control      N= 512 t= 8 total=34.368 prove=32.402 verify=10.670 rss=97048
+profile        control      N= 512 t=16 total=35.031 prove=32.586 verify=11.311 rss=99032
+profile        control      N=1024 t= 1 total=277.410 prove=260.151 verify=62.323 rss=207552
+profile        control      N=1024 t= 8 total=64.297 prove=60.589 verify=19.984 rss=187612
+profile        control      N=1024 t=16 total=62.152 prove=58.098 verify=19.308 rss=190124
+profile        factored     N= 512 t= 1 total=128.522 prove=119.522 verify=13.893 rss=83284
+profile        factored     N= 512 t= 8 total=29.847 prove=27.972 verify=6.825 rss=85048
+profile        factored     N= 512 t=16 total=30.930 prove=28.541 verify=7.857 rss=87036
+profile        factored     N=1024 t= 1 total=243.188 prove=226.615 verify=23.668 rss=168272
+profile        factored     N=1024 t= 8 total=52.848 prove=49.155 verify=9.464 rss=181832
+profile        factored     N=1024 t=16 total=51.956 prove=48.149 verify=9.861 rss=184620
+profile        owned        N= 512 t= 1 total=139.706 prove=130.478 verify=30.685 rss=83532
+profile        owned        N= 512 t= 8 total=31.804 prove=29.798 verify=10.601 rss=86820
+profile        owned        N= 512 t=16 total=32.367 prove=30.019 verify=11.292 rss=88720
+profile        owned        N=1024 t= 1 total=270.687 prove=253.536 verify=62.152 rss=206924
+profile        owned        N=1024 t= 8 total=56.953 prove=53.313 verify=18.599 rss=175468
+profile        owned        N=1024 t=16 total=54.921 prove=51.119 verify=17.674 rss=178840
+profile_details fusion       N= 512 t=16 total=34.822 prove=32.474 verify=11.179 rss=99252
+profile_details fusion       N=1024 t=16 total=62.003 prove=58.108 verify=18.691 rss=190816
+profile_details owned_carries N= 512 t=16 total=31.728 prove=29.416 verify=11.169 rss=88920
+profile_details owned_carries N=1024 t=16 total=54.064 prove=50.104 verify=17.115 rss=178368
+profile_details owned_norm   N= 512 t=16 total=32.476 prove=30.056 verify=11.327 rss=89288
+profile_details owned_norm   N=1024 t=16 total=56.117 prove=52.215 verify=17.261 rss=178724
+profile_details owned_public N= 512 t=16 total=32.434 prove=29.934 verify=10.725 rss=87108
+profile_details owned_public N=1024 t=16 total=54.802 prove=50.882 verify=16.370 rss=178900
+qualify        baseline     N= 512 t= 1 total=140.795 prove=131.850 verify=30.415 rss=93928
+qualify        baseline     N= 512 t= 8 total=33.609 prove=31.718 verify=10.433 rss=97420
+qualify        baseline     N= 512 t=16 total=34.581 prove=32.230 verify=10.618 rss=99108
+qualify        baseline     N=1024 t= 1 total=275.933 prove=258.944 verify=59.697 rss=207052
+qualify        baseline     N=1024 t= 8 total=63.749 prove=60.157 verify=19.771 rss=187752
+qualify        baseline     N=1024 t=16 total=61.342 prove=57.326 verify=18.616 rss=192252
+qualify        factored     N= 512 t= 1 total=128.741 prove=119.679 verify=13.727 rss=82588
+qualify        factored     N= 512 t= 8 total=29.082 prove=27.234 verify=6.666 rss=84416
+qualify        factored     N= 512 t=16 total=30.257 prove=27.915 verify=7.671 rss=87216
+qualify        factored     N=1024 t= 1 total=241.980 prove=225.503 verify=23.615 rss=170424
+qualify        factored     N=1024 t= 8 total=52.002 prove=48.517 verify=9.402 rss=181892
+qualify        factored     N=1024 t=16 total=51.452 prove=47.516 verify=9.733 rss=185724
+qualify        owned        N= 512 t= 1 total=139.065 prove=130.113 verify=30.534 rss=83504
+qualify        owned        N= 512 t= 8 total=31.219 prove=29.350 verify=10.233 rss=85772
+qualify        owned        N= 512 t=16 total=31.828 prove=29.538 verify=10.946 rss=89864
+qualify        owned        N=1024 t= 1 total=270.584 prove=253.394 verify=60.057 rss=206968
+qualify        owned        N=1024 t= 8 total=56.028 prove=52.399 verify=18.541 rss=175372
+qualify        owned        N=1024 t=16 total=54.950 prove=51.041 verify=17.596 rss=179676
+qualify        owned_carries N= 512 t= 1 total=139.417 prove=130.438 verify=30.537 rss=83724
+qualify        owned_carries N= 512 t= 8 total=31.232 prove=29.355 verify=10.212 rss=85596
+qualify        owned_carries N= 512 t=16 total=31.697 prove=29.380 verify=11.379 rss=89936
+qualify        owned_carries N=1024 t= 1 total=270.356 prove=253.185 verify=59.934 rss=206848
+qualify        owned_carries N=1024 t= 8 total=55.914 prove=52.336 verify=18.596 rss=175884
+qualify        owned_carries N=1024 t=16 total=54.218 prove=50.347 verify=17.248 rss=180036
+screen         baseline     N= 512 t=16 total=34.734 prove=32.276 verify=10.525 rss=99476
+screen         baseline     N=1024 t=16 total=61.718 prove=57.702 verify=18.672 rss=191980
+screen         carries      N= 512 t=16 total=34.342 prove=31.996 verify=11.075 rss=99840
+screen         carries      N=1024 t=16 total=61.159 prove=57.283 verify=18.641 rss=191620
+screen         control      N= 512 t=16 total=34.632 prove=32.317 verify=10.448 rss=99968
+screen         control      N=1024 t=16 total=61.785 prove=57.878 verify=18.550 rss=191652
+screen         factored     N= 512 t=16 total=30.050 prove=27.727 verify=7.776 rss=86716
+screen         factored     N=1024 t=16 total=51.494 prove=47.597 verify=9.672 rss=185216
+screen         fusion       N= 512 t=16 total=34.435 prove=32.119 verify=10.858 rss=100084
+screen         fusion       N=1024 t=16 total=61.923 prove=57.925 verify=18.601 rss=191864
+screen         initial      N= 512 t=16 total=34.632 prove=32.190 verify=11.080 rss=99892
+screen         initial      N=1024 t=16 total=61.786 prove=57.960 verify=18.587 rss=192044
+screen         norm         N= 512 t=16 total=35.160 prove=32.856 verify=11.306 rss=99840
+screen         norm         N=1024 t=16 total=62.365 prove=58.573 verify=18.300 rss=191520
+screen         owned        N= 512 t=16 total=32.093 prove=29.678 verify=11.321 rss=89436
+screen         owned        N=1024 t=16 total=54.490 prove=50.682 verify=17.169 rss=180176
+screen         pairs2       N= 512 t=16 total=34.910 prove=32.508 verify=11.205 rss=99704
+screen         pairs2       N=1024 t=16 total=61.614 prove=57.687 verify=18.802 rss=192620
+screen         pairs8       N= 512 t=16 total=35.118 prove=32.766 verify=10.587 rss=100096
+screen         pairs8       N=1024 t=16 total=61.809 prove=57.753 verify=18.482 rss=191656
+screen         public       N= 512 t=16 total=35.336 prove=32.931 verify=11.419 rss=103668
+screen         public       N=1024 t=16 total=62.000 prove=58.149 verify=18.640 rss=191984
+smoke          baseline     N= 512 t= 1 total=13.597 prove=13.417 verify=2.794 rss=16588
+smoke          baseline     N=1024 t= 1 total=14.233 prove=14.029 verify=2.983 rss=17216
+smoke          carries      N= 512 t= 1 total=13.590 prove=13.417 verify=2.780 rss=16388
+smoke          carries      N=1024 t= 1 total=14.324 prove=14.128 verify=2.965 rss=17292
+smoke          control      N= 512 t= 1 total=13.556 prove=13.387 verify=2.780 rss=16896
+smoke          control      N=1024 t= 1 total=14.289 prove=14.094 verify=2.972 rss=17036
+smoke          factored     N= 512 t= 1 total=13.545 prove=13.371 verify=2.873 rss=16660
+smoke          factored     N=1024 t= 1 total=14.435 prove=14.239 verify=2.891 rss=17188
+smoke          fusion       N= 512 t= 1 total=14.452 prove=14.263 verify=2.799 rss=17216
+smoke          fusion       N=1024 t= 1 total=14.272 prove=14.071 verify=2.987 rss=17200
+smoke          initial      N= 512 t= 1 total=13.579 prove=13.407 verify=2.779 rss=16368
+smoke          initial      N=1024 t= 1 total=14.297 prove=14.101 verify=2.968 rss=16720
+smoke          norm         N= 512 t= 1 total=13.603 prove=13.425 verify=2.814 rss=16372
+smoke          norm         N=1024 t= 1 total=14.221 prove=14.026 verify=2.961 rss=17144
+smoke          owned        N= 512 t= 1 total=13.596 prove=13.423 verify=2.781 rss=16632
+smoke          owned        N=1024 t= 1 total=14.277 prove=14.074 verify=2.972 rss=17176
+smoke          pairs2       N= 512 t= 1 total=13.559 prove=13.387 verify=2.777 rss=16880
+smoke          pairs2       N=1024 t= 1 total=14.242 prove=14.047 verify=2.960 rss=17560
+smoke          pairs8       N= 512 t= 1 total=13.583 prove=13.413 verify=2.803 rss=16884
+smoke          pairs8       N=1024 t= 1 total=14.254 prove=14.047 verify=2.972 rss=17228
+smoke          public       N= 512 t= 1 total=13.574 prove=13.401 verify=2.790 rss=16828
+smoke          public       N=1024 t= 1 total=14.278 prove=14.082 verify=2.968 rss=17176

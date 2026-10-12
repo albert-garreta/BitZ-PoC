@@ -37,6 +37,49 @@ impl<S> tracing_subscriber::Layer<S> for StageTimings
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
+    fn enabled(
+        &self,
+        metadata: &tracing::Metadata<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        // Aggregate stages avoid the substantial overhead of tracing every round.
+        static LIGHT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if !*LIGHT.get_or_init(|| std::env::var_os("BITZ_FALCON_LIGHT_PROFILE").is_some()) {
+            return true;
+        }
+        metadata.name().starts_with("falcon_factored_ring:")
+            || matches!(
+                metadata.name(),
+                "falcon_algebraic:commit"
+                    | "falcon_algebraic:prove"
+                    | "falcon_algebraic:verify"
+                    | "falcon_algebraic:witness"
+                    | "falcon_algebraic:ring"
+                    | "falcon_algebraic:arithmetic"
+                    | "falcon_algebraic:binding"
+                    | "falcon_algebraic:integer_outer"
+                    | "falcon_algebraic:binding_construction"
+                    | "falcon_algebraic:word_first_fold"
+                    | "falcon_algebraic:bitz"
+                    | "falcon_algebraic:pcs"
+                    | "falcon_algebraic_ring:coordinates"
+                    | "falcon_algebraic_ring:coordinate_work"
+                    | "falcon_algebraic_ring:carries"
+                    | "falcon_algebraic_ring:collapse"
+                    | "shared_source:encode"
+                    | "shared_source:merkle"
+                    | "falcon_bridge:integer_folds"
+                    | "falcon_bridge:column_packing"
+                    | "falcon_bridge:power_tables"
+                    | "falcon_bridge:wfbitz_forest"
+                    | "op:initial_messages"
+                    | "op:deferred_first_fold"
+                    | "op:ring_switch"
+                    | "op:extra_bases"
+                    | "op:ligerito"
+            )
+    }
+
     fn on_new_span(
         &self,
         attrs: &tracing::span::Attributes<'_>,

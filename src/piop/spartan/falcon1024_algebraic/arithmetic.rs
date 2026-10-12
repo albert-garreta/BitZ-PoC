@@ -140,6 +140,84 @@ pub(super) fn prove(
     ring: &PreparedClaim,
     schedule: &Schedule,
 ) -> Result<(Proof, BridgeClaim), FalconError> {
+    prove_with_ring(
+        transcript,
+        layout,
+        data,
+        source,
+        field,
+        RingInput::Borrowed(ring),
+        schedule,
+    )
+}
+
+/// Transfer ring projections once the ring prover no longer needs them.
+pub(super) fn prove_owned(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: PreparedClaim,
+    schedule: &Schedule,
+) -> Result<(Proof, BridgeClaim), FalconError> {
+    // The production caller is finished with these projections. Reusing them
+    // avoids retaining and copying another pair of full coefficient tables.
+    if arithmetic_experiment("BITZ_ARITHMETIC_BINDING_OWNED", true) {
+        prove_with_ring(
+            transcript,
+            layout,
+            data,
+            source,
+            field,
+            RingInput::Owned(ring),
+            schedule,
+        )
+    } else {
+        prove(transcript, layout, data, source, field, &ring, schedule)
+    }
+}
+
+enum RingInput<'a> {
+    Borrowed(&'a PreparedClaim),
+    Owned(PreparedClaim),
+    #[cfg(any(test, feature = "bench-internals"))]
+    Factored(super::factored_ring::PreparedClaim),
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) fn prove_factored_ring(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: super::factored_ring::PreparedClaim,
+    schedule: &Schedule,
+) -> Result<(Proof, BridgeClaim), FalconError> {
+    if !schedule.word_binding {
+        return Err(failure("factored ring requires word binding"));
+    }
+    prove_with_ring(
+        transcript,
+        layout,
+        data,
+        source,
+        field,
+        RingInput::Factored(ring),
+        schedule,
+    )
+}
+
+fn prove_with_ring(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: RingInput<'_>,
+    schedule: &Schedule,
+) -> Result<(Proof, BridgeClaim), FalconError> {
     if source.layout() != layout {
         return Err(failure("algebraic source layout mismatch"));
     }
@@ -149,13 +227,54 @@ pub(super) fn prove(
     transcript.absorb_slice(MERGE_DOMAIN);
     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
     let eta = sample(transcript, field)?;
-    let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+    #[cfg(any(test, feature = "bench-internals"))]
+    let factored_ring = matches!(&ring, RingInput::Factored(_));
+    #[cfg(not(any(test, feature = "bench-internals")))]
+    let factored_ring = false;
+    let defer_norm = schedule.word_binding
+        && (factored_ring || arithmetic_experiment("BITZ_ARITHMETIC_NORM_FACTORED", false));
+    let (mut form, target, s1) = match ring {
+        RingInput::Borrowed(ring) if !defer_norm => {
+            let (form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+            (form, target, None)
+        }
+        RingInput::Borrowed(ring) => {
+            let (form, target) =
+                BindingForm::new_owned(layout, ring.clone(), &norm_claims, eta, field, true)?;
+            (form, target, None)
+        }
+        RingInput::Owned(ring) => {
+            let (form, target) =
+                BindingForm::new_owned(layout, ring, &norm_claims, eta, field, defer_norm)?;
+            (form, target, None)
+        }
+        #[cfg(any(test, feature = "bench-internals"))]
+        RingInput::Factored(ring) => {
+            let (form, target, factors) =
+                BindingForm::new_factored(layout, ring, &norm_claims, eta, field)?;
+            (form, target, Some(factors))
+        }
+    };
     if schedule.word_binding {
-        let (proof, row_weights, claim) = word_binding::prove(
+        let correction = if defer_norm {
+            Some(word_binding::FactoredNorm::new(
+                layout,
+                &norm_claims,
+                eta,
+                field,
+            )?)
+        } else {
+            None
+        };
+        let (proof, row_weights, claim) = word_binding::prove_with_correction(
             transcript,
             layout,
             source,
             form,
+            word_binding::WordFactors {
+                norm: correction,
+                s1,
+            },
             target,
             norm,
             merge_nonce,
@@ -222,6 +341,39 @@ pub(super) fn prove(
         },
         claim,
     ))
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) fn verify_factored_ring(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    field: &Cfg,
+    ring: &super::factored_ring::PreparedClaim,
+    proof: &Proof,
+    schedule: &Schedule,
+) -> Result<BridgeClaim, FalconError> {
+    if !schedule.word_binding {
+        return Err(failure("factored ring requires word binding"));
+    }
+    validate_field(layout, field)?;
+    let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
+    transcript.absorb_slice(MERGE_DOMAIN);
+    verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
+    let eta = sample(transcript, field)?;
+    let (form, target, s1) = BindingForm::new_factored(layout, ring.clone(), &norm, eta, field)?;
+    let factors = word_binding::WordFactors {
+        s1: Some(s1),
+        norm: Some(word_binding::FactoredNorm::new(layout, &norm, eta, field)?),
+    };
+    let claim = word_binding::verify_with_factors(
+        transcript, layout, &form, &factors, target, proof, schedule, field,
+    )?;
+    Ok(BridgeClaim {
+        column_point: claim.column_point(layout).to_vec(),
+        row_weights: claim.row_weights(layout, field)?,
+        modulus: claim.modulus,
+        value: claim.value,
+    })
 }
 
 pub(super) fn verify(
@@ -457,6 +609,23 @@ enum BindingStrategy {
     Legacy,
 }
 
+fn arithmetic_experiment(name: &str, default: bool) -> bool {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var(name) {
+        Ok(value) => {
+            return match value.as_str() {
+                "on" => true,
+                "off" => false,
+                _ => panic!("{name} must be on or off"),
+            };
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => panic!("{name} must be valid Unicode"),
+    }
+    let _ = name;
+    default
+}
+
 fn binding_workers() -> usize {
     rayon::current_num_threads()
 }
@@ -550,6 +719,29 @@ impl<'a> BindingForm<'a> {
         )
     }
 
+    fn new_owned(
+        layout: &'a Layout,
+        ring: PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+        defer_norm: bool,
+    ) -> Result<(Self, F), FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        let strategy = binding_strategy(layout.batch(), BindingKernel::Construction);
+        Self::new_owned_with_strategy(
+            layout,
+            ring,
+            norm,
+            eta,
+            field,
+            strategy,
+            binding_parallel(strategy),
+            defer_norm,
+            false,
+        )
+    }
+
     fn new_with_strategy(
         layout: &'a Layout,
         ring: &PreparedClaim,
@@ -559,8 +751,69 @@ impl<'a> BindingForm<'a> {
         strategy: BindingStrategy,
         parallel: bool,
     ) -> Result<(Self, F), FalconError> {
+        Self::new_owned_with_strategy(
+            layout,
+            ring.clone(),
+            norm,
+            eta,
+            field,
+            strategy,
+            parallel,
+            false,
+            false,
+        )
+    }
+
+    #[cfg(any(test, feature = "bench-internals"))]
+    fn new_factored(
+        layout: &'a Layout,
+        ring: super::factored_ring::PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+    ) -> Result<(Self, F, word_binding::FactoredS1), FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        if ring.s1_rows.len() != layout.batch() || ring.s1_columns.len() != N {
+            return Err(failure("factored ring binding dimensions"));
+        }
+        validate_field_elements(&ring.s1_rows, field).map_err(failure)?;
+        validate_field_elements(&ring.s1_columns, field).map_err(failure)?;
+        let factors = word_binding::FactoredS1 {
+            rows: ring.s1_rows,
+            columns: ring.s1_columns,
+        };
+        let dense = PreparedClaim {
+            weights_s1: Vec::new(),
+            weights_s2: ring.weights_s2,
+            target: ring.target,
+        };
+        let (form, target) = Self::new_owned_with_strategy(
+            layout,
+            dense,
+            norm,
+            eta,
+            field,
+            BindingStrategy::Optimized,
+            false,
+            true,
+            true,
+        )?;
+        Ok((form, target, factors))
+    }
+
+    fn new_owned_with_strategy(
+        layout: &'a Layout,
+        ring: PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+        strategy: BindingStrategy,
+        parallel: bool,
+        defer_norm: bool,
+        factored_s1: bool,
+    ) -> Result<(Self, F), FalconError> {
         let len = layout.batch() * N;
-        if ring.weights_s1.len() != len
+        if ring.weights_s1.len() != if factored_s1 { 0 } else { len }
             || ring.weights_s2.len() != len
             || norm.point.len() != COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
             || norm.instance_point.len() != layout.capacity().ilog2() as usize
@@ -578,16 +831,20 @@ impl<'a> BindingForm<'a> {
             field.sub(&field.one(), &norm.point[COEFFICIENT_LOG]),
             norm.point[COEFFICIENT_LOG],
         ];
-        let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
-        match strategy {
-            BindingStrategy::Optimized => {
-                let coefficient_weights =
-                    eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
-                let norm_instances =
-                    eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
-                // eq(j, i; r) factors into coefficient and instance weights.
-                // Combine the instance factors before touching either N-word slice.
-                let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
+        let mut coefficients = [ring.weights_s1, ring.weights_s2];
+        if defer_norm {
+            validate_field_elements(&coefficients[0], field).map_err(failure)?;
+            validate_field_elements(&coefficients[1], field).map_err(failure)?;
+        } else {
+            match strategy {
+                BindingStrategy::Optimized => {
+                    let coefficient_weights =
+                        eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
+                    let norm_instances =
+                        eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
+                    // eq(j, i; r) factors into coefficient and instance weights.
+                    // Combine the instance factors before touching either N-word slice.
+                    let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
                  -> Result<(), FalconError> {
                     // Validate the original ring projections in the same
                     // partition pass, before adding the norm coefficients.
@@ -604,30 +861,33 @@ impl<'a> BindingForm<'a> {
                     }
                     Ok(())
                 };
-                let [s1, s2] = &mut coefficients;
-                if parallel {
-                    s1.par_chunks_mut(N)
-                        .zip(s2.par_chunks_mut(N))
-                        .enumerate()
-                        .try_for_each(fill)?;
-                } else {
-                    s1.chunks_mut(N)
-                        .zip(s2.chunks_mut(N))
-                        .enumerate()
-                        .try_for_each(fill)?;
+                    let [s1, s2] = &mut coefficients;
+                    if parallel {
+                        s1.par_chunks_mut(N)
+                            .zip(s2.par_chunks_mut(N))
+                            .enumerate()
+                            .try_for_each(fill)?;
+                    } else {
+                        s1.chunks_mut(N)
+                            .zip(s2.chunks_mut(N))
+                            .enumerate()
+                            .try_for_each(fill)?;
+                    }
                 }
-            }
-            BindingStrategy::Legacy => {
-                validate_field_elements(&ring.weights_s1, field).map_err(failure)?;
-                validate_field_elements(&ring.weights_s2, field).map_err(failure)?;
-                let weights = eq_table(&norm.point, field).map_err(failure)?;
-                for side in 0..2 {
-                    for instance in 0..layout.batch() {
-                        for j in 0..N {
-                            let index = instance * N + j;
-                            let weight = weights[instance * 2 * N + side * N + j];
-                            coefficients[side][index] = field
-                                .add(&coefficients[side][index], &field.mul(&scales[1], &weight));
+                BindingStrategy::Legacy => {
+                    validate_field_elements(&coefficients[0], field).map_err(failure)?;
+                    validate_field_elements(&coefficients[1], field).map_err(failure)?;
+                    let weights = eq_table(&norm.point, field).map_err(failure)?;
+                    for side in 0..2 {
+                        for instance in 0..layout.batch() {
+                            for j in 0..N {
+                                let index = instance * N + j;
+                                let weight = weights[instance * 2 * N + side * N + j];
+                                coefficients[side][index] = field.add(
+                                    &coefficients[side][index],
+                                    &field.mul(&scales[1], &weight),
+                                );
+                            }
                         }
                     }
                 }
@@ -1331,6 +1591,108 @@ mod tests {
             slacks.push(BETA_SQUARED - norm);
         }
         WitnessData { witness, slacks }
+    }
+
+    #[test]
+    fn factored_binding_checks_shapes_and_canonical_coefficients() {
+        let f = field();
+        let layout = Layout::new(3).unwrap();
+        let norm = NormClaims {
+            instance_point: vec![f.zero(); layout.capacity().ilog2() as usize],
+            point: vec![f.zero(); COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize],
+            terminal: f.zero(),
+            slack: f.zero(),
+        };
+        let claim = super::super::factored_ring::PreparedClaim {
+            s1_rows: vec![f.one(); layout.batch()],
+            s1_columns: vec![f.one(); N],
+            weights_s2: vec![f.one(); layout.batch() * N],
+            target: f.zero(),
+        };
+        let (form, _, _) =
+            BindingForm::new_factored(&layout, claim.clone(), &norm, f.one(), &f).unwrap();
+        assert!(form.coefficients[0].is_empty());
+        for component in 0..4 {
+            let mut invalid = claim.clone();
+            let noncanonical = crate::piop::spartan::noncanonical_test_value(&f);
+            match component {
+                0 => invalid.s1_rows[0] = noncanonical,
+                1 => invalid.s1_columns[0] = noncanonical,
+                2 => invalid.weights_s2[0] = noncanonical,
+                _ => invalid.target = noncanonical,
+            }
+            assert!(BindingForm::new_factored(&layout, invalid, &norm, f.one(), &f).is_err());
+        }
+        for component in 0..3 {
+            let mut invalid = claim.clone();
+            match component {
+                0 => {
+                    invalid.s1_rows.pop();
+                }
+                1 => {
+                    invalid.s1_columns.pop();
+                }
+                _ => {
+                    invalid.weights_s2.pop();
+                }
+            }
+            assert!(BindingForm::new_factored(&layout, invalid, &norm, f.one(), &f).is_err());
+        }
+    }
+
+    #[test]
+    fn owned_ring_binding_preserves_proof_and_transcript() {
+        let f = field();
+        for batch in [1, 3, 17] {
+            let layout = Layout::new(batch).unwrap();
+            let data = data(batch);
+            let source = Source::new(layout, &data);
+            let ring = ring(&data, &f);
+            let mut borrowed = Blake3Transcript::new();
+            let expected = prove_with_ring(
+                &mut borrowed,
+                &layout,
+                &data,
+                &source,
+                &f,
+                RingInput::Borrowed(&ring),
+                &schedule(),
+            )
+            .unwrap();
+            let mut owned = Blake3Transcript::new();
+            let actual = prove_with_ring(
+                &mut owned,
+                &layout,
+                &data,
+                &source,
+                &f,
+                RingInput::Owned(ring.clone()),
+                &schedule(),
+            )
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(owned.state_digest(), borrowed.state_digest());
+            let mut verifier = Blake3Transcript::new();
+            assert_eq!(
+                verify(&mut verifier, &layout, &f, &ring, &actual.0, &schedule()).unwrap(),
+                actual.1
+            );
+            assert_eq!(verifier.state_digest(), owned.state_digest());
+            let mut invalid = ring;
+            invalid.weights_s1[0] = crate::piop::spartan::noncanonical_test_value(&f);
+            assert!(
+                prove_with_ring(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &data,
+                    &source,
+                    &f,
+                    RingInput::Owned(invalid),
+                    &schedule()
+                )
+                .is_err()
+            );
+        }
     }
 
     fn ring(data: &WitnessData, field: &Cfg) -> PreparedClaim {

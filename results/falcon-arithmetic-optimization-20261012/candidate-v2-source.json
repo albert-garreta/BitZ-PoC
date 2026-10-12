@@ -1,0 +1,12 @@
+{
+  "benches/common/falcon_stage_timings.rs": "81b275c0a4247c0896e881a7036203c90f03faa02c6b18b14ef36a6c641bc796",
+  "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "c0d716129b6d977be2dafe6896627b22c35131f2a734575a47e8067d66255461",
+  "src/piop/spartan/falcon1024_algebraic/backend.rs": "a08c510f15f612ff071dd368c1d957dfa9e5884b746af161f609bf39ade645cb",
+  "src/piop/spartan/falcon1024_algebraic/protocol.rs": "04ce42b3272bb2456fe871e5b7ed82504978f471d73f337691b44811563096c1",
+  "src/piop/spartan/falcon1024_algebraic/ring.rs": "51355ea03d8a563dcc52b347ec156ac7f7d7a0b325baf2e70aef475e28837d87",
+  "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "7babb6ee8a64277ae044a89d40bed11af027773eeeb7d34107856eb297a29811",
+  "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "2dfa54fdf2994b5904c9253e75cfc3d955dbdc2d61b719d44bfc6bd1724ad41f",
+  "vendor/field/src/q12289.rs": "ab09746c4515f02d5cd68294d98bf9f5fba822f7cc905e02acf377bf2e8819ce",
+  "vendor/field/src/q12289/avx512.rs": "c980913e2e8b8828ea6fa1bfb22a93a4a1a436a88804fa1de362cfe993983617",
+  "src/piop/spartan/falcon1024_algebraic/factored_ring.rs": "0882facf19d6f4db0b2720bb20b8a7589565dded547dd3a4d533dac28419dc9f"
+}

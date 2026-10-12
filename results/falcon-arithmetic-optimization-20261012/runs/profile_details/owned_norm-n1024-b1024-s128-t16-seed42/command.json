@@ -1,0 +1,37 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-arithmetic-optimization-20261012/candidate-v2",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--trace"
+  ],
+  "overrides": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_WORD_INITIAL": "off",
+    "BITZ_ARITHMETIC_WORD_FUSION": "off",
+    "BITZ_ARITHMETIC_NORM_FACTORED": "on",
+    "BITZ_ARITHMETIC_PUBLIC_EVAL": "legacy",
+    "BITZ_ARITHMETIC_RECURRENCE_PAIRS": "4",
+    "BITZ_ARITHMETIC_CARRY_FUSION": "off",
+    "BITZ_ARITHMETIC_RING": "canonical",
+    "RAYON_NUM_THREADS": "16",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012",
+    "BITZ_FALCON_LIGHT_PROFILE": "1"
+  },
+  "binary_sha256": "b06f017766addba15ff22dc087dc506b5de8fb07d51d0654b13b7a960512cbc2",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

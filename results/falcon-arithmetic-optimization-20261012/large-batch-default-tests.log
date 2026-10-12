@@ -1,0 +1,7 @@
+
+running 2 tests
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 942 filtered out; finished in 0.98s
+

@@ -1,0 +1,8 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-arithmetic-optimization-20261012/production",
+  "sha256": "ad4d265def6c4807ee3fc3875c66887ce7554ccd3081a3a498049178a56f27ed",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "experiment_environment_ignored": true
+}

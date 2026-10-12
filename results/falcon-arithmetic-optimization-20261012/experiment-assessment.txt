@@ -1,0 +1,203 @@
+Arithmetic Falcon optimization experiment assessment
+Date: 2026-10-12
+
+Decision
+--------
+Promote ownership of the existing ring/binding buffers only. Keep paired public
+evaluation, recurrence group changes, carry fusion, and the additional binding
+switches experimental. Keep the factored ring protocol explicitly experimental:
+its measured gains are substantial, but it changes the proof relation and
+requires its separate version and security analysis.
+
+This assessment uses the completed screen, combinations, qualify, confirm,
+profile, and profile_details phases in summary.json and profile-summary.json.
+It excludes correctness100 and correctness128 timings: those runs intentionally
+overlapped builds and supply correctness evidence only. The final production
+benchmark build was still running when this assessment was written; production
+binary measurements are not inferred from experimental-build measurements.
+No builds or benchmarks were run as part of this independent assessment.
+
+Measurement interpretation
+--------------------------
+All timing tables below concern batch 1,024 and 128-bit security. Latency cells
+have 21 samples across seeds 42, 43, and 44; profile cells have nine samples.
+Total prover time includes witness construction and commitment plus proof
+generation. Profile stage wall times are inclusive and overlap with parents.
+
+The coordinate diagnostic's public_eval_worker_ns, recurrence_worker_ns, and
+carry_worker_ns fields are SUMMED WORKER TIME, converted to milliseconds in
+profile-summary.json. They are not elapsed phase times, cannot be added to wall
+times, and should not be divided by worker count to claim exact wall savings.
+The basis/power and buffer-allocation fields are elapsed wall measurements.
+
+Pooled medians can reverse a comparison across seeds. For example, combinations
+owned_public versus owned at N512 has a pooled total-time change of -0.25%,
+while all three matched-seed total medians are slower (+0.13%, +0.14%, +0.21%).
+Use the per-seed evidence alongside pooled summaries. Small effects are also
+subject to run variation: screen control versus original baseline differed by
+approximately -3.3% for one N1024 seed. The percentages here are observed median
+changes, not confidence intervals or claims of statistical significance.
+
+Ownership is the repeatable production improvement
+--------------------------------------------------
+Confirm phase, total prover milliseconds:
+
+  Degree  Workers  Original baseline  Owned buffers  Change
+     512        1            140.906        139.189   -1.22%
+     512        8             33.746         31.894   -5.49%
+     512       16             34.476         31.864   -7.58%
+    1024        1            276.047        270.129   -2.14%
+    1024        8             63.790         56.193  -11.91%
+    1024       16             62.199         54.318  -12.67%
+
+Each confirm seed improves in every cell. The qualify phase independently shows
+the same direction across the degree/worker matrix. The profiles also show the
+expected reduction in binding construction and the first word fold:
+
+  Degree  Workers  Stage                    Control ms  Owned ms
+     512       16  Binding construction          1.415     0.440
+     512       16  First word fold               2.602     1.297
+    1024       16  Binding construction          2.751     0.857
+    1024       16  First word fold               5.413     2.336
+
+These child-stage medians are explanatory evidence; do not add them to the
+inclusive binding stage or treat their sum as an independently measured total.
+
+The coordinate bottleneck is largely buffer allocation/initialization
+--------------------------------------------------------------------
+The new profile separates a cost previously included under "coordinates":
+allocation and initialization of the large s1/s2 coordinate vectors. On the
+canonical control path this is the dominant elapsed component at 8/16 workers:
+
+  Degree  Workers  Coordinates ms  Buffer allocation/initialization ms  Share*
+     512        1           4.122                                2.036   49.4%
+     512        8           2.706                                2.266   83.8%
+     512       16           2.913                                2.523   86.6%
+    1024        1           9.066                                4.926   54.3%
+    1024        8           6.166                                5.340   86.6%
+    1024       16           6.046                                5.323   88.1%
+
+  * Ratio of separately computed medians, not the median of per-trial ratios.
+
+The owned path shows nearly the same coordinate behavior: at 16 workers,
+allocation/initialization takes 2.492 of 2.864 ms for N512 and 5.253 of 5.960 ms
+for N1024. Basis and shared power setup is only about 0.033/0.063 ms.
+
+This materially changes the interpretation of the old ~3/~6 ms "coordinate
+generation" figures. They were not pure recurrence timings. The timed buffer
+interval includes allocator and initialization work and may include page faults;
+the data does not separate those mechanisms or establish that every byte was
+physically zeroed by the same implementation. Avoid calling it a measured
+memset-only cost. No allocator/zeroing optimization was qualified in this task.
+
+Paired public evaluation improves worker work but not total proving
+------------------------------------------------------------------
+At 16 workers, compare profile owned with profile_details owned_public:
+
+  Degree  Public evaluation summed-worker ms  Change  Coordinate wall ms
+     512                         1.171 -> 0.394  -66.4%       2.864 -> 2.745
+    1024                         2.548 -> 0.913  -64.2%       5.960 -> 6.003
+
+Thus the SIMD dot product reduces measured evaluation work, while the much
+larger serial buffer interval limits its effect on the enclosing stage. These
+are separate diagnostic phases, so the exact small wall changes should not be
+treated as a matched latency result.
+
+The untraced results do not qualify this switch:
+  - Screen N512 total medians regress for every seed: +0.45%, +2.59%, +5.54%
+    versus the same-build control. N1024 effects are near zero and mixed.
+  - Combinations owned_public versus owned remains near zero; N512 is slower
+    for all three matched seeds despite its misleading pooled median.
+
+A repeatable memory anomaly occurs in untraced combinations N512: owned_public
+peaks at 112,440 KiB versus owned 90,084 KiB, or 109.8 versus 88.0 MiB (+24.8%).
+Each seed increases 24.7-25.8%. The prepared power table itself is only 11 KiB at
+this degree, so the extra process RSS cannot be explained as the table's direct
+size. This assessment does not establish the allocation cause. The anomaly is
+not universal: the profile phases report 87,108 KiB for owned_public versus
+88,720 KiB for owned. Instrumentation/run-phase differences matter; do not claim
+a proven permanent leak or a fixed +25% memory cost on every workload.
+
+Carry fusion is useful mainly at 16 workers, not a universal improvement
+------------------------------------------------------------------------
+Screen and combinations favored carry fusion, especially N1024 at 16 workers.
+The broader qualify and confirm phases explain why it remains experimental.
+Changes below compare owned_carries with owned; negative means faster:
+
+  Degree Workers  Qualify total change  Confirm total change
+     512       1                +0.25%                +0.11%
+     512       8                +0.04%                -1.60%
+     512      16                -0.41%                -1.15%
+    1024       1                -0.08%                +0.35%
+    1024       8                -0.20%                -0.27%
+    1024      16                -1.33%                -1.33%
+
+All confirm single-worker seeds regress: N512 +0.096% to +0.139%, N1024 +0.307%
+to +0.485%. The N512 8-worker pooled gain is not repeated in qualify. N1024 at
+16 workers is the strongest result: qualify improves 0.88-1.75% per seed and
+confirm improves 1.19-1.47% per seed. N512's smaller 16-worker gain is less
+stable between phases. These observations support a future narrowly qualified
+policy experiment, not enabling fusion for every production configuration now.
+
+The diagnostic carry span disappears when fusion is enabled because its work
+moves into coordinates. Compare complete ring or total prover time. At 16
+workers, profile-details owned_carries reports coordinate wall times of
+2.961/6.162 ms and complete ring times of 4.673/9.218 ms for N512/N1024, versus
+profile owned 2.864/5.960 ms and ring 4.830/9.530 ms. The moved work is visible;
+an absent carry span is not evidence that carry computation became free.
+
+Recurrence group changes are not qualified
+-----------------------------------------
+Group2 has mixed N512 screen results and only 0.08-0.61% N1024 total gains per
+seed. Group8 has mixed results, with no repeatable material benefit across both
+degrees. Keep the established group4 default.
+
+The independent assembly review supplies a plausible cost mechanism, not a
+performance conclusion: group2 uses 17 ZMM registers with no hot-loop stack
+references; group4 uses 24 with two scalar pointer reloads and no vector spills;
+group8 uses all 32 and reloads two 64-byte correction vectors each recurrence
+iteration, plus fourteen scalar pointers. See assembly-review.txt for the
+inspected binary hash, exact commands and instruction addresses. The factored
+ring's four-pair adjoint-only kernel had no vector spills in its hot loop.
+
+Additional binding switches and the factored protocol
+----------------------------------------------------
+Combinations do not justify turning on every candidate together. For example,
+owned_all N512 total medians regress for all seeds (+0.50% to +1.25%) relative
+to ownership alone; N1024 is mixed and near zero. Factored norm correction and
+the word-fold switches remain experiments rather than assumed improvements.
+
+The experimental factored ring is a distinct, promising result. Confirm phase:
+
+  Degree Workers  Owned total ms  Factored total ms  Factored versus owned
+     512       1         139.189            128.671                 -7.56%
+     512       8          31.894             29.012                 -9.04%
+     512      16          31.864             30.048                 -5.70%
+    1024       1         270.129            241.744                -10.51%
+    1024       8          56.193             52.129                 -7.23%
+    1024      16          54.318             51.239                 -5.67%
+
+Its gain persists after comparing against the ownership improvement, so the
+entire effect should not be attributed to eliminating clones. Qualify also
+shows improvements in all six cells. Confirm verification times are about
+13.73/6.65/7.68 ms for N512 and 23.64/9.48/9.82 ms for N1024 at 1/8/16 workers.
+The protocol's smaller coordinate representation does not guarantee a lower
+whole-process peak than owned binding: at N1024/16, combinations factored RSS
+is 3.2-3.6% higher per seed than owned, although below control. At one worker
+the factored path's memory saving is much larger.
+
+Matched proof-size differences vary with the new transcript's PCS queries;
+they are not exactly the fixed lift-payload increment. In the completed
+screen/combinations seeds, increases remain below 0.3%, comfortably below the
+10% cap. Security equivalence requires the separate degree-20 projection
+accounting and protocol version; performance does not establish soundness.
+See security-review.txt. The factored_fast combination offers only a small
+N512 improvement and mixed N1024 behavior, so it is not separately qualified.
+
+Remaining interpretation limits
+-------------------------------
+No result here establishes an instruction-level cause of total speed changes.
+The profiles identify buffer allocation/initialization as the next concrete
+canonical ring target, while demonstrating why reducing arithmetic worker time
+alone was insufficient. Review final production measurements separately once
+available, and preserve the experimental qualification boundaries above.

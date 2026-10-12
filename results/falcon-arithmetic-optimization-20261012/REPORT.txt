@@ -1,0 +1,97 @@
+Arithmetic Falcon binding and coordinate optimization
+2026-10-12; saved on falcon-poc
+
+Outcome
+Production now consumes the ring coefficient buffers for binding. Borrowed construction remains available. This removes a 16 MiB copy/retained pair for Falcon-512 and 32 MiB for Falcon-1024 at batch 1024. Both clean production runs improve total proving time in all six degree/worker configurations. Canonical v9 proofs remain identical to the saved baseline.
+All planned experiments were implemented and tested. Only buffer ownership is enabled by default. First-fold fusion, initial-product reuse, deferred norm correction, paired public evaluation, recurrence groups 2/8, and fused carries remain benchmark experiments because their overall gains were mixed, inconclusive, or negative. The new degree-20 ring remains an explicitly selected v10-factored-ring prototype.
+
+Method
+AMD Ryzen 9 9950X3D; Linux; native release, LTO, codegen-units=1. Batch 1024, security 128, Falcon degrees 512/1024, workers 1/8/16. Each latency cell has three seeds (42/43/44), two warmups per seed and seven untraced samples per seed: 21 samples per configuration. Variants and configurations run sequentially in deterministic shuffled order. Worker CPUs: 6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9; main CPU 6. Every trial checks observed affinity, verifies the proof, records source/proof digests, and records process peak RSS.
+Total prover time = witness commitment + proving. Input fixture generation/loading and reusable preparation are excluded. Verification is measured separately. The two production campaigns use builds with falcon-hybrid only; benchmark experiment environment variables are ignored by these binaries. Experimental screening/qualification uses falcon-hybrid,bench-internals. Baseline ee79186745962e3e285fc5090dae8a95545dda43 has the same production source as starting branch commit ba2664e247a82560148085e3572f0aa4da3c0068.
+Profile measurements are separate: one warmup and three samples per seed, nine samples per configuration. Lightweight traced medians stayed within approximately 3% of the untraced confirmation medians. Nested stage times overlap. Worker-nanosecond fields sum elapsed intervals measured on workers; they are not CPU-time counters and must not be read as stage wall time.
+Smoke and correctness100/128 phases are correctness evidence only. The latter overlap builds deliberately; none of those timings contributes to performance conclusions.
+
+Production total prover medians (ms)
+N     workers   run1 baseline -> new (reduction)     run2 baseline -> new (reduction)
+512   1         141.094 -> 138.917 ( 1.54%)     141.443 -> 138.868 ( 1.82%)
+512   8          33.218 ->  31.517 ( 5.12%)      33.532 ->  31.280 ( 6.72%)
+512   16         34.697 ->  32.143 ( 7.36%)      34.369 ->  32.007 ( 6.87%)
+1024  1         276.170 -> 269.447 ( 2.43%)     276.458 -> 270.466 ( 2.17%)
+1024  8          63.801 ->  56.058 (12.14%)      63.616 ->  56.143 (11.75%)
+1024  16         61.576 ->  54.579 (11.36%)      61.757 ->  54.852 (11.18%)
+
+Production confirmation: verification and peak process memory
+N     workers   verify baseline/new ms    RSS baseline/new MiB
+512   1          30.489 /  30.482         91.47 /   81.49
+512   8          10.326 /  10.347         94.89 /   83.03
+512   16         11.099 /  11.328         97.09 /   87.46
+1024  1          59.823 /  59.804        201.79 /  201.83
+1024  8          19.758 /  18.588        183.18 /  171.33
+1024  16         18.574 /  17.361        186.93 /  175.38
+Verification tradeoff: Falcon-512 at 16 workers is 0.352 ms slower in production run1 and 0.229 ms slower in run2 (about 2-3%). Other cells are approximately unchanged or faster. This change is selected for its repeatable prover improvement; it is not a claim that every performance metric improves. No correctness regression was observed. Process RSS includes fixture preparation, allocation history, proving and verification; structural buffer savings need not reduce the peak of the whole process.
+
+Experimental factored ring: independent confirmation (benchmark-feature build)
+N     workers   old baseline / owned v9 / factored v10 total ms   factored verify ms
+512   1         140.906 / 139.189 / 128.671                  13.728
+512   8          33.746 /  31.894 /  29.012                   6.654
+512   16         34.476 /  31.864 /  30.048                   7.681
+1024  1         276.047 / 270.129 / 241.744                  23.640
+1024  8          63.790 /  56.193 /  52.129                   9.481
+1024  16         62.199 /  54.318 /  51.239                   9.822
+The factored protocol improves total proving and verification in both all-worker campaigns. Its main coordinate storage is approximately halved: 44 to 22 MiB for Falcon-1024, 22 to 11 MiB for Falcon-512, plus small shared tables. Whole-process RSS is not uniformly lower than owned v9: factored Falcon-1024 at 8/16 workers retains a higher process peak than owned v9, while remaining below the old baseline. The prototype stays opt-in and uses a separate verifier configuration and transcript domain.
+
+Stage medians at 16 workers (ms; lightweight profile)
+Included sub-stages must not be added to their parents.
+N     stage                           control v9    owned v9     factored v10
+512   GKR/forest                        11.784        11.900        12.142
+512   ring total                         4.921         4.830         1.838
+512   norm                               2.102         2.079         2.180
+512   binding total                      5.938         4.500         5.360
+512   binding construction (included)    1.415         0.440         0.197
+512   first word fold (included)         2.602         1.297         2.292
+1024  GKR/forest                        21.224        21.536        21.268
+1024  ring total                         9.667         9.530         3.272
+1024  norm                               3.173         3.193         3.235
+1024  binding total                     11.849         7.269         9.900
+1024  binding construction (included)    2.751         0.857         0.375
+1024  first word fold (included)         5.413         2.336         5.570
+
+Canonical coordinate detail at 16 workers, control (ms)
+N=512: coordinates wall=2.913; allocation/zeroing wall=2.523 (86.6%); basis/powers wall=0.033; public-evaluation summed worker time=1.288; recurrence summed worker time=2.608.
+N=1024: coordinates wall=6.046; allocation/zeroing wall=5.323 (88.1%); basis/powers wall=0.064; public-evaluation summed worker time=2.535; recurrence summed worker time=6.124.
+The next major coordinate target is allocation and initialization. Prepared public evaluation reduced public-evaluation worker time by roughly 64-66%, but that work is already parallel and is a small part of the coordinate wall time. It did not produce a repeatable total-time gain. Paired evaluation also showed a process-RSS increase for Falcon-512 in the ownership combination; the allocation cause is not established.
+Fused carries remove the separate carry pass, but add work inside coordinate generation. They improve 16-worker Falcon-1024 modestly and are mixed at other configurations. Group 8 incurs vector spills; neither group 2 nor group 8 demonstrates a material repeatable advantage over group 4. Deferred norm correction avoids materialization but raises the initial/first-fold work enough to regress total binding. First-fold fusion and duplicate-product removal preserve exact polynomials but do not show a robust total-time improvement here. See experiment-assessment.txt for per-seed comparisons and the pooled-median reversal in owned_public.
+
+Protocol and proof size
+v9 is unchanged. v10 retains canonical alpha-basis coordinates for A_i, shared powers P_j and per-instance adjoints W_ij; it authenticates the unreduced degree-20 integer polynomial. Twenty-one signed i128 lift coefficients replace eleven i64 carries, adding exactly 248 ring payload bytes. The lift is absorbed before projection grinding and xi. The bound is H=2*B*N*2^14*11*(12289-1)^2; require p>2H and |lift[k]|<=H. The native read-off evaluates at alpha. The projection numerator is 20, with 12 grinding bits at security 128 instead of 11; security 100 uses 0 in both modes. The existing security ledger still meets the target.
+Whole-proof sizes include variable transcript-dependent components, so their difference need not equal 248 bytes.
+N=512, batch 1024/security 128 median payload: v9=256368 bytes; v10=256360 bytes.
+N=1024, batch 1024/security 128 median payload: v9=321304 bytes; v10=321232 bytes.
+Across all matched large/partial/small cases, the maximum observed whole-proof growth is 0.6430%, below the 10% cap. Payload sizes exclude public inputs and outer transport framing.
+
+Validation
+339 Falcon library tests passed after promoting ownership; two explicit large-batch tests passed at both security targets. 21 q12289 field tests passed, including direct portable/SIMD comparisons, maximal coordinates and vector tails. The final native production release build passed without bench-internals.
+Coverage includes both degrees, full/partial batches, signed15 boundaries, Boolean/random fold challenges, zero norm scale, Boolean norm coordinates, malformed padding, noncanonical field inputs, security 100/128, malformed/oversized/i128::MIN lifts, wrong public targets, insufficient prime bounds and version/domain mismatch. Adding q to a lift coefficient preserves the native read-off but is rejected by the complete proof. Independent schoolbook and convolution references validate the factored lift; component tests compare round polynomials, folded tables, terminals, proofs and transcript continuations.
+Correctness-only harness matrices additionally cover batch 129/security 100 and batch 1023/security 128 at 1/8/16 workers, with baseline, owned and factored paths.
+The saved harness validated 3502 proofs (warmups, samples and correctness fixtures). It checked source/input identity, complete v9 proof identity against both frozen baselines, deterministic complete proofs within each protocol across strategies/workers, raw-log hashes, command provenance and requested security. Proof digests cover the complete Debug representation, including round messages, terminals and nonces; component tests additionally use direct equality. This project has no independent outer transport codec in this benchmark.
+Independent algebra/security review: security-review.txt. Independent kernel assembly/bounds review: assembly-review.txt. The portable reference is functionally tested; performance conclusions are limited to this native CPU and batch 1024/security 128. The review does not replace a formal proof or external audit of the underlying proving system.
+
+Experiment controls (bench-internals builds only)
+BITZ_ARITHMETIC_BINDING_OWNED=on|off (default on)
+BITZ_ARITHMETIC_WORD_INITIAL=on|off (default off)
+BITZ_ARITHMETIC_WORD_FUSION=on|off (default off)
+BITZ_ARITHMETIC_NORM_FACTORED=on|off (default off)
+BITZ_ARITHMETIC_PUBLIC_EVAL=legacy|paired (default legacy)
+BITZ_ARITHMETIC_RECURRENCE_PAIRS=2|4|8 (default 4)
+BITZ_ARITHMETIC_CARRY_FUSION=off|on (default off)
+BITZ_ARITHMETIC_RING=canonical|factored (default canonical)
+Factored ring requires raw word binding; conflicting compact/combined selections are rejected. It is also available through new_factored_ring with bench-internals. Production builds ignore these environment selectors and retain canonical v9.
+
+Reproduction and evidence
+scripts/falcon_arithmetic_optimization.py records every command, binary hash, curated environment, exit status, raw stdout/stderr and normalized trial. Resume rejects changed binaries/settings and reconstructs trials from raw output. Use a fresh phase for any changed configuration. The runner assumes the CPU placement above; adjust explicitly on a different host.
+Build a frozen baseline at ee79186745962e3e285fc5090dae8a95545dda43, and build this source with RUSTFLAGS="-C target-cpu=native" cargo build --release --features falcon-hybrid --bench falcon_algebraic. Use falcon-hybrid,bench-internals for the experiments. Cargo JSON build logs identify the actual executable; freeze it before measuring.
+Example production matrix:
+  python3 scripts/falcon_arithmetic_optimization.py --output <new-results> --binary <new-production-binary> --baseline <old-production-binary> --configs results/falcon-arithmetic-optimization-20261012/production-config.json --phase run1 --variants baseline production --threads 1 8 16
+Defaults are both degrees, batch 1024, security 128, seeds 42/43/44, two warmups and seven samples. Repeat with a new phase for confirmation. Use --trace --warmup 1 --iterations 3 for separate profiling.
+Machine/build inputs: manifest.json and *-binary.json. Raw runs: runs/<phase>/<configuration>/. Aggregates: summary.json, profile-summary.json, validation.json. Source snapshots: candidate*.patch, production.patch and *-source.json. candidate-new-file.patch supplies the new module absent from the baseline tracked diff; final source is committed on falcon-poc. The production baseline hash is checked against the prior campaign manifest. Frozen binaries remain local under .tmp and are not committed.
+Profiling and earlier experimental builds are kept separate from the two production measurements. Failed initial feature-gating compilation was fixed before qualification; production-build.log and falcon-default-tests.log record the final successful code.

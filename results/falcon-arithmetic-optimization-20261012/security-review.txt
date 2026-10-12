@@ -1,0 +1,85 @@
+Independent review of the experimental factored Falcon ring lift
+Review date: 2026-10-12
+Base commit: ba2664e247a82560148085e3572f0aa4da3c0068; reviewed the working-tree implementation on top of this commit.
+Reviewer: arithmetic-binding agent, independently reviewing the ring agent's algebra and the root agent's protocol integration.
+
+Result
+
+No blocking algebraic, transcript, or security-accounting issue was found in the inspected factored_ring.rs and protocol.rs integration. This is a source-level review, not a formal proof or an independent audit of the entire proving system. No builds or benchmarks were run for this review.
+
+Files examined
+
+src/piop/spartan/falcon1024_algebraic/factored_ring.rs
+src/piop/spartan/falcon1024_algebraic/protocol.rs
+src/piop/spartan/falcon1024_algebraic/backend.rs
+Related power-basis, source-layout, extension-sampling, and word-binding code.
+The degree-generic implementation is included for Falcon-512 and Falcon-1024.
+
+Algebra and alpha basis
+
+Let q = 12289, K = 11, B be the live batch size, and N in {512,1024}. The source witness is committed before the native instance-batching challenges and alpha. Public keys and targets are canonical polynomials in F_q[X]/(X^N+1).
+
+The implementation prepares the basis 1, alpha, ..., alpha^(K-1). PowerBasis::try_new checks canonical alpha and invertibility of the basis conversion. The sampler excludes base-field alpha; with the existing degree-11 extension, non-base elements generate the extension. All integer-lift coordinates are canonical representatives in [0,q-1].
+
+For each instance, A_i(Y) is the alpha-basis encoding of the native equality weight lambda_i. Shared P_j(Y) encodes alpha^j. W_ij(Y) encodes the evaluation at alpha of X^j h_i(X) mod (X^N+1). The adjoint recurrence uses the subtraction alpha^N+1 and descending public-key coefficients, matching this negacyclic shift.
+
+The true integer polynomial is
+
+  H(Y) = sum_i A_i(Y) * sum_j [s1_ij P_j(Y) + s2_ij W_ij(Y)].
+
+It has degree at most 20. calculate_lift first accumulates the inner degree-10 polynomial, then performs one 11-by-11 convolution per instance. This reorders exact integer sums without reducing them modulo q or p.
+
+read_off reduces each signed integer coefficient modulo q and evaluates H at alpha using extension-field Horner evaluation. It correctly uses alpha, not the fixed extension generator theta and not reduction of the lift by theta's defining polynomial. Therefore H(alpha) equals the batched native witness relation. The verifier checks it against sum_i lambda_i t_i(alpha).
+
+The prime-field collapsed claim is exactly H(xi): S1 weights are retained as A_i(xi) P_j(xi), S2 weights are A_i(xi) W_ij(xi), and the target is the claimed lift evaluated at xi. The word binder authenticates these weights against the same committed signed15 source used by the norm proof. The standalone ring verifier intentionally returns a claim that still requires binding; read-off alone does not authenticate the lift.
+
+Coefficient bounds and p > 2H
+
+Every signed15 coefficient has absolute value at most M = 2^14. The source encoding gives the same bound even for a dishonest committed bit string. Each inner coefficient has absolute value at most
+
+  2 N M (q-1).
+
+A coefficient of the product with A_i receives at most K products of such an inner coefficient and a coordinate of magnitude at most q-1. Across B instances, both the actual lift and an accepted claimed lift are bounded coefficientwise by
+
+  H_bound = 2 B N M K (q-1)^2.
+
+This is exactly lift_bound(batch). For the largest supported case B=N=1024,
+
+  H_bound = 57,069,614,477,038,925,312 < 2^66,
+  2 H_bound < 2^67.
+
+The inner i64 accumulator is safe because 2 N M (q-1) < 2^39. Lift accumulation fits comfortably in i128 over every supported batch. Layout restricts B to 1..=1024.
+
+The verifier rejects |claimed coefficient| > H_bound. unsigned_abs handles i128::MIN without signed overflow. validate_context requires p > 2 H_bound, and the production prime interval starts at 2^125. Thus each actual-minus-claimed coefficient has magnitude strictly below p. A nonzero integer difference polynomial cannot become the zero polynomial modulo p. This remains true although the prime is sampled before the claimed lift.
+
+Given a false claimed lift, the nonzero difference polynomial over F_p has degree at most 20. The independent xi projection therefore has at most 20 roots. If the claimed lift equals the actual integer lift, the read-off check enforces the native relation at the sampled lambda and alpha. These are the two cases used by the security composition.
+
+Security ledger
+
+The native residual is a polynomial of degree at most N-1 in alpha and has batching degree at most d = log2(capacity) in the independent extension challenges. The existing ledger term (N-1+d) * 2^-149 remains valid because both the extension challenge domain and the non-base alpha domain have size at least 2^149. Factorizing the coordinate representation does not increase this native residual degree.
+
+The coordinate-projection ledger changes from degree 10 to degree 20. protocol.rs routes both fixed_terms and carry_grinding through RingMode::projection_degree. At 128-bit security, the canonical difficulty is 11 bits and the factored difficulty is 12 bits:
+
+  10 * 2^(-125-11) = 20 * 2^(-125-12).
+
+At 100-bit security both difficulties are zero; the degree-20 error is still explicitly included in the fixed budget. The binary/PCS allocator receives the mode-dependent fixed terms, and construction rejects a composed ledger below the requested security target. This review checked consistency with the repository's existing grinding accounting; it does not independently re-prove the underlying Fiat-Shamir/grinding security model.
+
+Transcript and version separation
+
+The factored protocol has a distinct outer identifier, v10-factored-ring, for each Falcon degree. That identifier is hashed into the statement/configuration digest and absorbed before prime sampling and native challenges. The committed source root, public statement, security configuration, and carry difficulty are also bound.
+
+Inside the ring proof, the domain, extension definition, N, live and padded batch dimensions, prime, projection difficulty, and lift bound are absorbed before instance challenges and alpha. The complete fixed-length array of 21 signed i128 lift coefficients is absorbed before the projection nonce and xi. All coefficient encodings have fixed width. The projection nonce uses its own factored-ring grinding domain. Prover and verifier follow the same sequence.
+
+Verification matches RingProof and RingMode and explicitly rejects cross-version combinations. Canonical proof formatting is delegated unchanged. The new relation is limited to raw word binding and is gated behind tests/bench-internals; production defaults remain canonical. The degree-20 proof adds 248 lift-payload bytes compared with the 11-i64 carry payload. Whole-proof growth still needs the implementation's measured acceptance check against the user's 10% limit.
+
+Malformed inputs and inspected coverage
+
+The paths check public/witness dimensions, canonical public coefficients, signed15 witness range, lift bounds, prime no-wrap bound, and projection-nonce presence. The verifier rechecks the read-off and the binding terminal. Factorized binding constructors additionally check row/column/S2 lengths and canonical prime-field coefficients before they are used.
+
+Inspected tests include independent negacyclic schoolbook/shifted-polynomial comparisons, direct integer convolution, signed boundary witnesses, partial batches, projection grinding, alpha-vs-theta read-off, minimal-polynomial/q-multiple alterations that require binding to reject, malformed lifts/nonces, and end-to-end cross-version rejection. Test execution is owned by the root task and is not claimed as part of this read-only review.
+
+One configuration ambiguity was reported during review: new() originally returned for compact/combined computation before parsing BITZ_ARITHMETIC_RING, silently ignoring a simultaneous factored selection. The root agent fixed this. The inspected updated constructor parses the ring selector first and rejects factored+non-padding combinations.
+
+Limits
+
+This review inherits the existing extension-field definition, field arithmetic, commitment binding, sumcheck/BitZ security model, prime sampling, and random-oracle assumptions. It does not establish an independent audit of those components, constant-time suitability for secret processing, exhaustive SIMD correctness, or a performance improvement. The binding agent authored the new binding implementation; the independence claim applies to this review of the other agents' ring algebra and protocol integration.

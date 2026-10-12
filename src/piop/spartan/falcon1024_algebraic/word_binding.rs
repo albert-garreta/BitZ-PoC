@@ -396,28 +396,170 @@ fn reduce_signed(acc: [FpLinearAcc<2, 1>; 2], f: &Cfg) -> F {
 
 /// Before the first challenge D is signed15. Products need a wide accumulator,
 /// not u128: a prime-field coefficient itself can already occupy 126 bits.
+#[cfg(test)]
 fn first_round(form: &BindingForm<'_>, source: &Source, f: &Cfg) -> ([F; 2], F) {
+    first_round_with_factors(
+        form,
+        source,
+        &WordFactors::default(),
+        f,
+        arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
+    )
+}
+
+#[derive(Default)]
+pub(super) struct WordFactors {
+    pub norm: Option<FactoredNorm>,
+    pub s1: Option<FactoredS1>,
+}
+
+pub(super) struct FactoredS1 {
+    pub rows: Vec<F>,
+    pub columns: Vec<F>,
+}
+
+pub(super) struct FactoredNorm {
+    first: F,
+    // Equality weights of the remaining coefficient bits, shared by all rows.
+    columns: Vec<F>,
+    // eta * eq(side) * eq(instance), with no entries for inactive instances.
+    rows: [Vec<F>; 2],
+}
+
+impl FactoredNorm {
+    pub(super) fn new(
+        layout: &Layout,
+        norm: &NormClaims,
+        eta: F,
+        f: &Cfg,
+    ) -> Result<Self, FalconError> {
+        let columns = eq_table(&norm.point[1..COEFFICIENT_LOG], f).map_err(failure)?;
+        let instances = eq_table(&norm.point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
+        let sides = [
+            f.sub(&f.one(), &norm.point[COEFFICIENT_LOG]),
+            norm.point[COEFFICIENT_LOG],
+        ];
+        Ok(Self {
+            first: norm.point[0],
+            columns,
+            rows: sides.map(|side| {
+                let scale = f.mul(&eta, &side);
+                instances[..layout.batch()]
+                    .iter()
+                    .map(|i| f.mul(&scale, i))
+                    .collect()
+            }),
+        })
+    }
+
+    fn first_round(&self, source: &Source, f: &Cfg) -> ([F; 2], F) {
+        let parts: Vec<_> = crate::cfg_into_iter!(0..self.rows[0].len())
+            .map(|instance| {
+                let mut totals = [f.zero(); 2];
+                for side in 0..2 {
+                    let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 2];
+                    for (j, weight) in self.columns.iter().enumerate() {
+                        let i = instance * 2 * N + side * N + 2 * j;
+                        signed_acc(&mut sums[0], weight, decode(word(source, i)), f);
+                        signed_acc(&mut sums[1], weight, decode(word(source, i + 1)), f);
+                    }
+                    for (total, sum) in totals.iter_mut().zip(sums) {
+                        *total = f.add(
+                            total,
+                            &f.mul(&self.rows[side][instance], &reduce_signed(sum, f)),
+                        );
+                    }
+                }
+                totals
+            })
+            .collect();
+        let [even, odd] = parts
+            .into_iter()
+            .fold([f.zero(); 2], |a, b| add_pair(a, b, f));
+        let c0 = f.mul(&f.sub(&f.one(), &self.first), &even);
+        let c2 = f.mul(
+            &f.sub(&f.add(&self.first, &self.first), &f.one()),
+            &f.sub(&odd, &even),
+        );
+        ([c0, c2], f.add(&c0, &f.mul(&self.first, &odd)))
+    }
+
+    fn folded_rows(&self, r: F, f: &Cfg) -> [Vec<F>; 2] {
+        let eq = f.add(
+            &f.mul(&self.first, &r),
+            &f.mul(&f.sub(&f.one(), &self.first), &f.sub(&f.one(), &r)),
+        );
+        self.rows
+            .each_ref()
+            .map(|rows| rows.iter().map(|v| f.mul(v, &eq)).collect())
+    }
+}
+
+fn first_round_with_factors(
+    form: &BindingForm<'_>,
+    source: &Source,
+    factors: &WordFactors,
+    f: &Cfg,
+    reuse_product: bool,
+) -> ([F; 2], F) {
     let chunks = (form.layout.source_bits() / 32).div_ceil(1024);
     let parts: Vec<_> = crate::cfg_into_iter!(0..chunks)
         .map(|chunk| {
             let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
             let end = ((chunk + 1) * 1024).min(form.layout.source_bits() / 32);
             for i in chunk * 1024..end {
+                if factors.s1.is_some() && (2 * i / N) & 1 == 0 {
+                    continue;
+                }
                 let a = decode(word(source, 2 * i));
                 let b = decode(word(source, 2 * i + 1));
                 let w0 = coefficient(form, 2 * i);
                 let w1 = coefficient(form, 2 * i + 1);
                 signed_acc(&mut sums[0], &w0, a, f);
                 signed_acc(&mut sums[1], &f.sub(&w1, &w0), b - a, f);
-                signed_acc(&mut sums[2], &w0, a, f);
+                if !reuse_product {
+                    signed_acc(&mut sums[2], &w0, a, f);
+                }
                 signed_acc(&mut sums[2], &w1, b, f);
             }
             sums.map(|s| reduce_signed(s, f))
         })
         .collect();
-    let sum = parts.into_iter().fold([f.zero(); 3], |a, b| {
+    let mut sum = parts.into_iter().fold([f.zero(); 3], |a, b| {
         std::array::from_fn(|i| f.add(&a[i], &b[i]))
     });
+    if reuse_product {
+        sum[2] = f.add(&sum[2], &sum[0]);
+    }
+    if let Some(s1) = &factors.s1 {
+        let parts: Vec<_> = crate::cfg_into_iter!(0..form.layout.batch())
+            .map(|instance| {
+                let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
+                for (j, pair) in s1.columns.chunks_exact(2).enumerate() {
+                    let i = instance * 2 * N + 2 * j;
+                    let a = decode(word(source, i));
+                    let b = decode(word(source, i + 1));
+                    signed_acc(&mut sums[0], &pair[0], a, f);
+                    signed_acc(&mut sums[1], &f.sub(&pair[1], &pair[0]), b - a, f);
+                    signed_acc(&mut sums[2], &pair[1], b, f);
+                }
+                let mut values = sums.map(|s| f.mul(&s1.rows[instance], &reduce_signed(s, f)));
+                values[2] = f.add(&values[2], &values[0]);
+                values
+            })
+            .collect();
+        for part in parts {
+            for i in 0..3 {
+                sum[i] = f.add(&sum[i], &part[i]);
+            }
+        }
+    }
+    if let Some(norm) = &factors.norm {
+        let (next, initial) = norm.first_round(source, f);
+        sum[0] = f.add(&sum[0], &next[0]);
+        sum[1] = f.add(&sum[1], &next[1]);
+        sum[2] = f.add(&sum[2], &initial);
+    }
     ([sum[0], sum[1]], sum[2])
 }
 
@@ -434,34 +576,97 @@ fn dense_sums(values: &[[F; 2]], stride: usize, f: &Cfg) -> [F; 2] {
 
 /// Allocate the sole dense product after the first word fold. Each slot holds
 /// [Lambda, D]. Later folds reuse these slots at a doubling stride.
-#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
+#[cfg(test)]
 fn first_fold(form: &BindingForm<'_>, source: &Source, r: F, f: &Cfg) -> (Vec<[F; 2]>, [F; 2]) {
-    // Flipping bit 14 maps signed15 a to a+2^14. The interpolation weights
-    // sum to one, so the third term removes this bias in the wide accumulator.
-    // Prepared weights give one Montgomery reduction for the complete fold.
+    first_fold_with_factors(
+        form,
+        source,
+        r,
+        &WordFactors::default(),
+        f,
+        arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
+    )
+}
+
+#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
+fn first_fold_with_factors(
+    form: &BindingForm<'_>,
+    source: &Source,
+    r: F,
+    factors: &WordFactors,
+    f: &Cfg,
+    fused: bool,
+) -> (Vec<[F; 2]>, [F; 2]) {
+    // Flipping bit14 maps signed15 a to a+2^14. Prepared weights include the bias.
     let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
         f,
         [f.sub(&f.one(), &r), r, f.neg(&small(1 << 14, f))],
     );
+    let norm_rows = factors.norm.as_ref().map(|norm| norm.folded_rows(r, f));
+    let s1_columns: Option<Vec<_>> = factors.s1.as_ref().map(|s1| {
+        s1.columns
+            .chunks_exact(2)
+            .map(|p| lerp(p[0], p[1], r, f))
+            .collect()
+    });
+    let slot = |index: usize| {
+        let i = 2 * index;
+        let instance = i / (2 * N);
+        let side = (i / N) & 1;
+        let mut weight = if let (Some(s1), Some(columns)) = (&factors.s1, &s1_columns) {
+            if side == 0 {
+                if instance < form.layout.batch() {
+                    f.mul(&s1.rows[instance], &columns[(i % N) / 2])
+                } else {
+                    f.zero()
+                }
+            } else {
+                lerp(coefficient(form, i), coefficient(form, i + 1), r, f)
+            }
+        } else {
+            lerp(coefficient(form, i), coefficient(form, i + 1), r, f)
+        };
+        if instance < form.layout.batch() {
+            if let (Some(norm), Some(rows)) = (&factors.norm, &norm_rows) {
+                weight = f.add(
+                    &weight,
+                    &f.mul(&rows[side][instance], &norm.columns[(i % N) / 2]),
+                );
+            }
+        }
+        let words = [word(source, i), word(source, i + 1)];
+        [
+            weight,
+            <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+                if k == 2 {
+                    1
+                } else {
+                    u64::from((words[k] ^ 0x4000) & 0x7fff)
+                }
+            }),
+        ]
+    };
     let mut values = vec![[f.zero(); 2]; form.layout.source_bits() / 32];
     let parts: Vec<_> = crate::cfg_chunks_mut!(values, 1024)
         .enumerate()
         .map(|(chunk, out)| {
-            for (j, slot) in out.iter_mut().enumerate() {
-                let i = 2 * (chunk * 1024 + j);
-                let words = [word(source, i), word(source, i + 1)];
-                *slot = [
-                    lerp(coefficient(form, i), coefficient(form, i + 1), r, f),
-                    <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
-                        if k == 2 {
-                            1
-                        } else {
-                            u64::from((words[k] ^ 0x4000) & 0x7fff)
-                        }
-                    }),
-                ];
+            if fused {
+                let mut sums = [FpProductAcc::<2>::default(); 2];
+                for (j, pair) in out.chunks_exact_mut(2).enumerate() {
+                    let a = slot(chunk * 1024 + 2 * j);
+                    let b = slot(chunk * 1024 + 2 * j + 1);
+                    pair[0] = a;
+                    pair[1] = b;
+                    f.mul_acc(&mut sums[0], &a[0], &a[1]);
+                    f.mul_acc(&mut sums[1], &f.sub(&b[0], &a[0]), &f.sub(&b[1], &a[1]));
+                }
+                sums.map(|s| f.reduce(s))
+            } else {
+                for (j, out) in out.iter_mut().enumerate() {
+                    *out = slot(chunk * 1024 + j);
+                }
+                dense_sums(out, 1, f)
             }
-            dense_sums(out, 1, f)
         })
         .collect();
     let sums = parts
@@ -554,6 +759,7 @@ fn bind_terminal(
     }
 }
 
+#[cfg(test)]
 pub(super) fn prove(
     t: &mut impl Transcript,
     layout: &Layout,
@@ -565,11 +771,43 @@ pub(super) fn prove(
     schedule: &Schedule,
     f: &Cfg,
 ) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+    prove_with_correction(
+        t,
+        layout,
+        source,
+        form,
+        WordFactors::default(),
+        target,
+        norm,
+        merge_nonce,
+        schedule,
+        f,
+    )
+}
+
+pub(super) fn prove_with_correction(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    source: &Source,
+    form: BindingForm<'_>,
+    factors: WordFactors,
+    target: F,
+    norm: NormProof,
+    merge_nonce: Option<u64>,
+    schedule: &Schedule,
+    f: &Cfg,
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
     t.absorb_slice(DOMAIN);
     let mut weights = PublicWeights::new(&form);
     let mut spare = Sparse::from_source(source, layout, f)?;
     let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
-    let (mut next, initial) = first_round(&form, source, f);
+    let (mut next, initial) = first_round_with_factors(
+        &form,
+        source,
+        &factors,
+        f,
+        arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
+    );
     let spare_initial = aggregate_spare.initial(&weights, f);
     if f.add(&initial, &spare_initial) != target {
         return Err(failure("word binding initial claim"));
@@ -610,7 +848,14 @@ pub(super) fn prove(
         point.push(r);
         if round == 0 {
             let initial_form = form.take().unwrap();
-            (dense, next) = first_fold(&initial_form, source, r, f);
+            (dense, next) = first_fold_with_factors(
+                &initial_form,
+                source,
+                r,
+                &factors,
+                f,
+                arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
+            );
         } else {
             next = dense_fold(&mut dense, stride, r, f);
             stride *= 2;
@@ -669,6 +914,28 @@ pub(super) fn verify(
     schedule: &Schedule,
     f: &Cfg,
 ) -> Result<WordBridgeClaim, FalconError> {
+    verify_with_factors(
+        t,
+        layout,
+        form,
+        &WordFactors::default(),
+        target,
+        proof,
+        schedule,
+        f,
+    )
+}
+
+pub(super) fn verify_with_factors(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    form: &BindingForm<'_>,
+    factors: &WordFactors,
+    target: F,
+    proof: &Proof,
+    schedule: &Schedule,
+    f: &Cfg,
+) -> Result<WordBridgeClaim, FalconError> {
     let n = 2 + usize::from(layout.batch() < layout.capacity());
     if proof.binding_terminal.len() != n {
         return Err(failure("word binding terminal count"));
@@ -686,9 +953,19 @@ pub(super) fn verify(
     let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
     let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
     let reduction = f.prepare_product_reduction(2 * N);
+    let s1_local = factors.s1.as_ref().map(|s1| {
+        let mut sum = FpProductAcc::<2>::default();
+        for (a, b) in s1.columns.iter().zip(&local[..N]) {
+            f.mul_acc(&mut sum, a, b);
+        }
+        reduction.reduce(sum)
+    });
     let evaluate_instance = |instance: usize| {
         let mut sum = FpProductAcc::<2>::default();
         for side in 0..2 {
+            if side == 0 && factors.s1.is_some() {
+                continue;
+            }
             for (coefficient, weight) in form.coefficients[side][instance * N..(instance + 1) * N]
                 .iter()
                 .zip(&local[side * N..(side + 1) * N])
@@ -696,7 +973,12 @@ pub(super) fn verify(
                 f.mul_acc(&mut sum, coefficient, weight);
             }
         }
-        reduction.reduce(sum)
+        let value = reduction.reduce(sum);
+        if let (Some(s1), Some(column)) = (&factors.s1, s1_local) {
+            f.add(&value, &f.mul(&s1.rows[instance], &column))
+        } else {
+            value
+        }
     };
     #[cfg(feature = "parallel")]
     let values: Option<Vec<_>> =
@@ -719,13 +1001,38 @@ pub(super) fn verify(
             .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
         f.mul_acc(&mut coefficient_sum, &value, weight);
     }
+    let mut coefficient_value = f.reduce(coefficient_sum);
+    if let Some(norm) = &factors.norm {
+        let mut correction = f.zero();
+        for side in 0..2 {
+            let mut row_sum = FpProductAcc::<2>::default();
+            for (a, b) in norm.rows[side].iter().zip(&instances) {
+                f.mul_acc(&mut row_sum, a, b);
+            }
+            let mut column_sum = FpProductAcc::<2>::default();
+            for (j, weight) in local[side * N..(side + 1) * N].iter().enumerate() {
+                let first = if j & 1 == 0 {
+                    f.sub(&f.one(), &norm.first)
+                } else {
+                    norm.first
+                };
+                let coefficient = f.mul(&first, &norm.columns[j / 2]);
+                f.mul_acc(&mut column_sum, &coefficient, weight);
+            }
+            correction = f.add(
+                &correction,
+                &f.mul(&f.reduce(row_sum), &f.reduce(column_sum)),
+            );
+        }
+        coefficient_value = f.add(&coefficient_value, &correction);
+    }
     let mut weights = PublicWeights::new(form);
     for (round, &r) in point.iter().enumerate() {
         weights.fold(round, r, f);
     }
     let v = &proof.binding_terminal;
     let mut terminal = f.add(
-        &f.mul(&f.reduce(coefficient_sum), &v[0]),
+        &f.mul(&coefficient_value, &v[0]),
         &f.mul(&weights.spare(0, rounds(layout), f), &v[1]),
     );
     if n == 3 {

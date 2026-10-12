@@ -1,0 +1,2716 @@
+diff --git a/benches/common/falcon_stage_timings.rs b/benches/common/falcon_stage_timings.rs
+index e20300db7..61eb46565 100644
+--- a/benches/common/falcon_stage_timings.rs
++++ b/benches/common/falcon_stage_timings.rs
+@@ -37,6 +37,49 @@ impl<S> tracing_subscriber::Layer<S> for StageTimings
+ where
+     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+ {
++    fn enabled(
++        &self,
++        metadata: &tracing::Metadata<'_>,
++        _ctx: tracing_subscriber::layer::Context<'_, S>,
++    ) -> bool {
++        // Aggregate stages avoid the substantial overhead of tracing every round.
++        static LIGHT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        if !*LIGHT.get_or_init(|| std::env::var_os("BITZ_FALCON_LIGHT_PROFILE").is_some()) {
++            return true;
++        }
++        metadata.name().starts_with("falcon_factored_ring:")
++            || matches!(
++                metadata.name(),
++                "falcon_algebraic:commit"
++                    | "falcon_algebraic:prove"
++                    | "falcon_algebraic:verify"
++                    | "falcon_algebraic:witness"
++                    | "falcon_algebraic:ring"
++                    | "falcon_algebraic:arithmetic"
++                    | "falcon_algebraic:binding"
++                    | "falcon_algebraic:integer_outer"
++                    | "falcon_algebraic:binding_construction"
++                    | "falcon_algebraic:word_first_fold"
++                    | "falcon_algebraic:bitz"
++                    | "falcon_algebraic:pcs"
++                    | "falcon_algebraic_ring:coordinates"
++                    | "falcon_algebraic_ring:coordinate_work"
++                    | "falcon_algebraic_ring:carries"
++                    | "falcon_algebraic_ring:collapse"
++                    | "shared_source:encode"
++                    | "shared_source:merkle"
++                    | "falcon_bridge:integer_folds"
++                    | "falcon_bridge:column_packing"
++                    | "falcon_bridge:power_tables"
++                    | "falcon_bridge:wfbitz_forest"
++                    | "op:initial_messages"
++                    | "op:deferred_first_fold"
++                    | "op:ring_switch"
++                    | "op:extra_bases"
++                    | "op:ligerito"
++            )
++    }
++
+     fn on_new_span(
+         &self,
+         attrs: &tracing::span::Attributes<'_>,
+diff --git a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+index 84e9503d6..b1d54707c 100644
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -139,6 +139,80 @@ pub(super) fn prove(
+     field: &Cfg,
+     ring: &PreparedClaim,
+     schedule: &Schedule,
++) -> Result<(Proof, BridgeClaim), FalconError> {
++    prove_with_ring(
++        transcript,
++        layout,
++        data,
++        source,
++        field,
++        RingInput::Borrowed(ring),
++        schedule,
++    )
++}
++
++/// Transfer ring projections once the ring prover no longer needs them.
++pub(super) fn prove_owned(
++    transcript: &mut impl Transcript,
++    layout: &Layout,
++    data: &WitnessData,
++    source: &Source,
++    field: &Cfg,
++    ring: PreparedClaim,
++    schedule: &Schedule,
++) -> Result<(Proof, BridgeClaim), FalconError> {
++    if arithmetic_experiment("BITZ_ARITHMETIC_BINDING_OWNED", false) {
++        prove_with_ring(
++            transcript,
++            layout,
++            data,
++            source,
++            field,
++            RingInput::Owned(ring),
++            schedule,
++        )
++    } else {
++        prove(transcript, layout, data, source, field, &ring, schedule)
++    }
++}
++
++enum RingInput<'a> {
++    Borrowed(&'a PreparedClaim),
++    Owned(PreparedClaim),
++    Factored(super::factored_ring::PreparedClaim),
++}
++
++pub(super) fn prove_factored_ring(
++    transcript: &mut impl Transcript,
++    layout: &Layout,
++    data: &WitnessData,
++    source: &Source,
++    field: &Cfg,
++    ring: super::factored_ring::PreparedClaim,
++    schedule: &Schedule,
++) -> Result<(Proof, BridgeClaim), FalconError> {
++    if !schedule.word_binding {
++        return Err(failure("factored ring requires word binding"));
++    }
++    prove_with_ring(
++        transcript,
++        layout,
++        data,
++        source,
++        field,
++        RingInput::Factored(ring),
++        schedule,
++    )
++}
++
++fn prove_with_ring(
++    transcript: &mut impl Transcript,
++    layout: &Layout,
++    data: &WitnessData,
++    source: &Source,
++    field: &Cfg,
++    ring: RingInput<'_>,
++    schedule: &Schedule,
+ ) -> Result<(Proof, BridgeClaim), FalconError> {
+     if source.layout() != layout {
+         return Err(failure("algebraic source layout mismatch"));
+@@ -149,13 +223,47 @@ pub(super) fn prove(
+     transcript.absorb_slice(MERGE_DOMAIN);
+     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
+     let eta = sample(transcript, field)?;
+-    let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
++    let defer_norm = schedule.word_binding
++        && (matches!(&ring, RingInput::Factored(_))
++            || arithmetic_experiment("BITZ_ARITHMETIC_NORM_FACTORED", false));
++    let mut s1 = None;
++    let (mut form, target) = match ring {
++        RingInput::Borrowed(ring) if !defer_norm => {
++            BindingForm::new(layout, ring, &norm_claims, eta, field)?
++        }
++        RingInput::Borrowed(ring) => {
++            BindingForm::new_owned(layout, ring.clone(), &norm_claims, eta, field, true)?
++        }
++        RingInput::Owned(ring) => {
++            BindingForm::new_owned(layout, ring, &norm_claims, eta, field, defer_norm)?
++        }
++        RingInput::Factored(ring) => {
++            let (form, target, factors) =
++                BindingForm::new_factored(layout, ring, &norm_claims, eta, field)?;
++            s1 = Some(factors);
++            (form, target)
++        }
++    };
+     if schedule.word_binding {
+-        let (proof, row_weights, claim) = word_binding::prove(
++        let correction = if defer_norm {
++            Some(word_binding::FactoredNorm::new(
++                layout,
++                &norm_claims,
++                eta,
++                field,
++            )?)
++        } else {
++            None
++        };
++        let (proof, row_weights, claim) = word_binding::prove_with_correction(
+             transcript,
+             layout,
+             source,
+             form,
++            word_binding::WordFactors {
++                norm: correction,
++                s1,
++            },
+             target,
+             norm,
+             merge_nonce,
+@@ -224,6 +332,38 @@ pub(super) fn prove(
+     ))
+ }
+ 
++pub(super) fn verify_factored_ring(
++    transcript: &mut impl Transcript,
++    layout: &Layout,
++    field: &Cfg,
++    ring: &super::factored_ring::PreparedClaim,
++    proof: &Proof,
++    schedule: &Schedule,
++) -> Result<BridgeClaim, FalconError> {
++    if !schedule.word_binding {
++        return Err(failure("factored ring requires word binding"));
++    }
++    validate_field(layout, field)?;
++    let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
++    transcript.absorb_slice(MERGE_DOMAIN);
++    verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
++    let eta = sample(transcript, field)?;
++    let (form, target, s1) = BindingForm::new_factored(layout, ring.clone(), &norm, eta, field)?;
++    let factors = word_binding::WordFactors {
++        s1: Some(s1),
++        norm: Some(word_binding::FactoredNorm::new(layout, &norm, eta, field)?),
++    };
++    let claim = word_binding::verify_with_factors(
++        transcript, layout, &form, &factors, target, proof, schedule, field,
++    )?;
++    Ok(BridgeClaim {
++        column_point: claim.column_point(layout).to_vec(),
++        row_weights: claim.row_weights(layout, field)?,
++        modulus: claim.modulus,
++        value: claim.value,
++    })
++}
++
+ pub(super) fn verify(
+     transcript: &mut impl Transcript,
+     layout: &Layout,
+@@ -457,6 +597,23 @@ enum BindingStrategy {
+     Legacy,
+ }
+ 
++fn arithmetic_experiment(name: &str, default: bool) -> bool {
++    #[cfg(feature = "bench-internals")]
++    match std::env::var(name) {
++        Ok(value) => {
++            return match value.as_str() {
++                "on" => true,
++                "off" => false,
++                _ => panic!("{name} must be on or off"),
++            };
++        }
++        Err(std::env::VarError::NotPresent) => {}
++        Err(std::env::VarError::NotUnicode(_)) => panic!("{name} must be valid Unicode"),
++    }
++    let _ = name;
++    default
++}
++
+ fn binding_workers() -> usize {
+     rayon::current_num_threads()
+ }
+@@ -550,6 +707,29 @@ impl<'a> BindingForm<'a> {
+         )
+     }
+ 
++    fn new_owned(
++        layout: &'a Layout,
++        ring: PreparedClaim,
++        norm: &NormClaims,
++        eta: F,
++        field: &'a Cfg,
++        defer_norm: bool,
++    ) -> Result<(Self, F), FalconError> {
++        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
++        let strategy = binding_strategy(layout.batch(), BindingKernel::Construction);
++        Self::new_owned_with_strategy(
++            layout,
++            ring,
++            norm,
++            eta,
++            field,
++            strategy,
++            binding_parallel(strategy),
++            defer_norm,
++            false,
++        )
++    }
++
+     fn new_with_strategy(
+         layout: &'a Layout,
+         ring: &PreparedClaim,
+@@ -558,9 +738,69 @@ impl<'a> BindingForm<'a> {
+         field: &'a Cfg,
+         strategy: BindingStrategy,
+         parallel: bool,
++    ) -> Result<(Self, F), FalconError> {
++        Self::new_owned_with_strategy(
++            layout,
++            ring.clone(),
++            norm,
++            eta,
++            field,
++            strategy,
++            parallel,
++            false,
++            false,
++        )
++    }
++
++    fn new_factored(
++        layout: &'a Layout,
++        ring: super::factored_ring::PreparedClaim,
++        norm: &NormClaims,
++        eta: F,
++        field: &'a Cfg,
++    ) -> Result<(Self, F, word_binding::FactoredS1), FalconError> {
++        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
++        if ring.s1_rows.len() != layout.batch() || ring.s1_columns.len() != N {
++            return Err(failure("factored ring binding dimensions"));
++        }
++        validate_field_elements(&ring.s1_rows, field).map_err(failure)?;
++        validate_field_elements(&ring.s1_columns, field).map_err(failure)?;
++        let factors = word_binding::FactoredS1 {
++            rows: ring.s1_rows,
++            columns: ring.s1_columns,
++        };
++        let dense = PreparedClaim {
++            weights_s1: Vec::new(),
++            weights_s2: ring.weights_s2,
++            target: ring.target,
++        };
++        let (form, target) = Self::new_owned_with_strategy(
++            layout,
++            dense,
++            norm,
++            eta,
++            field,
++            BindingStrategy::Optimized,
++            false,
++            true,
++            true,
++        )?;
++        Ok((form, target, factors))
++    }
++
++    fn new_owned_with_strategy(
++        layout: &'a Layout,
++        ring: PreparedClaim,
++        norm: &NormClaims,
++        eta: F,
++        field: &'a Cfg,
++        strategy: BindingStrategy,
++        parallel: bool,
++        defer_norm: bool,
++        factored_s1: bool,
+     ) -> Result<(Self, F), FalconError> {
+         let len = layout.batch() * N;
+-        if ring.weights_s1.len() != len
++        if ring.weights_s1.len() != if factored_s1 { 0 } else { len }
+             || ring.weights_s2.len() != len
+             || norm.point.len() != COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
+             || norm.instance_point.len() != layout.capacity().ilog2() as usize
+@@ -578,16 +818,20 @@ impl<'a> BindingForm<'a> {
+             field.sub(&field.one(), &norm.point[COEFFICIENT_LOG]),
+             norm.point[COEFFICIENT_LOG],
+         ];
+-        let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
+-        match strategy {
+-            BindingStrategy::Optimized => {
+-                let coefficient_weights =
+-                    eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
+-                let norm_instances =
+-                    eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
+-                // eq(j, i; r) factors into coefficient and instance weights.
+-                // Combine the instance factors before touching either N-word slice.
+-                let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
++        let mut coefficients = [ring.weights_s1, ring.weights_s2];
++        if defer_norm {
++            validate_field_elements(&coefficients[0], field).map_err(failure)?;
++            validate_field_elements(&coefficients[1], field).map_err(failure)?;
++        } else {
++            match strategy {
++                BindingStrategy::Optimized => {
++                    let coefficient_weights =
++                        eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
++                    let norm_instances =
++                        eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
++                    // eq(j, i; r) factors into coefficient and instance weights.
++                    // Combine the instance factors before touching either N-word slice.
++                    let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
+                  -> Result<(), FalconError> {
+                     // Validate the original ring projections in the same
+                     // partition pass, before adding the norm coefficients.
+@@ -604,30 +848,33 @@ impl<'a> BindingForm<'a> {
+                     }
+                     Ok(())
+                 };
+-                let [s1, s2] = &mut coefficients;
+-                if parallel {
+-                    s1.par_chunks_mut(N)
+-                        .zip(s2.par_chunks_mut(N))
+-                        .enumerate()
+-                        .try_for_each(fill)?;
+-                } else {
+-                    s1.chunks_mut(N)
+-                        .zip(s2.chunks_mut(N))
+-                        .enumerate()
+-                        .try_for_each(fill)?;
++                    let [s1, s2] = &mut coefficients;
++                    if parallel {
++                        s1.par_chunks_mut(N)
++                            .zip(s2.par_chunks_mut(N))
++                            .enumerate()
++                            .try_for_each(fill)?;
++                    } else {
++                        s1.chunks_mut(N)
++                            .zip(s2.chunks_mut(N))
++                            .enumerate()
++                            .try_for_each(fill)?;
++                    }
+                 }
+-            }
+-            BindingStrategy::Legacy => {
+-                validate_field_elements(&ring.weights_s1, field).map_err(failure)?;
+-                validate_field_elements(&ring.weights_s2, field).map_err(failure)?;
+-                let weights = eq_table(&norm.point, field).map_err(failure)?;
+-                for side in 0..2 {
+-                    for instance in 0..layout.batch() {
+-                        for j in 0..N {
+-                            let index = instance * N + j;
+-                            let weight = weights[instance * 2 * N + side * N + j];
+-                            coefficients[side][index] = field
+-                                .add(&coefficients[side][index], &field.mul(&scales[1], &weight));
++                BindingStrategy::Legacy => {
++                    validate_field_elements(&coefficients[0], field).map_err(failure)?;
++                    validate_field_elements(&coefficients[1], field).map_err(failure)?;
++                    let weights = eq_table(&norm.point, field).map_err(failure)?;
++                    for side in 0..2 {
++                        for instance in 0..layout.batch() {
++                            for j in 0..N {
++                                let index = instance * N + j;
++                                let weight = weights[instance * 2 * N + side * N + j];
++                                coefficients[side][index] = field.add(
++                                    &coefficients[side][index],
++                                    &field.mul(&scales[1], &weight),
++                                );
++                            }
+                         }
+                     }
+                 }
+@@ -1333,6 +1580,108 @@ mod tests {
+         WitnessData { witness, slacks }
+     }
+ 
++    #[test]
++    fn factored_binding_checks_shapes_and_canonical_coefficients() {
++        let f = field();
++        let layout = Layout::new(3).unwrap();
++        let norm = NormClaims {
++            instance_point: vec![f.zero(); layout.capacity().ilog2() as usize],
++            point: vec![f.zero(); COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize],
++            terminal: f.zero(),
++            slack: f.zero(),
++        };
++        let claim = super::super::factored_ring::PreparedClaim {
++            s1_rows: vec![f.one(); layout.batch()],
++            s1_columns: vec![f.one(); N],
++            weights_s2: vec![f.one(); layout.batch() * N],
++            target: f.zero(),
++        };
++        let (form, _, _) =
++            BindingForm::new_factored(&layout, claim.clone(), &norm, f.one(), &f).unwrap();
++        assert!(form.coefficients[0].is_empty());
++        for component in 0..4 {
++            let mut invalid = claim.clone();
++            let noncanonical = crate::piop::spartan::noncanonical_test_value(&f);
++            match component {
++                0 => invalid.s1_rows[0] = noncanonical,
++                1 => invalid.s1_columns[0] = noncanonical,
++                2 => invalid.weights_s2[0] = noncanonical,
++                _ => invalid.target = noncanonical,
++            }
++            assert!(BindingForm::new_factored(&layout, invalid, &norm, f.one(), &f).is_err());
++        }
++        for component in 0..3 {
++            let mut invalid = claim.clone();
++            match component {
++                0 => {
++                    invalid.s1_rows.pop();
++                }
++                1 => {
++                    invalid.s1_columns.pop();
++                }
++                _ => {
++                    invalid.weights_s2.pop();
++                }
++            }
++            assert!(BindingForm::new_factored(&layout, invalid, &norm, f.one(), &f).is_err());
++        }
++    }
++
++    #[test]
++    fn owned_ring_binding_preserves_proof_and_transcript() {
++        let f = field();
++        for batch in [1, 3, 17] {
++            let layout = Layout::new(batch).unwrap();
++            let data = data(batch);
++            let source = Source::new(layout, &data);
++            let ring = ring(&data, &f);
++            let mut borrowed = Blake3Transcript::new();
++            let expected = prove_with_ring(
++                &mut borrowed,
++                &layout,
++                &data,
++                &source,
++                &f,
++                RingInput::Borrowed(&ring),
++                &schedule(),
++            )
++            .unwrap();
++            let mut owned = Blake3Transcript::new();
++            let actual = prove_with_ring(
++                &mut owned,
++                &layout,
++                &data,
++                &source,
++                &f,
++                RingInput::Owned(ring.clone()),
++                &schedule(),
++            )
++            .unwrap();
++            assert_eq!(actual, expected);
++            assert_eq!(owned.state_digest(), borrowed.state_digest());
++            let mut verifier = Blake3Transcript::new();
++            assert_eq!(
++                verify(&mut verifier, &layout, &f, &ring, &actual.0, &schedule()).unwrap(),
++                actual.1
++            );
++            assert_eq!(verifier.state_digest(), owned.state_digest());
++            let mut invalid = ring;
++            invalid.weights_s1[0] = crate::piop::spartan::noncanonical_test_value(&f);
++            assert!(
++                prove_with_ring(
++                    &mut Blake3Transcript::new(),
++                    &layout,
++                    &data,
++                    &source,
++                    &f,
++                    RingInput::Owned(invalid),
++                    &schedule()
++                )
++                .is_err()
++            );
++        }
++    }
++
+     fn ring(data: &WitnessData, field: &Cfg) -> PreparedClaim {
+         let len = data.witness.s1.len() * N;
+         let weights_s1: Vec<_> = (0..len)
+diff --git a/src/piop/spartan/falcon1024_algebraic/backend.rs b/src/piop/spartan/falcon1024_algebraic/backend.rs
+index c848341a9..cab91ddab 100644
+--- a/src/piop/spartan/falcon1024_algebraic/backend.rs
++++ b/src/piop/spartan/falcon1024_algebraic/backend.rs
+@@ -1,5 +1,7 @@
+ mod arithmetic;
+ mod compact;
++#[cfg(any(test, feature = "bench-internals"))]
++mod factored_ring;
+ mod protocol;
+ mod ring;
+ mod source;
+diff --git a/src/piop/spartan/falcon1024_algebraic/protocol.rs b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+index 5125ed31b..aa328af4f 100644
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -102,6 +102,67 @@ enum SourceProverData {
+     Split(shared::JointProverData<3>),
+ }
+ 
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum RingMode {
++    Canonical,
++    #[cfg(any(test, feature = "bench-internals"))]
++    Factored,
++}
++
++impl RingMode {
++    fn projection_degree(self) -> usize {
++        match self {
++            Self::Canonical => 10,
++            #[cfg(any(test, feature = "bench-internals"))]
++            Self::Factored => 20,
++        }
++    }
++}
++
++#[derive(Clone)]
++enum RingProof {
++    Canonical(ring::Proof),
++    #[cfg(any(test, feature = "bench-internals"))]
++    Factored(super::factored_ring::Proof),
++}
++
++// Delegate canonical Debug unchanged: benchmark digests cover the complete v9 proof.
++impl std::fmt::Debug for RingProof {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            Self::Canonical(proof) => proof.fmt(f),
++            #[cfg(any(test, feature = "bench-internals"))]
++            Self::Factored(proof) => f.debug_tuple("FactoredRing").field(proof).finish(),
++        }
++    }
++}
++
++impl RingProof {
++    fn payload_size_bytes(&self) -> usize {
++        match self {
++            Self::Canonical(proof) => proof.payload_size_bytes(),
++            #[cfg(any(test, feature = "bench-internals"))]
++            Self::Factored(proof) => proof.payload_size_bytes(),
++        }
++    }
++}
++
++enum RingClaim {
++    Canonical(ring::PreparedClaim),
++    #[cfg(any(test, feature = "bench-internals"))]
++    Factored(super::factored_ring::PreparedClaim),
++}
++
++impl RingClaim {
++    #[cfg(any(test, feature = "bench-internals"))]
++    fn canonical(&self) -> Result<&ring::PreparedClaim, FalconError> {
++        match self {
++            Self::Canonical(claim) => Ok(claim),
++            Self::Factored(_) => Err(error("compact computation requires canonical ring")),
++        }
++    }
++}
++
+ /// Reusable configuration for 1..=1024 algebraic Falcon statements.
+ pub struct PreparedFalconAlgebraic {
+     layout: Layout,
+@@ -113,6 +174,7 @@ pub struct PreparedFalconAlgebraic {
+     grinding: BinaryGrinding,
+     compact_binding: bool,
+     compute_variant: &'static str,
++    ring_mode: RingMode,
+     scratch: Mutex<Scratch>,
+ }
+ 
+@@ -143,7 +205,7 @@ impl CommittedFalconAlgebraic {
+ pub struct FalconAlgebraicProof {
+     source_root: [u8; 32],
+     exceptions: Vec<Vec<u16>>,
+-    ring: ring::Proof,
++    ring: RingProof,
+     arithmetic: ArithmeticProof,
+     bridges: Vec<bridge::Proof>,
+     bridge_merge_nonces: Vec<u64>,
+@@ -272,9 +334,28 @@ impl PreparedFalconAlgebraic {
+         if compute_variant != "padding" {
+             return Self::with_compute_variant(batch, target_bits, compute_variant);
+         }
++        #[cfg(feature = "bench-internals")]
++        match std::env::var("BITZ_ARITHMETIC_RING").as_deref() {
++            Ok("factored") => return Self::new_factored_ring(batch, target_bits),
++            Err(std::env::VarError::NotPresent) | Ok("canonical") => {}
++            _ => return Err(error("BITZ_ARITHMETIC_RING must be canonical or factored")),
++        }
+         Self::new_with_binding(batch, target_bits, FalconAlgebraicBinding::Words)
+     }
+ 
++    /// Experimental degree-20 ring lift; never selected by production builds.
++    #[cfg(any(test, feature = "bench-internals"))]
++    #[doc(hidden)]
++    pub fn new_factored_ring(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
++        Self::with_ring_configuration(
++            batch,
++            target_bits,
++            "padding",
++            FalconAlgebraicBinding::Words,
++            RingMode::Factored,
++        )
++    }
++
+     /// Select the binding relation over the same compact commitment. Both support
+     /// partial batches; prover and verifier must select the same mode.
+     pub fn new_with_binding(
+@@ -304,6 +385,27 @@ impl PreparedFalconAlgebraic {
+         compute_variant: &'static str,
+         binding: FalconAlgebraicBinding,
+     ) -> Result<Self, FalconError> {
++        Self::with_ring_configuration(
++            batch,
++            target_bits,
++            compute_variant,
++            binding,
++            RingMode::Canonical,
++        )
++    }
++
++    fn with_ring_configuration(
++        batch: usize,
++        target_bits: usize,
++        compute_variant: &'static str,
++        binding: FalconAlgebraicBinding,
++        ring_mode: RingMode,
++    ) -> Result<Self, FalconError> {
++        if ring_mode != RingMode::Canonical
++            && (binding != FalconAlgebraicBinding::Words || compute_variant != "padding")
++        {
++            return Err(error("factored ring requires raw word binding"));
++        }
+         let layout = Layout::new(batch)?;
+         #[cfg(any(test, feature = "bench-internals"))]
+         let layout = if compute_variant == "compact" {
+@@ -343,6 +445,7 @@ impl PreparedFalconAlgebraic {
+             &ligerito,
+             &schedule,
+             target_bits,
++            ring_mode,
+         )?;
+         for matrix in bridge_matrices(&layout, compact_binding) {
+             bridge::validate_layout(&matrix, BridgeMode::TwoLimbs, PRIME_MAX)?;
+@@ -357,6 +460,7 @@ impl PreparedFalconAlgebraic {
+             grinding,
+             compact_binding,
+             compute_variant,
++            ring_mode,
+             scratch: Mutex::default(),
+         };
+         if prepared.security().algebraic_bits < target_bits as f64 {
+@@ -383,6 +487,14 @@ impl PreparedFalconAlgebraic {
+     }
+     /// Word computation uses v9; explicit bit computation retains its v7/v8 domain.
+     pub fn protocol_id(&self) -> &'static str {
++        #[cfg(any(test, feature = "bench-internals"))]
++        if self.ring_mode == RingMode::Factored {
++            return if N == 1024 {
++                "bitz/falcon1024-algebraic/non-zk/v10-factored-ring"
++            } else {
++                "bitz/falcon512-algebraic/non-zk/v10-factored-ring"
++            };
++        }
+         if self.schedule.word_binding {
+             PROTOCOL_ID
+         } else if self.uses_legacy_transcript() {
+@@ -452,6 +564,7 @@ impl PreparedFalconAlgebraic {
+             self.uses_compact_binding(),
+             self.target_bits,
+             &self.schedule,
++            self.ring_mode,
+         );
+         let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
+         for (index, matrix) in self.bridge_layouts().iter().enumerate() {
+@@ -496,7 +609,7 @@ impl PreparedFalconAlgebraic {
+     }
+ 
+     fn carry_grinding(&self) -> u32 {
+-        carry_grinding(self.target_bits)
++        carry_grinding(self.target_bits, self.ring_mode)
+     }
+ 
+     /// Validate, pack and commit the algebraic witness. No signature hashing.
+@@ -733,14 +846,31 @@ impl PreparedFalconAlgebraic {
+         let field = sample_field(&mut t)?;
+         let (ring, ring_claim) = {
+             let _span = tracing::info_span!("falcon_algebraic:ring").entered();
+-            ring::prove(
+-                &mut t,
+-                &self.layout,
+-                &committed.statement,
+-                &committed.witness,
+-                &field,
+-                self.carry_grinding(),
+-            )?
++            match self.ring_mode {
++                RingMode::Canonical => {
++                    let (proof, claim) = ring::prove(
++                        &mut t,
++                        &self.layout,
++                        &committed.statement,
++                        &committed.witness,
++                        &field,
++                        self.carry_grinding(),
++                    )?;
++                    (RingProof::Canonical(proof), RingClaim::Canonical(claim))
++                }
++                #[cfg(any(test, feature = "bench-internals"))]
++                RingMode::Factored => {
++                    let (proof, claim) = super::factored_ring::prove(
++                        &mut t,
++                        &self.layout,
++                        &committed.statement,
++                        &committed.witness,
++                        &field,
++                        self.carry_grinding(),
++                    )?;
++                    (RingProof::Factored(proof), RingClaim::Factored(claim))
++                }
++            }
+         };
+         let (arithmetic, bridges, coefficients, target, bridge_merge_nonces) =
+             if self.uses_compact_binding() {
+@@ -759,7 +889,7 @@ impl PreparedFalconAlgebraic {
+                             &committed.exceptions,
+                             &matrices,
+                             &field,
+-                            &ring_claim,
++                            ring_claim.canonical()?,
+                             &self.schedule,
+                         )?
+                     };
+@@ -808,17 +938,28 @@ impl PreparedFalconAlgebraic {
+                     .ok_or_else(|| error("missing raw arithmetic source"))?;
+                 let (proof, claim) = {
+                     let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
+-                    arithmetic::prove(
+-                        &mut t,
+-                        &self.layout,
+-                        &committed.witness,
+-                        source,
+-                        &field,
+-                        &ring_claim,
+-                        &self.schedule,
+-                    )?
++                    match ring_claim {
++                        RingClaim::Canonical(claim) => arithmetic::prove_owned(
++                            &mut t,
++                            &self.layout,
++                            &committed.witness,
++                            source,
++                            &field,
++                            claim,
++                            &self.schedule,
++                        )?,
++                        #[cfg(any(test, feature = "bench-internals"))]
++                        RingClaim::Factored(claim) => arithmetic::prove_factored_ring(
++                            &mut t,
++                            &self.layout,
++                            &committed.witness,
++                            source,
++                            &field,
++                            claim,
++                            &self.schedule,
++                        )?,
++                    }
+                 };
+-                drop(ring_claim);
+                 drop(committed.witness);
+                 let (bridge, binary) = {
+                     let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
+@@ -939,14 +1080,31 @@ impl PreparedFalconAlgebraic {
+     ) -> Result<(), FalconError> {
+         let (mut t, digest) = self.transcript(public, &proof.source_root, &proof.exceptions)?;
+         let field = sample_field(&mut t)?;
+-        let ring_claim = ring::verify(
+-            &mut t,
+-            &self.layout,
+-            public,
+-            &proof.ring,
+-            &field,
+-            self.carry_grinding(),
+-        )?;
++        let ring_claim = match (&proof.ring, self.ring_mode) {
++            (RingProof::Canonical(proof), RingMode::Canonical) => {
++                RingClaim::Canonical(ring::verify(
++                    &mut t,
++                    &self.layout,
++                    public,
++                    proof,
++                    &field,
++                    self.carry_grinding(),
++                )?)
++            }
++            #[cfg(any(test, feature = "bench-internals"))]
++            (RingProof::Factored(proof), RingMode::Factored) => {
++                RingClaim::Factored(super::factored_ring::verify(
++                    &mut t,
++                    &self.layout,
++                    public,
++                    proof,
++                    &field,
++                    self.carry_grinding(),
++                )?)
++            }
++            #[cfg(any(test, feature = "bench-internals"))]
++            _ => return Err(error("ring proof version mismatch")),
++        };
+         let (coefficients, target) = match (&proof.arithmetic, self.uses_compact_binding()) {
+             #[cfg(any(test, feature = "bench-internals"))]
+             (ArithmeticProof::Compact(arithmetic), true) => {
+@@ -960,7 +1118,7 @@ impl PreparedFalconAlgebraic {
+                     &proof.exceptions,
+                     &matrices,
+                     &field,
+-                    &ring_claim,
++                    ring_claim.canonical()?,
+                     arithmetic,
+                     &self.schedule,
+                 )?;
+@@ -996,14 +1154,25 @@ impl PreparedFalconAlgebraic {
+                 if proof.bridges.len() != 1 || !proof.bridge_merge_nonces.is_empty() {
+                     return Err(error("raw bridge shape"));
+                 }
+-                let claim = arithmetic::verify(
+-                    &mut t,
+-                    &self.layout,
+-                    &field,
+-                    &ring_claim,
+-                    arithmetic,
+-                    &self.schedule,
+-                )?;
++                let claim = match &ring_claim {
++                    RingClaim::Canonical(claim) => arithmetic::verify(
++                        &mut t,
++                        &self.layout,
++                        &field,
++                        claim,
++                        arithmetic,
++                        &self.schedule,
++                    )?,
++                    #[cfg(any(test, feature = "bench-internals"))]
++                    RingClaim::Factored(claim) => arithmetic::verify_factored_ring(
++                        &mut t,
++                        &self.layout,
++                        &field,
++                        claim,
++                        arithmetic,
++                        &self.schedule,
++                    )?,
++                };
+                 drop(ring_claim);
+                 let binary = bridge::verify_weighted(
+                     &mut t,
+@@ -1204,8 +1373,8 @@ fn grind(target: usize, numerator: usize, domain_bits: u32) -> u32 {
+     (target as u32 + 4 + numerator.next_power_of_two().ilog2()).saturating_sub(domain_bits)
+ }
+ 
+-fn carry_grinding(target_bits: usize) -> u32 {
+-    grind(target_bits, 10, 125)
++fn carry_grinding(target_bits: usize, ring_mode: RingMode) -> u32 {
++    grind(target_bits, ring_mode.projection_degree(), 125)
+ }
+ 
+ fn binding_rounds(layout: &Layout, word_binding: bool) -> usize {
+@@ -1218,6 +1387,7 @@ fn fixed_terms(
+     compact_binding: bool,
+     target_bits: usize,
+     schedule: &Schedule,
++    ring_mode: RingMode,
+ ) -> Vec<(&'static str, f64)> {
+     let d = layout.capacity().ilog2() as usize;
+     let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
+@@ -1227,7 +1397,10 @@ fn fixed_terms(
+         ("native ring identity", (N - 1 + d) as f64 * 2f64.powi(-149)),
+         (
+             "ring coordinate projection",
+-            prime(10, carry_grinding(target_bits)),
++            prime(
++                ring_mode.projection_degree(),
++                carry_grinding(target_bits, ring_mode),
++            ),
+         ),
+         (
+             "per-signature norm identity",
+@@ -1267,6 +1440,7 @@ fn allocate_grinding(
+     ligerito: &ResolvedLigerito,
+     schedule: &Schedule,
+     target_bits: usize,
++    ring_mode: RingMode,
+ ) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+     use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
+     // Block structure, raw errors and native Flock work do not depend on the
+@@ -1308,7 +1482,7 @@ fn allocate_grinding(
+         sites: 1.0,
+         min_bits: block.native_bits.unwrap_or(0),
+     }));
+-    let fixed: f64 = fixed_terms(layout, compact_binding, target_bits, schedule)
++    let fixed: f64 = fixed_terms(layout, compact_binding, target_bits, schedule, ring_mode)
+         .iter()
+         .map(|(_, error)| error)
+         .sum();
+@@ -1367,6 +1541,101 @@ mod tests {
+         (public, witness)
+     }
+ 
++    #[test]
++    fn factored_ring_security_version_and_lift_are_bound() {
++        for target in [100, 128] {
++            for batch in [1, 3, 16, 17, 33, 65, 1024] {
++                let canonical = PreparedFalconAlgebraic::new_with_binding(
++                    batch,
++                    target,
++                    FalconAlgebraicBinding::Words,
++                )
++                .unwrap();
++                let factored = PreparedFalconAlgebraic::new_factored_ring(batch, target).unwrap();
++                assert_ne!(canonical.protocol_id(), factored.protocol_id());
++                assert_eq!(
++                    factored.carry_grinding(),
++                    if target == 128 { 12 } else { 0 }
++                );
++                assert!(
++                    factored.security().algebraic_bits
++                        >= target as f64 + (16f64 / 15.0).log2() - 1e-9
++                );
++                let projection = factored
++                    .security()
++                    .terms
++                    .into_iter()
++                    .find(|(name, _)| *name == "ring coordinate projection")
++                    .unwrap()
++                    .1;
++                assert_eq!(
++                    projection,
++                    20.0 * 2f64.powi(-125 - factored.carry_grinding() as i32)
++                );
++                let (public, _) = fixture(batch);
++                let exceptions = if compact::is_split(&factored.layout) {
++                    vec![Vec::new(); batch]
++                } else {
++                    Vec::new()
++                };
++                let (_, a) = canonical
++                    .transcript(&public, &[0; 32], &exceptions)
++                    .unwrap();
++                let (_, b) = factored.transcript(&public, &[0; 32], &exceptions).unwrap();
++                assert_ne!(a, b);
++            }
++        }
++        assert!(
++            PreparedFalconAlgebraic::with_ring_configuration(
++                1,
++                128,
++                "padding",
++                FalconAlgebraicBinding::Bits,
++                RingMode::Factored
++            )
++            .is_err()
++        );
++    }
++
++    #[test]
++    fn factored_ring_end_to_end_and_cross_version_rejection() {
++        for target in [100, 128] {
++            for batch in [1, 3, 33] {
++                let prepared = PreparedFalconAlgebraic::new_factored_ring(batch, target).unwrap();
++                let old = PreparedFalconAlgebraic::new_with_binding(
++                    batch,
++                    target,
++                    FalconAlgebraicBinding::Words,
++                )
++                .unwrap();
++                let (public, witness) = fixture(batch);
++                let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
++                let proof = prepared.prove(committed).unwrap();
++                prepared.verify(&public, &proof).unwrap();
++                assert!(old.verify(&public, &proof).is_err());
++                let old_proof = old
++                    .prove(old.commit(public.clone(), witness).unwrap())
++                    .unwrap();
++                old.verify(&public, &old_proof).unwrap();
++                assert!(prepared.verify(&public, &old_proof).is_err());
++                assert!(proof.payload_size_bytes() * 10 <= old_proof.payload_size_bytes() * 11);
++                assert_eq!(
++                    proof.ring.payload_size_bytes(),
++                    old_proof.ring.payload_size_bytes() + 248
++                );
++                let mut malformed = proof.clone();
++                let RingProof::Factored(ring) = &mut malformed.ring else {
++                    unreachable!()
++                };
++                ring.lift[0] = i128::MIN;
++                assert!(prepared.verify(&public, &malformed).is_err());
++                let mut altered = public.clone();
++                altered.targets[0][0] = (altered.targets[0][0] + 1) % Q as u16;
++                assert!(prepared.verify(&altered, &proof).is_err());
++            }
++        }
++    }
++
+     #[test]
+     fn configuration_bounds_cover_all_supported_batches() {
+         let q = BigUint::from(Q as u64);
+@@ -1574,7 +1843,10 @@ mod tests {
+                             bad.exceptions.push(vec![0]);
+                         }
+                     }
+-                    2 => bad.ring.carries[0] += 1,
++                    2 => match &mut bad.ring {
++                        RingProof::Canonical(ring) => ring.carries[0] += 1,
++                        RingProof::Factored(ring) => ring.lift[0] += 1,
++                    },
+                     3 => {
+                         if compact::is_split(&prepared.layout) {
+                             bad.exceptions.pop();
+diff --git a/src/piop/spartan/falcon1024_algebraic/ring.rs b/src/piop/spartan/falcon1024_algebraic/ring.rs
+index 806ab26b0..ffff58e58 100644
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -5,7 +5,7 @@
+ 
+ use field::{
+     BatchMulAcc, FpSignedLinearAcc, PreparedLinearCombination, Reduce, RingOps,
+-    q12289::{PowerBasis, PowerCoordinates},
++    q12289::{PowerBasis, PowerCoordinates, PreparedPublicDotProducts},
+ };
+ use rayon::prelude::*;
+ 
+@@ -75,8 +75,19 @@ pub(super) fn prove(
+     let lambda = instance_weights(transcript, layout)?;
+     transcript.absorb_slice(b"polynomial-evaluation");
+     let alpha = sample_extension(transcript, true)?;
+-    let coordinates = coordinates(public, &lambda, alpha)?;
+-    let carries = calculate_carries(&coordinates, data)?;
++    let options = CoordinateOptions::current();
++    let (coordinates, totals) = coordinates_with_options(
++        public,
++        &lambda,
++        alpha,
++        options,
++        options.fuse_carries.then_some(data),
++    )?;
++    let carries = if options.fuse_carries {
++        carries_from_totals(totals, &coordinates.target)?
++    } else {
++        calculate_carries(&coordinates, data)?
++    };
+     check_carries(&carries, layout.batch())?;
+     absorb_carries(transcript, &carries);
+     let projection_nonce = if grinding_bits == 0 {
+@@ -239,11 +250,11 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
+     transcript.absorb_slice(&bytes);
+ }
+ 
+-fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
++pub(super) fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
+     crate::piop::spartan::falcon_extension::powers(alpha)
+ }
+ 
+-fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
++pub(super) fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
+     let mut sum = [0u64; EXTENSION_DEGREE];
+     for (&coefficient, power) in polynomial.iter().zip(powers) {
+         for (total, &coordinate) in sum.iter_mut().zip(&power.0) {
+@@ -253,30 +264,131 @@ fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
+     Ext::new(sum.map(|x| (x % Q as u64) as u16))
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
+ fn coordinates(
+     public: &FalconAlgebraicStatement,
+     lambda: &[Ext],
+     alpha: Ext,
+ ) -> Result<Coordinates, FalconError> {
++    coordinates_with_options(public, lambda, alpha, CoordinateOptions::current(), None)
++        .map(|(coordinates, _)| coordinates)
++}
++
++pub(super) struct PreparedPublicEvaluation(PreparedPublicDotProducts<EXTENSION_DEGREE>);
++
++impl PreparedPublicEvaluation {
++    pub(super) fn new(powers: &[Ext; N + 1]) -> Self {
++        Self(PreparedPublicDotProducts::new(&powers[..N]))
++    }
++
++    pub(super) fn evaluate_pair(&self, h: &[u16; N], target: &[u16; N]) -> [Ext; 2] {
++        self.0.evaluate_pair(h, target)
++    }
++}
++
++#[derive(Clone, Copy)]
++struct CoordinateOptions {
++    paired_public: bool,
++    pairs: usize,
++    fuse_carries: bool,
++}
++
++impl CoordinateOptions {
++    fn current() -> Self {
++        #[cfg(not(feature = "bench-internals"))]
++        let defaults = Self {
++            paired_public: false,
++            pairs: 4,
++            fuse_carries: false,
++        };
++        #[cfg(feature = "bench-internals")]
++        {
++            let select = |name: &str, choices: &[&str], default: usize| match std::env::var(name) {
++                Err(std::env::VarError::NotPresent) => default,
++                Ok(value) => choices
++                    .iter()
++                    .position(|&choice| choice == value)
++                    .unwrap_or_else(|| panic!("{name} must be one of {choices:?}")),
++                Err(std::env::VarError::NotUnicode(_)) => panic!("{name} must be valid Unicode"),
++            };
++            Self {
++                paired_public: select("BITZ_ARITHMETIC_PUBLIC_EVAL", &["legacy", "paired"], 0) == 1,
++                pairs: [2, 4, 8][select("BITZ_ARITHMETIC_RECURRENCE_PAIRS", &["2", "4", "8"], 1)],
++                fuse_carries: select("BITZ_ARITHMETIC_CARRY_FUSION", &["off", "on"], 0) == 1,
++            }
++        }
++        #[cfg(not(feature = "bench-internals"))]
++        defaults
++    }
++}
++
++#[derive(Default)]
++struct CoordinateWork {
++    public_eval_ns: u64,
++    recurrence_ns: u64,
++    carry_ns: u64,
++    totals: [i64; EXTENSION_DEGREE],
++}
++
++impl CoordinateWork {
++    fn combine(mut self, rhs: Self) -> Self {
++        self.public_eval_ns += rhs.public_eval_ns;
++        self.recurrence_ns += rhs.recurrence_ns;
++        self.carry_ns += rhs.carry_ns;
++        for (left, right) in self.totals.iter_mut().zip(rhs.totals) {
++            *left += right;
++        }
++        self
++    }
++}
++
++fn elapsed_ns(start: Option<std::time::Instant>) -> u64 {
++    start.map_or(0, |start| start.elapsed().as_nanos() as u64)
++}
++
++#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
++fn coordinates_with_options(
++    public: &FalconAlgebraicStatement,
++    lambda: &[Ext],
++    alpha: Ext,
++    options: CoordinateOptions,
++    witness: Option<&WitnessData>,
++) -> Result<(Coordinates, [i64; EXTENSION_DEGREE]), FalconError> {
++    // A single diagnostic record aggregates worker time. It is not an elapsed
++    // phase breakdown: workers overlap. Disabled tracing makes no timer calls.
++    let diagnostics = tracing::info_span!(
++        "falcon_algebraic_ring:coordinate_work",
++        basis_powers_wall_ns = tracing::field::Empty,
++        buffer_allocation_wall_ns = tracing::field::Empty,
++        public_eval_worker_ns = tracing::field::Empty,
++        recurrence_worker_ns = tracing::field::Empty,
++        carry_worker_ns = tracing::field::Empty,
++    );
++    let profile = !diagnostics.is_disabled();
++    let setup_start = profile.then(std::time::Instant::now);
+     // The transcript samples alpha outside F_q. Since 11 is prime, its powers
+     // form a basis. Still reject a singular basis rather than assuming invertibility.
+     let basis = PowerBasis::try_new(alpha)
+         .map_err(|e| error(format!("invalid algebraic ring power basis: {e:?}")))?;
+     let powers = powers(alpha);
++    let paired = options
++        .paired_public
++        .then(|| PreparedPublicEvaluation::new(&powers));
++    diagnostics.record("basis_powers_wall_ns", elapsed_ns(setup_start));
+     let batch = public.public_keys.len();
+     let wrap = powers[N].add(Ext::ONE);
++    let allocation_start = profile.then(std::time::Instant::now);
+     let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
+     let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
+     let mut targets = vec![Ext::ZERO; batch];
++    diagnostics.record("buffer_allocation_wall_ns", elapsed_ns(allocation_start));
+     // Four independent SIMD states hide the dependency chain in each pair.
+     // Portable builds keep one signature per task and the existing recurrence.
+-    const PAIRS: usize = if cfg!(all(
++    let pairs = if cfg!(all(
+         target_arch = "x86_64",
+         target_feature = "avx512f",
+         target_feature = "avx512bw"
+     )) {
+-        4
++        options.pairs
+     } else {
+         1
+     };
+@@ -285,10 +397,20 @@ fn coordinates(
+     #[cfg(not(feature = "parallel"))]
+     let workers = 1;
+     // Keep at least one independent task per worker for small batches.
+-    let group_size = if batch / PAIRS >= workers { PAIRS } else { 1 };
+-    let prepare = |i: usize, target: &mut Ext| {
+-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
+-        *target = lambda[i].mul(eval_public(&public.targets[i], powers.as_slice()));
++    let group_size = if batch / pairs >= workers { pairs } else { 1 };
++    let evaluate = |i: usize| {
++        if let Some(prepared) = &paired {
++            prepared.evaluate_pair(&public.public_keys[i], &public.targets[i])
++        } else {
++            [
++                eval_public(&public.public_keys[i], powers.as_slice()),
++                eval_public(&public.targets[i], powers.as_slice()),
++            ]
++        }
++    };
++    let prepare = |i: usize, evaluations: [Ext; 2], target: &mut Ext| {
++        let lambda_h = lambda[i].mul(evaluations[0]);
++        *target = lambda[i].mul(evaluations[1]);
+         // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplication by X gives
+         // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j]. Apply lambda first
+         // to obtain canonical adjoint coordinates in O(N*K) per signature.
+@@ -303,47 +425,120 @@ fn coordinates(
+         ),
+     )| {
+         let start = chunk * group_size;
+-        if PAIRS > 1 && targets.len() == PAIRS {
+-            let prepared: [_; PAIRS] = std::array::from_fn(|i| prepare(start + i, &mut targets[i]));
+-            let mut a = a.chunks_mut(N);
+-            let mut b = b.chunks_mut(N);
+-            basis.fill_powers_adjoint_pairs(
+-                prepared.map(|v| v.0),
+-                prepared.map(|v| v.1),
+-                std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
+-                std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
+-            );
++        let mut work = CoordinateWork::default();
++        if targets.len() == group_size && group_size > 1 {
++            match group_size {
++                2 => fill_coordinate_group::<2>(
++                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
++                ),
++                4 => fill_coordinate_group::<4>(
++                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
++                ),
++                8 => fill_coordinate_group::<8>(
++                    &basis, public, start, a, b, targets, &evaluate, &prepare, profile, &mut work,
++                ),
++                _ => unreachable!("unsupported recurrence group"),
++            }
+         } else {
+             for (i, ((a, b), target)) in a
+                 .chunks_mut(N)
+                 .zip(b.chunks_mut(N))
+-                .zip(targets)
++                .zip(targets.iter_mut())
+                 .enumerate()
+             {
+-                let (starts, subtract) = prepare(start + i, target);
++                let before = profile.then(std::time::Instant::now);
++                let evaluations = evaluate(start + i);
++                work.public_eval_ns += elapsed_ns(before);
++                let (starts, subtract) = prepare(start + i, evaluations, target);
++                let before = profile.then(std::time::Instant::now);
+                 basis.fill_powers_adjoint_pair(
+                     starts,
+                     subtract,
+                     &public.public_keys[start + i],
+                     [a, b],
+                 );
++                work.recurrence_ns += elapsed_ns(before);
+             }
+         }
++        if let Some(data) = witness {
++            let before = profile.then(std::time::Instant::now);
++            work.totals = coordinate_totals(a, b, data, start, targets.len());
++            work.carry_ns = elapsed_ns(before);
++        }
++        work
+     };
+     #[cfg(feature = "parallel")]
+-    s1.par_chunks_mut(group_size * N)
++    let work = s1
++        .par_chunks_mut(group_size * N)
+         .zip(s2.par_chunks_mut(group_size * N))
+         .zip(targets.par_chunks_mut(group_size))
+         .enumerate()
+-        .for_each(fill);
++        .map(fill)
++        .reduce(CoordinateWork::default, CoordinateWork::combine);
+     #[cfg(not(feature = "parallel"))]
+-    s1.chunks_mut(group_size * N)
++    let work = s1
++        .chunks_mut(group_size * N)
+         .zip(s2.chunks_mut(group_size * N))
+         .zip(targets.chunks_mut(group_size))
+         .enumerate()
+-        .for_each(fill);
++        .map(fill)
++        .fold(CoordinateWork::default(), CoordinateWork::combine);
++    diagnostics.record("public_eval_worker_ns", work.public_eval_ns);
++    diagnostics.record("recurrence_worker_ns", work.recurrence_ns);
++    diagnostics.record("carry_worker_ns", work.carry_ns);
+     let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
+-    Ok(Coordinates { s1, s2, target })
++    Ok((Coordinates { s1, s2, target }, work.totals))
++}
++
++#[allow(clippy::too_many_arguments)]
++fn fill_coordinate_group<const PAIRS: usize>(
++    basis: &PowerBasis<EXTENSION_DEGREE>,
++    public: &FalconAlgebraicStatement,
++    start: usize,
++    a: &mut [CoordinatesInAlpha],
++    b: &mut [CoordinatesInAlpha],
++    targets: &mut [Ext],
++    evaluate: &impl Fn(usize) -> [Ext; 2],
++    prepare: &impl Fn(usize, [Ext; 2], &mut Ext) -> ([CoordinatesInAlpha; 2], CoordinatesInAlpha),
++    profile: bool,
++    work: &mut CoordinateWork,
++) {
++    let before = profile.then(std::time::Instant::now);
++    let evaluations: [_; PAIRS] = std::array::from_fn(|i| evaluate(start + i));
++    work.public_eval_ns += elapsed_ns(before);
++    let prepared: [_; PAIRS] =
++        std::array::from_fn(|i| prepare(start + i, evaluations[i], &mut targets[i]));
++    let before = profile.then(std::time::Instant::now);
++    let mut a = a.chunks_mut(N);
++    let mut b = b.chunks_mut(N);
++    basis.fill_powers_adjoint_pairs(
++        prepared.map(|v| v.0),
++        prepared.map(|v| v.1),
++        std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
++        std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
++    );
++    work.recurrence_ns += elapsed_ns(before);
++}
++
++fn coordinate_totals(
++    a: &[CoordinatesInAlpha],
++    b: &[CoordinatesInAlpha],
++    data: &WitnessData,
++    start: usize,
++    count: usize,
++) -> [i64; EXTENSION_DEGREE] {
++    let mut totals = [0i64; EXTENSION_DEGREE];
++    for (weights, witness) in [(a, &data.witness.s1), (b, &data.witness.s2)] {
++        for (weight, &coefficient) in weights
++            .iter()
++            .zip(witness[start..start + count].iter().flatten())
++        {
++            for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
++                *total += i64::from(coordinate) * i64::from(coefficient);
++            }
++        }
++    }
++    totals
+ }
+ 
+ #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:carries")]
+@@ -391,9 +586,16 @@ fn calculate_carries(
+     };
+     #[cfg(not(feature = "parallel"))]
+     let totals = sum(0, batch);
++    carries_from_totals(totals, &coordinates.target)
++}
++
++fn carries_from_totals(
++    totals: [i64; EXTENSION_DEGREE],
++    target: &CoordinatesInAlpha,
++) -> Result<[i64; EXTENSION_DEGREE], FalconError> {
+     let mut carries = [0i64; EXTENSION_DEGREE];
+     for k in 0..EXTENSION_DEGREE {
+-        let difference = totals[k] - i64::from(coordinates.target.coordinates()[k]);
++        let difference = totals[k] - i64::from(target.coordinates()[k]);
+         if difference % Q != 0 {
+             return Err(error("algebraic ring claim has no integer coordinate lift"));
+         }
+@@ -690,6 +892,117 @@ mod tests {
+         assert!(coordinates(&public, &lambda, Ext::ONE).is_err());
+     }
+ 
++    #[test]
++    fn coordinate_experiments_preserve_canonical_weights_and_signed_carries() {
++        let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
++        let field = field();
++        for batch in [1, 3, 9, 17, 129] {
++            let (_, mut public, mut data) = fixture(batch);
++            for i in 0..batch {
++                for j in 0..N {
++                    data.witness.s1[i][j] = if (i + j) % 2 == 0 {
++                        -(1 << 14)
++                    } else {
++                        (1 << 14) - 1
++                    };
++                    data.witness.s2[i][j] = if (i + j) % 3 == 0 {
++                        -(1 << 14)
++                    } else {
++                        (1 << 14) - 1
++                    };
++                }
++                // Multiplication by h=X^(N-1) shifts and negates every
++                // nonconstant coefficient; this reference needs no NTT.
++                for j in 0..N {
++                    let product = if j + 1 == N {
++                        i64::from(data.witness.s2[i][0])
++                    } else {
++                        -i64::from(data.witness.s2[i][j + 1])
++                    };
++                    public.targets[i][j] =
++                        (i64::from(data.witness.s1[i][j]) + product).rem_euclid(Q) as u16;
++                }
++            }
++            let lambda: Vec<_> = (0..batch)
++                .map(|i| {
++                    Ext::new(std::array::from_fn(|k| {
++                        ((i * 373 + k * 719 + 1) as i64 % Q) as u16
++                    }))
++                })
++                .collect();
++            let (expected, _) = coordinates_with_options(
++                &public,
++                &lambda,
++                alpha,
++                CoordinateOptions {
++                    paired_public: false,
++                    pairs: 4,
++                    fuse_carries: false,
++                },
++                None,
++            )
++            .unwrap();
++            let expected_carries = calculate_carries(&expected, &data).unwrap();
++            let xi = F::from_with_cfg(97u128, &field);
++            let expected_claim = collapse_claim(&expected, &expected_carries, xi, &field);
++            for workers in [1, 8, 16] {
++                #[cfg(feature = "parallel")]
++                let pool = rayon::ThreadPoolBuilder::new()
++                    .num_threads(workers)
++                    .build()
++                    .unwrap();
++                for pairs in [2, 4, 8] {
++                    for paired_public in [false, true] {
++                        let run = || {
++                            coordinates_with_options(
++                                &public,
++                                &lambda,
++                                alpha,
++                                CoordinateOptions {
++                                    paired_public,
++                                    pairs,
++                                    fuse_carries: true,
++                                },
++                                Some(&data),
++                            )
++                        };
++                        #[cfg(feature = "parallel")]
++                        let (actual, totals) = pool.install(run).unwrap();
++                        #[cfg(not(feature = "parallel"))]
++                        let (actual, totals) = run().unwrap();
++                        assert_eq!(
++                            actual.s1, expected.s1,
++                            "batch={batch}, workers={workers}, pairs={pairs}"
++                        );
++                        assert_eq!(actual.s2, expected.s2);
++                        assert_eq!(actual.target, expected.target);
++                        let carries = carries_from_totals(totals, &actual.target).unwrap();
++                        assert_eq!(carries, expected_carries);
++                        assert_eq!(
++                            collapse_claim(&actual, &carries, xi, &field),
++                            expected_claim
++                        );
++                    }
++                }
++            }
++            data.witness.s1[0][0] += 1;
++            let (actual, totals) = coordinates_with_options(
++                &public,
++                &lambda,
++                alpha,
++                CoordinateOptions {
++                    paired_public: true,
++                    pairs: 8,
++                    fuse_carries: true,
++                },
++                Some(&data),
++            )
++            .unwrap();
++            assert!(carries_from_totals(totals, &actual.target).is_err());
++            assert!(calculate_carries(&actual, &data).is_err());
++        }
++    }
++
+     #[test]
+     fn ring_claim_matches_negacyclic_witness_for_padded_batches() {
+         let field = field();
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding.rs b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+index 5379aeed6..f29b45d05 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+@@ -396,28 +396,170 @@ fn reduce_signed(acc: [FpLinearAcc<2, 1>; 2], f: &Cfg) -> F {
+ 
+ /// Before the first challenge D is signed15. Products need a wide accumulator,
+ /// not u128: a prime-field coefficient itself can already occupy 126 bits.
++#[cfg(test)]
+ fn first_round(form: &BindingForm<'_>, source: &Source, f: &Cfg) -> ([F; 2], F) {
++    first_round_with_factors(
++        form,
++        source,
++        &WordFactors::default(),
++        f,
++        arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
++    )
++}
++
++#[derive(Default)]
++pub(super) struct WordFactors {
++    pub norm: Option<FactoredNorm>,
++    pub s1: Option<FactoredS1>,
++}
++
++pub(super) struct FactoredS1 {
++    pub rows: Vec<F>,
++    pub columns: Vec<F>,
++}
++
++pub(super) struct FactoredNorm {
++    first: F,
++    // Equality weights of the remaining coefficient bits, shared by all rows.
++    columns: Vec<F>,
++    // eta * eq(side) * eq(instance), with no entries for inactive instances.
++    rows: [Vec<F>; 2],
++}
++
++impl FactoredNorm {
++    pub(super) fn new(
++        layout: &Layout,
++        norm: &NormClaims,
++        eta: F,
++        f: &Cfg,
++    ) -> Result<Self, FalconError> {
++        let columns = eq_table(&norm.point[1..COEFFICIENT_LOG], f).map_err(failure)?;
++        let instances = eq_table(&norm.point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
++        let sides = [
++            f.sub(&f.one(), &norm.point[COEFFICIENT_LOG]),
++            norm.point[COEFFICIENT_LOG],
++        ];
++        Ok(Self {
++            first: norm.point[0],
++            columns,
++            rows: sides.map(|side| {
++                let scale = f.mul(&eta, &side);
++                instances[..layout.batch()]
++                    .iter()
++                    .map(|i| f.mul(&scale, i))
++                    .collect()
++            }),
++        })
++    }
++
++    fn first_round(&self, source: &Source, f: &Cfg) -> ([F; 2], F) {
++        let parts: Vec<_> = crate::cfg_into_iter!(0..self.rows[0].len())
++            .map(|instance| {
++                let mut totals = [f.zero(); 2];
++                for side in 0..2 {
++                    let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 2];
++                    for (j, weight) in self.columns.iter().enumerate() {
++                        let i = instance * 2 * N + side * N + 2 * j;
++                        signed_acc(&mut sums[0], weight, decode(word(source, i)), f);
++                        signed_acc(&mut sums[1], weight, decode(word(source, i + 1)), f);
++                    }
++                    for (total, sum) in totals.iter_mut().zip(sums) {
++                        *total = f.add(
++                            total,
++                            &f.mul(&self.rows[side][instance], &reduce_signed(sum, f)),
++                        );
++                    }
++                }
++                totals
++            })
++            .collect();
++        let [even, odd] = parts
++            .into_iter()
++            .fold([f.zero(); 2], |a, b| add_pair(a, b, f));
++        let c0 = f.mul(&f.sub(&f.one(), &self.first), &even);
++        let c2 = f.mul(
++            &f.sub(&f.add(&self.first, &self.first), &f.one()),
++            &f.sub(&odd, &even),
++        );
++        ([c0, c2], f.add(&c0, &f.mul(&self.first, &odd)))
++    }
++
++    fn folded_rows(&self, r: F, f: &Cfg) -> [Vec<F>; 2] {
++        let eq = f.add(
++            &f.mul(&self.first, &r),
++            &f.mul(&f.sub(&f.one(), &self.first), &f.sub(&f.one(), &r)),
++        );
++        self.rows
++            .each_ref()
++            .map(|rows| rows.iter().map(|v| f.mul(v, &eq)).collect())
++    }
++}
++
++fn first_round_with_factors(
++    form: &BindingForm<'_>,
++    source: &Source,
++    factors: &WordFactors,
++    f: &Cfg,
++    reuse_product: bool,
++) -> ([F; 2], F) {
+     let chunks = (form.layout.source_bits() / 32).div_ceil(1024);
+     let parts: Vec<_> = crate::cfg_into_iter!(0..chunks)
+         .map(|chunk| {
+             let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
+             let end = ((chunk + 1) * 1024).min(form.layout.source_bits() / 32);
+             for i in chunk * 1024..end {
++                if factors.s1.is_some() && (2 * i / N) & 1 == 0 {
++                    continue;
++                }
+                 let a = decode(word(source, 2 * i));
+                 let b = decode(word(source, 2 * i + 1));
+                 let w0 = coefficient(form, 2 * i);
+                 let w1 = coefficient(form, 2 * i + 1);
+                 signed_acc(&mut sums[0], &w0, a, f);
+                 signed_acc(&mut sums[1], &f.sub(&w1, &w0), b - a, f);
+-                signed_acc(&mut sums[2], &w0, a, f);
++                if !reuse_product {
++                    signed_acc(&mut sums[2], &w0, a, f);
++                }
+                 signed_acc(&mut sums[2], &w1, b, f);
+             }
+             sums.map(|s| reduce_signed(s, f))
+         })
+         .collect();
+-    let sum = parts.into_iter().fold([f.zero(); 3], |a, b| {
++    let mut sum = parts.into_iter().fold([f.zero(); 3], |a, b| {
+         std::array::from_fn(|i| f.add(&a[i], &b[i]))
+     });
++    if reuse_product {
++        sum[2] = f.add(&sum[2], &sum[0]);
++    }
++    if let Some(s1) = &factors.s1 {
++        let parts: Vec<_> = crate::cfg_into_iter!(0..form.layout.batch())
++            .map(|instance| {
++                let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
++                for (j, pair) in s1.columns.chunks_exact(2).enumerate() {
++                    let i = instance * 2 * N + 2 * j;
++                    let a = decode(word(source, i));
++                    let b = decode(word(source, i + 1));
++                    signed_acc(&mut sums[0], &pair[0], a, f);
++                    signed_acc(&mut sums[1], &f.sub(&pair[1], &pair[0]), b - a, f);
++                    signed_acc(&mut sums[2], &pair[1], b, f);
++                }
++                let mut values = sums.map(|s| f.mul(&s1.rows[instance], &reduce_signed(s, f)));
++                values[2] = f.add(&values[2], &values[0]);
++                values
++            })
++            .collect();
++        for part in parts {
++            for i in 0..3 {
++                sum[i] = f.add(&sum[i], &part[i]);
++            }
++        }
++    }
++    if let Some(norm) = &factors.norm {
++        let (next, initial) = norm.first_round(source, f);
++        sum[0] = f.add(&sum[0], &next[0]);
++        sum[1] = f.add(&sum[1], &next[1]);
++        sum[2] = f.add(&sum[2], &initial);
++    }
+     ([sum[0], sum[1]], sum[2])
+ }
+ 
+@@ -434,34 +576,97 @@ fn dense_sums(values: &[[F; 2]], stride: usize, f: &Cfg) -> [F; 2] {
+ 
+ /// Allocate the sole dense product after the first word fold. Each slot holds
+ /// [Lambda, D]. Later folds reuse these slots at a doubling stride.
+-#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
++#[cfg(test)]
+ fn first_fold(form: &BindingForm<'_>, source: &Source, r: F, f: &Cfg) -> (Vec<[F; 2]>, [F; 2]) {
+-    // Flipping bit 14 maps signed15 a to a+2^14. The interpolation weights
+-    // sum to one, so the third term removes this bias in the wide accumulator.
+-    // Prepared weights give one Montgomery reduction for the complete fold.
++    first_fold_with_factors(
++        form,
++        source,
++        r,
++        &WordFactors::default(),
++        f,
++        arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
++    )
++}
++
++#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
++fn first_fold_with_factors(
++    form: &BindingForm<'_>,
++    source: &Source,
++    r: F,
++    factors: &WordFactors,
++    f: &Cfg,
++    fused: bool,
++) -> (Vec<[F; 2]>, [F; 2]) {
++    // Flipping bit14 maps signed15 a to a+2^14. Prepared weights include the bias.
+     let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
+         f,
+         [f.sub(&f.one(), &r), r, f.neg(&small(1 << 14, f))],
+     );
++    let norm_rows = factors.norm.as_ref().map(|norm| norm.folded_rows(r, f));
++    let s1_columns: Option<Vec<_>> = factors.s1.as_ref().map(|s1| {
++        s1.columns
++            .chunks_exact(2)
++            .map(|p| lerp(p[0], p[1], r, f))
++            .collect()
++    });
++    let slot = |index: usize| {
++        let i = 2 * index;
++        let instance = i / (2 * N);
++        let side = (i / N) & 1;
++        let mut weight = if let (Some(s1), Some(columns)) = (&factors.s1, &s1_columns) {
++            if side == 0 {
++                if instance < form.layout.batch() {
++                    f.mul(&s1.rows[instance], &columns[(i % N) / 2])
++                } else {
++                    f.zero()
++                }
++            } else {
++                lerp(coefficient(form, i), coefficient(form, i + 1), r, f)
++            }
++        } else {
++            lerp(coefficient(form, i), coefficient(form, i + 1), r, f)
++        };
++        if instance < form.layout.batch() {
++            if let (Some(norm), Some(rows)) = (&factors.norm, &norm_rows) {
++                weight = f.add(
++                    &weight,
++                    &f.mul(&rows[side][instance], &norm.columns[(i % N) / 2]),
++                );
++            }
++        }
++        let words = [word(source, i), word(source, i + 1)];
++        [
++            weight,
++            <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
++                if k == 2 {
++                    1
++                } else {
++                    u64::from((words[k] ^ 0x4000) & 0x7fff)
++                }
++            }),
++        ]
++    };
+     let mut values = vec![[f.zero(); 2]; form.layout.source_bits() / 32];
+     let parts: Vec<_> = crate::cfg_chunks_mut!(values, 1024)
+         .enumerate()
+         .map(|(chunk, out)| {
+-            for (j, slot) in out.iter_mut().enumerate() {
+-                let i = 2 * (chunk * 1024 + j);
+-                let words = [word(source, i), word(source, i + 1)];
+-                *slot = [
+-                    lerp(coefficient(form, i), coefficient(form, i + 1), r, f),
+-                    <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+-                        if k == 2 {
+-                            1
+-                        } else {
+-                            u64::from((words[k] ^ 0x4000) & 0x7fff)
+-                        }
+-                    }),
+-                ];
++            if fused {
++                let mut sums = [FpProductAcc::<2>::default(); 2];
++                for (j, pair) in out.chunks_exact_mut(2).enumerate() {
++                    let a = slot(chunk * 1024 + 2 * j);
++                    let b = slot(chunk * 1024 + 2 * j + 1);
++                    pair[0] = a;
++                    pair[1] = b;
++                    f.mul_acc(&mut sums[0], &a[0], &a[1]);
++                    f.mul_acc(&mut sums[1], &f.sub(&b[0], &a[0]), &f.sub(&b[1], &a[1]));
++                }
++                sums.map(|s| f.reduce(s))
++            } else {
++                for (j, out) in out.iter_mut().enumerate() {
++                    *out = slot(chunk * 1024 + j);
++                }
++                dense_sums(out, 1, f)
+             }
+-            dense_sums(out, 1, f)
+         })
+         .collect();
+     let sums = parts
+@@ -554,6 +759,7 @@ fn bind_terminal(
+     }
+ }
+ 
++#[cfg(test)]
+ pub(super) fn prove(
+     t: &mut impl Transcript,
+     layout: &Layout,
+@@ -564,12 +770,44 @@ pub(super) fn prove(
+     merge_nonce: Option<u64>,
+     schedule: &Schedule,
+     f: &Cfg,
++) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
++    prove_with_correction(
++        t,
++        layout,
++        source,
++        form,
++        WordFactors::default(),
++        target,
++        norm,
++        merge_nonce,
++        schedule,
++        f,
++    )
++}
++
++pub(super) fn prove_with_correction(
++    t: &mut impl Transcript,
++    layout: &Layout,
++    source: &Source,
++    form: BindingForm<'_>,
++    factors: WordFactors,
++    target: F,
++    norm: NormProof,
++    merge_nonce: Option<u64>,
++    schedule: &Schedule,
++    f: &Cfg,
+ ) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+     t.absorb_slice(DOMAIN);
+     let mut weights = PublicWeights::new(&form);
+     let mut spare = Sparse::from_source(source, layout, f)?;
+     let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
+-    let (mut next, initial) = first_round(&form, source, f);
++    let (mut next, initial) = first_round_with_factors(
++        &form,
++        source,
++        &factors,
++        f,
++        arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
++    );
+     let spare_initial = aggregate_spare.initial(&weights, f);
+     if f.add(&initial, &spare_initial) != target {
+         return Err(failure("word binding initial claim"));
+@@ -610,7 +848,14 @@ pub(super) fn prove(
+         point.push(r);
+         if round == 0 {
+             let initial_form = form.take().unwrap();
+-            (dense, next) = first_fold(&initial_form, source, r, f);
++            (dense, next) = first_fold_with_factors(
++                &initial_form,
++                source,
++                r,
++                &factors,
++                f,
++                arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
++            );
+         } else {
+             next = dense_fold(&mut dense, stride, r, f);
+             stride *= 2;
+@@ -668,6 +913,28 @@ pub(super) fn verify(
+     proof: &Proof,
+     schedule: &Schedule,
+     f: &Cfg,
++) -> Result<WordBridgeClaim, FalconError> {
++    verify_with_factors(
++        t,
++        layout,
++        form,
++        &WordFactors::default(),
++        target,
++        proof,
++        schedule,
++        f,
++    )
++}
++
++pub(super) fn verify_with_factors(
++    t: &mut impl Transcript,
++    layout: &Layout,
++    form: &BindingForm<'_>,
++    factors: &WordFactors,
++    target: F,
++    proof: &Proof,
++    schedule: &Schedule,
++    f: &Cfg,
+ ) -> Result<WordBridgeClaim, FalconError> {
+     let n = 2 + usize::from(layout.batch() < layout.capacity());
+     if proof.binding_terminal.len() != n {
+@@ -686,9 +953,19 @@ pub(super) fn verify(
+     let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
+     let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
+     let reduction = f.prepare_product_reduction(2 * N);
++    let s1_local = factors.s1.as_ref().map(|s1| {
++        let mut sum = FpProductAcc::<2>::default();
++        for (a, b) in s1.columns.iter().zip(&local[..N]) {
++            f.mul_acc(&mut sum, a, b);
++        }
++        reduction.reduce(sum)
++    });
+     let evaluate_instance = |instance: usize| {
+         let mut sum = FpProductAcc::<2>::default();
+         for side in 0..2 {
++            if side == 0 && factors.s1.is_some() {
++                continue;
++            }
+             for (coefficient, weight) in form.coefficients[side][instance * N..(instance + 1) * N]
+                 .iter()
+                 .zip(&local[side * N..(side + 1) * N])
+@@ -696,7 +973,12 @@ pub(super) fn verify(
+                 f.mul_acc(&mut sum, coefficient, weight);
+             }
+         }
+-        reduction.reduce(sum)
++        let value = reduction.reduce(sum);
++        if let (Some(s1), Some(column)) = (&factors.s1, s1_local) {
++            f.add(&value, &f.mul(&s1.rows[instance], &column))
++        } else {
++            value
++        }
+     };
+     #[cfg(feature = "parallel")]
+     let values: Option<Vec<_>> =
+@@ -719,13 +1001,38 @@ pub(super) fn verify(
+             .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
+         f.mul_acc(&mut coefficient_sum, &value, weight);
+     }
++    let mut coefficient_value = f.reduce(coefficient_sum);
++    if let Some(norm) = &factors.norm {
++        let mut correction = f.zero();
++        for side in 0..2 {
++            let mut row_sum = FpProductAcc::<2>::default();
++            for (a, b) in norm.rows[side].iter().zip(&instances) {
++                f.mul_acc(&mut row_sum, a, b);
++            }
++            let mut column_sum = FpProductAcc::<2>::default();
++            for (j, weight) in local[side * N..(side + 1) * N].iter().enumerate() {
++                let first = if j & 1 == 0 {
++                    f.sub(&f.one(), &norm.first)
++                } else {
++                    norm.first
++                };
++                let coefficient = f.mul(&first, &norm.columns[j / 2]);
++                f.mul_acc(&mut column_sum, &coefficient, weight);
++            }
++            correction = f.add(
++                &correction,
++                &f.mul(&f.reduce(row_sum), &f.reduce(column_sum)),
++            );
++        }
++        coefficient_value = f.add(&coefficient_value, &correction);
++    }
+     let mut weights = PublicWeights::new(form);
+     for (round, &r) in point.iter().enumerate() {
+         weights.fold(round, r, f);
+     }
+     let v = &proof.binding_terminal;
+     let mut terminal = f.add(
+-        &f.mul(&f.reduce(coefficient_sum), &v[0]),
++        &f.mul(&coefficient_value, &v[0]),
+         &f.mul(&weights.spare(0, rounds(layout), f), &v[1]),
+     );
+     if n == 3 {
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+index abc1d793e..e974fdf6b 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+@@ -526,3 +526,209 @@ fn parallel_sparse_source_scan_preserves_entries_and_padding_errors() {
+         assert_eq!(parallel_error, serial_error);
+     }
+ }
++
++fn factored_fixture<'a>(
++    layout: &'a Layout,
++    f: &'a Cfg,
++    mode: u8,
++) -> (BindingForm<'a>, WordFactors, BindingForm<'a>) {
++    let mut ring = form_fixture(layout, f);
++    let mut dense = form_fixture(layout, f);
++    let mut factors = WordFactors::default();
++    if mode & 2 != 0 {
++        let rows: Vec<_> = (0..layout.batch())
++            .map(|i| value(i as i64 * 7 - 11, f))
++            .collect();
++        let columns: Vec<_> = (0..N).map(|j| value(j as i64 % 31 - 17, f)).collect();
++        for i in 0..layout.batch() {
++            for j in 0..N {
++                dense.coefficients[0][i * N + j] = f.mul(&rows[i], &columns[j]);
++            }
++        }
++        ring.coefficients[0].clear();
++        factors.s1 = Some(FactoredS1 { rows, columns });
++    }
++    if mode & 1 != 0 {
++        let norm = NormClaims {
++            instance_point: vec![f.zero(); layout.capacity().ilog2() as usize],
++            point: (0..rounds(layout))
++                .map(|i| value(i as i64 * 13 - 37, f))
++                .collect(),
++            terminal: f.zero(),
++            slack: f.zero(),
++        };
++        let eta = value(-29, f);
++        let weights = eq_table(&norm.point, f).unwrap();
++        for side in 0..2 {
++            for i in 0..layout.batch() {
++                for j in 0..N {
++                    let correction = f.mul(&eta, &weights[i * 2 * N + side * N + j]);
++                    dense.coefficients[side][i * N + j] =
++                        f.add(&dense.coefficients[side][i * N + j], &correction);
++                }
++            }
++        }
++        factors.norm = Some(FactoredNorm::new(layout, &norm, eta, f).unwrap());
++    }
++    (ring, factors, dense)
++}
++
++#[test]
++fn factored_word_kernels_match_dense_signed_bit_reference() {
++    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
++        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
++        for batch in [1, 3, 17] {
++            let layout = Layout::new(batch).unwrap();
++            let source = source_fixture(&layout);
++            for mode in 0..4 {
++                let (form, factors, dense) = factored_fixture(&layout, &f, mode);
++                let reference = Reference::new(&dense, &source, &f);
++                let mut initial = f.zero();
++                let mut sums = [f.zero(); 2];
++                for (w, x) in reference.weights[0]
++                    .chunks_exact(2)
++                    .zip(reference.tables[0].chunks_exact(2))
++                {
++                    let even = f.mul(&w[0], &x[0]);
++                    initial = f.add(&initial, &f.add(&even, &f.mul(&w[1], &x[1])));
++                    sums[0] = f.add(&sums[0], &even);
++                    sums[1] = f.add(&sums[1], &f.mul(&f.sub(&w[1], &w[0]), &f.sub(&x[1], &x[0])));
++                }
++                for reuse in [false, true] {
++                    assert_eq!(
++                        first_round_with_factors(&form, &source, &factors, &f, reuse),
++                        (sums, initial)
++                    );
++                }
++                for r in [
++                    f.zero(),
++                    f.one(),
++                    value(-1, &f),
++                    F::from_with_cfg(modulus / 2, &f),
++                ] {
++                    let mut reference = Reference::new(&dense, &source, &f);
++                    reference.fold(r, &f);
++                    let expected: Vec<_> = reference.weights[0]
++                        .iter()
++                        .zip(&reference.tables[0])
++                        .map(|(&w, &d)| [w, d])
++                        .collect();
++                    let expected_sums =
++                        expected
++                            .chunks_exact(2)
++                            .fold([f.zero(); 2], |mut sum, pair| {
++                                sum[0] = f.add(&sum[0], &f.mul(&pair[0][0], &pair[0][1]));
++                                sum[1] = f.add(
++                                    &sum[1],
++                                    &f.mul(
++                                        &f.sub(&pair[1][0], &pair[0][0]),
++                                        &f.sub(&pair[1][1], &pair[0][1]),
++                                    ),
++                                );
++                                sum
++                            });
++                    for fused in [false, true] {
++                        let actual =
++                            first_fold_with_factors(&form, &source, r, &factors, &f, fused);
++                        assert_eq!(
++                            actual.0, expected,
++                            "batch={batch} mode={mode} fused={fused}"
++                        );
++                        assert_eq!(actual.1, expected_sums);
++                    }
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn factored_word_proofs_preserve_transcript_and_reject_tampering() {
++    let f = test_field();
++    for (batch, grinding) in [(1, 0), (3, 0), (3, 2), (16, 0)] {
++        let layout = Layout::new(batch).unwrap();
++        let source = source_fixture(&layout);
++        let schedule = test_schedule(grinding);
++        for mode in 1..4 {
++            let (form, factors, dense) = factored_fixture(&layout, &f, mode);
++            let target = Reference::new(&dense, &source, &f).target(&f);
++            let mut baseline = Blake3Transcript::new();
++            let expected = prove(
++                &mut baseline,
++                &layout,
++                &source,
++                dense,
++                target,
++                dummy_norm(&f),
++                None,
++                &schedule,
++                &f,
++            )
++            .unwrap();
++            let mut transcript = Blake3Transcript::new();
++            let actual = prove_with_correction(
++                &mut transcript,
++                &layout,
++                &source,
++                form,
++                factors,
++                target,
++                dummy_norm(&f),
++                None,
++                &schedule,
++                &f,
++            )
++            .unwrap();
++            assert_eq!(actual, expected);
++            assert_eq!(transcript.state_digest(), baseline.state_digest());
++            let (form, factors, _) = factored_fixture(&layout, &f, mode);
++            let mut verifier = Blake3Transcript::new();
++            assert_eq!(
++                verify_with_factors(
++                    &mut verifier,
++                    &layout,
++                    &form,
++                    &factors,
++                    target,
++                    &actual.0,
++                    &schedule,
++                    &f
++                )
++                .unwrap(),
++                actual.2
++            );
++            assert_eq!(verifier.state_digest(), transcript.state_digest());
++            let mut altered = actual.0.clone();
++            altered.binding_terminal[0] = f.add(&altered.binding_terminal[0], &f.one());
++            assert!(
++                verify_with_factors(
++                    &mut Blake3Transcript::new(),
++                    &layout,
++                    &form,
++                    &factors,
++                    target,
++                    &altered,
++                    &schedule,
++                    &f
++                )
++                .is_err()
++            );
++            let (form, factors, _) = factored_fixture(&layout, &f, mode);
++            assert!(
++                prove_with_correction(
++                    &mut Blake3Transcript::new(),
++                    &layout,
++                    &source,
++                    form,
++                    factors,
++                    f.add(&target, &f.one()),
++                    dummy_norm(&f),
++                    None,
++                    &schedule,
++                    &f
++                )
++                .is_err()
++            );
++        }
++    }
++}
+diff --git a/vendor/field/src/q12289.rs b/vendor/field/src/q12289.rs
+index 793a6f1bf..78d264bf2 100644
+--- a/vendor/field/src/q12289.rs
++++ b/vendor/field/src/q12289.rs
+@@ -27,6 +27,71 @@ pub const fn extension_constant(k: usize) -> u16 {
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub struct Q12289Extension<const K: usize>(pub [u16; K]);
+ 
++/// Shared public extension weights, transposed for two base-field dot products.
++///
++/// Preparation and evaluation validate canonical inputs. Accumulation is exact
++/// in integers until the single reduction of each result coordinate.
++#[derive(Clone, Debug)]
++pub struct PreparedPublicDotProducts<const K: usize> {
++    coordinates: [Vec<u16>; K],
++    len: usize,
++}
++
++impl<const K: usize> PreparedPublicDotProducts<K> {
++    pub fn new(weights: &[Q12289Extension<K>]) -> Self {
++        assert!(matches!(K, 9 | 10 | 11), "unsupported extension degree");
++        assert!(
++            weights.iter().all(|value| value.canonical()),
++            "noncanonical weight"
++        );
++        // This length bound also proves every complete u64 accumulator fits.
++        assert!(
++            weights.len() <= u32::MAX as usize,
++            "public dot product too long"
++        );
++        Self {
++            coordinates: std::array::from_fn(|k| weights.iter().map(|value| value.0[k]).collect()),
++            len: weights.len(),
++        }
++    }
++
++    pub fn evaluate_pair(&self, a: &[u16], b: &[u16]) -> [Q12289Extension<K>; 2] {
++        assert_eq!(a.len(), self.len, "public dot product length differs");
++        assert_eq!(b.len(), self.len, "public dot product length differs");
++        assert!(
++            a.iter().chain(b).all(|&value| u64::from(value) < Q),
++            "noncanonical coefficient"
++        );
++        #[cfg(all(
++            target_arch = "x86_64",
++            target_feature = "avx512f",
++            target_feature = "avx512bw"
++        ))]
++        {
++            // SAFETY: build features and canonical equal-length arrays satisfy
++            // the kernel contract. The constructor bounds the final u64 sum.
++            return unsafe { avx512::evaluate_public_pair(&self.coordinates, a, b) }
++                .map(Q12289Extension);
++        }
++        #[allow(unreachable_code)]
++        self.evaluate_pair_portable(a, b)
++    }
++
++    fn evaluate_pair_portable(&self, a: &[u16], b: &[u16]) -> [Q12289Extension<K>; 2] {
++        let mut result = [[0; K]; 2];
++        for k in 0..K {
++            let mut sums = [0u64; 2];
++            for ((&weight, &a), &b) in self.coordinates[k].iter().zip(a).zip(b) {
++                sums[0] += u64::from(weight) * u64::from(a);
++                sums[1] += u64::from(weight) * u64::from(b);
++            }
++            result[0][k] = (sums[0] % Q) as u16;
++            result[1][k] = (sums[1] % Q) as u16;
++        }
++        result.map(Q12289Extension)
++    }
++}
++
+ impl<const K: usize> Q12289Extension<K> {
+     pub const ZERO: Self = Self([0; K]);
+     pub const ONE: Self = {
+@@ -86,6 +151,71 @@ impl<const K: usize> Q12289Extension<K> {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn prepared_public_dot_products_match_independent_reference() {
++        fn check<const K: usize>() {
++            for len in [0, 1, 31, 32, 33, 127, 128, 129, 511, 512, 1024] {
++                for maximal in [false, true] {
++                    let weights: Vec<_> = (0..len)
++                        .map(|i| {
++                            Q12289Extension::new(std::array::from_fn(|k| {
++                                if maximal {
++                                    (Q - 1) as u16
++                                } else {
++                                    ((i * 97 + k * 53) as u64 % Q) as u16
++                                }
++                            }))
++                        })
++                        .collect();
++                    let a: Vec<_> = (0..len)
++                        .map(|i| {
++                            if maximal {
++                                (Q - 1) as u16
++                            } else {
++                                (i as u64 * 137 % Q) as u16
++                            }
++                        })
++                        .collect();
++                    let b: Vec<_> = (0..len)
++                        .map(|i| ((i as u64 * 23 + Q - 1) % Q) as u16)
++                        .collect();
++                    let prepared = PreparedPublicDotProducts::new(&weights);
++                    let expected = [&a, &b].map(|input| {
++                        let mut sums = [0u64; K];
++                        for (&coefficient, weight) in input.iter().zip(&weights) {
++                            for (total, &coordinate) in sums.iter_mut().zip(&weight.0) {
++                                *total += u64::from(coefficient) * u64::from(coordinate);
++                            }
++                        }
++                        Q12289Extension::new(sums.map(|sum| (sum % Q) as u16))
++                    });
++                    assert_eq!(prepared.evaluate_pair(&a, &b), expected, "K={K}, len={len}");
++                    assert_eq!(prepared.evaluate_pair_portable(&a, &b), expected);
++                    #[cfg(target_arch = "x86_64")]
++                    if std::arch::is_x86_feature_detected!("avx512f")
++                        && std::arch::is_x86_feature_detected!("avx512bw")
++                    {
++                        // SAFETY: runtime features checked; construction above uses
++                        // canonical coordinates and equal bounded lengths.
++                        let actual =
++                            unsafe { avx512::evaluate_public_pair(&prepared.coordinates, &a, &b) };
++                        assert_eq!(actual.map(Q12289Extension), expected);
++                    }
++                }
++            }
++        }
++        check::<9>();
++        check::<10>();
++        check::<11>();
++    }
++
++    #[test]
++    #[should_panic(expected = "noncanonical coefficient")]
++    fn prepared_public_dot_products_reject_noncanonical_coefficients() {
++        let prepared = PreparedPublicDotProducts::new(&[Q12289Extension::<11>::ONE]);
++        prepared.evaluate_pair(&[Q as u16], &[0]);
++    }
+     fn trim(p: &mut Vec<u64>) {
+         while p.last() == Some(&0) {
+             p.pop();
+@@ -413,6 +543,68 @@ impl<const K: usize> PowerBasis<K> {
+         }
+     }
+ 
++    /// Emit pairs of adjoint sequences with one shared subtraction vector.
++    ///
++    /// Every polynomial and output has the same length. All coordinates belong
++    /// to this basis, and polynomial coefficients must be canonical. The degree
++    /// eleven SIMD path packs two distinct public polynomials in each vector.
++    pub fn fill_adjoint_pairs<const PAIRS: usize>(
++        &self,
++        starts: [[PowerCoordinates<K>; 2]; PAIRS],
++        subtract: PowerCoordinates<K>,
++        polynomials: [[&[u16]; 2]; PAIRS],
++        outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
++    ) {
++        const {
++            assert!(PAIRS > 0);
++        }
++        let len = polynomials[0][0].len();
++        for pair in 0..PAIRS {
++            for side in 0..2 {
++                assert_eq!(
++                    polynomials[pair][side].len(),
++                    len,
++                    "polynomial lengths differ"
++                );
++                assert_eq!(outputs[pair][side].len(), len, "sequence lengths differ");
++                assert!(
++                    polynomials[pair][side]
++                        .iter()
++                        .all(|&scalar| u64::from(scalar) < Q),
++                    "noncanonical base-field scalar"
++                );
++            }
++        }
++        #[cfg(all(
++            target_arch = "x86_64",
++            target_feature = "avx512f",
++            target_feature = "avx512bw"
++        ))]
++        if K == 11 {
++            // SAFETY: target features, degree, lengths and canonical scalars
++            // were checked; PowerCoordinates preserves canonical coordinates.
++            unsafe {
++                avx512::fill_adjoint_pairs(&self.feedback, starts, subtract, polynomials, outputs)
++            };
++            return;
++        }
++        for (pair, outputs) in outputs.into_iter().enumerate() {
++            for (side, output) in outputs.into_iter().enumerate() {
++                let mut value = starts[pair][side];
++                for (j, slot) in output.iter_mut().enumerate() {
++                    *slot = value;
++                    if j + 1 < len {
++                        self.advance_sub_scaled(
++                            &mut value,
++                            polynomials[pair][side][len - 1 - j],
++                            subtract,
++                        );
++                    }
++                }
++            }
++        }
++    }
++
+     /// Emit independent power/adjoint pairs with one shared public generator.
+     ///
+     /// Every polynomial and output must have the same length. Coordinates and
+@@ -497,6 +689,107 @@ fn inverse_mod_q(value: u16) -> u32 {
+ mod power_basis_tests {
+     use super::*;
+ 
++    fn check_shared_adjoint_pairs<const K: usize, const PAIRS: usize>() {
++        let mut alpha = Q12289Extension::<K>::ONE;
++        alpha.0[1] = 1;
++        let basis = PowerBasis::try_new(alpha).unwrap();
++        let subtract = Q12289Extension([12288; K]);
++        let fixed_starts: [[Q12289Extension<K>; 2]; PAIRS] = std::array::from_fn(|pair| {
++            std::array::from_fn(|side| {
++                Q12289Extension(std::array::from_fn(|k| {
++                    ((pair * 1237 + side * 731 + k * 193) as u64 % Q) as u16
++                }))
++            })
++        });
++        let starts = fixed_starts.map(|pair| pair.map(|value| basis.encode(value)));
++        for len in [0, 1, 2, 31, 32, 33, 127, 128, 129, 1024] {
++            let polynomials: [[Vec<u16>; 2]; PAIRS] = std::array::from_fn(|pair| {
++                std::array::from_fn(|side| {
++                    (0..len)
++                        .map(|j| [0, 1, 6144, 6145, 12287, 12288][(pair + side + j) % 6])
++                        .collect()
++                })
++            });
++            let expected: [[Vec<PowerCoordinates<K>>; 2]; PAIRS] = std::array::from_fn(|pair| {
++                std::array::from_fn(|side| {
++                    let mut value = fixed_starts[pair][side];
++                    (0..len)
++                        .map(|j| {
++                            let out = basis.encode(value);
++                            let mut scalar = Q12289Extension::ZERO;
++                            scalar.0[0] = polynomials[pair][side][len - 1 - j];
++                            value = alpha.mul(value).sub(scalar.mul(subtract));
++                            out
++                        })
++                        .collect()
++                })
++            });
++            let sentinel = PowerCoordinates([u16::MAX; K]);
++            let mut actual: [[Vec<PowerCoordinates<K>>; 2]; PAIRS] =
++                std::array::from_fn(|_| std::array::from_fn(|_| vec![sentinel; len + 4]));
++            let mut slots = actual.iter_mut();
++            let outputs = std::array::from_fn(|_| {
++                let [a, b] = slots.next().unwrap();
++                [&mut a[2..len + 2], &mut b[2..len + 2]]
++            });
++            let polynomials = std::array::from_fn(|pair| {
++                std::array::from_fn(|side| polynomials[pair][side].as_slice())
++            });
++            basis.fill_adjoint_pairs(starts, basis.encode(subtract), polynomials, outputs);
++            for (pair, reference) in actual.iter().zip(&expected) {
++                for (output, reference) in pair.iter().zip(reference) {
++                    assert_eq!(&output[2..len + 2], reference);
++                    assert_eq!(&output[..2], &[sentinel; 2]);
++                    assert_eq!(&output[len + 2..], &[sentinel; 2]);
++                }
++            }
++            #[cfg(target_arch = "x86_64")]
++            if K == 11
++                && std::arch::is_x86_feature_detected!("avx512f")
++                && std::arch::is_x86_feature_detected!("avx512bw")
++            {
++                for pair in &mut actual {
++                    for output in pair {
++                        output.fill(sentinel);
++                    }
++                }
++                let mut slots = actual.iter_mut();
++                let outputs = std::array::from_fn(|_| {
++                    let [a, b] = slots.next().unwrap();
++                    [&mut a[2..len + 2], &mut b[2..len + 2]]
++                });
++                // SAFETY: runtime feature/degree checks above and canonical
++                // equal-length inputs; the mutable slices remain disjoint.
++                unsafe {
++                    avx512::fill_adjoint_pairs(
++                        &basis.feedback,
++                        starts,
++                        basis.encode(subtract),
++                        polynomials,
++                        outputs,
++                    )
++                };
++                for (pair, reference) in actual.iter().zip(&expected) {
++                    for (output, reference) in pair.iter().zip(reference) {
++                        assert_eq!(&output[2..len + 2], reference);
++                        assert_eq!(&output[..2], &[sentinel; 2]);
++                        assert_eq!(&output[len + 2..], &[sentinel; 2]);
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn shared_adjoint_pairs_match_fixed_basis_with_guarded_tails() {
++        check_shared_adjoint_pairs::<9, 2>();
++        check_shared_adjoint_pairs::<10, 2>();
++        check_shared_adjoint_pairs::<11, 1>();
++        check_shared_adjoint_pairs::<11, 2>();
++        check_shared_adjoint_pairs::<11, 4>();
++        check_shared_adjoint_pairs::<11, 8>();
++    }
++
+     fn check<const K: usize>() {
+         for seed in 0..12 {
+             let alpha = Q12289Extension(std::array::from_fn(|i| {
+diff --git a/vendor/field/src/q12289/avx512.rs b/vendor/field/src/q12289/avx512.rs
+index 40ecdb8bb..04074b094 100644
+--- a/vendor/field/src/q12289/avx512.rs
++++ b/vendor/field/src/q12289/avx512.rs
+@@ -13,6 +13,50 @@ const SHIFT_INDICES: [u16; 32] = [
+     25, 26, 27, 28, 29, 30,
+ ];
+ 
++/// Two exact public dot products over a coordinate-major table.
++///
++/// # Safety
++/// AVX512F+BW must be available. Every input is canonical, all slices have the
++/// same length, and their length is at most u32::MAX. Four multiply-adds put at
++/// most eight products in each signed32 lane: 8*12288^2 < 2^31. Widen each block
++/// before accumulating; the complete sum fits u64 under the length bound.
++#[target_feature(enable = "avx512f,avx512bw")]
++pub(super) unsafe fn evaluate_public_pair<const K: usize>(
++    coordinates: &[Vec<u16>; K],
++    a: &[u16],
++    b: &[u16],
++) -> [[u16; K]; 2] {
++    let mut result = [[0; K]; 2];
++    for k in 0..K {
++        let weights = &coordinates[k];
++        let mut totals = [0u64; 2];
++        let vector_len = a.len() / 32 * 32;
++        for start in (0..vector_len).step_by(128) {
++            let mut sums = [_mm512_setzero_si512(); 2];
++            for offset in (start..(start + 128).min(vector_len)).step_by(32) {
++                // A vector is 32 u16 entries, entirely within each input.
++                let w = unsafe { _mm512_loadu_si512(weights.as_ptr().add(offset).cast()) };
++                let x = unsafe { _mm512_loadu_si512(a.as_ptr().add(offset).cast()) };
++                let y = unsafe { _mm512_loadu_si512(b.as_ptr().add(offset).cast()) };
++                sums[0] = _mm512_add_epi32(sums[0], _mm512_madd_epi16(w, x));
++                sums[1] = _mm512_add_epi32(sums[1], _mm512_madd_epi16(w, y));
++            }
++            for (total, sum) in totals.iter_mut().zip(sums) {
++                let low = _mm512_cvtepi32_epi64(_mm512_castsi512_si256(sum));
++                let high = _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64::<1>(sum));
++                *total += _mm512_reduce_add_epi64(_mm512_add_epi64(low, high)) as u64;
++            }
++        }
++        for j in vector_len..a.len() {
++            totals[0] += u64::from(weights[j]) * u64::from(a[j]);
++            totals[1] += u64::from(weights[j]) * u64::from(b[j]);
++        }
++        result[0][k] = (totals[0] % u64::from(Q)) as u16;
++        result[1][k] = (totals[1] % u64::from(Q)) as u16;
++    }
++    result
++}
++
+ #[target_feature(enable = "avx512f,avx512bw")]
+ unsafe fn load_starts<const K: usize>(starts: [PowerCoordinates<K>; 2]) -> __m512i {
+     let mut packed = [0u16; 32];
+@@ -258,6 +302,83 @@ pub(super) unsafe fn fill_powers_adjoint_pairs<const K: usize, const PAIRS: usiz
+     }
+ }
+ 
++/// Pack two adjoint sequences per vector, sharing their public correction.
++///
++/// # Safety
++/// AVX512F+BW are available, K=11, PAIRS>0, and all polynomials and outputs
++/// have equal lengths. All input coordinates and polynomial coefficients are
++/// canonical. Mutable outputs are disjoint slices supplied by the caller.
++#[target_feature(enable = "avx512f,avx512bw")]
++pub(super) unsafe fn fill_adjoint_pairs<const K: usize, const PAIRS: usize>(
++    feedback: &[u16; K],
++    starts: [[PowerCoordinates<K>; 2]; PAIRS],
++    subtract: PowerCoordinates<K>,
++    polynomials: [[&[u16]; 2]; PAIRS],
++    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
++) {
++    assert_eq!(K, 11);
++    assert!(PAIRS > 0);
++    let len = polynomials[0][0].len();
++    for pair in 0..PAIRS {
++        for side in 0..2 {
++            assert_eq!(polynomials[pair][side].len(), len);
++            assert_eq!(outputs[pair][side].len(), len);
++        }
++    }
++    let mut feedback_coefficients = [0i16; 32];
++    let mut feedback_quotients = [0i16; 32];
++    let mut subtract_coefficients = [0i16; 32];
++    let mut subtract_quotients = [0i16; 32];
++    for i in 0..11 {
++        for offset in [0, 16] {
++            (
++                feedback_coefficients[offset + i],
++                feedback_quotients[offset + i],
++            ) = centered_multiplier(feedback[i]);
++            (
++                subtract_coefficients[offset + i],
++                subtract_quotients[offset + i],
++            ) = centered_multiplier(subtract.0[i]);
++        }
++    }
++    // Each source is a full 64-byte array.
++    let feedback = unsafe { _mm512_loadu_si512(feedback_coefficients.as_ptr().cast()) };
++    let quotients = unsafe { _mm512_loadu_si512(feedback_quotients.as_ptr().cast()) };
++    let correction = unsafe { _mm512_loadu_si512(subtract_coefficients.as_ptr().cast()) };
++    let correction_quotients = unsafe { _mm512_loadu_si512(subtract_quotients.as_ptr().cast()) };
++    let mut values = starts.map(|start| unsafe { load_starts(start) });
++    let q = _mm512_set1_epi16(Q as i16);
++    let top_indices = unsafe { _mm512_loadu_si512(TOP_INDICES.as_ptr().cast()) };
++    let shift_indices = unsafe { _mm512_loadu_si512(SHIFT_INDICES.as_ptr().cast()) };
++    for j in 0..len {
++        for pair in 0..PAIRS {
++            let [a, b] = &mut outputs[pair];
++            unsafe { store(values[pair], &mut a[j], &mut b[j]) };
++        }
++        if j + 1 == len {
++            break;
++        }
++        for pair in 0..PAIRS {
++            let value = values[pair];
++            let top = _mm512_permutexvar_epi16(top_indices, value);
++            let quotient = _mm512_mulhrs_epi16(top, quotients);
++            let product = _mm512_mullo_epi16(top, feedback);
++            let remainder = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
++            let shifted = _mm512_maskz_permutexvar_epi16(SHIFT, shift_indices, value);
++            let left = _mm512_set1_epi16(polynomials[pair][0][len - 1 - j] as i16);
++            let right = _mm512_set1_epi16(polynomials[pair][1][len - 1 - j] as i16);
++            let scalar = _mm512_mask_blend_epi16(0xffff0000, left, right);
++            let quotient = _mm512_mulhrs_epi16(scalar, correction_quotients);
++            let product = _mm512_mullo_epi16(scalar, correction);
++            let subtract = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
++            let sum = _mm512_sub_epi16(_mm512_add_epi16(remainder, shifted), subtract);
++            // Both exact remainders are in [-8448,8448], with a canonical
++            // predecessor, so the same [-16896,29184] reduction bound applies.
++            values[pair] = unsafe { reduce_adjoint(sum, q) };
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::super::{PowerBasis, PowerCoordinates, Q12289Extension};
