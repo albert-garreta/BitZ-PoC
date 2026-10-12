@@ -18,14 +18,10 @@ pub struct FalconSignatureCt {
 pub fn encode_signature_ct(
     signature: &FalconSignatureCt,
 ) -> Result<[u8; CT_SIGNATURE_BYTES], FalconError> {
+    validate_signature_ct(signature)?;
     let mut bytes = [0u8; CT_SIGNATURE_BYTES];
     bytes[0] = 0x50 + COEFFICIENT_LOG as u8;
     bytes[1..1 + NONCE_BYTES].copy_from_slice(&signature.nonce);
-    for (index, &coefficient) in signature.s2.iter().enumerate() {
-        if coefficient <= -(1 << (SIGNATURE_BITS - 1)) || coefficient >= 1 << (SIGNATURE_BITS - 1) {
-            return Err(FalconError::SignatureCoefficientOutOfRange { index });
-        }
-    }
     for (i, &coefficient) in signature.s2.iter().enumerate() {
         for bit in 0..SIGNATURE_BITS {
             let offset = i * SIGNATURE_BITS + bit;
@@ -34,6 +30,15 @@ pub fn encode_signature_ct(
         }
     }
     Ok(bytes)
+}
+
+pub(super) fn validate_signature_ct(signature: &FalconSignatureCt) -> Result<(), FalconError> {
+    for (index, &coefficient) in signature.s2.iter().enumerate() {
+        if coefficient <= -(1 << (SIGNATURE_BITS - 1)) || coefficient >= 1 << (SIGNATURE_BITS - 1) {
+            return Err(FalconError::SignatureCoefficientOutOfRange { index });
+        }
+    }
+    Ok(())
 }
 
 /// Decodes the `log2(N) || h[0..N]` public-key format.  Coefficients are

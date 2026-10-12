@@ -35,9 +35,9 @@ pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
 pub const COMPACT_LIVE_BITS: usize =
     2 * N * compact::BASE_BITS + 3 * compact::MAX_EXCEPTIONS + SLACK_BITS;
 pub const PROTOCOL_ID: &str = if N == 1024 {
-    "bitz/falcon1024-algebraic/non-zk/v8"
+    "bitz/falcon1024-algebraic/non-zk/v9"
 } else {
-    "bitz/falcon512-algebraic/non-zk/v8"
+    "bitz/falcon512-algebraic/non-zk/v9"
 };
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;
@@ -48,6 +48,7 @@ struct Schedule {
     norm_round_bits: u32,
     merge_bits: u32,
     binding_bits: u32,
+    terminal_merge_bits: u32,
 }
 
 fn error(e: impl std::fmt::Display) -> FalconError {

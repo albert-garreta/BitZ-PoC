@@ -1,0 +1,424 @@
+{
+  "aggregate": {
+    "arithmetic": {
+      "baseline_mean_of_seed_medians_ms": 1.7292592500000001,
+      "candidate_mean_of_seed_medians_ms": 1.75061775,
+      "candidate_minus_baseline_ms": 0.021358499999999947,
+      "seed_delta_range_ms": [
+        0.019717999999999902,
+        0.023895999999999917
+      ]
+    },
+    "binding": {
+      "baseline_mean_of_seed_medians_ms": 0.8863332500000001,
+      "candidate_mean_of_seed_medians_ms": 0.897046,
+      "candidate_minus_baseline_ms": 0.010712749999999993,
+      "seed_delta_range_ms": [
+        0.009248000000000034,
+        0.014346999999999888
+      ]
+    },
+    "bitz": {
+      "baseline_mean_of_seed_medians_ms": 10.652569,
+      "candidate_mean_of_seed_medians_ms": 10.841736749999999,
+      "candidate_minus_baseline_ms": 0.1891677500000002,
+      "seed_delta_range_ms": [
+        0.16201600000000127,
+        0.20626999999999995
+      ]
+    },
+    "column_packing": {
+      "baseline_mean_of_seed_medians_ms": 0.02370725,
+      "candidate_mean_of_seed_medians_ms": 0.02371725,
+      "candidate_minus_baseline_ms": 1.000000000000046e-05,
+      "seed_delta_range_ms": [
+        -0.00010999999999999552,
+        0.00016100000000000142
+      ]
+    },
+    "forest": {
+      "baseline_mean_of_seed_medians_ms": 10.045466000000001,
+      "candidate_mean_of_seed_medians_ms": 10.229564,
+      "candidate_minus_baseline_ms": 0.18409799999999876,
+      "seed_delta_range_ms": [
+        0.15545400000000065,
+        0.20219199999999837
+      ]
+    },
+    "forest_grinding": {
+      "baseline_mean_of_seed_medians_ms": 0.4792385000000001,
+      "candidate_mean_of_seed_medians_ms": 0.47860425000000006,
+      "candidate_minus_baseline_ms": -0.0006342500000000167,
+      "seed_delta_range_ms": [
+        -0.002717000000000025,
+        0.0005189999999999362
+      ]
+    },
+    "integer_folds": {
+      "baseline_mean_of_seed_medians_ms": 0.05622625,
+      "candidate_mean_of_seed_medians_ms": 0.0560135,
+      "candidate_minus_baseline_ms": -0.00021274999999999766,
+      "seed_delta_range_ms": [
+        -0.0003500000000000031,
+        -0.00012099999999998917
+      ]
+    },
+    "integer_outer": {
+      "baseline_mean_of_seed_medians_ms": 0.81403425,
+      "candidate_mean_of_seed_medians_ms": 0.8240305,
+      "candidate_minus_baseline_ms": 0.009996249999999957,
+      "seed_delta_range_ms": [
+        0.009477999999999875,
+        0.010830000000000006
+      ]
+    },
+    "pcs": {
+      "baseline_mean_of_seed_medians_ms": 2.38445625,
+      "candidate_mean_of_seed_medians_ms": 2.39689475,
+      "candidate_minus_baseline_ms": 0.012438500000000019,
+      "seed_delta_range_ms": [
+        0.00880700000000001,
+        0.015579000000000232
+      ]
+    },
+    "power_tables": {
+      "baseline_mean_of_seed_medians_ms": 0.35287975,
+      "candidate_mean_of_seed_medians_ms": 0.3523765,
+      "candidate_minus_baseline_ms": -0.0005032500000000245,
+      "seed_delta_range_ms": [
+        -0.0013319999999999999,
+        0.0005309999999999482
+      ]
+    },
+    "prove": {
+      "baseline_mean_of_seed_medians_ms": 16.313472249999997,
+      "candidate_mean_of_seed_medians_ms": 16.545093,
+      "candidate_minus_baseline_ms": 0.23162075000000115,
+      "seed_delta_range_ms": [
+        0.19638100000000236,
+        0.2446230000000007
+      ]
+    },
+    "ring": {
+      "baseline_mean_of_seed_medians_ms": 0.1639475,
+      "candidate_mean_of_seed_medians_ms": 0.1677195,
+      "candidate_minus_baseline_ms": 0.0037719999999999906,
+      "seed_delta_range_ms": [
+        -0.0010719999999999896,
+        0.014236999999999972
+      ]
+    }
+  },
+  "configuration": {
+    "batch": 1,
+    "degree": 512,
+    "iterations": 15,
+    "main_cpu": 6,
+    "mode": "arithmetic",
+    "security_bits": 128,
+    "seeds": [
+      45,
+      46,
+      47,
+      48
+    ],
+    "threads": 1,
+    "trace_enabled": true,
+    "warmup": 3
+  },
+  "finding": "Most traced proof latency increase lies in the BitZ forest outside measured grinding loops. The forest delta is positive for every seed. Integer folds, column packing, power tables and forest grinding are essentially unchanged.",
+  "limitations": [
+    "Tracing raises absolute runtimes and may change relative costs; these traces are diagnostic and do not replace the untraced qualification or confirmation benchmarks.",
+    "Four input seeds and one configuration do not establish universal performance behavior or statistically isolate a causal implementation change.",
+    "Stage durations include nested work and logging overhead. Inclusive stage totals overlap; median stage differences need not sum exactly to the median root difference.",
+    "The affected bridge/forest/GKR/grinding/transcript source files are byte-identical to the frozen baseline. Localization does not attribute the slowdown to the new serialization helper; compiler/code-layout effects remain an untested hypothesis.",
+    "This report describes the original frozen candidate binaries in the command logs, before any subsequent NTT scratch-reduction experiment."
+  ],
+  "method": "Identify each top-level falcon_algebraic:prove ancestor, exclude its first three occurrences per process, sum elapsed_ms for each full stage path within each remaining trial, take per-process medians, then average four paired-seed medians/deltas. Nested spans are inclusive and must not be added together.",
+  "per_seed": [
+    {
+      "candidate_minus_baseline_ms": {
+        "arithmetic": 0.020599000000000034,
+        "binding": 0.009248000000000034,
+        "bitz": 0.20196299999999923,
+        "column_packing": -4.099999999999937e-05,
+        "forest": 0.19492799999999733,
+        "forest_grinding": -0.00032699999999974416,
+        "integer_folds": -0.00023999999999999716,
+        "integer_outer": 0.009477999999999875,
+        "pcs": 0.015579000000000232,
+        "power_tables": 0.0005309999999999482,
+        "prove": 0.2446230000000007,
+        "ring": 0.0005809999999999982
+      },
+      "seed": 45,
+      "variants": {
+        "baseline": {
+          "measured_trials": 15,
+          "stage_log": "baseline-45.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.684425,
+            "binding": 0.884633,
+            "bitz": 10.615571000000001,
+            "column_packing": 0.023725,
+            "forest": 10.006841000000001,
+            "forest_grinding": 0.4572499999999999,
+            "integer_folds": 0.056146,
+            "integer_outer": 0.7717890000000001,
+            "pcs": 2.3223409999999998,
+            "power_tables": 0.35247700000000004,
+            "prove": 16.047792,
+            "ring": 0.155554
+          },
+          "timed_prove_median_ms": 16.059544,
+          "timed_total_prover_median_ms": 16.243783,
+          "trial_log": "baseline-45.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        },
+        "candidate": {
+          "measured_trials": 15,
+          "stage_log": "candidate-45.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.705024,
+            "binding": 0.893881,
+            "bitz": 10.817534,
+            "column_packing": 0.023684,
+            "forest": 10.201768999999999,
+            "forest_grinding": 0.45692300000000013,
+            "integer_folds": 0.055906000000000004,
+            "integer_outer": 0.7812669999999999,
+            "pcs": 2.33792,
+            "power_tables": 0.353008,
+            "prove": 16.292415000000002,
+            "ring": 0.156135
+          },
+          "timed_prove_median_ms": 16.305028999999998,
+          "timed_total_prover_median_ms": 16.468588,
+          "trial_log": "candidate-45.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        }
+      }
+    },
+    {
+      "candidate_minus_baseline_ms": {
+        "arithmetic": 0.019717999999999902,
+        "binding": 0.009537999999999935,
+        "bitz": 0.16201600000000127,
+        "column_packing": 0.00016100000000000142,
+        "forest": 0.15545400000000065,
+        "forest_grinding": 0.0005189999999999362,
+        "integer_folds": -0.00012099999999998917,
+        "integer_outer": 0.009738999999999942,
+        "pcs": 0.00880700000000001,
+        "power_tables": -0.0006720000000000059,
+        "prove": 0.19638100000000236,
+        "ring": 0.001341999999999982
+      },
+      "seed": 46,
+      "variants": {
+        "baseline": {
+          "measured_trials": 15,
+          "stage_log": "baseline-46.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.72971,
+            "binding": 0.898128,
+            "bitz": 10.744786,
+            "column_packing": 0.023663999999999998,
+            "forest": 10.137927999999999,
+            "forest_grinding": 0.5493830000000002,
+            "integer_folds": 0.056276999999999994,
+            "integer_outer": 0.803088,
+            "pcs": 2.413664,
+            "power_tables": 0.352998,
+            "prove": 16.349242999999998,
+            "ring": 0.154703
+          },
+          "timed_prove_median_ms": 16.360884,
+          "timed_total_prover_median_ms": 16.54893,
+          "trial_log": "baseline-46.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        },
+        "candidate": {
+          "measured_trials": 15,
+          "stage_log": "candidate-46.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.749428,
+            "binding": 0.907666,
+            "bitz": 10.906802,
+            "column_packing": 0.023825,
+            "forest": 10.293382,
+            "forest_grinding": 0.5499020000000001,
+            "integer_folds": 0.056156000000000005,
+            "integer_outer": 0.812827,
+            "pcs": 2.422471,
+            "power_tables": 0.352326,
+            "prove": 16.545624,
+            "ring": 0.156045
+          },
+          "timed_prove_median_ms": 16.557506,
+          "timed_total_prover_median_ms": 16.718941,
+          "trial_log": "candidate-46.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        }
+      }
+    },
+    {
+      "candidate_minus_baseline_ms": {
+        "arithmetic": 0.021220999999999934,
+        "binding": 0.009718000000000115,
+        "bitz": 0.20626999999999995,
+        "column_packing": -0.00010999999999999552,
+        "forest": 0.20219199999999837,
+        "forest_grinding": -0.002717000000000025,
+        "integer_folds": -0.00014000000000000123,
+        "integer_outer": 0.010830000000000006,
+        "pcs": 0.01282499999999942,
+        "power_tables": -0.0013319999999999999,
+        "prove": 0.24191800000000185,
+        "ring": -0.0010719999999999896
+      },
+      "seed": 47,
+      "variants": {
+        "baseline": {
+          "measured_trials": 15,
+          "stage_log": "baseline-47.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.706857,
+            "binding": 0.8906339999999999,
+            "bitz": 10.568022,
+            "column_packing": 0.023794999999999997,
+            "forest": 9.961515,
+            "forest_grinding": 0.4204480000000001,
+            "integer_folds": 0.056156000000000005,
+            "integer_outer": 0.786658,
+            "pcs": 2.4169500000000004,
+            "power_tables": 0.353157,
+            "prove": 16.485218999999997,
+            "ring": 0.176864
+          },
+          "timed_prove_median_ms": 16.496881000000002,
+          "timed_total_prover_median_ms": 16.681641,
+          "trial_log": "baseline-47.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        },
+        "candidate": {
+          "measured_trials": 15,
+          "stage_log": "candidate-47.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.728078,
+            "binding": 0.900352,
+            "bitz": 10.774291999999999,
+            "column_packing": 0.023685,
+            "forest": 10.163706999999999,
+            "forest_grinding": 0.4177310000000001,
+            "integer_folds": 0.056016,
+            "integer_outer": 0.797488,
+            "pcs": 2.429775,
+            "power_tables": 0.351825,
+            "prove": 16.727137,
+            "ring": 0.175792
+          },
+          "timed_prove_median_ms": 16.739009,
+          "timed_total_prover_median_ms": 16.902207999999998,
+          "trial_log": "candidate-47.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        }
+      }
+    },
+    {
+      "candidate_minus_baseline_ms": {
+        "arithmetic": 0.023895999999999917,
+        "binding": 0.014346999999999888,
+        "bitz": 0.1864220000000003,
+        "column_packing": 2.9999999999995308e-05,
+        "forest": 0.1838179999999987,
+        "forest_grinding": -1.2000000000234046e-05,
+        "integer_folds": -0.0003500000000000031,
+        "integer_outer": 0.009938000000000002,
+        "pcs": 0.012543000000000415,
+        "power_tables": -0.0005400000000000404,
+        "prove": 0.2435609999999997,
+        "ring": 0.014236999999999972
+      },
+      "seed": 48,
+      "variants": {
+        "baseline": {
+          "measured_trials": 15,
+          "stage_log": "baseline-48.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.7960450000000001,
+            "binding": 0.8719380000000001,
+            "bitz": 10.681897,
+            "column_packing": 0.023645000000000003,
+            "forest": 10.07558,
+            "forest_grinding": 0.4898730000000002,
+            "integer_folds": 0.056326,
+            "integer_outer": 0.894602,
+            "pcs": 2.38487,
+            "power_tables": 0.352887,
+            "prove": 16.371634999999998,
+            "ring": 0.168669
+          },
+          "timed_prove_median_ms": 16.383347,
+          "timed_total_prover_median_ms": 16.569167999999998,
+          "trial_log": "baseline-48.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        },
+        "candidate": {
+          "measured_trials": 15,
+          "stage_log": "candidate-48.stages.jsonl",
+          "stage_medians_ms": {
+            "arithmetic": 1.819941,
+            "binding": 0.886285,
+            "bitz": 10.868319,
+            "column_packing": 0.023674999999999998,
+            "forest": 10.259398,
+            "forest_grinding": 0.489861,
+            "integer_folds": 0.055976,
+            "integer_outer": 0.90454,
+            "pcs": 2.3974130000000002,
+            "power_tables": 0.35234699999999997,
+            "prove": 16.615195999999997,
+            "ring": 0.18290599999999999
+          },
+          "timed_prove_median_ms": 16.627228000000002,
+          "timed_total_prover_median_ms": 16.790316,
+          "trial_log": "candidate-48.jsonl",
+          "trials": 18,
+          "warmups_excluded": 3
+        }
+      }
+    }
+  ],
+  "schema": "falcon-diagnostic-stage-comparison/v1",
+  "source_files_identical_to_frozen_baseline": [
+    "src/hybrid/integer_bridge.rs",
+    "src/bitz/forest.rs",
+    "src/bitz/gkr.rs",
+    "src/hybrid/block_grinding.rs",
+    "src/piop/spartan/grinding.rs",
+    "src/transcript/mod.rs",
+    "src/transcript/traits.rs"
+  ],
+  "stage_paths": {
+    "arithmetic": "falcon_algebraic:prove/falcon_algebraic:arithmetic",
+    "binding": "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding",
+    "bitz": "falcon_algebraic:prove/falcon_algebraic:bitz",
+    "column_packing": "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:column_packing",
+    "forest": "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest",
+    "forest_grinding": "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest/spartan:grinding",
+    "integer_folds": "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:integer_folds",
+    "integer_outer": "falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:integer_outer",
+    "pcs": "falcon_algebraic:prove/falcon_algebraic:pcs",
+    "power_tables": "falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:power_tables",
+    "prove": "falcon_algebraic:prove",
+    "ring": "falcon_algebraic:prove/falcon_algebraic:ring"
+  }
+}

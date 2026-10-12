@@ -1,0 +1,21 @@
+{
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "host": "Linux will 6.17.0-41-generic #41-Ubuntu SMP PREEMPT_DYNAMIC Sat Jun 20 18:01:40 UTC 2026 x86_64 GNU/Linux\n",
+  "rustflags": "-C target-cpu=native",
+  "profile": "release; LTO; codegen-units=1",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "changed_files": [
+    "src/piop/spartan/falcon_polynomial.rs",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs",
+    "src/piop/spartan/falcon1024_algebraic/source.rs",
+    "src/piop/spartan/falcon/opening.rs",
+    "src/piop/spartan/falcon/verify.rs",
+    "src/piop/spartan/falcon/mod.rs",
+    "src/piop/spartan/falcon/source.rs",
+    "src/piop/spartan/falcon/hash_to_point.rs",
+    "src/piop/spartan/falcon/hybrid.rs",
+    "src/piop/spartan/falcon/format.rs"
+  ]
+}

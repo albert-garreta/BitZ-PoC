@@ -1,0 +1,35 @@
+[
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/bitz-738ed92fae04001d",
+      "falcon",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 31.488818883895874,
+    "RAYON_NUM_THREADS": 8
+  },
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/bitz-738ed92fae04001d",
+      "hybrid::integer_bridge::tests",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 0.06632590293884277,
+    "RAYON_NUM_THREADS": 8
+  },
+  {
+    "argv": [
+      "/home/john-wu/code/BitZ-pcs/target/release/deps/bitz-738ed92fae04001d",
+      "hybrid::grinding_allocation::tests",
+      "--include-ignored",
+      "--test-threads=1"
+    ],
+    "returncode": 0,
+    "seconds": 0.0008893013000488281,
+    "RAYON_NUM_THREADS": 8
+  }
+]

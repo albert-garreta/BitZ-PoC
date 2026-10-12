@@ -1,0 +1,31 @@
+--- src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -647,13 +647,21 @@
+             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
+         }
+         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+-        let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
+-        for (key, target) in public.public_keys.iter().zip(&public.targets) {
+-            for coefficient in key.iter().chain(target) {
+-                coefficients.extend_from_slice(&coefficient.to_le_bytes());
+-            }
+-        }
+-        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
++        if public.public_keys.len() <= 3 {
++            for (key, target) in public.public_keys.iter().zip(&public.targets) {
++                for coefficient in key.iter().chain(target) {
++                    h.update(&coefficient.to_le_bytes());
++                }
++            }
++        } else {
++            let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
++            for (key, target) in public.public_keys.iter().zip(&public.targets) {
++                for coefficient in key.iter().chain(target) {
++                    coefficients.extend_from_slice(&coefficient.to_le_bytes());
++                }
++            }
++            crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
++        }
+         h.update(root);
+         h.update(&self.ligerito.digest());
+         for block in &self.pcs_grinding.blocks {

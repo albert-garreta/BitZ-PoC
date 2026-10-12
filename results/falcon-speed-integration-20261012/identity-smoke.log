@@ -1,0 +1,8 @@
+2 cells, 2 pairs, 0 completed
+priming fixture cache: fn-dsa-0.3.0-n512-b1-seed42.bin
+arithmetic-n512-b1-s100-t1-seed42-baseline
+arithmetic-n512-b1-s100-t1-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 512, "batch": 1, "security_bits": 100, "threads": 1}, "seed": 42, "ratios": {"total_prover_ms": 1.0131014441323707, "prove_ms": 1.0154967844402414, "witness_commit_ms": 0.8649184891914001, "verify_ms": 0.9958893306402837, "process_peak_rss_kib": 0.9806039774122268}}
+full-n512-b1-s100-t1-seed42-candidate
+full-n512-b1-s100-t1-seed42-baseline
+{"matched": true, "cell": {"mode": "full", "degree": 512, "batch": 1, "security_bits": 100, "threads": 1}, "seed": 42, "ratios": {"total_prover_ms": 1.116668326765919, "prove_ms": 1.1142848817548683, "witness_commit_ms": 1.2178922340943599, "verify_ms": 1.0148423346306052, "process_peak_rss_kib": 0.99896458894181}}

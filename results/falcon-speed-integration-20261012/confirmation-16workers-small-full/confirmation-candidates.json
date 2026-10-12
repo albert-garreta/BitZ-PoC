@@ -1,0 +1,63 @@
+{
+  "cells": [
+    {
+      "baseline_median_of_seed_medians": 16.728218999999996,
+      "candidate_median_of_seed_medians": 17.408325,
+      "candidate_over_baseline_geomean": 1.028210970779712,
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metric": "total_prover_ms",
+      "observed_change_percent": 2.821097077971202,
+      "paired_seed_bootstrap_95_percent_interval": [
+        1.0137467329051129,
+        1.0420320029778618
+      ],
+      "review_observed_increase": true,
+      "seed_ratios": [
+        0.9899832463076944,
+        1.033993142718653,
+        1.0395088291216175,
+        1.0460105876436634,
+        1.044193003081719,
+        1.038893421402879,
+        1.0444517895758703,
+        0.9906219055878136
+      ]
+    },
+    {
+      "baseline_median_of_seed_medians": 16.047131,
+      "candidate_median_of_seed_medians": 16.813315000000003,
+      "candidate_over_baseline_geomean": 1.03526592139972,
+      "cell": {
+        "batch": 1,
+        "degree": 1024,
+        "mode": "full",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metric": "prove_ms",
+      "observed_change_percent": 3.5265921399719957,
+      "paired_seed_bootstrap_95_percent_interval": [
+        1.0200886242837037,
+        1.0493859350255366
+      ],
+      "review_observed_increase": true,
+      "seed_ratios": [
+        0.9943266468814436,
+        1.0416513489355919,
+        1.046136440577787,
+        1.0527015000144395,
+        1.0521747652170232,
+        1.0469793337511801,
+        1.0514693653144043,
+        0.9987290910322034
+      ]
+    }
+  ],
+  "definition": "Observed total/proof geometric-mean ratio exceeds +1.0%; confirm with new seeds and longer samples. This is not proof of a regression."
+}

@@ -1,0 +1,8 @@
+{
+  "head": "d865c9df5e50a1c78ee4d52885d5381b17fc08c5",
+  "source": "/tmp/bitz-falcon-speed-baseline-20261012",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid"
+  ]
+}

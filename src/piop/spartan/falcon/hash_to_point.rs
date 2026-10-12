@@ -21,7 +21,7 @@ pub fn hash_to_point_ct(nonce: &[u8; 40], message: &[u8]) -> Result<HashToPointT
     from_shake_bytes(&bytes, shake)
 }
 
-/// Arithmetic mirror shared by the prime and binary SHAKE front ends.
+/// Decode the native SHAKE byte stream for the arithmetic mirror.
 pub(super) fn from_shake_bytes(
     bytes: &[u8],
     shake: KeccakTrace,
@@ -30,7 +30,17 @@ pub(super) fn from_shake_bytes(
         return Err(FalconError::Piop("SHAKE sample length".into()));
     }
 
-    let mut words = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
+    let words = Box::new(std::array::from_fn(|index| {
+        u16::from_be_bytes([bytes[2 * index], bytes[2 * index + 1]])
+    }));
+    from_shake_words(words, shake)
+}
+
+/// Arithmetic mirror shared by the native and binary SHAKE front ends.
+pub(super) fn from_shake_words(
+    words: Box<[u16; HASH_TO_POINT_SAMPLES]>,
+    shake: KeccakTrace,
+) -> Result<HashToPointTrace, FalconError> {
     let mut quotients = Box::new([0u8; HASH_TO_POINT_SAMPLES]);
     let mut remainders = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
     let mut accepted = Box::new([false; HASH_TO_POINT_SAMPLES]);
@@ -38,11 +48,10 @@ pub(super) fn from_shake_bytes(
     let mut count = 0usize;
 
     for index in 0..HASH_TO_POINT_SAMPLES {
-        let word = u16::from_be_bytes([bytes[2 * index], bytes[2 * index + 1]]);
+        let word = words[index];
         let quotient = u32::from(word) / Q as u32;
         let remainder = u32::from(word) - quotient * Q as u32;
         let keep = u32::from(word) < 5 * Q as u32;
-        words[index] = word;
         quotients[index] = quotient as u8;
         remainders[index] = remainder as u16;
         accepted[index] = keep;
@@ -66,6 +75,89 @@ pub(super) fn from_shake_bytes(
         point,
     })
 }
+
+#[cfg(test)]
+mod word_tests {
+    use super::*;
+
+    fn bytes(words: &[u16; HASH_TO_POINT_SAMPLES]) -> Vec<u8> {
+        words.iter().flat_map(|word| word.to_be_bytes()).collect()
+    }
+
+    #[test]
+    fn word_frontend_preserves_division_boundaries_and_byte_order() {
+        let mut words = Box::new([7; HASH_TO_POINT_SAMPLES]);
+        let boundaries: Vec<_> = std::iter::once(0)
+            .chain((1..=5).flat_map(|q| [q * Q as u16 - 1, q * Q as u16, q * Q as u16 + 1]))
+            .chain([u16::MAX])
+            .collect();
+        words[..boundaries.len()].copy_from_slice(&boundaries);
+        let encoded = bytes(&words);
+        let trace = from_shake_words(words, KeccakTrace::default()).unwrap();
+        assert_eq!(
+            trace,
+            from_shake_bytes(&encoded, KeccakTrace::default()).unwrap()
+        );
+        for i in 0..HASH_TO_POINT_SAMPLES {
+            assert_eq!(trace.quotients[i], (trace.words[i] / Q as u16) as u8);
+            assert_eq!(trace.remainders[i], trace.words[i] % Q as u16);
+            assert_eq!(trace.accepted[i], trace.words[i] < 5 * Q as u16);
+        }
+        let expected: Vec<_> = trace
+            .words
+            .iter()
+            .copied()
+            .filter(|&word| word < 5 * Q as u16)
+            .map(|word| word % Q as u16)
+            .take(N)
+            .collect();
+        assert_eq!(trace.point.as_slice(), expected);
+    }
+
+    #[test]
+    fn word_frontend_keeps_all_acceptance_decisions_after_point_is_full() {
+        let mut words = Box::new([7; HASH_TO_POINT_SAMPLES]);
+        for (i, word) in words[N..].iter_mut().enumerate() {
+            *word = if i % 2 == 0 {
+                5 * Q as u16 - 1
+            } else {
+                5 * Q as u16
+            };
+        }
+        let trace = from_shake_words(words, KeccakTrace::default()).unwrap();
+        assert!(trace.point.iter().all(|&value| value == 7));
+        for i in N..HASH_TO_POINT_SAMPLES {
+            assert_eq!(trace.accepted[i], (i - N) % 2 == 0);
+            assert_eq!(
+                trace.remainders[i],
+                if trace.accepted[i] { Q as u16 - 1 } else { 0 }
+            );
+        }
+    }
+
+    #[test]
+    fn word_frontend_preserves_underflow_and_byte_length_errors() {
+        for accepted in [0, N - 1] {
+            let mut words = Box::new([u16::MAX; HASH_TO_POINT_SAMPLES]);
+            words[..accepted].fill(0);
+            let encoded = bytes(&words);
+            let expected = Err(FalconError::HashToPointUnderflow { accepted });
+            assert_eq!(from_shake_words(words, KeccakTrace::default()), expected);
+            assert_eq!(from_shake_bytes(&encoded, KeccakTrace::default()), expected);
+        }
+        for len in [
+            0,
+            2 * HASH_TO_POINT_SAMPLES - 1,
+            2 * HASH_TO_POINT_SAMPLES + 1,
+        ] {
+            assert_eq!(
+                from_shake_bytes(&vec![0; len], KeccakTrace::default()),
+                Err(FalconError::Piop("SHAKE sample length".into())),
+            );
+        }
+    }
+}
+
 falcon_tests! {
 mod tests {
     use super::*;

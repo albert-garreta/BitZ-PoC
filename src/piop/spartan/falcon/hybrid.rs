@@ -429,29 +429,34 @@ impl PreparedFalconHybrid {
     ) -> Result<CommittedFalconHybrid, FalconError> {
         let _span = tracing::info_span!("falcon_hybrid:witness_commit").entered();
         public.validate(self.batch())?;
-        let encoded = public
-            .signatures
-            .iter()
-            .map(encode_signature_ct)
-            .collect::<Result<Vec<_>, _>>()?;
-        let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
         let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
         let (keccak_packed, auxiliary, samples) = self.generate_shake(&nonces, &public.messages)?;
-        let traces = crate::utils::cfg_into_iter!(0..self.batch())
-            .map(|i| {
-                let bytes: Vec<_> = samples[i].iter().flat_map(|w| w.to_be_bytes()).collect();
-                let htp = super::hash_to_point::from_shake_bytes(&bytes, KeccakTrace::default())?;
-                super::verify::trace_from_parts(
-                    public.public_keys[i].clone(),
-                    public.signatures[i].clone(),
-                    htp,
-                    true,
-                )
-            })
+        let traces = samples
+            .into_par_iter()
+            .enumerate()
+            .map_init(
+                || crate::piop::spartan::falcon_polynomial::PolynomialWorkspace::new(N),
+                |workspace, (i, words)| {
+                    let htp = super::hash_to_point::from_shake_words(
+                        Box::new(words),
+                        KeccakTrace::default(),
+                    )?;
+                    super::verify::trace_from_parts(
+                        public.public_keys[i].clone(),
+                        public.signatures[i].clone(),
+                        htp,
+                        workspace,
+                    )
+                },
+            )
             .collect::<Result<Vec<_>, FalconError>>()?;
         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
-        let arithmetic =
-            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;
+        let arithmetic = FalconSourceWitness::from_decoded_traces(
+            self.layout,
+            &messages,
+            &public.signatures,
+            &traces,
+        )?;
         let mut arithmetic_packed = Vec::with_capacity(1 << self.geometry.physical_logs[0]);
         for row in arithmetic.rows() {
             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
@@ -622,6 +627,8 @@ impl PreparedFalconHybrid {
             h.update(&(n as u64).to_le_bytes());
         }
         h.update(&statement.source_root);
+        let mut public =
+            Vec::with_capacity(self.batch() * (2 * N + 32 + super::CT_SIGNATURE_BYTES));
         for ((pk, msg), signature) in statement
             .public
             .public_keys
@@ -630,11 +637,12 @@ impl PreparedFalconHybrid {
             .zip(&statement.public.signatures)
         {
             for &coefficient in pk.h.iter() {
-                h.update(&coefficient.to_le_bytes());
+                public.extend_from_slice(&coefficient.to_le_bytes());
             }
-            h.update(msg);
-            h.update(&encode_signature_ct(signature)?);
+            public.extend_from_slice(msg);
+            public.extend_from_slice(&encode_signature_ct(signature)?);
         }
+        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &public);
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
             h.update(&block.bits.to_le_bytes());

@@ -229,6 +229,8 @@ fn row_images(chunks: &[LargeNumber], comb: &FixedBasePow) -> Vec<Gf> {
         .collect()
 }
 
+/// Equality-row wrapper retained for existing bit-MLE openings. Callers supply
+/// their cached equality weights; the transcript is identical to the weighted API.
 pub(crate) fn prove(
     t: &mut impl Transcript,
     p: &IntegerMatrixLayout,
@@ -240,18 +242,90 @@ pub(crate) fn prove(
     row_weights: &[u128],
 ) -> Result<(Proof, BinaryClaim), FalconError> {
     Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    validate_point(point, p.row_vars + p.col_vars, &field)?;
+    prove_weighted_with_field(
+        t,
+        p,
+        rows,
+        mode,
+        &point[p.row_vars..],
+        &field,
+        grinding_bits,
+        row_weights,
+    )
+}
+
+fn validate_point(point: &[F], variables: usize, field: &Cfg) -> Result<(), FalconError> {
+    if point.len() != variables {
+        return Err(err("bridge point shape"));
+    }
+    let encoding = F::canonical_modulus_encoding(field);
+    for coordinate in point {
+        coordinate
+            .validate_element(&encoding)
+            .map_err(|_| err("bridge point element"))?;
+    }
+    Ok(())
+}
+
+fn validate_row_weights(
+    p: &IntegerMatrixLayout,
+    row_weights: &[u128],
+    modulus: u128,
+) -> Result<(), FalconError> {
+    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+        return Err(err("bridge row weights"));
+    }
+    Ok(())
+}
+
+/// Authenticate `sum_{r,c} row_weights[r] * eq(c, column_point) * bits[r,c]`.
+/// The public weights may be any canonical prime-field coefficients. The caller
+/// must bind or derive the weights and column point in its enclosing transcript
+/// before invoking this reduction; the bridge preserves the legacy framing.
+pub(crate) fn prove_weighted(
+    t: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    mode: BridgeMode,
+    column_point: &[F],
+    modulus: u128,
+    grinding_bits: u32,
+    row_weights: &[u128],
+) -> Result<(Proof, BinaryClaim), FalconError> {
+    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    prove_weighted_with_field(
+        t,
+        p,
+        rows,
+        mode,
+        column_point,
+        &field,
+        grinding_bits,
+        row_weights,
+    )
+}
+
+fn prove_weighted_with_field(
+    t: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    mode: BridgeMode,
+    column_point: &[F],
+    field: &Cfg,
+    grinding_bits: u32,
+    row_weights: &[u128],
+) -> Result<(Proof, BinaryClaim), FalconError> {
+    Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
     if rows.len() != p.cols() || rows.iter().any(|column| column.len() != p.rows() / 64) {
         return Err(err("bridge source shape"));
     }
+    let modulus = field.modulus_u128();
+    validate_point(column_point, p.col_vars, field)?;
+    validate_row_weights(p, row_weights, modulus)?;
     if mode == BridgeMode::Unsplit {
-        return prove_unsplit(t, p, rows, point, modulus, grinding_bits, row_weights);
-    }
-    if point.len() != p.row_vars + p.col_vars {
-        return Err(err("bridge point shape"));
-    }
-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
+        return prove_unsplit(t, p, rows, modulus, grinding_bits, row_weights);
     }
     split_bounds(p, modulus)?;
     let chunks = weight_limbs(row_weights, limb_width(p))?;
@@ -302,6 +376,7 @@ pub(crate) fn prove(
     ))
 }
 
+/// Equality-row wrapper for an opening at the full bit-domain point.
 pub(crate) fn verify(
     t: &mut impl Transcript,
     p: &IntegerMatrixLayout,
@@ -313,19 +388,86 @@ pub(crate) fn verify(
     grinding_bits: u32,
 ) -> Result<BinaryClaim, FalconError> {
     Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    validate_point(point, p.row_vars + p.col_vars, &field)?;
+    let row_weights = weights(&point[..p.row_vars], &field);
+    verify_weighted_with_field(
+        t,
+        p,
+        mode,
+        &point[p.row_vars..],
+        value,
+        &field,
+        proof,
+        grinding_bits,
+        &row_weights,
+    )
+}
+
+/// Verify a public weighted-row opening, returning the claim that the enclosing
+/// binary PCS must authenticate. As in `prove_weighted`, the enclosing protocol
+/// binds or derives the public weights, point, and claimed value.
+pub(crate) fn verify_weighted(
+    t: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    mode: BridgeMode,
+    column_point: &[F],
+    value: F,
+    modulus: u128,
+    proof: &Proof,
+    grinding_bits: u32,
+    row_weights: &[u128],
+) -> Result<BinaryClaim, FalconError> {
+    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    verify_weighted_with_field(
+        t,
+        p,
+        mode,
+        column_point,
+        value,
+        &field,
+        proof,
+        grinding_bits,
+        row_weights,
+    )
+}
+
+fn verify_weighted_with_field(
+    t: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    mode: BridgeMode,
+    column_point: &[F],
+    value: F,
+    field: &Cfg,
+    proof: &Proof,
+    grinding_bits: u32,
+    row_weights: &[u128],
+) -> Result<BinaryClaim, FalconError> {
+    Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    let modulus = field.modulus_u128();
+    validate_point(column_point, p.col_vars, field)?;
+    value
+        .validate_element(&F::canonical_modulus_encoding(field))
+        .map_err(|_| err("bridge value element"))?;
+    validate_row_weights(p, row_weights, modulus)?;
     if mode == BridgeMode::Unsplit {
-        return verify_unsplit(t, p, point, value, modulus, proof, grinding_bits);
-    }
-    if point.len() != p.row_vars + p.col_vars {
-        return Err(err("bridge point shape"));
+        return verify_unsplit(
+            t,
+            p,
+            column_point,
+            value,
+            field,
+            proof,
+            grinding_bits,
+            row_weights,
+        );
     }
     if proof.forest.len() != message_count(p) {
         return Err(err("bridge forest message count"));
     }
-    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
     split_bounds(p, modulus)?;
     let width = limb_width(p);
-    let chunks = weight_limbs(&weights(&point[..p.row_vars], &field), width)?;
+    let chunks = weight_limbs(row_weights, width)?;
     let ColumnSums::Split(sums) = &proof.sums else {
         return Err(err("bridge chunk shape"));
     };
@@ -333,7 +475,7 @@ pub(crate) fn verify(
     if sums.len() != p.cols() || sums.iter().any(|&sum| !sum.within(bound)) {
         return Err(err("bridge integer fold magnitude"));
     }
-    let cols = weights(&point[p.row_vars..], &field);
+    let cols = weights(column_point, field);
     let partial = sums
         .iter()
         .zip(&cols)
@@ -456,19 +598,11 @@ fn prove_unsplit(
     t: &mut impl Transcript,
     p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
-    point: &[F],
     modulus: u128,
     grinding_bits: u32,
     row_weights: &[u128],
 ) -> Result<(Proof, BinaryClaim), FalconError> {
     let shape = unsplit_shape(p, modulus)?;
-    if point.len() != p.row_vars + p.col_vars {
-        return Err(err("bridge point shape"));
-    }
-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
-    }
     // All terms are nonnegative. Bounding their full sum also bounds every
     // partial sum in the digit-table and parallel folding implementations.
     checked_weight_sum(row_weights)?;
@@ -510,16 +644,14 @@ fn prove_unsplit(
 fn verify_unsplit(
     t: &mut impl Transcript,
     p: &IntegerMatrixLayout,
-    point: &[F],
+    column_point: &[F],
     value: F,
-    modulus: u128,
+    field: &Cfg,
     proof: &Proof,
     grinding_bits: u32,
+    row_weights: &[u128],
 ) -> Result<BinaryClaim, FalconError> {
-    unsplit_shape(p, modulus)?;
-    if point.len() != p.row_vars + p.col_vars {
-        return Err(err("bridge point shape"));
-    }
+    unsplit_shape(p, field.modulus_u128())?;
     if proof.forest.len() != unsplit_message_count(p) {
         return Err(err("bridge forest message count"));
     }
@@ -529,13 +661,11 @@ fn verify_unsplit(
     if sums.len() != p.cols() {
         return Err(err("unsplit bridge sum shape"));
     }
-    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    let row_weights = weights(&point[..p.row_vars], &field);
-    let bound = checked_weight_sum(&row_weights)?;
+    let bound = checked_weight_sum(row_weights)?;
     if sums.iter().any(|&sum| sum > bound) {
         return Err(err("bridge integer fold magnitude"));
     }
-    let cols = weights(&point[p.row_vars..], &field);
+    let cols = weights(column_point, field);
     let result = sums.iter().zip(&cols).fold(0, |acc, (&sum, &weight)| {
         field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight))
     });
@@ -626,6 +756,277 @@ mod tests {
     }
 
     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+
+    fn weighted_test_source(p: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
+        (0..p.cols())
+            .map(|column| {
+                (0..p.rows() / 64)
+                    .map(|word| match column {
+                        0 => u64::MAX,
+                        1 => 0,
+                        2 => 0xaaaa_aaaa_aaaa_aaaa,
+                        _ => 1u64 << ((13 * word + column) % 64),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn weighted_prime_value(
+        rows: &[Vec<u64>],
+        row_weights: &[u128],
+        column_point: &[F],
+        field: &Cfg,
+    ) -> F {
+        let cols = weights(column_point, field);
+        let value = rows.iter().zip(cols).fold(0, |acc, (bits, column)| {
+            let sum = row_weights
+                .iter()
+                .enumerate()
+                .fold(0, |sum, (row, &weight)| {
+                    if bits[row / 64] >> (row % 64) & 1 == 1 {
+                        field.add_u128(sum, weight)
+                    } else {
+                        sum
+                    }
+                });
+            field.add_u128(acc, field.mul_u128(sum, column))
+        });
+        F::from_with_cfg(Uint::from(value), field)
+    }
+
+    fn binary_claim_value(rows: &[Vec<u64>], claim: &BinaryClaim) -> Gf {
+        let cols = build_eq_x_r_vec(&claim.high_point, &()).unwrap();
+        rows.iter()
+            .zip(cols)
+            .fold(Gf::zero(), |acc, (bits, column)| {
+                let sum = claim
+                    .low
+                    .iter()
+                    .enumerate()
+                    .fold(Gf::zero(), |sum, (row, &weight)| {
+                        if bits[row / 64] >> (row % 64) & 1 == 1 {
+                            sum + weight
+                        } else {
+                            sum
+                        }
+                    });
+                acc + sum * column
+            })
+    }
+
+    #[test]
+    fn weighted_bridge_authenticates_arbitrary_weights_and_rejects_bad_inputs() {
+        let p = IntegerMatrixLayout {
+            row_vars: 7,
+            col_vars: 2,
+        };
+        let rows = weighted_test_source(&p);
+        for (mode, modulus) in [
+            (BridgeMode::Unsplit, (1u128 << 107) - 1),
+            (BridgeMode::TwoLimbs, (1u128 << 127) - 1),
+        ] {
+            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let column_point: Vec<_> = [3u128, 7]
+                .map(|x| F::from_with_cfg(Uint::from(x), &field))
+                .to_vec();
+            // Includes zero, negative field coefficients, and values spanning
+            // both limbs. No equality polynomial is assumed for these rows.
+            let row_weights: Vec<_> = (0..p.rows())
+                .map(|row| match row % 4 {
+                    0 => 0,
+                    1 => modulus - 1 - row as u128,
+                    2 => 1u128 << (row % 100),
+                    _ => (row * row + 1) as u128,
+                })
+                .collect();
+            let value = weighted_prime_value(&rows, &row_weights, &column_point, &field);
+            let mut pt = Blake3Transcript::new();
+            let (proof, claim) = super::prove_weighted(
+                &mut pt,
+                &p,
+                &rows,
+                mode,
+                &column_point,
+                modulus,
+                2,
+                &row_weights,
+            )
+            .unwrap();
+            let mut vt = Blake3Transcript::new();
+            let verified = super::verify_weighted(
+                &mut vt,
+                &p,
+                mode,
+                &column_point,
+                value,
+                modulus,
+                &proof,
+                2,
+                &row_weights,
+            )
+            .unwrap();
+            assert_eq!(claim.low, verified.low);
+            assert_eq!(claim.high_point, verified.high_point);
+            assert_eq!(claim.value, verified.value);
+            assert_eq!(binary_claim_value(&rows, &verified), verified.value);
+            assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
+
+            let verify = |point: &[F], value: F, weights: &[u128]| {
+                super::verify_weighted(
+                    &mut Blake3Transcript::new(),
+                    &p,
+                    mode,
+                    point,
+                    value,
+                    modulus,
+                    &proof,
+                    2,
+                    weights,
+                )
+            };
+            let prove = |point: &[F], weights: &[u128]| {
+                super::prove_weighted(
+                    &mut Blake3Transcript::new(),
+                    &p,
+                    &rows,
+                    mode,
+                    point,
+                    modulus,
+                    2,
+                    weights,
+                )
+            };
+            let wrong_value = F::from_with_cfg(
+                Uint::from(field.add_u128(u128::from(field.to_integer(&value)), 1)),
+                &field,
+            );
+            assert!(verify(&column_point, wrong_value, &row_weights).is_err());
+            let mut wrong_point = column_point.clone();
+            wrong_point[0] = F::from_with_cfg(Uint::from(5u128), &field);
+            assert_ne!(
+                weighted_prime_value(&rows, &row_weights, &wrong_point, &field),
+                value
+            );
+            assert!(verify(&wrong_point, value, &row_weights).is_err());
+
+            let mut changed_weights = row_weights.clone();
+            changed_weights[0] = 1;
+            // A bridge verifier returns a binary PCS claim; final source
+            // authentication belongs to that PCS. A changed public row weight
+            // must therefore fail either this reduction or its terminal claim.
+            if let Ok(changed) = verify(&column_point, value, &changed_weights) {
+                assert_ne!(binary_claim_value(&rows, &changed), changed.value);
+            }
+            changed_weights[0] = modulus;
+            for bad_weights in [&changed_weights[..], &row_weights[..p.rows() - 1]] {
+                assert!(prove(&column_point, bad_weights).is_err());
+                assert!(verify(&column_point, value, bad_weights).is_err());
+            }
+            let mut long_point = column_point.clone();
+            long_point.push(column_point[0]);
+            for bad_point in [&column_point[..1], &long_point[..]] {
+                assert!(prove(bad_point, &row_weights).is_err());
+                assert!(verify(bad_point, value, &row_weights).is_err());
+            }
+            // Construct an element reduced in a wider context whose raw
+            // Montgomery encoding is out of range in the statement's field.
+            let wider = field::create_prime_field(Uint::from(u128::MAX - 158));
+            let noncanonical = F::new_unchecked_with_cfg(Uint::from(modulus), &wider);
+            let mut bad_point = column_point.clone();
+            bad_point[0] = noncanonical;
+            assert!(prove(&bad_point, &row_weights).is_err());
+            assert!(verify(&bad_point, value, &row_weights).is_err());
+            assert!(verify(&column_point, noncanonical, &row_weights).is_err());
+        }
+    }
+
+    #[test]
+    fn weighted_equality_openings_preserve_wrapper_proofs_and_transcripts() {
+        let p = IntegerMatrixLayout {
+            row_vars: 7,
+            col_vars: 2,
+        };
+        let rows = weighted_test_source(&p);
+        for (mode, modulus) in [
+            (BridgeMode::Unsplit, (1u128 << 107) - 1),
+            (BridgeMode::TwoLimbs, (1u128 << 127) - 1),
+        ] {
+            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let point: Vec<_> = (0..p.row_vars + p.col_vars)
+                .map(|i| F::from_with_cfg(Uint::from(3 + 2 * i as u128), &field))
+                .collect();
+            let row_weights = weights(&point[..p.row_vars], &field);
+            let column_point = &point[p.row_vars..];
+            let value = weighted_prime_value(&rows, &row_weights, column_point, &field);
+            let mut wrapper_t = Blake3Transcript::new();
+            let (wrapper, wrapper_claim) = super::prove(
+                &mut wrapper_t,
+                &p,
+                &rows,
+                mode,
+                &point,
+                modulus,
+                2,
+                &row_weights,
+            )
+            .unwrap();
+            let mut weighted_t = Blake3Transcript::new();
+            let (weighted, weighted_claim) = super::prove_weighted(
+                &mut weighted_t,
+                &p,
+                &rows,
+                mode,
+                column_point,
+                modulus,
+                2,
+                &row_weights,
+            )
+            .unwrap();
+            assert_eq!(wrapper.sums, weighted.sums);
+            assert_eq!(wrapper.forest, weighted.forest);
+            assert_eq!(wrapper.nonces, weighted.nonces);
+            assert_eq!(wrapper_claim.low, weighted_claim.low);
+            assert_eq!(wrapper_claim.high_point, weighted_claim.high_point);
+            assert_eq!(wrapper_claim.value, weighted_claim.value);
+            let expected_challenge = wrapper_t.get_challenge::<u128>();
+            assert_eq!(expected_challenge, weighted_t.get_challenge::<u128>());
+            let mut wrapper_t = Blake3Transcript::new();
+            let wrapper_claim = super::verify(
+                &mut wrapper_t,
+                &p,
+                mode,
+                &point,
+                value,
+                modulus,
+                &wrapper,
+                2,
+            )
+            .unwrap();
+            let mut weighted_t = Blake3Transcript::new();
+            let weighted_claim = super::verify_weighted(
+                &mut weighted_t,
+                &p,
+                mode,
+                column_point,
+                value,
+                modulus,
+                &weighted,
+                2,
+                &row_weights,
+            )
+            .unwrap();
+            assert_eq!(wrapper_claim.low, weighted_claim.low);
+            assert_eq!(wrapper_claim.high_point, weighted_claim.high_point);
+            assert_eq!(wrapper_claim.value, weighted_claim.value);
+            assert_eq!(
+                binary_claim_value(&rows, &weighted_claim),
+                weighted_claim.value
+            );
+            assert_eq!(expected_challenge, wrapper_t.get_challenge::<u128>());
+            assert_eq!(expected_challenge, weighted_t.get_challenge::<u128>());
+        }
+    }
 
     #[test]
     fn single_algebraic_source_bridge_authenticates_without_falcon_trace() {

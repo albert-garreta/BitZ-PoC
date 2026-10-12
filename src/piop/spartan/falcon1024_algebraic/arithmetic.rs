@@ -1,8 +1,8 @@
 //! Exact integer norms and authentication against the one committed bit source.
 //!
 //! The native ring reduction, norm endpoint, and slack are joined only after all
-//! their claimed values are fixed. The resulting linear form is streamed into
-//! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
+//! their claimed values are fixed. A word-level quadratic sumcheck ends in
+//! two or three raw lane evaluations, batched into one weighted BitZ opening.
 
 use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
 #[cfg(feature = "parallel")]
@@ -10,6 +10,12 @@ use rayon::prelude::*;
 
 #[cfg(test)]
 use crate::piop::spartan::SpartanField;
+
+#[cfg(any(test, feature = "bench-internals"))]
+use crate::sumcheck::inner::{
+    packed::{ColumnMajorPackedBits, PackedInput, StreamingMle},
+    prove_inner_sumcheck,
+};
 
 use crate::{
     piop::spartan::{
@@ -23,13 +29,7 @@ use crate::{
     sumcheck::{
         SumcheckError, SumcheckProof,
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
-        inner::{
-            packed::{
-                BindingOptions, ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource,
-                StreamingMle,
-            },
-            prove_inner_sumcheck,
-        },
+        inner::packed::{BindingOptions, StreamingCoefficientSource},
         proof::validate_field_elements,
     },
     transcript::traits::Transcript,
@@ -44,6 +44,10 @@ mod compact_binding;
 #[cfg(any(test, feature = "bench-internals"))]
 pub(super) use compact_binding::{CompactProof, prove_compact, verify_compact};
 
+#[path = "word_binding.rs"]
+mod word_binding;
+pub(super) use word_binding::WordBridgeClaim;
+
 const COEFFICIENT_BITS: usize = 15;
 const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
 const SLACK_BITS: usize = super::SLACK_BITS;
@@ -51,6 +55,7 @@ const SLACK_BITS: usize = super::SLACK_BITS;
 const SMALL_BATCH_MAX: usize = (1 << 19) / (64 * N);
 const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
 const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
+#[cfg(test)]
 const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
 
 struct NormInstance;
@@ -84,7 +89,8 @@ pub(super) struct Proof {
     pub norm: NormProof,
     pub merge_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
-    pub binding_terminal: [F; 2],
+    pub binding_terminal: Vec<F>,
+    pub terminal_merge_nonce: Option<u64>,
     pub binding_nonces: Vec<u64>,
 }
 
@@ -95,16 +101,18 @@ impl Proof {
         16 * (2
             + 4 * self.norm.sumcheck.round_polynomials.len()
             + 3 * self.binding.round_polynomials.len()
-            + 2)
+            + self.binding_terminal.len())
             + 8 * (usize::from(self.norm.instance_nonce.is_some())
                 + self.norm.grinding_nonces.len()
                 + usize::from(self.merge_nonce.is_some())
-                + self.binding_nonces.len())
+                + self.binding_nonces.len()
+                + usize::from(self.terminal_merge_nonce.is_some()))
     }
 }
 
 /// This is a pending PCS obligation, not a standalone proof of the relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(any(test, feature = "bench-internals"))]
 pub(super) struct BridgeClaim {
     pub point: Vec<F>,
     pub modulus: u128,
@@ -126,7 +134,7 @@ pub(super) fn prove(
     field: &Cfg,
     ring: &PreparedClaim,
     schedule: &Schedule,
-) -> Result<(Proof, Vec<u128>, BridgeClaim), FalconError> {
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
     if source.layout() != layout {
         return Err(failure("algebraic source layout mismatch"));
     }
@@ -136,56 +144,18 @@ pub(super) fn prove(
     transcript.absorb_slice(MERGE_DOMAIN);
     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
     let eta = sample(transcript, field)?;
-    let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
-    form.options = arithmetic_binding_options(layout.batch(), schedule.binding_bits == 0);
-
-    transcript.absorb_slice(BINDING_DOMAIN);
-    let stream = StreamingMle::new(&form);
-    let bits = ColumnMajorPackedBits::new(source.rows(), layout.bitz_params().row_vars);
-    let mut boundary =
-        ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(schedule.binding_bits, 0);
-    let output = prove_inner_sumcheck(
-        field,
+    let (form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+    word_binding::prove(
         transcript,
+        layout,
+        source,
+        form,
         target,
-        PackedInput::new(
-            &stream,
-            &bits,
-            source_rounds(layout),
-            layout.source_bits(),
-            binding_prefix_variables(layout.batch()),
-        ),
-        (),
-        &mut boundary,
+        norm,
+        merge_nonce,
+        schedule,
+        field,
     )
-    .map_err(failure)?;
-    let binding_nonces = boundary.into_nonces();
-    let binding_terminal = output.terminal_evaluations;
-    // A dishonest host witness may disagree with the source. Catch that here,
-    // while the verifier separately checks the same coefficient evaluation.
-    if output.final_claim != field.mul(&binding_terminal[0], &binding_terminal[1])
-        || form.evaluate(&output.point)? != binding_terminal[0]
-    {
-        return Err(failure("algebraic binding terminal mismatch"));
-    }
-    absorb_field_elements(transcript, &binding_terminal, field);
-    let claim = bind_opening(transcript, output.point, binding_terminal[1], field);
-    let row_weights = eq_table(&claim.point[..layout.bitz_params().row_vars], field)
-        .map_err(failure)?
-        .into_iter()
-        .map(|value| u128::from(field.to_integer(&value)))
-        .collect();
-    Ok((
-        Proof {
-            norm,
-            merge_nonce,
-            binding: output.proof,
-            binding_terminal,
-            binding_nonces,
-        },
-        row_weights,
-        claim,
-    ))
 }
 
 pub(super) fn verify(
@@ -195,41 +165,14 @@ pub(super) fn verify(
     ring: &PreparedClaim,
     proof: &Proof,
     schedule: &Schedule,
-) -> Result<BridgeClaim, FalconError> {
+) -> Result<WordBridgeClaim, FalconError> {
     validate_field(layout, field)?;
     let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
     transcript.absorb_slice(MERGE_DOMAIN);
     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
     let eta = sample(transcript, field)?;
     let (form, target) = BindingForm::new(layout, ring, &norm, eta, field)?;
-    transcript.absorb_slice(BINDING_DOMAIN);
-    let mut boundary = VerifierGrindingRoundBoundary::<BindingRound>::new(
-        schedule.binding_bits,
-        &proof.binding_nonces,
-    );
-    let (point, final_claim) = proof
-        .binding
-        .verify_with_round_boundary(
-            transcript,
-            target,
-            source_rounds(layout),
-            field,
-            &mut boundary,
-        )
-        .map_err(failure)?;
-    validate_field_elements(&proof.binding_terminal, field).map_err(failure)?;
-    if final_claim != field.mul(&proof.binding_terminal[0], &proof.binding_terminal[1])
-        || form.evaluate(&point)? != proof.binding_terminal[0]
-    {
-        return Err(failure("algebraic binding terminal mismatch"));
-    }
-    absorb_field_elements(transcript, &proof.binding_terminal, field);
-    Ok(bind_opening(
-        transcript,
-        point,
-        proof.binding_terminal[1],
-        field,
-    ))
+    word_binding::verify(transcript, layout, &form, target, proof, schedule, field)
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic:integer_outer")]
@@ -443,41 +386,6 @@ fn binding_parallel(batch: usize) -> bool {
     optimized_binding(batch) && binding_workers() > 1
 }
 
-fn arithmetic_binding_options(batch: usize, ungrinded: bool) -> BindingOptions {
-    #[cfg(feature = "bench-internals")]
-    match std::env::var("BITZ_ARITHMETIC_BINDING_GROUP_CAP") {
-        Ok(value) => {
-            let group_cap = match value.as_str() {
-                "1" => 1,
-                "8" => 8,
-                "16" => 16,
-                _ => panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be 1, 8, or 16"),
-            };
-            return BindingOptions {
-                optimized: true,
-                group_cap,
-            };
-        }
-        Err(std::env::VarError::NotPresent) => {}
-        Err(std::env::VarError::NotUnicode(_)) => {
-            panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be valid Unicode")
-        }
-    }
-    // Aggregate signatures before expanding their common signed decoder. The
-    // packed consumer reduces this cap when there are fewer parallel tasks.
-    if cfg!(all(target_os = "linux", target_arch = "x86_64"))
-        && matches!(binding_workers(), 1 | 8)
-        && binding_prefix_variables(batch) == 4
-    {
-        BindingOptions {
-            optimized: true,
-            group_cap: 16,
-        }
-    } else {
-        BindingOptions::for_arithmetic(batch, N, ungrinded)
-    }
-}
-
 impl<'a> BindingForm<'a> {
     fn new(
         layout: &'a Layout,
@@ -611,6 +519,7 @@ impl<'a> BindingForm<'a> {
 
     /// Split bit-lane, coefficient and instance variables. The signed decoder
     /// is evaluated once, rather than once per coefficient or per signature.
+    #[cfg(test)]
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
         let _span = tracing::info_span!("falcon_algebraic:binding_evaluation").entered();
         self.evaluate_with_strategy(
@@ -620,6 +529,7 @@ impl<'a> BindingForm<'a> {
         )
     }
 
+    #[cfg(test)]
     fn evaluate_with_strategy(
         &self,
         point: &[F],
@@ -1154,6 +1064,7 @@ impl BindingForm<'_> {
     }
 }
 
+#[cfg(test)]
 fn signed_decoder(weights: &[F], field: &Cfg) -> F {
     let mut value = field.zero();
     let mut power = field.one();
@@ -1169,6 +1080,7 @@ fn signed_decoder(weights: &[F], field: &Cfg) -> F {
     value
 }
 
+#[cfg(any(test, feature = "bench-internals"))]
 fn bind_opening(
     transcript: &mut impl Transcript,
     point: Vec<F>,
@@ -1223,6 +1135,7 @@ fn verify_nonce<D: GrindingDomain>(
 }
 
 /// Prefix width affects only the prover's representation, never the transcript.
+#[cfg(any(test, feature = "bench-internals"))]
 fn binding_prefix_variables(batch: usize) -> usize {
     #[cfg(feature = "bench-internals")]
     match std::env::var("BITZ_ARITHMETIC_BINDING_PREFIX") {
@@ -1299,6 +1212,7 @@ mod tests {
             norm_round_bits: 0,
             merge_bits: 0,
             binding_bits: 0,
+            terminal_merge_bits: 0,
         }
     }
 
@@ -1953,7 +1867,27 @@ mod tests {
             )
             .unwrap();
             assert_eq!(claim, verified);
-            assert_eq!(claim.value, open_source(&source, &claim.point, &field));
+            let cols = eq_table(claim.column_point(&layout), &field).unwrap();
+            let opened = rows
+                .iter()
+                .enumerate()
+                .fold(field.zero(), |sum, (row, &weight)| {
+                    cols.iter().enumerate().fold(sum, |sum, (col, col_weight)| {
+                        if !source.bit((col << layout.row_vars()) + row) {
+                            return sum;
+                        }
+                        field.add(&sum, &field.mul(&unsigned(weight, &field), col_weight))
+                    })
+                });
+            assert_eq!(claim.value, opened);
+            assert_eq!(
+                proof.binding.round_polynomials.len(),
+                source_rounds(&layout) - 4
+            );
+            assert_eq!(
+                proof.binding_terminal.len(),
+                if batch.is_power_of_two() { 2 } else { 3 }
+            );
             assert_eq!(rows.len(), 1 << layout.row_vars());
         }
     }
@@ -2128,7 +2062,13 @@ mod tests {
                 self.0.fill_sampling_bytes(output);
             }
             fn absorb_inner(&mut self, value: &[u8]) {
-                if value.starts_with(b"bitz/falcon1024-algebraic/") && value.ends_with(b"/v2") {
+                if value == b"bitz/falcon-algebraic/word-binding/v1" {
+                    // The word binder replaced this bit-domain frame. Exercise
+                    // the current frame even when all grinding is disabled.
+                    self.0.absorb_inner(BINDING_DOMAIN);
+                } else if value.starts_with(b"bitz/falcon1024-algebraic/")
+                    && value.ends_with(b"/v2")
+                {
                     let mut legacy = value.to_vec();
                     *legacy.last_mut().unwrap() = b'1';
                     self.0.absorb_inner(&legacy);
@@ -2180,6 +2120,10 @@ mod tests {
 
     #[test]
     fn grinded_messages_roundtrip_and_require_all_nonces() {
+        use crate::piop::spartan::grinding::{
+            derive_grinding_seed_in_domain, grinding_nonce_is_valid,
+        };
+
         let field = field();
         let layout = Layout::new(3).unwrap();
         let data = data(3);
@@ -2190,6 +2134,7 @@ mod tests {
             norm_round_bits: 2,
             merge_bits: 2,
             binding_bits: 2,
+            terminal_merge_bits: 2,
         };
         let (mut proof, _, claim) = prove(
             &mut Blake3Transcript::new(),
@@ -2213,6 +2158,54 @@ mod tests {
             .unwrap(),
             claim
         );
+        let terminal_nonce = proof
+            .terminal_merge_nonce
+            .expect("terminal merge is grinded");
+        let mut missing = proof.clone();
+        missing.terminal_merge_nonce = None;
+        let mut terminal_transcript = Blake3Transcript::new();
+        assert!(
+            verify(
+                &mut terminal_transcript,
+                &layout,
+                &field,
+                &ring,
+                &missing,
+                &schedule,
+            )
+            .is_err()
+        );
+        // Missing-nonce validation stops immediately before the terminal
+        // grinding frame. Check the exact seed before choosing a bad nonce;
+        // incrementing a valid nonce could accidentally find another valid one.
+        let seed = derive_grinding_seed_in_domain(
+            &mut terminal_transcript,
+            b"bitz/falcon-algebraic/grinding/word-terminals/v1",
+            0,
+            schedule.terminal_merge_bits,
+        )
+        .unwrap();
+        assert!(
+            grinding_nonce_is_valid(&seed, terminal_nonce, schedule.terminal_merge_bits).unwrap()
+        );
+        let invalid_nonce = (0..256)
+            .find(|&nonce| {
+                !grinding_nonce_is_valid(&seed, nonce, schedule.terminal_merge_bits).unwrap()
+            })
+            .expect("fixture has an invalid terminal nonce");
+        let mut altered = proof.clone();
+        altered.terminal_merge_nonce = Some(invalid_nonce);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &altered,
+                &schedule,
+            )
+            .is_err()
+        );
         proof.norm.grinding_nonces.pop();
         assert!(
             verify(
@@ -2222,6 +2215,51 @@ mod tests {
                 &ring,
                 &proof,
                 &schedule
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn terminal_merge_rejects_nonce_when_grinding_is_disabled() {
+        let field = field();
+        let layout = Layout::new(3).unwrap();
+        let data = data(3);
+        let source = Source::new(layout, &data);
+        let ring = ring(&data, &field);
+        let schedule = schedule();
+        let (mut proof, _, claim) = prove(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &data,
+            &source,
+            &field,
+            &ring,
+            &schedule,
+        )
+        .unwrap();
+        assert_eq!(proof.terminal_merge_nonce, None);
+        assert_eq!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule,
+            )
+            .unwrap(),
+            claim
+        );
+        proof.terminal_merge_nonce = Some(0);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule,
             )
             .is_err()
         );
