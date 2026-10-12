@@ -1,0 +1,68 @@
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-ring-optimizations/vendor/field)
+warning: unused import: `num_traits::ConstZero`
+  --> src/gf128/wide.rs:80:9
+   |
+80 |     use num_traits::ConstZero;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `square_n` is never used
+   --> src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib test) generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 2.09s
+     Running unittests src/lib.rs (/home/john-wu/code/BitZ-pcs/.tmp/falcon-ring-field-test-target/release/deps/field-8435b37305d19d80)
+
+running 19 tests
+test q12289::avx512::tests::adjoint_recurrence_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::adjoint_reduction_covers_every_permitted_signed_sum ... ok
+test q12289::avx512::tests::interleaved_adjoint_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::paired_recurrence_matches_fixed_basis_multiplication ... ok
+test q12289::avx512::tests::paired_recurrence_matches_portable_with_guarded_tails ... ok
+test q12289::avx512::tests::paired_reduction_exhaustive ... ok
+test q12289::power_basis_tests::adjoint_pair_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::adjoint_pair_rejects_noncanonical_polynomial - should panic ... ok
+test q12289::power_basis_tests::adjoint_pair_rejects_polynomial_length - should panic ... ok
+test q12289::power_basis_tests::interleaved_dispatch_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::interleaved_pairs_reject_mismatched_polynomials - should panic ... ok
+test q12289::power_basis_tests::interleaved_pairs_reject_noncanonical_polynomials - should panic ... ok
+test q12289::power_basis_tests::paired_dispatch_matches_individual_sequences ... ok
+test q12289::power_basis_tests::paired_sequences_reject_mismatched_lengths - should panic ... ok
+test q12289::power_basis_tests::recurrence_matches_extension_multiplication ... ok
+test q12289::power_basis_tests::rejects_noncanonical_and_nongenerating_elements ... ok
+test q12289::power_basis_tests::shifted_subtraction_matches_fixed_basis_reference ... ok
+test q12289::power_basis_tests::shifted_subtraction_rejects_noncanonical_scalar - should panic ... ok
+test q12289::tests::registered_fields ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 3.93s
+

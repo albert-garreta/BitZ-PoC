@@ -1,0 +1,25 @@
+{
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "cpu": "AMD Ryzen 9 9950X3D, 16 physical cores / 32 logical CPUs",
+  "flags": "-C target-cpu=native",
+  "bench_profile": "release; lto=true; codegen-units=1",
+  "test_profile": "release; lto=false; codegen-units=16",
+  "worker_cpus": [
+    6,
+    7,
+    4,
+    5,
+    2,
+    3,
+    0,
+    1,
+    14,
+    15,
+    12,
+    13,
+    10,
+    11,
+    8,
+    9
+  ]
+}

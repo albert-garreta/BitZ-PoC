@@ -58,6 +58,91 @@ impl PolynomialWorkspace {
     }
 }
 
+/// Reusable multiplication in F_q[X]/(X^n+1) for the algebraic relation.
+/// The ordinary workspace above retains the high coefficients needed by full
+/// Falcon; this workspace returns only the n canonical negacyclic coefficients.
+pub(crate) struct NegacyclicWorkspace {
+    output: Vec<i64>,
+    left: Vec<u32>,
+    right: Vec<u32>,
+    tables: &'static NegacyclicTables,
+}
+
+impl NegacyclicWorkspace {
+    pub(crate) fn new(n: usize) -> Self {
+        static TABLES_512: OnceLock<NegacyclicTables> = OnceLock::new();
+        static TABLES_1024: OnceLock<NegacyclicTables> = OnceLock::new();
+        let tables = match n {
+            512 => &TABLES_512,
+            1024 => &TABLES_1024,
+            _ => panic!("unsupported Falcon polynomial degree"),
+        }
+        .get_or_init(|| NegacyclicTables::new(n));
+        Self {
+            output: vec![0; n],
+            left: vec![0; n],
+            right: vec![0; n],
+            tables,
+        }
+    }
+
+    pub(crate) fn product(&mut self, h: &[u16], s2: &[i16]) -> &[i64] {
+        let n = self.output.len();
+        assert_eq!(h.len(), n);
+        assert_eq!(s2.len(), n);
+        // psi has order 2n, so twisting by psi^i turns the negacyclic product
+        // into an n-point cyclic convolution. All products below fit in u32:
+        // even (i16::MAX + 3q)*(q-1) is less than 2^30.
+        for i in 0..n {
+            let twist = self.tables.twist[i];
+            self.left[i] = u32::from(h[i]) * twist % Q;
+            self.right[i] = (i32::from(s2[i]) + 3 * Q as i32) as u32 * twist % Q;
+        }
+        forward_ntt(&mut self.left, &self.tables.ntt);
+        forward_ntt(&mut self.right, &self.tables.ntt);
+        for (left, right) in self.left.iter_mut().zip(&self.right) {
+            *left = *left * *right % Q;
+        }
+        inverse_ntt(&mut self.left, &self.tables.ntt);
+        for ((output, &value), &untwist) in self
+            .output
+            .iter_mut()
+            .zip(&self.left)
+            .zip(&self.tables.untwist)
+        {
+            *output = i64::from(value * untwist % Q);
+        }
+        &self.output
+    }
+}
+
+struct NegacyclicTables {
+    ntt: NttTables,
+    twist: Vec<u32>,
+    untwist: Vec<u32>,
+}
+
+impl NegacyclicTables {
+    fn new(n: usize) -> Self {
+        let psi = power(11, (Q - 1) / (2 * n) as u32);
+        let powers = |step| {
+            let mut value = 1;
+            (0..n)
+                .map(|_| {
+                    let result = value;
+                    value = value * step % Q;
+                    result
+                })
+                .collect()
+        };
+        Self {
+            ntt: NttTables::new(n),
+            twist: powers(psi),
+            untwist: powers(power(psi, Q - 2)),
+        }
+    }
+}
+
 struct NttTables {
     forward: Vec<Vec<u32>>,
     inverse: Vec<Vec<u32>>,
@@ -66,7 +151,7 @@ struct NttTables {
 
 impl NttTables {
     fn new(len: usize) -> Self {
-        // 11 generates F_12289*. Both 1024 and 2048 divide q - 1.
+        // 11 generates F_12289*. Transform lengths 512/1024/2048 divide q-1.
         let root = power(11, (Q - 1) / len as u32);
         let inverse_root = power(root, Q - 2);
         let mut forward = Vec::new();
@@ -215,6 +300,62 @@ mod tests {
                 s2[j] = 0;
             }
             compare(&h, &s2, &mut workspace);
+        }
+    }
+
+    #[test]
+    fn negacyclic_workspace_matches_schoolbook_and_ordinary_product() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        for n in [512, 1024] {
+            let mut workspace = NegacyclicWorkspace::new(n);
+            let mut ordinary = PolynomialWorkspace::new(n);
+            let mut compare = |h: &[u16], s2: &[i16]| {
+                let expected = schoolbook(h, s2);
+                let ordinary = ordinary.product(h, s2);
+                let actual = workspace.product(h, s2);
+                assert_eq!(actual.len(), n);
+                for j in 0..n {
+                    assert_eq!(
+                        actual[j],
+                        (expected[j] - expected[n + j]).rem_euclid(i64::from(Q))
+                    );
+                    assert_eq!(
+                        actual[j],
+                        (ordinary[j] - ordinary[n + j]).rem_euclid(i64::from(Q))
+                    );
+                    assert!((0..i64::from(Q)).contains(&actual[j]));
+                }
+            };
+            for (h, s) in [
+                (Q as u16 - 1, -16384),
+                (Q as u16 - 1, 16383),
+                (u16::MAX, i16::MIN),
+                (u16::MAX, i16::MAX),
+            ] {
+                compare(&vec![h; n], &vec![s; n]);
+            }
+            for _ in 0..8 {
+                let mut next = || {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    state
+                };
+                let h: Vec<_> = (0..n).map(|_| next() as u16).collect();
+                let s: Vec<_> = (0..n).map(|_| next() as i16).collect();
+                compare(&h, &s);
+            }
+            let mut h = vec![0; n];
+            let mut s = vec![0; n];
+            compare(&h, &s);
+            for (i, j) in [(0, 0), (n - 1, 1), (n - 1, n - 1)] {
+                h[i] = Q as u16 - 1;
+                s[j] = -16384;
+                compare(&h, &s);
+                h[i] = 0;
+                s[j] = 0;
+            }
+            compare(&h, &s);
         }
     }
 }

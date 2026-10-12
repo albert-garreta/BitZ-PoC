@@ -4,7 +4,7 @@
 //! coefficient vectors to the same BitZ source used by the norm proof.
 
 use field::{
-    BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint,
+    BatchMulAcc, FpSignedLinearAcc, PreparedLinearCombination, Reduce, RingOps,
     q12289::{PowerBasis, PowerCoordinates},
 };
 #[cfg(feature = "parallel")]
@@ -12,7 +12,6 @@ use rayon::prelude::*;
 
 use crate::{
     piop::spartan::{
-        SpartanField,
         falcon_extension::FalconExtension,
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
         squeeze_field,
@@ -313,38 +312,77 @@ fn coordinates(
     let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut targets = vec![Ext::ZERO; batch];
-    let fill = |(i, ((a, b), target)): (
+    // Four independent SIMD states hide the dependency chain in each pair.
+    // Portable builds keep one signature per task and the existing recurrence.
+    const PAIRS: usize = if cfg!(all(
+        target_arch = "x86_64",
+        target_feature = "avx512f",
+        target_feature = "avx512bw"
+    )) {
+        4
+    } else {
+        1
+    };
+    #[cfg(feature = "parallel")]
+    let workers = rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let workers = 1;
+    // Keep at least one independent task per worker for small batches.
+    let group_size = if batch / PAIRS >= workers { PAIRS } else { 1 };
+    let prepare = |i: usize, target: &mut Ext| {
+        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
+        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
+        // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplication by X gives
+        // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j]. Apply lambda first
+        // to obtain canonical adjoint coordinates in O(N*K) per signature.
+        let subtract = basis.encode(lambda[i].mul(wrap));
+        ([basis.encode(lambda[i]), basis.encode(lambda_h)], subtract)
+    };
+    let fill = |(chunk, ((a, b), targets)): (
         usize,
         (
             (&mut [CoordinatesInAlpha], &mut [CoordinatesInAlpha]),
-            &mut Ext,
+            &mut [Ext],
         ),
     )| {
-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
-        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
-        // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplying by X wraps
-        // h[N-1-j] from degree N to degree zero, so
-        // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j].
-        // Applying lambda before the recurrence gives the adjoint weights on
-        // s2 directly, with O(N*K) canonical base-field operations per key.
-        let subtract = basis.encode(lambda[i].mul(wrap));
-        basis.fill_powers_adjoint_pair(
-            [basis.encode(lambda[i]), basis.encode(lambda_h)],
-            subtract,
-            &public.public_keys[i],
-            [a, b],
-        );
+        let start = chunk * group_size;
+        if PAIRS > 1 && targets.len() == PAIRS {
+            let prepared: [_; PAIRS] = std::array::from_fn(|i| prepare(start + i, &mut targets[i]));
+            let mut a = a.chunks_mut(N);
+            let mut b = b.chunks_mut(N);
+            basis.fill_powers_adjoint_pairs(
+                prepared.map(|v| v.0),
+                prepared.map(|v| v.1),
+                std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
+                std::array::from_fn(|_| [a.next().unwrap(), b.next().unwrap()]),
+            );
+        } else {
+            for (i, ((a, b), target)) in a
+                .chunks_mut(N)
+                .zip(b.chunks_mut(N))
+                .zip(targets)
+                .enumerate()
+            {
+                let (starts, subtract) = prepare(start + i, target);
+                basis.fill_powers_adjoint_pair(
+                    starts,
+                    subtract,
+                    &public.public_keys[start + i],
+                    [a, b],
+                );
+            }
+        }
     };
     #[cfg(feature = "parallel")]
-    s1.par_chunks_mut(N)
-        .zip(s2.par_chunks_mut(N))
-        .zip(targets.par_iter_mut())
+    s1.par_chunks_mut(group_size * N)
+        .zip(s2.par_chunks_mut(group_size * N))
+        .zip(targets.par_chunks_mut(group_size))
         .enumerate()
         .for_each(fill);
     #[cfg(not(feature = "parallel"))]
-    s1.chunks_mut(N)
-        .zip(s2.chunks_mut(N))
-        .zip(targets.iter_mut())
+    s1.chunks_mut(group_size * N)
+        .zip(s2.chunks_mut(group_size * N))
+        .zip(targets.chunks_mut(group_size))
         .enumerate()
         .for_each(fill);
     let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
@@ -436,14 +474,16 @@ fn collapse_claim(
     for k in 1..EXTENSION_DEGREE {
         xi_powers[k] = field.mul(&xi_powers[k - 1], &xi);
     }
+    // Prepare an extra Montgomery factor once for both vectors. With weights
+    // below p and coordinates at most q-1, S <= 11*(q-1)*(p-1) < p*2^128.
+    // One REDC therefore returns the required Montgomery scale without a
+    // general remainder reduction for each eleven-term dot product.
+    let prepared =
+        <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(field, xi_powers);
     let weight = |value: &CoordinatesInAlpha| {
-        // Eleven 126-bit field representatives times fourteen-bit coordinates
-        // fit in the 192-bit linear accumulator, retaining Montgomery scale.
-        let mut sum = FpLinearAcc::<2, 1>::default();
-        for (&coordinate, power) in value.coordinates().iter().zip(&xi_powers) {
-            sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
-        }
-        field.reduce(sum)
+        <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+            u64::from(value.coordinates()[k])
+        })
     };
     #[cfg(feature = "parallel")]
     let weights_s1 = coordinates.s1.par_iter().map(weight).collect();
@@ -476,7 +516,11 @@ fn error(message: impl Into<String>) -> FalconError {
 mod tests {
     use super::super::FalconAlgebraicWitness;
     use super::*;
-    use crate::transcript::{Blake3Transcript, traits::ConstTranscribable};
+    use crate::{
+        piop::spartan::SpartanField,
+        transcript::{Blake3Transcript, traits::ConstTranscribable},
+    };
+    use field::Uint;
     use std::collections::VecDeque;
 
     fn fixture(batch: usize) -> (Layout, FalconAlgebraicStatement, WitnessData) {
@@ -504,6 +548,80 @@ mod tests {
         // The ring reduction only needs its exact no-wrap bound. The enclosing
         // protocol separately enforces its narrower transcript-sampled family.
         F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap()
+    }
+
+    #[test]
+    fn prepared_collapse_matches_individual_field_operations() {
+        // For alpha=Z, encode preserves the coordinates, including q-1.
+        let basis =
+            PowerBasis::try_new(Ext::new(std::array::from_fn(|k| u16::from(k == 1)))).unwrap();
+        let mut values = vec![
+            [0; EXTENSION_DEGREE],
+            [1; EXTENSION_DEGREE],
+            [(Q - 1) as u16; EXTENSION_DEGREE],
+        ];
+        for coordinate in 0..EXTENSION_DEGREE {
+            values.push(std::array::from_fn(|k| {
+                if k == coordinate { (Q - 1) as u16 } else { 0 }
+            }));
+        }
+        let mut state = 0x1234_5678_9abc_def0u64;
+        for _ in 0..257 {
+            values.push(std::array::from_fn(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state % Q as u64) as u16
+            }));
+        }
+        let coordinates = Coordinates {
+            s1: values.iter().map(|&v| basis.encode(Ext::new(v))).collect(),
+            s2: values
+                .iter()
+                .rev()
+                .map(|&v| basis.encode(Ext::new(v)))
+                .collect(),
+            target: basis.encode(Ext::new([(Q - 1) as u16; EXTENSION_DEGREE])),
+        };
+        let bound = carry_bound(1024) as i64;
+        let carries = std::array::from_fn(|k| [0, 1, -1, bound, -bound][k % 5]);
+        for prime in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+            let field = F::make_cfg(&Uint::from(prime)).unwrap();
+            for xi in [0, 1, prime - 1, 1234567890123456789] {
+                let xi = F::from_with_cfg(xi, &field);
+                let actual = collapse_claim(&coordinates, &carries, xi, &field);
+                let mut powers = [field.one(); EXTENSION_DEGREE];
+                for k in 1..EXTENSION_DEGREE {
+                    powers[k] = field.mul(&powers[k - 1], &xi);
+                }
+                for (weights, inputs) in [
+                    (&actual.weights_s1, &coordinates.s1),
+                    (&actual.weights_s2, &coordinates.s2),
+                ] {
+                    for (weight, input) in weights.iter().zip(inputs) {
+                        let expected = input.coordinates().iter().zip(powers).fold(
+                            field.zero(),
+                            |sum, (&c, power)| {
+                                field.add(
+                                    &sum,
+                                    &field.mul(&F::from_with_cfg(u64::from(c), &field), &power),
+                                )
+                            },
+                        );
+                        assert_eq!(*weight, expected);
+                    }
+                }
+                let expected = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
+                    let value = i128::from(coordinates.target.coordinates()[k])
+                        + i128::from(Q) * i128::from(carries[k]);
+                    field.add(
+                        &sum,
+                        &field.mul(&F::from_with_cfg(value, &field), &powers[k]),
+                    )
+                });
+                assert_eq!(actual.target, expected);
+            }
+        }
     }
 
     fn dot(claim: &PreparedClaim, data: &WitnessData, field: &Cfg) -> F {
@@ -553,8 +671,8 @@ mod tests {
 
     #[test]
     fn alpha_coordinates_and_carries_match_independent_fixed_basis_reference() {
-        let (_, mut public, mut data) = fixture(3);
-        for i in 0..3 {
+        let (_, mut public, mut data) = fixture(5);
+        for i in 0..5 {
             public.public_keys[i] = std::array::from_fn(|j| ((i * 37 + j * 101) as i64 % Q) as u16);
             data.witness.s1[i] = std::array::from_fn(|j| (j as i16 % 17) - 8);
             data.witness.s2[i] = std::array::from_fn(|j| (j as i16 % 11) - 5);
@@ -566,9 +684,17 @@ mod tests {
         }
         let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
         let basis = PowerBasis::try_new(alpha).unwrap();
-        let lambda: Vec<_> = (0..3)
+        let lambda: Vec<_> = (0..5)
             .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
             .collect();
+        #[cfg(feature = "parallel")]
+        let actual = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| coordinates(&public, &lambda, alpha))
+            .unwrap();
+        #[cfg(not(feature = "parallel"))]
         let actual = coordinates(&public, &lambda, alpha).unwrap();
         let mut reference = Coordinates {
             s1: vec![],
@@ -577,7 +703,7 @@ mod tests {
         };
         let powers = powers(alpha);
         let mut target = Ext::ZERO;
-        for i in 0..3 {
+        for i in 0..5 {
             target = target.add(lambda[i].mul(eval_public(&public.targets[i], &powers)));
             for (j, &power) in powers[..N].iter().enumerate() {
                 reference.s1.push(basis.encode(lambda[i].mul(power)));
@@ -598,6 +724,18 @@ mod tests {
             calculate_carries(&actual, &data).unwrap(),
             calculate_carries(&reference, &data).unwrap()
         );
+        #[cfg(feature = "parallel")]
+        for workers in [8, 16] {
+            let other = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+                .install(|| coordinates(&public, &lambda, alpha))
+                .unwrap();
+            assert_eq!(other.s1, reference.s1);
+            assert_eq!(other.s2, reference.s2);
+            assert_eq!(other.target, reference.target);
+        }
         assert!(coordinates(&public, &lambda, Ext::ONE).is_err());
     }
 

@@ -1,0 +1,62 @@
+[
+  {
+    "variant": "baseline",
+    "seed": 42,
+    "stages": {
+      "falcon_algebraic_ring:prove": 12.597420999999999,
+      "falcon_algebraic_ring:coordinates": 6.674922,
+      "falcon_algebraic_ring:collapse": 4.887893,
+      "falcon_algebraic_ring:carries": 0.239022
+    }
+  },
+  {
+    "variant": "final",
+    "seed": 42,
+    "stages": {
+      "falcon_algebraic_ring:prove": 11.205328,
+      "falcon_algebraic_ring:coordinates": 6.301525,
+      "falcon_algebraic_ring:collapse": 3.830604,
+      "falcon_algebraic_ring:carries": 0.265152
+    }
+  },
+  {
+    "variant": "final",
+    "seed": 43,
+    "stages": {
+      "falcon_algebraic_ring:prove": 11.107683999999999,
+      "falcon_algebraic_ring:coordinates": 6.235731,
+      "falcon_algebraic_ring:collapse": 3.836114,
+      "falcon_algebraic_ring:carries": 0.262877
+    }
+  },
+  {
+    "variant": "baseline",
+    "seed": 43,
+    "stages": {
+      "falcon_algebraic_ring:prove": 12.564059,
+      "falcon_algebraic_ring:coordinates": 6.6950899999999995,
+      "falcon_algebraic_ring:collapse": 4.8946559999999995,
+      "falcon_algebraic_ring:carries": 0.223403
+    }
+  },
+  {
+    "variant": "baseline",
+    "seed": 44,
+    "stages": {
+      "falcon_algebraic_ring:prove": 12.548949,
+      "falcon_algebraic_ring:coordinates": 6.66361,
+      "falcon_algebraic_ring:collapse": 4.877593,
+      "falcon_algebraic_ring:carries": 0.23522500000000002
+    }
+  },
+  {
+    "variant": "final",
+    "seed": 44,
+    "stages": {
+      "falcon_algebraic_ring:prove": 11.209457,
+      "falcon_algebraic_ring:coordinates": 6.2626230000000005,
+      "falcon_algebraic_ring:collapse": 3.835613,
+      "falcon_algebraic_ring:carries": 0.302793
+    }
+  }
+]

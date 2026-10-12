@@ -2,7 +2,7 @@ use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error}
 use crate::pcs::IntegerMatrixLayout;
 #[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
-use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
+use crate::piop::spartan::falcon_polynomial::NegacyclicWorkspace;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -132,8 +132,7 @@ impl WitnessData {
             let mut s1 = [0; N];
             let mut norm = 0;
             for j in 0..N {
-                let centered =
-                    center(i64::from(public.targets[i][j]) - product[j] + product[N + j]);
+                let centered = center(i64::from(public.targets[i][j]) - product[j]);
                 s1[j] = centered;
                 norm += i64::from(centered).unsigned_abs().pow(2);
                 norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
@@ -166,8 +165,8 @@ impl WitnessData {
         let slacks = check_norms(&witness)?;
         map_products(public, &witness.s2, |i, product| {
             for j in 0..N {
-                let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
-                    - i64::from(witness.s1[i][j]);
+                let residual =
+                    i64::from(public.targets[i][j]) - product[j] - i64::from(witness.s1[i][j]);
                 if residual.rem_euclid(Q) != 0 {
                     return Err(error("invalid algebraic ring witness"));
                 }
@@ -188,14 +187,14 @@ fn map_products<T: Send>(
         (0..s2.len())
             .into_par_iter()
             .map_init(
-                || PolynomialWorkspace::new(N),
+                || NegacyclicWorkspace::new(N),
                 |workspace, i| f(i, workspace.product(&public.public_keys[i], &s2[i])),
             )
             .collect()
     }
     #[cfg(not(feature = "parallel"))]
     {
-        let mut workspace = PolynomialWorkspace::new(N);
+        let mut workspace = NegacyclicWorkspace::new(N);
         (0..s2.len())
             .map(|i| f(i, workspace.product(&public.public_keys[i], &s2[i])))
             .collect()
@@ -203,7 +202,7 @@ fn map_products<T: Send>(
 }
 
 fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
-    std::array::from_fn(|j| center(i64::from(target[j]) - product[j] + product[N + j]))
+    std::array::from_fn(|j| center(i64::from(target[j]) - product[j]))
 }
 
 fn center(value: i64) -> i16 {
@@ -445,8 +444,10 @@ mod tests {
         assert_eq!(combined.witness, witness);
         assert_eq!(combined.slacks, data.slacks);
         assert_eq!(
-            PolynomialWorkspace::new(N).product(&h, &s2),
-            ordinary.map(|coefficient| coefficient.rem_euclid(Q))
+            NegacyclicWorkspace::new(N).product(&h, &s2),
+            (0..N)
+                .map(|j| (ordinary[j] - ordinary[N + j]).rem_euclid(Q))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             data.slacks[0],

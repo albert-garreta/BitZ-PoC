@@ -179,10 +179,91 @@ unsafe fn fill_pair<const K: usize, const ADJOINT: bool>(
         }
     }
 }
+/// Interleave independent paired recurrences, sharing feedback preparation.
+///
+/// # Safety
+/// AVX512F+BW must be available, K must be eleven, PAIRS must be positive,
+/// all polynomials/outputs must have equal lengths, and all inputs must be
+/// canonical. Each mutable output is a distinct slice supplied by the caller.
+#[target_feature(enable = "avx512f,avx512bw")]
+pub(super) unsafe fn fill_powers_adjoint_pairs<const K: usize, const PAIRS: usize>(
+    feedback: &[u16; K],
+    starts: [[PowerCoordinates<K>; 2]; PAIRS],
+    subtract: [PowerCoordinates<K>; PAIRS],
+    polynomials: [&[u16]; PAIRS],
+    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+) {
+    assert_eq!(K, 11);
+    assert!(PAIRS > 0);
+    let len = polynomials[0].len();
+    for i in 0..PAIRS {
+        assert_eq!(polynomials[i].len(), len);
+        assert_eq!(outputs[i][0].len(), len);
+        assert_eq!(outputs[i][1].len(), len);
+    }
+    let mut coefficients = [0i16; 32];
+    let mut quotients = [0i16; 32];
+    for i in 0..11 {
+        (coefficients[i], quotients[i]) = centered_multiplier(feedback[i]);
+        coefficients[i + 16] = coefficients[i];
+        quotients[i + 16] = quotients[i];
+    }
+    // These arrays each contain a full vector; unaligned loads are permitted.
+    let feedback = unsafe { _mm512_loadu_si512(coefficients.as_ptr().cast()) };
+    let quotients = unsafe { _mm512_loadu_si512(quotients.as_ptr().cast()) };
+    let correction: [(__m512i, __m512i); PAIRS] = std::array::from_fn(|pair| {
+        let mut coefficients = [0i16; 32];
+        let mut quotients = [0i16; 32];
+        for i in 0..11 {
+            (coefficients[16 + i], quotients[16 + i]) = centered_multiplier(subtract[pair].0[i]);
+        }
+        // Zero lower lanes leave the ordinary power sequence unchanged.
+        unsafe {
+            (
+                _mm512_loadu_si512(coefficients.as_ptr().cast()),
+                _mm512_loadu_si512(quotients.as_ptr().cast()),
+            )
+        }
+    });
+    // Degree eleven and canonical starts satisfy load_starts' shape contract.
+    let mut values = starts.map(|start| unsafe { load_starts(start) });
+    let q = _mm512_set1_epi16(Q as i16);
+    let top_indices = unsafe { _mm512_loadu_si512(TOP_INDICES.as_ptr().cast()) };
+    let shift_indices = unsafe { _mm512_loadu_si512(SHIFT_INDICES.as_ptr().cast()) };
+    for j in 0..len {
+        for pair in 0..PAIRS {
+            let [a, b] = &mut outputs[pair];
+            // Each output has len entries of exactly eleven writable u16s.
+            unsafe { store(values[pair], &mut a[j], &mut b[j]) };
+        }
+        if j + 1 == len {
+            break;
+        }
+        for pair in 0..PAIRS {
+            let value = values[pair];
+            let top = _mm512_permutexvar_epi16(top_indices, value);
+            let quotient = _mm512_mulhrs_epi16(top, quotients);
+            let product = _mm512_mullo_epi16(top, feedback);
+            let remainder = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
+            let shifted = _mm512_maskz_permutexvar_epi16(SHIFT, shift_indices, value);
+            let scalar = _mm512_set1_epi16(polynomials[pair][len - 1 - j] as i16);
+            let quotient = _mm512_mulhrs_epi16(scalar, correction[pair].1);
+            let product = _mm512_mullo_epi16(scalar, correction[pair].0);
+            let subtract = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
+            let sum = _mm512_sub_epi16(_mm512_add_epi16(remainder, shifted), subtract);
+            // As in fill_pair: each remainder lies in [-8448,8448] and the
+            // predecessor is canonical, giving sum in [-16896,29184].
+            values[pair] = unsafe { reduce_adjoint(sum, q) };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{PowerBasis, PowerCoordinates, Q12289Extension};
-    use super::{fill_powers_adjoint_pair, fill_powers_pair, reduce_adjoint};
+    use super::{
+        fill_powers_adjoint_pair, fill_powers_adjoint_pairs, fill_powers_pair, reduce_adjoint,
+    };
     use core::arch::x86_64::*;
 
     const Q: u16 = 12_289;
@@ -395,6 +476,84 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn check_interleaved<const PAIRS: usize>() {
+        let mut state = 0xface_cafe_1234_5678;
+        for len in [0, 1, 2, 3, 7, 16, 17, 31, 32, 33, 255, 257, 512, 1024] {
+            for case in 0..16 {
+                let mut next = || match case {
+                    0 => 0,
+                    1 => Q - 1,
+                    2 => 6144,
+                    3 => 6145,
+                    _ => sample(&mut state),
+                };
+                let feedback = std::array::from_fn(|_| next());
+                let starts: [[PowerCoordinates<11>; 2]; PAIRS] = std::array::from_fn(|_| {
+                    std::array::from_fn(|_| PowerCoordinates(std::array::from_fn(|_| next())))
+                });
+                let subtract =
+                    std::array::from_fn(|_| PowerCoordinates(std::array::from_fn(|_| next())));
+                let polynomials: [Vec<u16>; PAIRS] =
+                    std::array::from_fn(|_| (0..len).map(|_| next()).collect());
+                let basis = PowerBasis {
+                    columns: [[0; 11]; 11],
+                    inverse: [[0; 11]; 11],
+                    feedback,
+                };
+                let sentinel = PowerCoordinates([u16::MAX; 11]);
+                let mut actual: [[Vec<PowerCoordinates<11>>; 2]; PAIRS] =
+                    std::array::from_fn(|_| std::array::from_fn(|_| vec![sentinel; len + 4]));
+                let mut buffers = actual.iter_mut();
+                let outputs = std::array::from_fn(|_| {
+                    let [a, b] = buffers.next().unwrap();
+                    [&mut a[2..len + 2], &mut b[2..len + 2]]
+                });
+                // Feature availability is checked by the test; inputs have
+                // canonical lanes and all guarded slices have the same length.
+                unsafe {
+                    fill_powers_adjoint_pairs(
+                        &feedback,
+                        starts,
+                        subtract,
+                        std::array::from_fn(|i| polynomials[i].as_slice()),
+                        outputs,
+                    );
+                }
+                for pair in 0..PAIRS {
+                    let [mut a, mut b] = starts[pair];
+                    for j in 0..len {
+                        assert_eq!(actual[pair][0][j + 2], a);
+                        assert_eq!(actual[pair][1][j + 2], b);
+                        basis.advance(&mut a);
+                        basis.advance_sub_scaled(
+                            &mut b,
+                            polynomials[pair][len - 1 - j],
+                            subtract[pair],
+                        );
+                    }
+                    for output in &actual[pair] {
+                        assert_eq!(&output[..2], &[sentinel; 2]);
+                        assert_eq!(&output[len + 2..], &[sentinel; 2]);
+                        assert!(
+                            output[2..len + 2]
+                                .iter()
+                                .all(|v| v.0.iter().all(|&c| c < Q))
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn interleaved_adjoint_matches_portable_with_guarded_tails() {
+        if !available() {
+            return;
+        }
+        check_interleaved::<2>();
+        check_interleaved::<4>();
     }
 
     #[target_feature(enable = "avx512f,avx512bw")]
