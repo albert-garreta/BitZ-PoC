@@ -1,4 +1,5 @@
 mod arithmetic;
+mod binding;
 mod protocol;
 mod ring;
 mod source;
@@ -29,9 +30,9 @@ pub const Q: i64 = 12_289;
 pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
 pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
 pub const PROTOCOL_ID: &str = if N == 1024 {
-    "bitz/falcon1024-algebraic/non-zk/v5"
+    "bitz/falcon1024-algebraic/non-zk/v6"
 } else {
-    "bitz/falcon512-algebraic/non-zk/v5"
+    "bitz/falcon512-algebraic/non-zk/v6"
 };
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;
@@ -42,6 +43,7 @@ struct Schedule {
     norm_round_bits: u32,
     merge_bits: u32,
     binding_bits: u32,
+    terminal_bits: u32,
 }
 
 fn error(e: impl std::fmt::Display) -> FalconError {

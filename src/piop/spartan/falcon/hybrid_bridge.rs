@@ -17,6 +17,8 @@ pub(super) fn grinding_sites(layout: &FalconSourceLayout) -> usize {
     integer_bridge::message_count(&layout.bitz_params())
 }
 
+/// `point` spans the row variables followed by the column variables; the
+/// full-verification binder opens at equality row weights.
 pub(super) fn prove(
     t: &mut impl Transcript,
     source: &FalconSourceWitness,
@@ -26,12 +28,16 @@ pub(super) fn prove(
     grinding_bits: u32,
     row_weights: &[u128],
 ) -> Result<(Proof, BinaryClaim), FalconError> {
+    let row_vars = source.layout().row_vars();
+    if point.len() < row_vars {
+        return Err(FalconError::Piop("bridge point shape".into()));
+    }
     integer_bridge::prove(
         t,
         &source.layout().bitz_params(),
         source.rows(),
         mode,
-        point,
+        &point[row_vars..],
         modulus,
         grinding_bits,
         row_weights,
@@ -48,14 +54,20 @@ pub(super) fn verify(
     proof: &Proof,
     grinding_bits: u32,
 ) -> Result<BinaryClaim, FalconError> {
+    let row_vars = layout.row_vars();
+    if point.len() < row_vars {
+        return Err(FalconError::Piop("bridge point shape".into()));
+    }
+    let row_weights = integer_bridge::eq_row_weights(&point[..row_vars], modulus)?;
     integer_bridge::verify(
         t,
         &layout.bitz_params(),
         mode,
-        point,
+        &point[row_vars..],
         value,
         modulus,
         proof,
         grinding_bits,
+        &row_weights,
     )
 }

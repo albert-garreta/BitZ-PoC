@@ -12,16 +12,11 @@ impl BindingOptions {
         group_cap: 1,
     };
 
-    pub fn for_arithmetic(batch: usize, degree: usize, ungrinded_binding: bool) -> Self {
-        // Of the supported 100/128-bit schedules, only 100 bits has no binding grind.
-        Self::for_workload(batch, degree, false, ungrinded_binding)
-    }
-
     pub fn for_full(batch: usize, degree: usize, security_bits: usize, extension: usize) -> Self {
-        Self::for_workload(batch, degree, true, security_bits == 100 && extension == 9)
+        Self::for_workload(batch, degree, security_bits == 100 && extension == 9)
     }
 
-    fn for_workload(batch: usize, degree: usize, full: bool, security_100: bool) -> Self {
+    fn for_workload(batch: usize, degree: usize, security_100: bool) -> Self {
         #[cfg(feature = "parallel")]
         let workers = rayon::current_num_threads();
         #[cfg(not(feature = "parallel"))]
@@ -34,14 +29,7 @@ impl BindingOptions {
         if supported || cfg!(test) {
             Self {
                 optimized: true,
-                // Arithmetic has no grouped adapter and keeps one task per signature.
-                group_cap: if !full {
-                    1
-                } else if degree == 512 {
-                    16
-                } else {
-                    8
-                },
+                group_cap: if degree == 512 { 16 } else { 8 },
             }
         } else {
             Self::REFERENCE

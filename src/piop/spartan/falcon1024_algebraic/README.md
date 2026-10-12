@@ -72,11 +72,18 @@ residuals are below `2^50` for every supported batch. These bounds apply to each
 equation before random batching.
 
 A fresh four-claim merge combines the ring claim, the single norm endpoint, slack,
-and padding. Coefficient index and bit-lane variables are separate: the binder
-evaluates the signed decoder once, aggregates its prefix by witness byte, and
-folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
-the original bits. The existing two-limb BitZ bridge, binary product GKR, binary
-source sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
+and padding into one linear statement over coefficient words rather than bits:
+`sum_c Lambda(c) T(c) + M(c) b(c)`, where `T(c)` is the decoded signed15
+coefficient of word `c`, `b(c)` its spare lane-15 bit, `Lambda` the merged
+ring/norm weight and `M` the slack weight on slack positions and the padding
+weight elsewhere. Inactive slots carry only the norm endpoint's equality
+weight; the integer outer sumcheck forces their squares to zero. The word
+binder is a quadratic sumcheck over the `log2(N)+1+d` word variables whose
+first round reads the committed words natively. Its two terminal values are
+merged with a fresh `zeta` into one evaluation of the original bits, with the
+fixed lane decoder `(1, 2, ..., 2^13, -2^14, zeta)` folded into the public row
+weights of the two-limb BitZ bridge. The binary product GKR, binary source
+sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
 SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
 
 The verifier reads the public polynomials and does linear work in their size.
@@ -85,7 +92,7 @@ There is no Orthus-style public-input preprocessing in this interface.
 ## Security accounting
 
 The layout, combined integer outer, and grinding schedule are bound into the
-v5 protocol domain; proofs from preceding versions cannot be reused. The five
+v6 protocol domain; proofs from preceding versions cannot be reused. The six
 prime-field groups each receive at most `2^(-target-4)`. Their degree
 numerators are:
 
@@ -95,7 +102,8 @@ numerators are:
 | Norm instance batching | d | `2^125` |
 | Integer outer sumcheck | 3(11+d) | `2^125` |
 | Four-claim merge | 3 | `2^125` |
-| Bit-source binder | 2(15+d) | `2^125` |
+| Word binder | 2(11+d) | `2^125` |
+| Terminal merge (`zeta`) | 1 | `2^125` |
 | BitZ product GKR | 367+40d | `2^128` |
 | Binary source sumcheck | 2(16+d) | `2^128` |
 | Ring switch | 256 | `2^128` |

@@ -146,7 +146,8 @@ impl PreparedFalconAlgebraic {
             norm_instance_bits: grind(target_bits, d, 125),
             norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
             merge_bits: grind(target_bits, 3, 125),
-            binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
+            binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 1 + d), 125),
+            terminal_bits: grind(target_bits, 1, 125),
         };
         let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
         let ligerito = LigeritoSelection::bench_rate_override()
@@ -317,9 +318,9 @@ impl PreparedFalconAlgebraic {
         h.update(PROTOCOL_ID.as_bytes());
         h.update(b"ring-coordinate-basis:alpha-powers/canonical/v1");
         h.update(if SLACK_BITS == 27 {
-            b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2"
+            b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding;word-binder-zeta-lanes/v3"
         } else {
-            b"signed15-lanes16,slack26-lane15;native11;two-limbs;one-source;zero-padding/v2"
+            b"signed15-lanes16,slack26-lane15;native11;two-limbs;one-source;zero-padding;word-binder-zeta-lanes/v3"
         });
         for value in [
             N,
@@ -342,6 +343,7 @@ impl PreparedFalconAlgebraic {
             self.schedule.norm_round_bits,
             self.schedule.merge_bits,
             self.schedule.binding_bits,
+            self.schedule.terminal_bits,
             self.carry_grinding(),
             self.grinding.bridge,
             self.grinding.joint,
@@ -401,7 +403,7 @@ impl PreparedFalconAlgebraic {
                 self.carry_grinding(),
             )?
         };
-        let (arithmetic, row_weights, claim) = {
+        let (arithmetic, claim) = {
             let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
             arithmetic::prove(
                 &mut t,
@@ -420,13 +422,13 @@ impl PreparedFalconAlgebraic {
                 &self.layout.bitz_params(),
                 committed.source.rows(),
                 BridgeMode::TwoLimbs,
-                &claim.point,
+                &claim.column_point,
                 claim.modulus,
                 self.grinding.bridge,
-                &row_weights,
+                &claim.row_weights,
             )?
         };
-        drop(row_weights);
+        drop(claim);
         let coefficients = Coefficients {
             tensors: vec![Tensor {
                 low: a.low,
@@ -518,11 +520,12 @@ impl PreparedFalconAlgebraic {
             &mut t,
             &self.layout.bitz_params(),
             BridgeMode::TwoLimbs,
-            &claim.point,
+            &claim.column_point,
             claim.value,
             claim.modulus,
             &proof.bridge,
             self.grinding.bridge,
+            &claim.row_weights,
         )?;
         let coefficients = Coefficients {
             tensors: vec![Tensor {
@@ -614,9 +617,10 @@ fn fixed_terms(
         ),
         ("claim merge", prime(3, schedule.merge_bits)),
         (
-            "source binding sumcheck",
-            prime(2 * (COEFFICIENT_LOG + 5 + d), schedule.binding_bits),
+            "word binding sumcheck",
+            prime(2 * (COEFFICIENT_LOG + 1 + d), schedule.binding_bits),
         ),
+        ("terminal merge", prime(1, schedule.terminal_bits)),
     ]
 }
 
@@ -782,7 +786,8 @@ mod tests {
                     d,
                     3 * (COEFFICIENT_LOG + 1 + d),
                     3,
-                    2 * (COEFFICIENT_LOG + 5 + d),
+                    2 * (COEFFICIENT_LOG + 1 + d),
+                    1,
                     10,
                 ] {
                     let g = grind(target, numerator, 125);
@@ -987,7 +992,7 @@ mod tests {
             let run = |pool: &rayon::ThreadPool, threads| {
                 pool.install(|| {
                     assert_eq!(rayon::current_num_threads(), threads);
-                    assert_eq!(arithmetic::optimized_binding(BATCH), threads > 1);
+                    assert_eq!(arithmetic::parallel_binding(BATCH), threads > 1);
                     let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
                     let root = *committed.source_root();
