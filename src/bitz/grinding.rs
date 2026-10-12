@@ -113,6 +113,21 @@ impl Geometry {
         }
     }
 
+    /// A block-layout opening ([`super::block`]): the integer stages run on
+    /// the derived grid, the binary sumcheck on the committed block grid's
+    /// rank-one claim.
+    pub(crate) fn block(
+        derived: &crate::pcs::IntegerMatrixLayout,
+        committed: &crate::pcs::IntegerMatrixLayout,
+    ) -> Self {
+        Self {
+            integer: Some((derived.row_vars, derived.col_vars)),
+            binary: Some((committed.row_vars, committed.col_vars)),
+            ring: true,
+            ood: false,
+        }
+    }
+
     pub(crate) fn prefix(rows: usize, columns: usize) -> Self {
         Self { integer: Some((rows, columns)), binary: None, ring: false, ood: false }
     }

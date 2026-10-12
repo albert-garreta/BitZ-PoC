@@ -142,15 +142,19 @@ fn sha_profiles_layouts_and_boundaries_preflight() {
             let r = p.ligerito_configuration().unwrap();
             ResolvedLigerito::validate_report(&r.report(&selection.name(), p.security().ood))
                 .unwrap();
-            let p = prepare_sha256_chain_batch(exponent)
-                .unwrap()
-                .with_ligerito(selection)
-                .unwrap();
             assert_eq!(
                 p.security().ood.is_some(),
                 selection == LigeritoSelection::JOHNSON
             );
-            let rows = prepare_sha256_compression_batch_for_assignment_rows(exponent + 14)
+            // `2^(k + L)` cells hold `2^k` compressions of the `2^L`-stride
+            // relation and a few more; where those need capacity `2^17`, the
+            // shape shrinks to the largest one at capacity `2^16`.
+            let local_vars = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+            let mut log_rows = exponent + local_vars;
+            while ((1usize << log_rows) - 1) / SHA256_H_INSTANCE_BITS > 1 << 16 {
+                log_rows -= 1;
+            }
+            let rows = prepare_sha256_compression_batch_for_assignment_rows(log_rows)
                 .unwrap()
                 .with_ligerito(selection)
                 .unwrap();
@@ -185,7 +189,6 @@ fn sha_profiles_layouts_and_boundaries_preflight() {
     }
     for exponent in [0, 4, 5, 6, 17] {
         assert!(prepare_sha256_compression_batch(exponent).is_err());
-        assert!(prepare_sha256_chain_batch(exponent).is_err());
     }
 }
 

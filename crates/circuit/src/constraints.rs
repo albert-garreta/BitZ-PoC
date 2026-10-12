@@ -44,6 +44,16 @@ pub struct ConstraintMatrices {
     pub b: CsrMatrix<IntegerTable>,
     /// Output R1CS matrix.
     pub c: CsrMatrix<IntegerTable>,
+    /// Left factors of the product slots: row `s` is the integer linear form
+    /// `(PA z)_s` (see [`crate::Circuit::product`]).
+    pub pa: CsrMatrix<IntegerTable>,
+    /// Right factors of the product slots.
+    pub pb: CsrMatrix<IntegerTable>,
+    /// Product-slot weights of the output side: row `j` adds
+    /// `Σ_s K[j, s] (PA z)_s (PB z)_s` to `(C z)_j`, so every row reads
+    /// `(A z)(B z) = C z + K (PA z ∘ PB z)`. Empty unless the circuit uses
+    /// product slots.
+    pub k: CsrMatrix<IntegerTable>,
     row_checks: Vec<RowCheck>,
 }
 
@@ -154,9 +164,28 @@ fn check_integer_constraint<const L: usize>(
 ) -> bool {
     let a = evaluate_integer_row::<L>(&matrices.a, row, witness);
     let b = evaluate_integer_row::<L>(&matrices.b, row, witness);
-    let c = evaluate_integer_row::<L>(&matrices.c, row, witness);
+    let mut c = evaluate_integer_row::<L>(&matrices.c, row, witness);
     let product = IntegerOps.mul_wide(&a, &b).checked_resize_ct::<L>();
-    (product.validity() & product.value().ct_eq(&c)).declassify()
+    let mut valid = product.validity();
+    // Product slots add `K[row, s] (PA z)_s (PB z)_s` to the output side.
+    for (slot, coefficient) in matrices.k.row(row).unwrap().iter() {
+        let left = evaluate_integer_row::<L>(&matrices.pa, slot, witness);
+        let right = evaluate_integer_row::<L>(&matrices.pb, slot, witness);
+        let term = IntegerOps.mul_wide(&left, &right).checked_resize_ct::<L>();
+        let coefficient = Z::<L>::from_twos_complement_words(
+            coefficient
+                .as_words()
+                .try_into()
+                .expect("declared coefficient width"),
+        );
+        let scaled = IntegerOps
+            .mul_wide(&coefficient, term.value())
+            .checked_resize_ct::<L>();
+        let sum = c.checked_add_ct(scaled.value());
+        valid = valid & term.validity() & scaled.validity() & sum.validity();
+        c = *sum.value();
+    }
+    (valid & product.value().ct_eq(&c)).declassify()
 }
 
 /// Public symbolic preparation must never silently wrap a coefficient.
@@ -218,11 +247,35 @@ impl BoolWitness for BoolLinearCombination {
     type Repr<const N: usize, const M: usize> = ScalarBits<Self, N>;
 }
 
-/// A symbolic integer linear combination.
+/// Adds `coefficient` to the sparse term `index`, dropping it if it cancels.
+fn add_sparse_term<const L: usize>(
+    terms: &mut BTreeMap<usize, Z<L>>,
+    index: usize,
+    coefficient: Z<L>,
+) {
+    if coefficient.is_zero() {
+        return;
+    }
+    match terms.entry(index) {
+        Entry::Vacant(entry) => {
+            entry.insert(coefficient);
+        }
+        Entry::Occupied(mut entry) => {
+            *entry.get_mut() = exact_public(entry.get().checked_add_ct(&coefficient));
+            if entry.get().is_zero() {
+                entry.remove();
+            }
+        }
+    }
+}
+
+/// A symbolic integer linear combination, possibly carrying product-slot
+/// terms (see [`crate::Circuit::product`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinearCombination<const L: usize> {
     constant: Z<L>,
     witnesses: BTreeMap<usize, Z<L>>,
+    products: BTreeMap<usize, Z<L>>,
 }
 
 impl<const L: usize> LinearCombination<L> {
@@ -236,28 +289,33 @@ impl<const L: usize> LinearCombination<L> {
         &self.witnesses
     }
 
+    /// Nonzero coefficients keyed by product slot.
+    pub fn products(&self) -> &BTreeMap<usize, Z<L>> {
+        &self.products
+    }
+
     fn witness(index: usize) -> Self {
         Self {
             constant: Z::<L>::zero(),
             witnesses: BTreeMap::from([(index, Z::<L>::one())]),
+            products: BTreeMap::new(),
+        }
+    }
+
+    fn product_slot(slot: usize) -> Self {
+        Self {
+            constant: Z::<L>::zero(),
+            witnesses: BTreeMap::new(),
+            products: BTreeMap::from([(slot, Z::<L>::one())]),
         }
     }
 
     fn add_term(&mut self, index: usize, coefficient: Z<L>) {
-        if coefficient.is_zero() {
-            return;
-        }
-        match self.witnesses.entry(index) {
-            Entry::Vacant(entry) => {
-                entry.insert(coefficient);
-            }
-            Entry::Occupied(mut entry) => {
-                *entry.get_mut() = exact_public(entry.get().checked_add_ct(&coefficient));
-                if entry.get().is_zero() {
-                    entry.remove();
-                }
-            }
-        }
+        add_sparse_term(&mut self.witnesses, index, coefficient);
+    }
+
+    fn add_product_term(&mut self, slot: usize, coefficient: Z<L>) {
+        add_sparse_term(&mut self.products, slot, coefficient);
     }
 
     fn validate_boolean_bounds(&self) {
@@ -266,7 +324,10 @@ impl<const L: usize> LinearCombination<L> {
         // fixed-width private evaluator, including signed-minimum coefficients.
         let mut negative = Z::<L>::ZERO;
         let mut positive = Z::<L>::ZERO;
-        for coefficient in std::iter::once(&self.constant).chain(self.witnesses.values()) {
+        for coefficient in std::iter::once(&self.constant)
+            .chain(self.witnesses.values())
+            .chain(self.products.values())
+        {
             if coefficient.is_negative_ct().declassify() {
                 negative = exact_public(negative.checked_add_ct(coefficient));
             } else {
@@ -283,10 +344,32 @@ impl<const L: usize> LinearCombination<L> {
                 .into_iter()
                 .map(|(i, c)| (i, c.sign_extend()))
                 .collect(),
+            products: self
+                .products
+                .into_iter()
+                .map(|(s, c)| (s, c.sign_extend()))
+                .collect(),
         }
     }
 
+    /// Appends the output side of a row: its linear part to `c`, its product
+    /// slots to `k`.
+    fn append_with_products_to(
+        mut self,
+        c: &mut CsrBuilder<IntegerTable>,
+        k: &mut CsrBuilder<IntegerTable>,
+    ) {
+        let products = std::mem::take(&mut self.products);
+        self.append_to(c);
+        k.push_row(products)
+            .expect("canonical product slots fit usize");
+    }
+
     fn append_to(self, builder: &mut CsrBuilder<IntegerTable>) {
+        assert!(
+            self.products.is_empty(),
+            "product slots may only reach the output side of a row"
+        );
         self.validate_boolean_bounds();
         let constant = (!self.constant.is_zero()).then_some((0, self.constant));
         builder
@@ -306,6 +389,7 @@ impl<const L: usize> From<Z<L>> for LinearCombination<L> {
         Self {
             constant,
             witnesses: BTreeMap::new(),
+            products: BTreeMap::new(),
         }
     }
 }
@@ -316,7 +400,7 @@ impl<const L: usize> Zero for LinearCombination<L> {
     }
 
     fn is_zero(&self) -> bool {
-        self.constant.is_zero() && self.witnesses.is_empty()
+        self.constant.is_zero() && self.witnesses.is_empty() && self.products.is_empty()
     }
 }
 
@@ -324,10 +408,7 @@ impl<const L: usize> Add for LinearCombination<L> {
     type Output = Self;
 
     fn add(mut self, rhs: Self) -> Self::Output {
-        self.constant = exact_public(self.constant.checked_add_ct(&rhs.constant));
-        for (witness, coefficient) in rhs.witnesses {
-            self.add_term(witness, coefficient);
-        }
+        self += rhs;
         self
     }
 }
@@ -337,6 +418,9 @@ impl<const L: usize> AddAssign for LinearCombination<L> {
         self.constant = exact_public(self.constant.checked_add_ct(&rhs.constant));
         for (witness, coefficient) in rhs.witnesses {
             self.add_term(witness, coefficient);
+        }
+        for (slot, coefficient) in rhs.products {
+            self.add_product_term(slot, coefficient);
         }
     }
 }
@@ -350,6 +434,11 @@ impl<const L: usize> Neg for LinearCombination<L> {
             .witnesses
             .into_iter()
             .map(|(witness, coefficient)| (witness, exact_public(coefficient.checked_neg_ct())))
+            .collect();
+        self.products = self
+            .products
+            .into_iter()
+            .map(|(slot, coefficient)| (slot, exact_public(coefficient.checked_neg_ct())))
             .collect();
         self
     }
@@ -374,14 +463,17 @@ impl<const L: usize> Mul<Z<L>> for LinearCombination<L> {
 
     fn mul(mut self, rhs: Z<L>) -> Self::Output {
         self.constant = exact_public(self.constant.checked_mul_ct(&rhs));
-        self.witnesses = self
-            .witnesses
-            .into_iter()
-            .filter_map(|(witness, coefficient)| {
-                let coefficient = exact_public(coefficient.checked_mul_ct(&rhs));
-                (!coefficient.is_zero()).then_some((witness, coefficient))
-            })
-            .collect();
+        let scale = |terms: BTreeMap<usize, Z<L>>| -> BTreeMap<usize, Z<L>> {
+            terms
+                .into_iter()
+                .filter_map(|(index, coefficient)| {
+                    let coefficient = exact_public(coefficient.checked_mul_ct(&rhs));
+                    (!coefficient.is_zero()).then_some((index, coefficient))
+                })
+                .collect()
+        };
+        self.witnesses = scale(self.witnesses);
+        self.products = scale(self.products);
         self
     }
 }
@@ -401,6 +493,11 @@ pub struct ConstraintGenerator {
     a: CsrBuilder<IntegerTable>,
     b: CsrBuilder<IntegerTable>,
     c: CsrBuilder<IntegerTable>,
+    pa: CsrBuilder<IntegerTable>,
+    pb: CsrBuilder<IntegerTable>,
+    k: CsrBuilder<IntegerTable>,
+    /// The declared limb width of each product slot.
+    product_limbs: Vec<usize>,
     row_checks: Vec<RowCheck>,
 }
 
@@ -414,6 +511,10 @@ impl ConstraintGenerator {
             a: CsrBuilder::new(IntegerTable::default()),
             b: CsrBuilder::new(IntegerTable::default()),
             c: CsrBuilder::new(IntegerTable::default()),
+            pa: CsrBuilder::new(IntegerTable::default()),
+            pb: CsrBuilder::new(IntegerTable::default()),
+            k: CsrBuilder::new(IntegerTable::default()),
+            product_limbs: Vec::new(),
             row_checks: Vec::new(),
         }
     }
@@ -457,6 +558,10 @@ impl ConstraintGenerator {
             a,
             b,
             c,
+            pa,
+            pb,
+            k,
+            product_limbs,
             row_checks,
         } = self;
         let integer_columns = m_rows.len() + 1;
@@ -483,6 +588,14 @@ impl ConstraintGenerator {
                 .expect("allocated integer columns"),
             c: c.finish(integer_columns)
                 .expect("allocated integer columns"),
+            pa: pa
+                .finish(integer_columns)
+                .expect("allocated integer columns"),
+            pb: pb
+                .finish(integer_columns)
+                .expect("allocated integer columns"),
+            k: k.finish(product_limbs.len())
+                .expect("allocated product slots"),
             row_checks,
         }
     }
@@ -539,13 +652,32 @@ impl Circuit for ConstraintGenerator {
         b: LinearCombination<LIMBS>,
         c: LinearCombination<LIMBS>,
     ) {
+        // A row check evaluates its product slots at the row's own width.
+        for slot in c.products.keys() {
+            assert_eq!(
+                self.product_limbs[*slot], LIMBS,
+                "a product slot must share its row's limb width"
+            );
+        }
         a.append_to(&mut self.a);
         b.append_to(&mut self.b);
-        c.append_to(&mut self.c);
+        c.append_with_products_to(&mut self.c, &mut self.k);
         self.row_checks.push(RowCheck {
             limbs: LIMBS,
             check: check_integer_constraint::<LIMBS>,
         });
+    }
+
+    fn product<const LIMBS: usize>(
+        &mut self,
+        a: LinearCombination<LIMBS>,
+        b: LinearCombination<LIMBS>,
+    ) -> LinearCombination<LIMBS> {
+        let slot = self.product_limbs.len();
+        a.append_to(&mut self.pa);
+        b.append_to(&mut self.pb);
+        self.product_limbs.push(LIMBS);
+        LinearCombination::product_slot(slot)
     }
 
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(

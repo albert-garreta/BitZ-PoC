@@ -234,6 +234,10 @@ impl Circuit for WitnessOnly {
 
     fn assert_r1c<const LIMBS: usize>(&mut self, _: Z<LIMBS>, _: Z<LIMBS>, _: Z<LIMBS>) {}
 
+    fn product<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>) -> Z<LIMBS> {
+        a * b
+    }
+
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,
         value: Z<FROM_LIMBS>,
@@ -373,6 +377,10 @@ impl Circuit for Witgen {
 
     fn assert_r1c<const LIMBS: usize>(&mut self, _: Z<LIMBS>, _: Z<LIMBS>, _: Z<LIMBS>) {}
 
+    fn product<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>) -> Z<LIMBS> {
+        a * b
+    }
+
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,
         value: Z<FROM_LIMBS>,
@@ -487,6 +495,10 @@ impl Circuit for ProductWitgen {
 
     fn assert_r1c<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) {
         self.products.push(a, b, c);
+    }
+
+    fn product<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>) -> Z<LIMBS> {
+        a * b
     }
 
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(

@@ -103,20 +103,3 @@ fn result_identity_roundtrip_rejects_tampered_config_and_metadata() {
         assert!(ResolvedLigerito::decode_report("åx").is_err());
     }
 }
-
-#[cfg(feature = "bench-internals")]
-#[test]
-fn fixed98_product_layouts_preflight_without_witnesses() {
-    use ::bitz::piop::spartan::sha256::prepare_sha256_compression_batch_for_product_t_fixed98;
-    for t in 7..=28 {
-        for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
-            let p = prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
-                .unwrap()
-                .with_ligerito(selection)
-                .unwrap();
-            assert_eq!(p.ligerito_configuration().unwrap().selection(), selection);
-        }
-    }
-    assert!(prepare_sha256_compression_batch_for_product_t_fixed98(14, 6).is_err());
-    assert!(prepare_sha256_compression_batch_for_product_t_fixed98(14, 29).is_err());
-}

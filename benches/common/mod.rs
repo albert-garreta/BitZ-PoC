@@ -46,8 +46,6 @@ pub mod pcs_console;
 pub mod peak_memory;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
-#[cfg(feature = "plonky3-sha256-bench")]
-pub mod whir_tuning;
 
 use bitz::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
@@ -85,6 +83,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_BENCH_LAMBDA",
     "BITZ_MULTISWAP_BATCH_COUNT",
     "BITZ_MULTISWAP_CHECK_ONLY",
+    // The SHA compressions bench's opening (`block` | `virtual`).
+    "BITZ_OPENER",
     "BITZ_BENCH_ORDER",
     "BITZ_BENCH_PASS",
     "BITZ_BENCH_QUIET",
@@ -106,6 +106,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     // Deprecated alias.
     "BITZ_MULTISWAP_REPS",
     "BITZ_MULTISWAP_TRACE_PATH",
+    // Product-slot sumcheck: cross-term rounds of the word path.
+    "BITZ_PRODUCT_WORD_ROUNDS",
     "BITZ_BINIUS_LOG_INV_RATE",
     "BITZ_BINIUS_LIGERITO_LOG_INV_RATE",
     "BITZ_PLONKY3_LOG_INV_RATE",
@@ -115,8 +117,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_WHIR_FOLDING",
     "BITZ_WHIR_LOG_INV_RATE",
     "BITZ_WHIR_MAX_POW_BITS",
-    "BITZ_WHIR_CONFIG",
-    "BITZ_WHIR_TUNING_REPS",
     // SHA trace-writer knobs.
     "BITZ_SHA_BUILD_PROFILE",
     "BITZ_SHA_CPU",
@@ -126,11 +126,15 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_SHA_MNUMROWS_LOG2S",
     "BITZ_SHA_OPENING_LAYOUT",
     "BITZ_SHA_OPENING_T",
-    "BITZ_SHA_PRODUCT_TS",
+    // SHA compressions bench: the block opening's split, and private I/O.
+    "BITZ_SHA_BLOCK_T",
+    "BITZ_SHA_PRIVATE_IO",
     "BITZ_SHA_REPS",
     "BITZ_SHA_RESULT_PATH",
     "BITZ_SHA_SEED",
     "BITZ_SHA_TRACE_PATH",
+    // BitZ phase timings on stderr (diagnostic only).
+    "BITZ_TRACE",
 ];
 
 /// Aborts on any exported `BITZ_*` variable the repo does not know.

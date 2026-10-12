@@ -1,18 +1,25 @@
-//! Product-structured linear SHA-256 PIOP followed by the virtual BitZ opening.
+//! Product-structured linear SHA-256 PIOP followed by the BitZ opening.
 //!
 //! The generated SHA circuit has empty R1CS `A` and `B` matrices, so every
-//! live row is the integer-linear equation `C h = 0`. Batch rows are challenged
-//! as the product of an eight-variable local-row equality tensor and an
-//! instance equality tensor. This collapses the local matrix once to
-//! `β = Cᵀ eq(·, ξ)`, while the physical witness remains gap-free at
-//! `1 + instance * (L - 1) + (local_column - 1)`. Shared-one and public-I/O
-//! coefficients are folded into the same local vector. For power-of-two
-//! batches, a proof-only local-column × instance view of `h` makes the final
-//! coefficient rank one across BitZ's row/column split, so BitZ opens the batched
-//! residual directly without an assignment-domain sumcheck. The committed
-//! source remains the canonical gap-free `f`; the virtual map binds the
-//! proof-only view back to that commitment. Non-power-of-two assignment-row
-//! batches retain the legacy inner-sumcheck fallback.
+//! live row is the integer equation `C h + K (h[l] ∘ (h[p] − h[m])) = 0`:
+//! linear in the lifted assignment `h` except for `Ch`, which enters as one
+//! product slot per round and bit (`K`). Batch rows are challenged as the
+//! product of an eight-variable local-row equality tensor and an instance
+//! equality tensor. This collapses the local matrices once to
+//! `β = Cᵀ eq(·, ξ)` and `κ = Kᵀ eq(·, ξ)`, while the physical witness remains
+//! gap-free at `1 + instance * (L - 1) + (local_column - 1)`. Shared-one and
+//! public-I/O coefficients are folded into the same local vector. The
+//! product sumcheck ([`crate::piop::spartan::protocol::product`]) reduces
+//! the slots, leaving one rank-one functional of `h` at a new instance
+//! point. For power-of-two batches, a proof-only local-column × instance
+//! view of `h` makes that functional rank one across BitZ's row/column
+//! split, so BitZ opens it directly without an assignment-domain sumcheck.
+//! The committed source is either the canonical gap-free `f`, which the
+//! virtual map binds back to the proof-only view, or (a batch prepared with
+//! [`super::constraints::prepare_sha256_compression_batch_block_with_profile`])
+//! `f` in the `Id ⊗ M` block layout, opened through
+//! [`crate::bitz::block`]. Non-power-of-two assignment-row batches retain
+//! the legacy inner-sumcheck fallback.
 
 use crate::piop::spartan::protocol::ProtocolError;
 use crate::piop::spartan::protocol::linear::LinearProof;
@@ -63,6 +70,7 @@ use super::super::{
             LinearBatching, LinearDomains, LinearProveOptions, LinearRelationSpec, OpeningClaim,
             frame, prove_linear, verify_linear,
         },
+        product::{InstanceBits, ProductSlots},
     },
     sumcheck::SumcheckError,
 };
@@ -70,7 +78,8 @@ use super::super::{
 use super::{
     constraints::{
         PreparedSha256CompressionBatch, PreparedSha256LinearRelation, SHA256_CONSTRAINTS,
-        SHA256_H_BAR_LIVE_BITS, SHA256_PUBLIC_WORD_BITS, SHA256_PUBLIC_WORDS,
+        SHA256_H_BAR_LIVE_BITS, SHA256_H_LOCAL_VARS, SHA256_PUBLIC_WORD_BITS,
+        SHA256_PUBLIC_WORDS, Sha256BlockLayout,
         sha256_public_f_column, sha256_public_h_column,
     },
     inner_sumcheck::Sha256InnerBitSource,
@@ -79,7 +88,10 @@ use super::{
 };
 
 #[cfg(test)]
-use super::{inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS, prime::Sha256PrimeProfile};
+use super::{
+    constraints::SHA256_PRODUCT_SLOTS, inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS,
+    prime::Sha256PrimeProfile,
+};
 
 const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"bitz/spartan-sha256-opening/v7";
 const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"bitz/spartan-sha256/constant-one-batch/v3";
@@ -89,7 +101,14 @@ const SHA256_LOCAL_ROW_POINT_DOMAIN: &[u8] = b"bitz/spartan-sha256/local-row-poi
 const SHA256_INSTANCE_POINT_DOMAIN: &[u8] = b"bitz/spartan-sha256/instance-point/v1";
 const SHA256_SHARED_CONSTANT_CELL: usize = 0;
 const SHA256_PROTOCOL_DOMAIN: &[u8] = b"bitz/spartan-sha256-compressions/product-linear/v2";
+/// [`SHA256_PROTOCOL_DOMAIN`] for a batch with nothing public
+/// ([`PreparedSha256CompressionBatch::with_private_io`]).
+const SHA256_PRIVATE_IO_PROTOCOL_DOMAIN: &[u8] =
+    b"bitz/spartan-sha256-compressions/product-linear/private-io/v1";
 const SHA256_ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-sha256-assignment/runtime-prime/v2";
+/// The opener frame of a batch committed in the block layout
+/// ([`Sha256BlockLayout`]).
+const SHA256_BLOCK_OPENING_DOMAIN: &[u8] = b"bitz/spartan-sha256/block-opening/v1";
 
 /// One runtime-field element in Montgomery form, without cloning the shared
 /// 128-bit modulus configuration into every dense table entry.
@@ -124,7 +143,9 @@ pub(super) fn commit_source_rows_with_config(
     Ok(hint)
 }
 
-/// Commits the q-independent source row retained by a packed SHA witness.
+/// Commits the q-independent source row retained by a packed SHA witness:
+/// the packed source itself, or, for a batch prepared for the block opening,
+/// the same bits regrouped into its block layout.
 pub fn commit_sha256_compression_witness_with_config(
     prepared: &PreparedSha256CompressionBatch,
     witness: &Sha256CompressionWitnessBatch,
@@ -133,7 +154,17 @@ pub fn commit_sha256_compression_witness_with_config(
     validate_ligerito_config_for(prepared, pc)?;
     validate_rows(prepared.source_params(), witness.source_rows())?;
     validate_shared_constant(witness.source_rows())?;
-    commit_source_rows_with_config(prepared.source_params(), witness.source_rows().to_vec(), pc)
+    let Some(block) = prepared.block_layout() else {
+        return commit_source_rows_with_config(
+            prepared.source_params(),
+            witness.source_rows().to_vec(),
+            pc,
+        );
+    };
+    let rows = block_source_rows(prepared, witness)?;
+    let hint = commit_rs_ligerito_rows(&block.layout, rows, pc);
+    validate_ligerito_commitment(&hint.commitment, pc).map_err(ProtocolError::Bitz)?;
+    Ok(hint)
 }
 
 /// Commits a q-independent witness with the prepared security profile.
@@ -168,6 +199,9 @@ struct Sha256CompressionSpec<'p, M> {
     /// The product tensor's order; `None` on the legacy path.
     order: Option<PackedSourceOrder>,
     instance_vars: usize,
+    /// The block-layout commitment the BitZ block opening opens through, in
+    /// place of the packed source (`None`: the virtual opening).
+    block: Option<&'p Sha256BlockLayout>,
 }
 
 enum Sha256CompressionRelation<'p> {
@@ -191,6 +225,7 @@ impl<'p> Sha256CompressionRelation<'p> {
                     opened: product_p_h,
                     order: Some(product_map.order()),
                     instance_vars,
+                    block: prepared.block_layout(),
                 }))
             }
             (None, None) => Ok(Self::Legacy(Sha256CompressionSpec {
@@ -199,6 +234,7 @@ impl<'p> Sha256CompressionRelation<'p> {
                 opened: h_layout,
                 order: None,
                 instance_vars,
+                block: None,
             })),
             _ => Err(ProtocolError::InvalidGeometry),
         }
@@ -224,7 +260,8 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
     }
 
     fn source_layout(&self) -> &IntegerMatrixLayout {
-        self.prepared.source_params()
+        self.block
+            .map_or(self.prepared.source_params(), |block| &block.layout)
     }
 
     fn opened_layout(&self) -> &IntegerMatrixLayout {
@@ -248,14 +285,14 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
     }
 
     fn public_io_count(&self) -> usize {
-        SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
+        public_io_bits(self.prepared)
     }
 
     fn validate_statement(
         &self,
         statement: &[Sha256CompressionStatement],
     ) -> Result<(), ProtocolError> {
-        validate_public_statement(self.prepared.instances(), statement)
+        validate_public_statement(statement_len(self.prepared), statement)
     }
 
     fn validate_opener_config(
@@ -280,9 +317,15 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
             (None, None) => {}
             _ => return Err(ProtocolError::InvalidGeometry),
         }
+        // The committed rows: the packed source itself, or its block layout
+        // (a regrouping the opener checks against the map, not re-derived here).
+        let committed = match self.block {
+            None => hint.rows() == witness.source_rows(),
+            Some(block) => validate_rows(&block.layout, hint.rows()).is_ok(),
+        };
         if witness.instances() != prepared.instances()
             || witness.outputs().len() != prepared.instances()
-            || hint.rows() != witness.source_rows()
+            || !committed
         {
             return Err(ProtocolError::InvalidGeometry);
         }
@@ -300,7 +343,14 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
         let assignment_binding =
             assignment_binding(prepared, commitment, config, &public_statement_binding)?;
         let mut frames = vec![
-            frame(b"protocol", SHA256_PROTOCOL_DOMAIN),
+            frame(
+                b"protocol",
+                if prepared.private_io() {
+                    SHA256_PRIVATE_IO_PROTOCOL_DOMAIN
+                } else {
+                    SHA256_PROTOCOL_DOMAIN
+                },
+            ),
             frame(b"integer-relation", prepared.integer_relation_digest()),
             frame(b"boolean-map", prepared.map().digest()),
         ];
@@ -330,10 +380,16 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
                 b"assignment-column-vars",
                 prepared.assignment_params().col_vars,
             ),
-            (b"source-row-vars", prepared.source_params().row_vars),
-            (b"source-column-vars", prepared.source_params().col_vars),
+            (b"source-row-vars", self.source_layout().row_vars),
+            (b"source-column-vars", self.source_layout().col_vars),
         ] {
             frames.push(frame(tag, (value as u64).to_le_bytes()));
+        }
+        // The block opening commits the source in another layout and opens
+        // it through the block map: both are bound before Round 0.
+        if let Some(block) = self.block {
+            frames.push(frame(b"opener", SHA256_BLOCK_OPENING_DOMAIN));
+            frames.push(frame(b"block-map", block.map.digest()));
         }
         frames.push(frame(b"public-sha256-io", public_statement_binding));
         frames.push(frame(b"assignment-oracle", assignment_binding));
@@ -376,20 +432,29 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
         config: &FieldConfig,
     ) -> Result<ProductLinearBatching, ProtocolError> {
         let local_row_weights = eq_table(local_point, config).map_err(SpartanError::from)?;
-        let beta = {
+        let (beta, kappa) = {
             let _scope = tracing::info_span!("sha256:local_relation_collapse").entered();
-            crate::sumcheck::bridge::repeated::collapse_signed_columns(
-                self.prepared.linear_relation().native_matrix(),
-                &local_row_weights,
-                reducer,
+            let collapse = |matrix| {
+                crate::sumcheck::bridge::repeated::collapse_signed_columns(
+                    matrix,
+                    &local_row_weights,
+                    reducer,
+                )
+                .map_err(SpartanError::from)
+            };
+            let mut kappa = collapse(self.prepared.product_terms().k())?;
+            kappa.resize(kappa.len().next_power_of_two(), SpartanBitzField::zero_with_cfg(config));
+            (
+                collapse(self.prepared.linear_relation().native_matrix())?,
+                kappa,
             )
-            .map_err(SpartanError::from)?
         };
         ProductLinearBatching::new(
             self.prepared,
             statement,
             instance_point,
             beta,
+            kappa,
             slot_weights,
             public_io_batch,
             constant_one,
@@ -463,6 +528,115 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
                 .product_assignment_rows()
                 .ok_or(ProtocolError::InvalidGeometry),
             None => Ok(witness.assignment_rows()),
+        }
+    }
+
+    fn product_slots(&self) -> Option<ProductSlots<'_>> {
+        let terms = self.prepared.product_terms();
+        Some(ProductSlots {
+            left: terms.left(),
+            right: terms.right(),
+        })
+    }
+
+    fn block_map(&self) -> Option<&crate::bitz::BlockRepeatedMap> {
+        self.block.map(|block| &block.map)
+    }
+
+    fn instance_bits<'a>(
+        &'a self,
+        witness: &'a Sha256CompressionWitnessBatch,
+    ) -> Result<Box<dyn InstanceBits + 'a>, ProtocolError> {
+        let view = match self.order {
+            Some(PackedSourceOrder::InstanceMajor) => InstanceView::InstanceMajor,
+            Some(PackedSourceOrder::LocalMajor) => InstanceView::LocalMajor,
+            None => InstanceView::Flat,
+        };
+        Ok(Box::new(Sha256InstanceBits {
+            rows: self.opened_rows(witness)?,
+            layout: self.opened,
+            view,
+            instances: self.prepared.instances(),
+            capacity: 1usize << self.instance_vars,
+        }))
+    }
+}
+
+/// How the opened grid places instance `i`'s local assignment column `c`.
+#[derive(Clone, Copy)]
+enum InstanceView {
+    /// Instance-major product tensor: `i · 2^L + c`, each instance a
+    /// word-aligned block.
+    InstanceMajor,
+    /// Local-major product tensor: rows are the low instance bits, columns
+    /// `c · (N / rows) + i / rows`.
+    LocalMajor,
+    /// The gap-free assignment: `1 + i (H − 1) + (c − 1)`, one shared constant.
+    Flat,
+}
+
+/// The opened SHA assignment, read one instance at a time by the product
+/// sumcheck.
+struct Sha256InstanceBits<'a> {
+    rows: &'a [Vec<u64>],
+    layout: &'a IntegerMatrixLayout,
+    view: InstanceView,
+    instances: usize,
+    capacity: usize,
+}
+
+impl Sha256InstanceBits<'_> {
+    fn flat_bit(&self, flat: usize) -> bool {
+        let column = flat >> self.layout.row_vars;
+        let row = flat & (self.layout.rows() - 1);
+        (self.rows[column][row / 64] >> (row % 64)) & 1 == 1
+    }
+}
+
+impl InstanceBits for Sha256InstanceBits<'_> {
+    fn instance_capacity(&self) -> usize {
+        self.capacity
+    }
+
+    fn words_per_instance(&self) -> usize {
+        (1usize << SHA256_H_LOCAL_VARS) / 64
+    }
+
+    fn read_local_words(&self, instance: usize, out: &mut [u64]) {
+        out.fill(0);
+        if instance >= self.instances {
+            return;
+        }
+        let words = self.words_per_instance();
+        match self.view {
+            InstanceView::InstanceMajor => {
+                let per_column = self.layout.rows() >> SHA256_H_LOCAL_VARS;
+                let start = (instance % per_column) * words;
+                out.copy_from_slice(&self.rows[instance / per_column][start..start + words]);
+            }
+            InstanceView::LocalMajor => {
+                let rows = self.layout.rows();
+                let high = self.capacity / rows;
+                for local in 0..SHA256_H_BAR_LIVE_BITS {
+                    let flat = ((local * high + instance / rows) << self.layout.row_vars)
+                        + instance % rows;
+                    if self.flat_bit(flat) {
+                        out[local / 64] |= 1 << (local % 64);
+                    }
+                }
+            }
+            InstanceView::Flat => {
+                for local in 0..SHA256_H_BAR_LIVE_BITS {
+                    let flat = if local == SHA256_SHARED_CONSTANT_CELL {
+                        SHA256_SHARED_CONSTANT_CELL
+                    } else {
+                        1 + instance * (SHA256_H_BAR_LIVE_BITS - 1) + local - 1
+                    };
+                    if self.flat_bit(flat) {
+                        out[local / 64] |= 1 << (local % 64);
+                    }
+                }
+            }
         }
     }
 }
@@ -608,6 +782,75 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
     )
 }
 
+/// Bits `[position, position + 64)` of the packed source in its cell order
+/// (cell `c·2^t + b` = row `b` of column `c`); cells past the grid read zero.
+fn packed_bits64(rows: &[Vec<u64>], row_vars: usize, position: usize) -> u64 {
+    let column_bits = 1usize << row_vars;
+    let column = position >> row_vars;
+    let offset = position & (column_bits - 1);
+    let (word, shift) = (offset / 64, offset % 64);
+    let read = |c: usize, w: usize| rows.get(c).and_then(|row| row.get(w)).copied().unwrap_or(0);
+    let low = read(column, word);
+    if shift == 0 {
+        return low;
+    }
+    let (next_column, next_word) = if (word + 1) * 64 < column_bits {
+        (column, word + 1)
+    } else {
+        (column + 1, 0)
+    };
+    (low >> shift) | (read(next_column, next_word) << (64 - shift))
+}
+
+/// The packed source regrouped into the block layout: instance `i`'s local
+/// column `j ≥ 1` (packed cell `1 + i·w + j − 1`, `w` nonconstant cells per
+/// instance) at block cell `i·2^a + j`, its own constant one at block cell
+/// `i·2^a`, zeros in the rest of the block. Each block's `w + 1` bits are the
+/// packed cells `i·w .. i·w + w` read 64 at a time, with the first
+/// overwritten by the constant.
+fn block_source_rows(
+    prepared: &PreparedSha256CompressionBatch,
+    witness: &Sha256CompressionWitnessBatch,
+) -> Result<Vec<Vec<u64>>, ProtocolError> {
+    let block = prepared.block_layout().ok_or(ProtocolError::InvalidGeometry)?;
+    let packed = prepared.source_params();
+    let source = witness.source_rows();
+    validate_rows(packed, source)?;
+    validate_shared_constant(source)?;
+    let width = block.map.local().cols() - 1;
+    let a = block.map.log_source_block();
+    let layout = &block.layout;
+    let per_column = 1usize << (layout.row_vars - a);
+    let words = layout.rows() / 64;
+    let span_words = (width + 1).div_ceil(64);
+    let tail_bits = (width + 1) % 64;
+    let instances = prepared.instances();
+    if instances != per_column * layout.cols() || a < 6 {
+        return Err(ProtocolError::InvalidGeometry);
+    }
+    let fill = |column: usize| {
+        let mut row = vec![0u64; words];
+        for low in 0..per_column {
+            let instance = column * per_column + low;
+            let base = (low << a) / 64;
+            for word in 0..span_words {
+                let mut bits = packed_bits64(source, packed.row_vars, instance * width + 64 * word);
+                if word + 1 == span_words && tail_bits != 0 {
+                    bits &= (1u64 << tail_bits) - 1;
+                }
+                row[base + word] = bits;
+            }
+            row[base] |= 1;
+        }
+        row
+    };
+    #[cfg(feature = "parallel")]
+    let rows = (0..layout.cols()).into_par_iter().map(fill).collect();
+    #[cfg(not(feature = "parallel"))]
+    let rows = (0..layout.cols()).map(fill).collect();
+    Ok(rows)
+}
+
 /// Random linear combination of the SHA rows, shared-one residual, and public
 /// SHA cells folded into one product-structured oracle.
 ///
@@ -628,6 +871,11 @@ struct ProductLinearBatching {
     local_coefficients: Vec<SpartanBitzField>,
     shared_coefficient: SpartanBitzField,
     initial_claim: SpartanBitzField,
+    /// `κ = Kᵀ eq(·, ξ)`: the product slots' collapsed row weights.
+    slot_weights: Vec<SpartanBitzField>,
+    /// The constant-one and public batching terms of `local_coefficients`:
+    /// what they add to the collapsed relation `Cᵀ eq(·, ξ)`.
+    free_coefficients: Vec<(u32, SpartanBitzField)>,
 }
 
 impl ProductLinearBatching {
@@ -637,15 +885,16 @@ impl ProductLinearBatching {
         public_statement: &[Sha256CompressionStatement],
         instance_point: &[SpartanBitzField],
         beta: Vec<SpartanBitzField>,
+        product_slot_weights: Vec<SpartanBitzField>,
         slot_weights: Vec<SpartanBitzField>,
         public_batch_weight: SpartanBitzField,
         constant_weight: SpartanBitzField,
         field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
     ) -> Result<Self, ProtocolError> {
-        validate_public_statement(prepared.instances(), public_statement)?;
+        validate_public_statement(statement_len(prepared), public_statement)?;
         if instance_point.len() != instance_vars(prepared.instances())?
             || beta.len() != SHA256_H_BAR_LIVE_BITS
-            || slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
+            || slot_weights.len() != public_io_bits(prepared)
         {
             return Err(ProtocolError::InvalidGeometry);
         }
@@ -665,6 +914,8 @@ impl ProductLinearBatching {
             &(local_coefficients[SHA256_SHARED_CONSTANT_CELL]),
             &(&constant_weight),
         );
+        let mut free_coefficients = Vec::with_capacity(1 + slot_weights.len());
+        free_coefficients.push((SHA256_SHARED_CONSTANT_CELL as u32, constant_weight.clone()));
         for (slot, slot_weight) in slot_weights.iter().enumerate() {
             let word_slot = slot / SHA256_PUBLIC_WORD_BITS;
             let bit = slot % SHA256_PUBLIC_WORD_BITS;
@@ -675,6 +926,7 @@ impl ProductLinearBatching {
                 .get_mut(local_column)
                 .ok_or(ProtocolError::InvalidGeometry)?;
             *coefficient = field_config.add(coefficient, &public_coefficient);
+            free_coefficients.push((local_column as u32, public_coefficient));
         }
         let shared_coefficient = field_config.mul(
             &(active_instance_sum.clone()),
@@ -682,27 +934,49 @@ impl ProductLinearBatching {
         );
 
         // Compress each eight-bit public dot product into a lookup table once.
-        // This computes μ without visiting all 1,024 public bits per instance.
-        let byte_tables = weighted_byte_tables(&slot_weights, field_config);
-        let mut initial_claim = field_config.mul(&(constant_weight), &(&active_instance_sum));
-        for (instance, statement) in public_statement.iter().enumerate() {
-            let mut statement_value = SpartanBitzField::zero_with_cfg(field_config);
+        // This computes μ without visiting all 1,024 public bits per instance:
+        // μ = c · Σ_i eq_i + p · Σ_i eq_i ⟨w, statement_i⟩.
+        // Canonical residues: a statement's 128 table entries sum in a u128.
+        let modulus = u128::from(*field_config.modulus());
+        if (4 * SHA256_PUBLIC_WORDS as u128).saturating_mul(modulus) >> 127 != 0 {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        let byte_tables = weighted_byte_tables(&slot_weights, field_config)
+            .iter()
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|entry| u128::from(field_config.to_integer(entry)))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let zero = SpartanBitzField::zero_with_cfg(field_config);
+        let weighted_statement = |(statement, weight): (&Sha256CompressionStatement, &SpartanBitzField)| {
+            let mut sum = 0u128;
             for (word_slot, word) in statement.words().enumerate() {
                 for byte in 0..4 {
-                    let value = ((word >> (8 * byte)) & 0xff) as usize;
-                    statement_value = field_config.add(
-                        &(statement_value),
-                        &(&byte_tables[4 * word_slot + byte][value]),
-                    );
+                    sum += byte_tables[4 * word_slot + byte][((word >> (8 * byte)) & 0xff) as usize];
                 }
             }
-            let mut coefficient = field_config.mul(
-                &(instance_weights[instance].clone()),
-                &(&public_batch_weight),
-            );
-            coefficient = field_config.mul(&(coefficient), &(&statement_value));
-            initial_claim = field_config.add(&(initial_claim), &(&coefficient));
-        }
+            let statement_value = field_config.from_canonical_integer(&Uint::<2>::from(sum % modulus));
+            field_config.mul(weight, &statement_value)
+        };
+        #[cfg(feature = "parallel")]
+        let statements = public_statement
+            .par_iter()
+            .zip(&instance_weights)
+            .map(weighted_statement)
+            .reduce(|| zero.clone(), |a, b| field_config.add(&a, &b));
+        #[cfg(not(feature = "parallel"))]
+        let statements = public_statement
+            .iter()
+            .zip(&instance_weights)
+            .map(weighted_statement)
+            .fold(zero.clone(), |a, b| field_config.add(&a, &b));
+        let initial_claim = field_config.add(
+            &field_config.mul(&constant_weight, &active_instance_sum),
+            &field_config.mul(&public_batch_weight, &statements),
+        );
 
         Ok(Self {
             instances: prepared.instances(),
@@ -711,6 +985,48 @@ impl ProductLinearBatching {
             local_coefficients,
             shared_coefficient,
             initial_claim,
+            slot_weights: product_slot_weights,
+            free_coefficients,
+        })
+    }
+
+    /// The batching at instance point `instance_point` with local weights
+    /// `local_coefficients` and claim `claim`.
+    fn reanchored(
+        &self,
+        instance_point: &[SpartanBitzField],
+        local_coefficients: Vec<SpartanBitzField>,
+        claim: SpartanBitzField,
+        field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
+    ) -> Result<Self, ProtocolError> {
+        if instance_point.len() != self.instance_point.len()
+            || local_coefficients.len() != self.local_coefficients.len()
+        {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        let instance_weights = eq_table(instance_point, field_config)
+            .map_err(SpartanError::from)?
+            .into_iter()
+            .take(self.instances)
+            .collect::<Vec<_>>();
+        let active_instance_sum = instance_weights
+            .iter()
+            .fold(SpartanBitzField::zero_with_cfg(field_config), |sum, weight| {
+                field_config.add(&sum, weight)
+            });
+        let shared_coefficient = field_config.mul(
+            &active_instance_sum,
+            &local_coefficients[SHA256_SHARED_CONSTANT_CELL],
+        );
+        Ok(Self {
+            instances: self.instances,
+            instance_point: instance_point.to_vec(),
+            instance_weights,
+            local_coefficients,
+            shared_coefficient,
+            initial_claim: claim,
+            slot_weights: self.slot_weights.clone(),
+            free_coefficients: Vec::new(),
         })
     }
 
@@ -842,6 +1158,28 @@ impl LinearBatching for ProductLinearBatching {
         config: &FieldConfig,
     ) -> Result<SpartanBitzField, ProtocolError> {
         Self::evaluate(self, point, config)
+    }
+
+    fn local_coefficients(&self) -> &[SpartanBitzField] {
+        &self.local_coefficients
+    }
+
+    fn product_slot_weights(&self) -> Option<&[SpartanBitzField]> {
+        Some(&self.slot_weights)
+    }
+
+    fn product_free_coefficients(&self) -> Option<&[(u32, SpartanBitzField)]> {
+        (!self.free_coefficients.is_empty()).then_some(&self.free_coefficients[..])
+    }
+
+    fn reanchored(
+        &self,
+        instance_point: &[SpartanBitzField],
+        local_coefficients: Vec<SpartanBitzField>,
+        claim: SpartanBitzField,
+        config: &FieldConfig,
+    ) -> Result<Self, ProtocolError> {
+        Self::reanchored(self, instance_point, local_coefficients, claim, config)
     }
 }
 
@@ -1122,7 +1460,7 @@ fn product_opening_claim(
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
-        || h_layout.row_vars + h_layout.col_vars != instance_vars + 15
+        || h_layout.row_vars + h_layout.col_vars != instance_vars + SHA256_H_LOCAL_VARS
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
         return Err(ProtocolError::InvalidGeometry);
@@ -1784,7 +2122,8 @@ fn validate_product_geometry(
     };
     if h_layout.row_vars < t_min
         || h_layout.row_vars > t_max
-        || h_layout.row_vars.saturating_add(h_layout.col_vars) != instance_vars + 15
+        || h_layout.row_vars.saturating_add(h_layout.col_vars)
+            != instance_vars + SHA256_H_LOCAL_VARS
         || map.rows() != cell_count(h_layout)
         || map.cols() != cell_count(f_layout)
         || map.live_rows() != expected_live_rows
@@ -1909,6 +2248,16 @@ pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Protocol
         return Err(ProtocolError::InvalidSharedConstant);
     }
     Ok(())
+}
+
+/// Statements the batch takes: one per compression, or none with private I/O.
+fn statement_len(prepared: &PreparedSha256CompressionBatch) -> usize {
+    if prepared.private_io() { 0 } else { prepared.instances() }
+}
+
+/// Public bits per compression the batch binds: none with private I/O.
+fn public_io_bits(prepared: &PreparedSha256CompressionBatch) -> usize {
+    if prepared.private_io() { 0 } else { SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS }
 }
 
 fn validate_public_statement(
@@ -2069,11 +2418,17 @@ fn public_statement_binding(
     let mut hash = Hasher::new();
     hash.update(SHA256_PUBLIC_STATEMENT_DOMAIN);
     hash_usize(&mut hash, public_statement.len())?;
+    // Every word's little-endian bytes in order, hashed as one string.
+    let mut bytes = Vec::with_capacity(4 * SHA256_PUBLIC_WORDS * public_statement.len());
     for statement in public_statement {
         for word in statement.words() {
-            hash.update(&word.to_le_bytes());
+            bytes.extend_from_slice(&word.to_le_bytes());
         }
     }
+    #[cfg(feature = "parallel")]
+    hash.update_rayon(&bytes);
+    #[cfg(not(feature = "parallel"))]
+    hash.update(&bytes);
     Ok(*hash.finalize().as_bytes())
 }
 
@@ -2220,8 +2575,12 @@ mod tests {
         }
 
         let by_rows = prepare_sha256_compression_batch_for_assignment_rows(21).unwrap();
-        assert_eq!(by_rows.instances(), 102);
-        assert_eq!(by_rows.log_instance_capacity(), 7);
+        let instances = ((1usize << 21) - 1) / super::super::constraints::SHA256_H_INSTANCE_BITS;
+        assert_eq!(by_rows.instances(), instances);
+        assert_eq!(
+            by_rows.log_instance_capacity(),
+            instances.next_power_of_two().ilog2() as usize
+        );
         assert_eq!(by_rows.assignment_params().cells(), 1 << 21);
         sha256_compression_configs(&by_rows).unwrap();
         Sha256PrimeProfile::from_security(by_rows.security(), by_rows.log_instance_capacity())
@@ -2288,8 +2647,10 @@ mod tests {
     }
 
     #[test]
-    fn assignment_row_sized_non_power_batch_roundtrip_and_public_binding() {
-        let prepared = prepare_sha256_compression_batch_for_assignment_rows(21).unwrap();
+    fn non_power_batch_roundtrip_and_public_binding() {
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_for_instances_test(102)
+                .unwrap();
         assert_eq!(prepared.instances(), 102);
 
         let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
@@ -2343,8 +2704,9 @@ mod tests {
             Sha256OpeningLayout, prepare_sha256_compression_batch_with_profile_and_layout,
         };
         use crate::piop::spartan::profile::Lambda100;
-        // 2^7 compressions: 2^22 assignment cells. t = 13 keeps one forest
-        // (113-bit primes, c_w = 113); t = 15 narrows c_w to 111 and needs two.
+        // 2^7 compressions: 2^22 assignment cells. t = 13 keeps the 113-bit
+        // prime (c_w = 113); t = 15 narrows c_w, and with it the prime, to 111
+        // bits, so both open one forest.
         const LOG_COMPRESSIONS: usize = 7;
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
@@ -2363,7 +2725,7 @@ mod tests {
             let h_layout = *prepared.opening_params();
             assert_eq!(
                 (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
-                (row_vars, 22)
+                (row_vars, 7 + SHA256_H_LOCAL_VARS)
             );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
@@ -2382,7 +2744,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 proof.inner().round_polynomials.len(),
-                22,
+                7 + SHA256_H_LOCAL_VARS,
                 "inner rounds at t={row_vars}"
             );
             let mut verifier_transcript = Blake3Transcript::new();
@@ -2414,12 +2776,13 @@ mod tests {
         };
         use crate::piop::spartan::profile::Lambda100;
         // 2^7 compressions: 2^22 assignment cells, local stride 2^15. Every
-        // admissible split has t >= 15, including the single-column endpoint.
+        // admissible split has t >= 14, including the single-column endpoint.
         const LOG_COMPRESSIONS: usize = 7;
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
             .collect::<Vec<_>>();
-        for row_vars in [15usize, 17, 22] {
+        let local = SHA256_H_LOCAL_VARS;
+        for row_vars in [local, local + 3, local + 7] {
             let prepared = prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
                 LOG_COMPRESSIONS,
                 Sha256OpeningLayout::ProductTransposed { row_vars },
@@ -2430,7 +2793,7 @@ mod tests {
             let h_layout = *prepared.opening_params();
             assert_eq!(
                 (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
-                (row_vars, 22)
+                (row_vars, 7 + local)
             );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
@@ -2459,7 +2822,7 @@ mod tests {
             )
             .unwrap();
         }
-        for row_vars in [14usize, 23] {
+        for row_vars in [local - 1, local + 8] {
             assert!(matches!(
                 prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
                     LOG_COMPRESSIONS,
@@ -3062,6 +3425,12 @@ mod tests {
             &reducer,
         )
         .unwrap();
+        let kappa = crate::sumcheck::bridge::repeated::collapse_signed_columns(
+            prepared.product_terms().k(),
+            &local_row_weights,
+            &reducer,
+        )
+        .unwrap();
         let instance_point = [SpartanBitzField::from_with_cfg(13_u64, &field_config)];
         let slot_weights = (0..SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS)
             .map(|slot| SpartanBitzField::from_with_cfg(slot as u64 + 17, &field_config))
@@ -3071,12 +3440,34 @@ mod tests {
             &statements,
             &instance_point,
             beta,
+            kappa.clone(),
             slot_weights,
             SpartanBitzField::from_with_cfg(29_u64, &field_config),
             SpartanBitzField::from_with_cfg(31_u64, &field_config),
             &field_config,
         )
         .unwrap();
+        // The product slots' share of μ: Σ_i eq(η, i) Σ_s κ_s h_i[l_s] (h_i[p_s] − h_i[m_s]).
+        let instance_weights = eq_table(&instance_point, &field_config).unwrap();
+        let terms = prepared.product_terms();
+        let mut product_part = SpartanBitzField::zero_with_cfg(&field_config);
+        for instance in 0..prepared.instances() {
+            let bit = |local: u32| {
+                let flat = prepared
+                    .flat_assignment_column(instance, local as usize)
+                    .unwrap();
+                i64::from(witness.assignment_bit(flat).unwrap())
+            };
+            for slot in 0..terms.slots() {
+                let value = terms.value(slot, &bit);
+                let term = field_config.mul(&kappa[slot], &instance_weights[instance]);
+                product_part = match value {
+                    1 => field_config.add(&product_part, &term),
+                    -1 => field_config.sub(&product_part, &term),
+                    _ => product_part,
+                };
+            }
+        }
 
         let factored = batching.factored_matrix_mle(&field_config).unwrap();
         assert_eq!(
@@ -3092,7 +3483,10 @@ mod tests {
                 );
             }
         }
-        assert_eq!(witness_sum, *batching.initial_claim());
+        assert_eq!(
+            field_config.add(&witness_sum, &product_part),
+            *batching.initial_claim()
+        );
 
         let product_p_h = prepared.product_assignment_params().unwrap();
         let product_rows = witness.product_assignment_rows().unwrap();
@@ -3116,7 +3510,10 @@ mod tests {
             );
             direct_sum = field_config.add(&(direct_sum), &(&term));
         }
-        assert_eq!(direct_sum, *batching.initial_claim());
+        assert_eq!(
+            field_config.add(&direct_sum, &product_part),
+            *batching.initial_claim()
+        );
         assert_eq!(
             claimed,
             u128::from(field_config.to_integer(batching.initial_claim()))
@@ -3144,8 +3541,9 @@ mod tests {
 
     #[test]
     fn product_linear_batching_handles_partial_instance_domains_without_inversion() {
-        let prepared = prepare_sha256_compression_batch_for_assignment_rows(21)
-            .expect("102-instance packed test relation");
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_for_instances_test(102)
+                .expect("102-instance packed test relation");
         let field_config = Fp::<2>::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
         let instance_point = (0..instance_vars(prepared.instances()).unwrap())
             .map(|coordinate| {
@@ -3169,6 +3567,7 @@ mod tests {
             &statements,
             &instance_point,
             vec![SpartanBitzField::zero_with_cfg(&field_config); SHA256_H_BAR_LIVE_BITS],
+            vec![SpartanBitzField::zero_with_cfg(&field_config); SHA256_PRODUCT_SLOTS],
             vec![
                 SpartanBitzField::zero_with_cfg(&field_config);
                 SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
@@ -3423,8 +3822,9 @@ mod tests {
 
     #[test]
     fn non_power_sha_terminal_contractions_match_dense_evaluation() {
-        let prepared = prepare_sha256_compression_batch_for_assignment_rows(21)
-            .expect("102-instance packed test relation");
+        let prepared =
+            super::super::constraints::prepare_sha256_compression_batch_for_instances_test(102)
+                .expect("102-instance packed test relation");
         assert_eq!(prepared.instances(), 102);
         let field_config = Fp::<2>::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
         let relation = prepared
@@ -3552,5 +3952,201 @@ mod tests {
             );
         }
         assert_eq!(claimed, u128::from(field_config.to_integer(&initial_claim)));
+    }
+
+    mod block {
+        use super::*;
+        use crate::piop::spartan::{
+            Lambda100,
+            sha256::{
+                prepare_sha256_compression_batch_block_at,
+                prepare_sha256_compression_batch_block_with_profile,
+            },
+        };
+
+        /// The production split at `2^7` (`r = 0`: one instance block per
+        /// committed column) and an explicit `t = 17` (`r = 3`: eight).
+        fn batches() -> Vec<PreparedSha256CompressionBatch> {
+            vec![
+                prepare_sha256_compression_batch_block_with_profile::<Lambda100>(7).unwrap(),
+                prepare_sha256_compression_batch_block_at::<Lambda100>(7, 17).unwrap(),
+            ]
+        }
+
+        fn bit(rows: &[Vec<u64>], layout: &IntegerMatrixLayout, cell: usize) -> u64 {
+            let (column, row) = (cell >> layout.row_vars, cell & (layout.rows() - 1));
+            (rows[column][row / 64] >> (row % 64)) & 1
+        }
+
+        /// The prime keeps BitZ's fold bound at the opening's split, the split
+        /// is BitZ's rule `⌈0.6 n⌉ − 1` clamped to the local bits, and the
+        /// committed block grid has the product tensor's columns.
+        #[test]
+        fn prepared_batches_fit_the_fold_bound() {
+            for prepared in batches() {
+                let t = prepared.opening_params().row_vars;
+                super::super::super::constraints::validate_opening_bound(
+                    prepared.opening_params(),
+                    prepared.security().projection_max,
+                )
+                .unwrap();
+                // Source blocks are `2^13` cells, derived ones `2^14`.
+                let block = prepared.block_layout().unwrap();
+                let source = super::super::super::constraints::SHA256_F_BAR_LIVE_BITS
+                    .next_power_of_two()
+                    .ilog2() as usize;
+                assert_eq!(block.layout.row_vars, t + source - SHA256_H_LOCAL_VARS);
+                assert_eq!(block.layout.col_vars, prepared.opening_params().col_vars);
+                assert_eq!(prepared.block_committed_params(), Some(&block.layout));
+            }
+            assert_eq!(
+                prepare_sha256_compression_batch_block_with_profile::<Lambda100>(7)
+                    .unwrap()
+                    .opening_params()
+                    .row_vars,
+                SHA256_H_LOCAL_VARS
+            );
+        }
+
+        /// The block rows under the block map are the product tensor, bit for
+        /// bit; every instance's constant copy is one and its padding zero.
+        #[test]
+        fn block_rows_under_the_block_map_are_the_product_tensor() {
+            for prepared in batches() {
+                let block = prepared.block_layout().unwrap();
+                let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+                let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+                let rows = block_source_rows(&prepared, &witness).unwrap();
+                let committed = &block.layout;
+                let opened = prepared.opening_params();
+                let mut derived = vec![vec![0u64; opened.rows() / 64]; opened.cols()];
+                for (column, row) in rows.iter().enumerate() {
+                    for (word_index, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let b = word_index * 64 + bits.trailing_zeros() as usize;
+                            bits &= bits - 1;
+                            let source = (column << committed.row_vars) | b;
+                            for d in block.map.column_rows(source).unwrap() {
+                                let (c, r) = (d >> opened.row_vars, d & (opened.rows() - 1));
+                                derived[c][r / 64] ^= 1 << (r % 64);
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    derived.as_slice(),
+                    witness.product_assignment_rows().unwrap(),
+                    "t = {}",
+                    opened.row_vars
+                );
+                let a = block.map.log_source_block();
+                let width = block.map.local().cols();
+                for instance in 0..prepared.instances() {
+                    assert_eq!(bit(&rows, committed, instance << a), 1);
+                    for j in width..1 << a {
+                        assert_eq!(bit(&rows, committed, (instance << a) + j), 0);
+                    }
+                }
+            }
+        }
+
+        /// Commit, prove and verify through the block opening, with public
+        /// and with private I/O; a wrong output, a changed opening stream, a
+        /// proof checked against the other statement kind, or a commitment
+        /// whose instance-5 constant copy is zero is rejected.
+        #[test]
+        fn roundtrips_and_rejects_tampering() {
+            for prepared in batches() {
+                let block = prepared.block_layout().unwrap();
+                let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+                let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+                let statements = public_statements(&inputs, witness.outputs());
+                let hint = commit_sha256_compression_witness(&prepared, &witness).unwrap();
+                assert_eq!(hint.rows().len(), block.layout.cols());
+                let prove = |hint: &FlockCommitHint| {
+                    prove_sha256_compressions(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        &statements,
+                        &witness,
+                        hint,
+                    )
+                };
+                let verify = |statements: &[Sha256CompressionStatement],
+                              commitment: &Commitment,
+                              proof: &LinearProof| {
+                    verify_sha256_compressions(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        statements,
+                        commitment,
+                        proof,
+                    )
+                };
+                let proof = prove(&hint).unwrap();
+                verify(&statements, &hint.commitment, &proof).unwrap();
+                assert_eq!(proof.bitz().ood.is_some(), prepared.security().ood.is_some());
+                assert!(proof.inner().round_polynomials.is_empty());
+                assert!(proof.product().is_some());
+
+                let mut wrong = statements.clone();
+                let mut output = witness.outputs()[3];
+                output[0] ^= 1;
+                wrong[3] = Sha256CompressionStatement::new(inputs[3], output);
+                assert!(verify(&wrong, &hint.commitment, &proof).is_err());
+
+                let mut tampered = proof.clone();
+                tampered.bitz_mut().transcript.narg_string[7] ^= 1;
+                assert!(verify(&statements, &hint.commitment, &tampered).is_err());
+                let mut tampered = proof.clone();
+                let last = tampered.bitz().transcript.hints.len() - 1;
+                tampered.bitz_mut().transcript.hints[last] ^= 1;
+                assert!(verify(&statements, &hint.commitment, &tampered).is_err());
+
+                // Private I/O: the same witness and commitment, an empty
+                // statement, its own protocol domain.
+                let private = prepared.clone().with_private_io();
+                let private_proof = prove_sha256_compressions(
+                    &mut Blake3Transcript::new(),
+                    &private,
+                    &[],
+                    &witness,
+                    &hint,
+                )
+                .unwrap();
+                verify_sha256_compressions(
+                    &mut Blake3Transcript::new(),
+                    &private,
+                    &[],
+                    &hint.commitment,
+                    &private_proof,
+                )
+                .unwrap();
+                assert!(
+                    verify_sha256_compressions(
+                        &mut Blake3Transcript::new(),
+                        &private,
+                        &[],
+                        &hint.commitment,
+                        &proof,
+                    )
+                    .is_err()
+                );
+
+                let mut rows = block_source_rows(&prepared, &witness).unwrap();
+                let cell = 5usize << block.map.log_source_block();
+                let (column, row) = (cell >> block.layout.row_vars, cell & (block.layout.rows() - 1));
+                rows[column][row / 64] &= !(1 << (row % 64));
+                let bad = commit_rs_ligerito_rows(
+                    &block.layout,
+                    rows,
+                    prepared.ligerito_configuration().unwrap().prover(),
+                );
+                if let Ok(proof) = prove(&bad) {
+                    assert!(verify(&statements, &bad.commitment, &proof).is_err());
+                }
+            }
+        }
     }
 }

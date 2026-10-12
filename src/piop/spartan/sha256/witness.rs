@@ -9,7 +9,7 @@
 use std::array;
 
 use circuit::{
-    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, compression_circuit},
+    sha256::{COMPRESSION_INPUT_BITS, ROUND_CONSTANTS},
     witgen::{PackedWitness, Witgen},
 };
 use thiserror::Error;
@@ -20,9 +20,46 @@ use rayon::prelude::*;
 use {crate::pcs::IntegerMatrixLayout, circuit::linear_map::binary::PackedSourceOrder};
 
 use super::constraints::{
-    PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
+    PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS, SHA256_HINT_BITS,
     SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
 };
+
+/// One SHA-256 compression, natively (FIPS 180-4 §6.2.2), on parsed words.
+pub fn sha256_compress(state: [u32; 8], block: [u32; 16]) -> [u32; 8] {
+    let mut w = [0u32; 64];
+    w[..16].copy_from_slice(&block);
+    for i in 16..64 {
+        let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+        let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16]
+            .wrapping_add(s0)
+            .wrapping_add(w[i - 7])
+            .wrapping_add(s1);
+    }
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+    for i in 0..64 {
+        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let ch = (e & f) ^ (!e & g);
+        let t1 = h
+            .wrapping_add(s1)
+            .wrapping_add(ch)
+            .wrapping_add(ROUND_CONSTANTS[i])
+            .wrapping_add(w[i]);
+        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let t2 = s0.wrapping_add(maj);
+        h = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(t1);
+        d = c;
+        c = b;
+        b = a;
+        a = t1.wrapping_add(t2);
+    }
+    let working = [a, b, c, d, e, f, g, h];
+    array::from_fn(|i| state[i].wrapping_add(working[i]))
+}
 
 /// One independent SHA-256 compression input: chaining state and message block.
 pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
@@ -279,9 +316,9 @@ fn generate_one(
     let input_bits = compression_input_bits(input);
     let mut generator = Witgen::with_inputs_and_capacity(
         &input_bits,
-        COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
+        COMPRESSION_INPUT_BITS + SHA256_HINT_BITS,
     );
-    let output_bits = compression_circuit(&mut generator, &input_bits);
+    let output_bits = super::constraints::sha256_relation_circuit(&mut generator, &input_bits);
     let (f, h_bar) = generator.into_witnesses();
     finish_packed_shard(f, h_bar, &output_bits)
 }
@@ -622,21 +659,23 @@ mod tests {
         let h_layout = prepared.assignment_params();
 
         assert_eq!((f_layout.row_vars, f_layout.col_vars), (7, 6));
-        assert_eq!((h_layout.row_vars, h_layout.col_vars), (8, 7));
+        let vars = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+        assert_eq!((h_layout.row_vars, h_layout.col_vars), (vars.div_ceil(2), vars / 2));
 
         // Source sequence cell 1 is block[0]'s low bit. In native PCS order
         // it is row 1 of column 0, not row 0 of column 1.
         assert_eq!(witness.source_rows()[0][0] >> 1 & 1, 1);
 
         // The nonidentity Bit map copies that source bit to local
-        // assignment cell 257. Native order makes this row 1 of column 1.
+        // assignment cell 257. Native order makes this row 1 of column 2.
         assert!(prepared.map().column_rows(1).unwrap().any(|row| row == 257));
-        assert_eq!(witness.assignment_rows()[1][0] >> 1 & 1, 1);
+        assert_eq!(witness.assignment_rows()[2][0] >> 1 & 1, 1);
     }
 
     #[test]
     fn instance_major_product_rows_match_the_virtual_map() {
-        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, 15).unwrap();
+        let local = super::super::constraints::SHA256_H_LOCAL_VARS;
+        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, local).unwrap();
         let inputs = [abc_input(), abc_input()];
         let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
         let f_layout = prepared.source_params();
@@ -645,7 +684,7 @@ mod tests {
         let product_rows = witness.product_assignment_rows().unwrap();
 
         assert_eq!(prepared.product_layout_name(), Some("local_rows"));
-        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (15, 1));
+        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (local, 1));
         let mut mapped = vec![false; product_p_h.cells()];
         for source in 0..f_layout.cells() {
             if !witness.source_bit(source).unwrap() {
@@ -760,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn packed_assignment_satisfies_the_exact_signed_linear_relation() {
+    fn packed_assignment_satisfies_the_exact_signed_relation_with_products() {
         let prepared = prepare_sha256_compression_batch_for_test(1).unwrap();
         let mut second = abc_input();
         second.1[0] ^= 0x0102_0304;
@@ -786,6 +825,21 @@ mod tests {
                     residuals[flat_row] += *coefficient;
                 }
             }
+            // Product slots: K[row, s] · h[left_s] · (h[plus_s] − h[minus_s]).
+            let terms = prepared.product_terms();
+            let bit = |local_column: u32| {
+                let flat = prepared
+                    .flat_assignment_column(instance, local_column as usize)
+                    .unwrap();
+                i64::from(witness.assignment_bit(flat).unwrap())
+            };
+            for slot in 0..terms.slots() {
+                let value = terms.value(slot, &bit);
+                for (local_row, coefficient) in terms.k().column(slot).expect("product slot") {
+                    let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
+                    residuals[flat_row] += *coefficient * value;
+                }
+            }
         }
 
         assert_eq!(residuals.len(), 2 * SHA256_CONSTRAINTS);
@@ -793,6 +847,26 @@ mod tests {
             residuals
                 .iter()
                 .all(|residual| residual == &BigInt::default())
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::sha256_compress;
+    use circuit::sha256::INITIAL_STATE;
+
+    #[test]
+    fn native_compression_matches_fips_abc() {
+        let block = [
+            0x61626380, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00000018,
+        ];
+        assert_eq!(
+            sha256_compress(INITIAL_STATE, block),
+            [
+                0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61,
+                0xf20015ad,
+            ]
         );
     }
 }

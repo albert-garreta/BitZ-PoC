@@ -16,7 +16,7 @@ def cases(extended=False):
         for target in [100, 128]:
             for mode in ['split', 'all']:
                 result.append(dict(id=f'ecdsa-{mode}-{target}-t{threads}', exe='sha256_ecdsa', args=['3', mode, str(target)], threads=threads, env={}))
-            result.append(dict(id=f'sha-chain-{target}-t{threads}', exe='sha256_chain', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '7', 'BITZ_BENCH_LAMBDA': str(target)}))
+            result.append(dict(id=f'sha-{target}-t{threads}', exe='sha256_compressions', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '7', 'BITZ_BENCH_LAMBDA': str(target)}))
         for width in [1, 8]:
             result.append(dict(id=f'u32-w{width}-t{threads}', exe='mul_bitz', args=['proof', '--workload', 'u32-full', '--log-n', '15', '--w', str(width)], threads=threads, env={}))
         for width in [64, 128]:
@@ -25,9 +25,9 @@ def cases(extended=False):
             result.append(dict(id=f'multiswap-b{batch}-t{threads}', exe='multiswap', args=[], threads=threads, env={'BITZ_BENCH_SHAPES': '0', 'BITZ_MULTISWAP_BATCH_COUNT': str(batch), 'BITZ_BENCH_LAMBDA': '114'}))
     if extended:
         for old in list(result):
-            if old['exe'] in ['mul_bitz', 'sha256_chain']:
+            if old['exe'] in ['mul_bitz', 'sha256_compressions']:
                 c = {**old, 'env': dict(old['env']), 'args': list(old['args'])}
-                if c['exe'] == 'sha256_chain':
+                if c['exe'] == 'sha256_compressions':
                     c['env']['BITZ_BENCH_SHAPES'] = '9'
                 else:
                     c['args'][c['args'].index('--log-n') + 1] = '17'

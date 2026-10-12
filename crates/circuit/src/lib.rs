@@ -549,6 +549,23 @@ pub trait Circuit {
         c: Self::Z<LIMBS>,
     );
 
+    /// The product `a * b` of two linear Z expressions as a term that is
+    /// never committed.
+    ///
+    /// The result may only reach the `c` side of [`Circuit::assert_r1c`],
+    /// where it adds `a * b` to that row. Recording backends keep `a` and `b`
+    /// as the two factors of a product slot (see
+    /// [`constraints::ConstraintMatrices`]); value backends return the
+    /// product itself. Backends without product slots panic.
+    fn product<const LIMBS: usize>(
+        &mut self,
+        a: Self::Z<LIMBS>,
+        b: Self::Z<LIMBS>,
+    ) -> Self::Z<LIMBS> {
+        let _ = (a, b);
+        unimplemented!("this circuit backend has no product slots")
+    }
+
     /// Explicitly changes a Z witness into a wider local representation.
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,

@@ -1653,3 +1653,61 @@ pub(crate) fn verify_virtual_opening<
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
+
+// The block-layout SHA opening binds its relation, the opener and the
+// block map before this fork.
+const BLOCK_SESSION: &[u8] = b"bitz/bitz-opener/block/v1";
+
+pub(crate) fn prove_block_opening<T: Transcript + Send>(
+    transcript: &mut T,
+    statement: &crate::bitz::BlockStatement<'_>,
+    pcs: &BitzPcs,
+    hint: &FlockCommitHint,
+    derived_rows: &[Vec<u64>],
+    ood: crate::ligerito_flock::ProverOod,
+) -> Result<BitZOpeningProof, ProtocolError> {
+    let ood = ood.opening_claim(transcript, hint);
+    let mut state = build_prover(BLOCK_SESSION, &fork_tag(transcript));
+    BitZProver::new(*statement.claim_params(), WINDOW)
+        .prove_block(
+            statement,
+            pcs,
+            hint,
+            derived_rows,
+            &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
+    Ok(BitZOpeningProof {
+        transcript: state.finish(),
+        ood: ood.map(|claim| claim.round),
+    })
+}
+
+pub(crate) fn verify_block_opening<T: Transcript + Send>(
+    transcript: &mut T,
+    statement: &crate::bitz::BlockStatement<'_>,
+    pcs: &BitzPcs,
+    commitment: &Commitment,
+    proof: &BitZOpeningProof,
+    ood: crate::ligerito_flock::VerifierOod,
+) -> Result<(), ProtocolError> {
+    let packed_vars = statement
+        .committed_shape()
+        .log_bits()
+        .checked_sub(crate::ligerito::LOG_PACKING)
+        .ok_or(ProtocolError::InvalidGeometry)?;
+    let ood = ood
+        .opening_claim(transcript, packed_vars, proof.ood.as_ref())
+        .map_err(ProtocolError::Bitz)?;
+    let state = build_verifier(BLOCK_SESSION, &fork_tag(transcript), &proof.transcript);
+    BitZVerifier::new(*statement.claim_params(), WINDOW)
+        .verify_block(
+            statement,
+            pcs,
+            Root(commitment.root),
+            state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
+}

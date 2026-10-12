@@ -114,7 +114,7 @@ def main():
     clean = clean_environment(os.environ)
     cases = multiplication_cases(args,binaries,clean)
     if 'sha' in args.kinds:
-        cases += [('sha', 'sha256_chain', f'sha-n{n}', dict(BITZ_BENCH_SHAPES=str(n)),None) for n in args.sha_exponents]
+        cases += [('sha', 'sha256_compressions', f'sha-n{n}', dict(BITZ_BENCH_SHAPES=str(n)),None) for n in args.sha_exponents]
     if 'multiswap' in args.kinds:
         cases += [('multiswap', 'multiswap', f'multiswap-b{b}', dict(BITZ_BENCH_SHAPES='0', BITZ_MULTISWAP_BATCH_COUNT=str(b), BITZ_BENCH_LAMBDA='114'),None) for b in args.batches]
     results = []

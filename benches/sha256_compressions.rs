@@ -1,38 +1,51 @@
-//! End-to-end benchmark for independent SHA-256 compressions through the
-//! repeated Spartan relation and virtual BitZ opening. This exercises the
-//! runtime-prime protocol: commit before q, transcript-derived 112/113-bit prime,
-//! signed local-matrix collapse, and per-round Spartan grinding.
+//! End-to-end benchmark for independent SHA-256 compressions: the CM
+//! relation with `Ch` as product slots (`h` is `2^14` cells per compression),
+//! its linear PIOP with the product sumcheck, and the BitZ opening. This
+//! exercises the runtime-prime protocol: commit before q, transcript-derived
+//! prime, signed local-matrix collapse, and per-round Spartan grinding.
 //!
 //! Output follows the unified schema (`docs/bench-schema.md`): the
-//! end-to-end prover (`prove_ms`) covers bit packing, commitment, the prime
-//! draw + grinding, Spartan, bitification, and the PCS opening. Witness
-//! synthesis and public relation construction are excluded and reported
-//! separately. Every measured proof is verified.
+//! end-to-end prover (`prove_ms`) covers bit packing, the commitment (also
+//! reported alone as `commit_ms`), the prime draw + grinding, the PIOP and
+//! the PCS opening. Witness synthesis and public relation construction are
+//! excluded and reported separately. Every measured proof is verified.
 //!
-//! Defaults to `2^7, ..., 2^16` with three measured
-//! repetitions after one warm-up. Override with, for example:
+//! Defaults to `2^7, ..., 2^16` with three measured repetitions after one
+//! warm-up. Override with, for example:
 //!
 //! ```text
-//! BITZ_BENCH_SHAPES="10 12" BITZ_BENCH_REPS=1 \
-//!   cargo bench --bench sha256_compressions --features unchecked
+//! BITZ_BENCH_SHAPES="13 14 15 16" BITZ_BENCH_REPS=5 \
+//!   cargo bench --bench sha256_compressions --features unchecked,span-metrics
 //! ```
+//!
+//! The opening (`BITZ_OPENER`):
+//! - `block` (the default for compression-count shapes): BitZ's fold and GKR
+//!   over the product tensor at BitZ's split `t = ⌈0.6 n⌉ − 1`
+//!   (`BITZ_SHA_BLOCK_T=<t>` overrides it), opened on a commitment of the
+//!   source in the `Id ⊗ M` block layout, so the transposed claim is rank
+//!   one (`bitz::bitz::block`);
+//! - `virtual`: the packed source is committed as is and the claim is
+//!   transposed through the dense virtual map (one weight per committed
+//!   bit). The modes below (explicit opening splits, assignment-row-sized
+//!   batches) run it when `BITZ_OPENER` is unset.
+//!
+//! `BITZ_SHA_PRIVATE_IO=1` proves the compressions with nothing public: the
+//! input states, blocks and outputs are witness only and the statement is
+//! empty (Flock's `sha2_proof` statement). By default they are public.
 //!
 //! To size the batch by the packed assignment domain instead, set
 //! `BITZ_SHA_MNUMROWS_LOG2S`. For example, `BITZ_SHA_MNUMROWS_LOG2S="24 25"`
 //! benchmarks the largest batch fitting in `MnumRows = 2^24` and `2^25`.
-//! Every compression occupies 20,456 adjacent assignment cells, all batches
+//! Every compression occupies 16,360 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
-//! zero suffix.
-//! Power-of-two compression batches of at least 128 instances open the
-//! product-layout assignment directly. Batches of 16, 32 and 64 use the
-//! packed inner sumcheck. `BITZ_SHA_INNER_PREFIX_VARS=0..4` configures that
-//! path and non-power-of-two assignment-row batches.
+//! zero suffix. Power-of-two batches of at least 128 compressions open the
+//! product-layout assignment directly; other batches use the packed inner
+//! sumcheck, configured by `BITZ_SHA_INNER_PREFIX_VARS=0..4`.
 //! `BITZ_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
 //! BitZ split of `2^t` rows (the read-off vector then has `2^(vars - t)`
-//! columns; splits above the one-forest cap open with one forest per weight
-//! chunk). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
-//! path; `=product` keeps the direct product opening on the transposed,
-//! instance-major product tensor (`t >= 15`).
+//! columns). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the
+//! inner-sumcheck path; `=product` keeps the direct product opening on the
+//! transposed, instance-major product tensor (`t >= 14`).
 //!
 //! `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile the run measures at (default `Lambda100`; the two-prime
@@ -81,6 +94,8 @@ use {
             SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256CompressionInput,
             Sha256CompressionStatement, Sha256ConstraintError, Sha256OpeningLayout, SpartanField,
             commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
+            prepare_sha256_compression_batch_block_at,
+            prepare_sha256_compression_batch_block_with_profile,
             prepare_sha256_compression_batch_for_assignment_rows_with_profile,
             prepare_sha256_compression_batch_with_profile_and_layout,
             prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
@@ -91,10 +106,49 @@ use {
     circuit::linear_map::binary::VirtualMap,
 };
 
-#[cfg(feature = "bench-internals")]
-use bitz::piop::spartan::{
-    SHA256_FIXED_98_PRIME, prepare_sha256_compression_batch_for_product_t_fixed98,
-};
+/// `BITZ_OPENER=block`: commit the source in the block layout and open the
+/// claim through it; `virtual`: commit the packed source and open through
+/// the virtual map. Set once in [`run`].
+static BLOCK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+fn block_opening() -> bool {
+    BLOCK.get().copied().unwrap_or(false)
+}
+
+/// `BITZ_SHA_BLOCK_T=<t>`: open at row split `t` instead of BitZ's own
+/// `⌈0.6 n⌉ − 1` (a probe of the split's cost; the transcript follows `t`).
+fn prepare_block<P: IopSecurityProfile>(
+    exponent: usize,
+) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    match common::cli::env::<usize>("BITZ_SHA_BLOCK_T") {
+        Some(row_vars) => prepare_sha256_compression_batch_block_at::<P>(exponent, row_vars),
+        None => prepare_sha256_compression_batch_block_with_profile::<P>(exponent),
+    }
+}
+
+/// `BITZ_SHA_PRIVATE_IO=1`: nothing public (states, blocks and outputs are
+/// witness only, the statement is empty), Flock's `sha2_proof` statement.
+fn private_io() -> bool {
+    matches!(std::env::var("BITZ_SHA_PRIVATE_IO").as_deref(), Ok("1"))
+}
+
+type BenchProof = bitz::piop::spartan::protocol::linear::LinearProof;
+
+/// (inner-sumcheck rounds, inner nonces)
+fn inner_counts(proof: &BenchProof) -> (usize, usize) {
+    (proof.inner().round_polynomials.len(), proof.inner_nonces().len())
+}
+
+/// (product-sumcheck rounds, terminal evaluations, nonces)
+fn product_counts(proof: &BenchProof) -> (usize, usize, usize) {
+    proof.product().map_or((0, 0, 0), |product| {
+        (
+            product.round_count(),
+            product.terminal().len(),
+            product.nonces().len(),
+        )
+    })
+}
 
 /// One rep's raw measurements; step extraction happens in `common`.
 struct RepTiming {
@@ -107,6 +161,10 @@ struct RepTiming {
     spartan_bytes: usize,
     bitz_bytes: usize,
     peak_heap_bytes: Option<usize>,
+    /// The first 16 hex digits of a BLAKE3 digest over what the transcript
+    /// pins hash: both transcript states, the commitment root, the opening
+    /// bytes and the two nonces.
+    proof_digest: String,
 }
 
 #[derive(Clone, Copy)]
@@ -119,16 +177,12 @@ enum Trial {
 enum BenchShape {
     Compressions(usize),
     AssignmentRows(usize),
-    #[cfg(feature = "bench-internals")]
-    ProductLayout(usize),
 }
 
 impl BenchShape {
     const fn exponent(self) -> usize {
         match self {
             Self::Compressions(exponent) | Self::AssignmentRows(exponent) => exponent,
-            #[cfg(feature = "bench-internals")]
-            Self::ProductLayout(t) => t,
         }
     }
 
@@ -136,17 +190,11 @@ impl BenchShape {
         match self {
             Self::Compressions(_) => "compressions",
             Self::AssignmentRows(_) => "mnumrows",
-            #[cfg(feature = "bench-internals")]
-            Self::ProductLayout(_) => "product-ts",
         }
     }
 
     fn slug(self) -> String {
-        match self {
-            #[cfg(feature = "bench-internals")]
-            Self::ProductLayout(t) => format!("product-ts-t{t}-s{}", 29 - t),
-            _ => format!("{}-2p{}", self.mode(), self.exponent()),
-        }
+        format!("{}-2p{}", self.mode(), self.exponent())
     }
 
     /// Public relation preparation under the selected security profile.
@@ -155,26 +203,29 @@ impl BenchShape {
         layout: Sha256OpeningLayout,
     ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
         match self {
+            Self::Compressions(exponent) if block_opening() => {
+                assert!(
+                    layout == Sha256OpeningLayout::Default,
+                    "BITZ_OPENER=block runs at BitZ's split (BITZ_SHA_BLOCK_T moves it); drop BITZ_SHA_OPENING_T"
+                );
+                prepare_block::<P>(exponent)
+            }
             Self::Compressions(exponent) => {
                 prepare_sha256_compression_batch_with_profile_and_layout::<P>(exponent, layout)
             }
             Self::AssignmentRows(exponent) => {
+                assert!(
+                    !block_opening(),
+                    "BITZ_OPENER=block applies to compression-count shapes only"
+                );
                 assert!(
                     layout == Sha256OpeningLayout::Default,
                     "BITZ_SHA_OPENING_T applies to compression-count shapes only"
                 );
                 prepare_sha256_compression_batch_for_assignment_rows_with_profile::<P>(exponent)
             }
-            #[cfg(feature = "bench-internals")]
-            Self::ProductLayout(t) => {
-                assert!(
-                    layout == Sha256OpeningLayout::Default
-                        && P::NAME == bitz::piop::spartan::Lambda100::NAME,
-                    "the fixed-98 product sweep requires the default profile and no opening layout override"
-                );
-                prepare_sha256_compression_batch_for_product_t_fixed98(14, t)
-            }
         }
+        .map(|p| if private_io() { p.with_private_io() } else { p })
         .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
     }
 }
@@ -294,12 +345,12 @@ impl TraceWriter {
                     BenchShape::AssignmentRows(_) => {
                         format!("MnumRows=2^{exponent}; {compressions} SHA-256 compressions")
                     }
-                    #[cfg(feature = "bench-internals")]
-                    BenchShape::ProductLayout(t) => {
-                        format!("2^14 SHA-256 compressions; product split ({t},{})", 29 - t)
-                    }
                 },
-                "algorithm": "SHA-256 compression / Spartan + virtual BitZ (runtime prime)",
+                "algorithm": if prepared.block_committed_params().is_some() {
+                    "SHA-256 compression / linear PIOP + product sumcheck + block-layout BitZ (runtime prime)"
+                } else {
+                    "SHA-256 compression / linear PIOP + product sumcheck + virtual BitZ (runtime prime)"
+                },
                 "implementation": "bitz runtime-prime SHA-256",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
@@ -766,16 +817,6 @@ fn make_inputs(compressions: usize, seed: u64) -> Vec<Sha256CompressionInput> {
 
 #[derive(clap::Parser)]
 pub(crate) struct Env {
-    #[arg(long, env = "BITZ_SHA_PRODUCT_TS", value_parser = common::cli::list::<usize>
-        .try_map(|values| {
-            if !cfg!(feature = "bench-internals") || values.iter().all(|t| (7..=28).contains(t)) {
-                Ok(values)
-            } else {
-                Err("expected product t in 7..=28")
-            }
-        }))]
-    #[cfg_attr(feature = "bench-internals", arg(conflicts_with = "assignment_rows"))]
-    product_ts: Option<common::cli::List<usize>>,
     #[arg(long, env = "BITZ_SHA_MNUMROWS_LOG2S", value_parser = common::cli::list::<usize>
         .try_map(|values| {
             if values.iter().all(|n| (18..=30).contains(n)) { Ok(values) } else { Err("expected row exponents in 18..=30") }
@@ -788,6 +829,8 @@ pub(crate) struct Env {
     opening_t: Option<usize>,
     #[arg(long, env = "BITZ_SHA_OPENING_LAYOUT")]
     opening_layout: Option<String>,
+    #[arg(long, env = "BITZ_OPENER")]
+    opener: Option<String>,
     #[arg(long, env = "BITZ_SHA_TRACE_PATH")]
     trace_path: Option<PathBuf>,
     #[arg(long, env = "BITZ_SHA_RESULT_PATH")]
@@ -806,38 +849,12 @@ pub(crate) struct Env {
     shapes: Vec<BenchShape>,
     #[arg(skip)]
     selected: Option<common::SecurityProfile>,
-    #[arg(skip)]
-    pub(crate) default_product_sweep: bool,
 }
 
 impl Env {
-    pub(crate) fn from_environment(product_preset: bool) -> Self {
+    pub(crate) fn from_environment() -> Self {
         let mut env: Self = common::cli::environment();
-        env.default_product_sweep = product_preset && env.product_ts.is_none();
-        if env.default_product_sweep {
-            env.product_ts = Some((7..=27).collect());
-        }
-        #[cfg(feature = "bench-internals")]
-        assert!(
-            env.product_ts.is_none() || env.assignment_rows.is_none(),
-            "BITZ_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
-        );
-        env.reps = if product_preset && std::env::var_os("BITZ_BENCH_REPS").is_none() {
-            // The product entrypoint historically supplies canonical reps=21,
-            // including the normal conflict check against its legacy alias.
-            if let Some(alias) = common::cli::env::<String>("BITZ_SHA_REPS") {
-                if alias != "21" {
-                    clap::Error::raw(
-                        clap::error::ErrorKind::ArgumentConflict,
-                        "BITZ_BENCH_REPS=21 and deprecated alias BITZ_SHA_REPS disagree",
-                    )
-                    .exit();
-                }
-            }
-            21
-        } else {
-            common::reps(Some("BITZ_SHA_REPS"), 3)
-        };
+        env.reps = common::reps(Some("BITZ_SHA_REPS"), 3);
         env.root_seed = common::seed(Some("BITZ_SHA_SEED"), 0x4632_5a5f_5348_4132);
         env.selected = common::security_profile(PrimePolicy::SingleDerived);
         let compressions = common::shape_values(
@@ -845,20 +862,8 @@ impl Env {
             clap::builder::RangedU64ValueParser::<usize>::new()
                 .range(SHA256_MIN_LOG_COMPRESSIONS as u64..=SHA256_MAX_LOG_COMPRESSIONS as u64),
         );
-        env.shapes = match (&env.product_ts, &env.assignment_rows) {
-            #[cfg(feature = "bench-internals")]
-            (Some(values), None) => {
-                assert!(
-                    compressions.is_none(),
-                    "BITZ_SHA_PRODUCT_TS cannot be combined with other SHA shape variables"
-                );
-                values
-                    .iter()
-                    .copied()
-                    .map(BenchShape::ProductLayout)
-                    .collect()
-            }
-            (_, Some(values)) => {
+        env.shapes = match &env.assignment_rows {
+            Some(values) => {
                 assert!(
                     compressions.is_none(),
                     "BITZ_SHA_MNUMROWS_LOG2S cannot be combined with compression-count shape variables"
@@ -869,7 +874,7 @@ impl Env {
                     .map(BenchShape::AssignmentRows)
                     .collect()
             }
-            _ => {
+            None => {
                 let values = compressions.unwrap_or_else(|| (7..=16).collect());
                 values.into_iter().map(BenchShape::Compressions).collect()
             }
@@ -917,11 +922,15 @@ fn run_once(
     };
     let statements = {
         let _scope = tracing::info_span!("sha256-trace:statement_materialization").entered();
-        let statements = inputs
-            .iter()
-            .zip(witness.outputs())
-            .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
-            .collect::<Vec<_>>();
+        let statements = if prepared.private_io() {
+            Vec::new()
+        } else {
+            inputs
+                .iter()
+                .zip(witness.outputs())
+                .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
+                .collect::<Vec<_>>()
+        };
         black_box(&statements);
         statements
     };
@@ -936,7 +945,7 @@ fn run_once(
     };
 
     let mut prover_transcript = Blake3Transcript::new();
-    let proof = {
+    let proof: BenchProof = {
         let _scope = tracing::info_span!("sha256-trace:proof").entered();
         prove_sha256_compressions_with_prefix_vars_and_config(
             &mut prover_transcript,
@@ -982,10 +991,36 @@ fn run_once(
         bitz::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
-    let bitz_bytes = proof.bitz().to_bytes().len();
-    let spartan_elements = 3 * proof.inner().round_polynomials.len();
+    let opening = proof.bitz().to_bytes();
+    let bitz_bytes = opening.len();
+    // A digest of the proof, so A/B runs can check the proofs are
+    // byte-identical; computed after every timed span.
+    let proof_digest = {
+        let nonces: Vec<u8> = [proof.initial_nonce(), proof.terminal_nonce()]
+            .iter()
+            .flat_map(|n| n.to_le_bytes())
+            .collect();
+        let mut hasher = blake3::Hasher::new();
+        for part in [
+            &prover_transcript.state_digest()[..],
+            &verifier_transcript.state_digest()[..],
+            &hint.commitment.root[..],
+            &opening[..],
+            &nonces[..],
+        ] {
+            hasher.update(&(part.len() as u64).to_le_bytes());
+            hasher.update(part);
+        }
+        hasher.finalize().to_hex()[..16].to_owned()
+    };
+    let (inner_rounds, inner_nonces) = inner_counts(&proof);
+    // The product sumcheck: its round messages (four coefficients each) and
+    // terminal evaluations.
+    let (product_rounds, product_terminal, product_nonces) = product_counts(&proof);
+    let product_elements = 4 * product_rounds + product_terminal;
+    let spartan_elements = 3 * inner_rounds + product_elements;
     let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
-    let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
+    let spartan_bytes = spartan_elements * field_bytes + 8 * (inner_nonces + product_nonces + 2);
 
     let timing = RepTiming {
         witness_ms,
@@ -997,6 +1032,7 @@ fn run_once(
         spartan_bytes,
         bitz_bytes,
         peak_heap_bytes,
+        proof_digest,
     };
     (timing, intervals)
 }
@@ -1017,8 +1053,6 @@ fn bench_shape<P: IopSecurityProfile>(
         ^ match shape {
             BenchShape::Compressions(_) => 0,
             BenchShape::AssignmentRows(_) => 0x6d6e_756d_726f_7773,
-            #[cfg(feature = "bench-internals")]
-            BenchShape::ProductLayout(_) => 0x7072_6f64_7563_745f,
         };
 
     let setup_started_recording =
@@ -1073,11 +1107,6 @@ fn bench_shape<P: IopSecurityProfile>(
         BenchShape::AssignmentRows(_) => println!(
             "=== MnumRows=2^{exponent} = {assignment_cells}; {compressions} packed SHA-256 compressions ==="
         ),
-        #[cfg(feature = "bench-internals")]
-        BenchShape::ProductLayout(t) => println!(
-            "=== 2^14 = {compressions} SHA-256 compressions; product (t,s)=({t},{}) ===",
-            29 - t,
-        ),
     }
     println!(
         "  source: {live_source_cells} live / {source_cells} padded cells | derived: {live_assignment_cells} live / {assignment_cells} padded cells",
@@ -1101,27 +1130,21 @@ fn bench_shape<P: IopSecurityProfile>(
         prepared.security().lambda,
     );
     if let Some(product) = prepared.product_assignment_params() {
-        let modulus = {
-            #[cfg(feature = "bench-internals")]
-            {
-                if matches!(shape, BenchShape::ProductLayout(_)) {
-                    SHA256_FIXED_98_PRIME.to_string()
-                } else {
-                    "transcript-derived".to_owned()
-                }
-            }
-            #[cfg(not(feature = "bench-internals"))]
-            {
-                "transcript-derived".to_owned()
-            }
-        };
         println!(
-            "  product opening: (t,s)=({},{}) | layout={} | q={modulus}",
+            "  product opening: (t,s)=({},{}) | layout={} | q=transcript-derived",
             product.row_vars,
             product.col_vars,
             prepared.product_layout_name().unwrap_or("none"),
         );
     }
+    println!(
+        "  statement: {}",
+        if prepared.private_io() {
+            "private I/O (states, blocks and outputs are witness only; nothing public)"
+        } else {
+            "public input states, blocks and outputs"
+        }
+    );
 
     let warm_inputs = make_inputs(compressions, shape_seed);
     let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, inner_prefix_vars, &pc, &vc);
@@ -1137,11 +1160,19 @@ fn bench_shape<P: IopSecurityProfile>(
     }
     {
         let opening = prepared.opening_params();
+        if let Some(committed) = prepared.block_committed_params() {
+            println!(
+                "  block opening: BitZ fold+GKR on the product tensor, Id⊗M block-layout commitment 2^{} rows × 2^{} columns (2^13-cell instance blocks), q < 2^{}",
+                committed.row_vars,
+                committed.col_vars,
+                128 - prepared.security().projection_max.leading_zeros(),
+            );
+        }
         let kind = match prepared.opening_layout() {
             Sha256OpeningLayout::Default if prepared.instances().is_power_of_two() => {
                 "direct product opening"
             }
-            Sha256OpeningLayout::Default => "inner sumcheck, balanced one-forest split",
+            Sha256OpeningLayout::Default => "inner sumcheck, balanced split",
             Sha256OpeningLayout::InnerSumcheck { .. } => "inner sumcheck, explicit split",
             Sha256OpeningLayout::ProductTransposed { .. } => {
                 "direct product opening, transposed (local bits on rows)"
@@ -1179,7 +1210,7 @@ fn bench_shape<P: IopSecurityProfile>(
             .peak_heap_bytes
             .map_or_else(|| "na".to_owned(), |bytes| bytes.to_string());
         let sample_line = format!(
-            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true",
+            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true proof_digest={}",
             shape.mode(),
             sample + 1,
             prepared
@@ -1196,6 +1227,7 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.spartan_bytes + timing.bitz_bytes,
             timing.spartan_bytes,
             timing.bitz_bytes,
+            timing.proof_digest,
         );
         println!("  {sample_line}");
         if let Some(writer) = result_writer {
@@ -1286,10 +1318,33 @@ fn bench_shape<P: IopSecurityProfile>(
 
 pub(crate) fn main() {
     common::cli::EnvironmentCli::parse();
-    run(Env::from_environment(false));
+    run(Env::from_environment());
 }
 
 pub(crate) fn run(env: Env) {
+    // The block opening is the default; the virtual-only modes (explicit
+    // opening splits, assignment-row-sized batches) open through the
+    // virtual map.
+    let virtual_only = env.opening_t.is_some()
+        || env
+            .shapes
+            .iter()
+            .any(|shape| !matches!(shape, BenchShape::Compressions(_)));
+    let opener = match env.opener.as_deref() {
+        Some(choice) => common::cli::value(
+            "BITZ_OPENER",
+            choice,
+            clap::builder::PossibleValuesParser::new(["block", "virtual"]),
+        ),
+        None if virtual_only => "virtual".to_owned(),
+        None => "block".to_owned(),
+    };
+    assert!(
+        !(virtual_only && opener == "block"),
+        "BITZ_OPENER=block runs compression-count shapes at BitZ's split; \
+         explicit opening splits and assignment-row sizes are virtual-only"
+    );
+    BLOCK.set(opener == "block").expect("the opener is chosen once");
     let reps = env.reps;
     let root_seed = env.root_seed;
     let inner_prefix_vars = env.inner_prefix_vars;
@@ -1326,20 +1381,32 @@ pub(crate) fn run(env: Env) {
             .buffered(path, FileMode::Replace)
             .expect("create SHA result output")
     });
-    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual BitZ");
+    println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf, Ch as product slots; product sumcheck + BitZ");
+    println!(
+        "opener: {}",
+        if block_opening() {
+            "block (BitZ fold + GKR on the product tensor, Id⊗M block-layout commitment)"
+        } else {
+            "virtual (BitZ on the packed source through the virtual map)"
+        }
+    );
+    println!(
+        "statement: {}",
+        if private_io() {
+            "private I/O (BITZ_SHA_PRIVATE_IO=1)"
+        } else {
+            "public input states, blocks and outputs"
+        }
+    );
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(
         "repetitions: {reps}; warmups: 1; inner prefix K={inner_prefix_vars}; root seed: {root_seed:#018x}"
     );
-    if env.product_ts.is_some() {
-        println!("security profile: sha-fixed98-lambda100 (fixed prime; product sweep)");
-    } else {
-        println!(
-            "security profile: {}",
-            common::profile_banner(selected, common::SecurityProfile::Lambda100)
-        );
-    }
+    println!(
+        "security profile: {}",
+        common::profile_banner(selected, common::SecurityProfile::Lambda100)
+    );
     match layout {
         Sha256OpeningLayout::InnerSumcheck { row_vars } => println!(
             "opening layout override: inner sumcheck with 2^{row_vars} BitZ rows (BITZ_SHA_OPENING_T={row_vars})"
@@ -1378,41 +1445,30 @@ mod cli_preset_tests {
 
     #[test]
     fn configuration_probe() {
-        let Ok(mode) = std::env::var("BITZ_PRESET_TEST_MODE") else {
+        if std::env::var_os("BITZ_PRESET_TEST_MODE").is_none() {
             return;
-        };
-        let before = [
-            std::env::var_os("BITZ_BENCH_REPS"),
-            std::env::var_os("BITZ_SHA_PRODUCT_TS"),
-        ];
-        let config = Env::from_environment(mode == "product");
-        assert_eq!(
-            before,
-            [
-                std::env::var_os("BITZ_BENCH_REPS"),
-                std::env::var_os("BITZ_SHA_PRODUCT_TS")
-            ]
-        );
+        }
+        let config = Env::from_environment();
         println!(
             "PRESET_CONFIG {}",
-            json!({"reps":config.reps,"default":config.default_product_sweep,
+            json!({"reps":config.reps,
             "shapes":config.shapes.iter().map(|s| (s.mode(), s.exponent())).collect::<Vec<_>>()})
         );
     }
 
-    fn child(mode: &str, settings: &[(&str, &str)]) -> std::process::Output {
+    fn child(settings: &[(&str, &str)]) -> std::process::Output {
         let test = concat!(module_path!(), "::configuration_probe");
         std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", test.split_once("::").unwrap().1, "--nocapture"])
             .env_clear()
-            .env("BITZ_PRESET_TEST_MODE", mode)
+            .env("BITZ_PRESET_TEST_MODE", "ordinary")
             .envs(settings.iter().copied())
             .output()
             .unwrap()
     }
 
-    fn config(mode: &str, settings: &[(&str, &str)]) -> Value {
-        let out = child(mode, settings);
+    fn config(settings: &[(&str, &str)]) -> Value {
+        let out = child(settings);
         assert!(
             out.status.success(),
             "{}",
@@ -1428,87 +1484,31 @@ mod cli_preset_tests {
     }
 
     #[test]
-    fn product_defaults_overrides_and_legacy_repetitions() {
-        let default = config("product", &[]);
-        assert_eq!(default["reps"], 21);
-        assert_eq!(default["default"], true);
-        assert_eq!(
-            default["shapes"],
-            json!((7..=27).map(|t| ("product-ts", t)).collect::<Vec<_>>())
-        );
-        assert_eq!(config("product", &[("BITZ_SHA_REPS", "21")]), default);
-        let explicit = config(
-            "product",
-            &[
-                ("BITZ_SHA_PRODUCT_TS", "7, 28"),
-                ("BITZ_BENCH_REPS", "3"),
-                ("BITZ_SHA_REPS", "3"),
-            ],
-        );
-        assert_eq!(
-            explicit,
-            json!({"reps":3,"default":false,"shapes":[["product-ts",7],["product-ts",28]]})
-        );
-        for alias in ["3", "021"] {
-            let output = child("product", &[("BITZ_SHA_REPS", alias)]);
-            assert_eq!(output.status.code(), Some(2));
-            assert!(String::from_utf8_lossy(&output.stderr).contains("disagree"));
-        }
-        assert_eq!(
-            child(
-                "product",
-                &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")]
-            )
-            .status
-            .code(),
-            Some(2)
-        );
-    }
-
-    #[test]
-    fn compression_assignment_and_product_shapes_keep_distinct_domains() {
-        let ordinary = config("ordinary", &[]);
+    fn compression_and_assignment_shapes_keep_distinct_domains() {
+        let ordinary = config(&[]);
         assert_eq!(ordinary["reps"], 3);
-        assert_eq!(ordinary["default"], false);
         assert_eq!(
             ordinary["shapes"],
             json!((7..=16).map(|n| ("compressions", n)).collect::<Vec<_>>())
         );
         assert_eq!(
-            config("ordinary", &[("BITZ_SHA_LOG2S", "7 16")])["shapes"],
+            config(&[("BITZ_SHA_LOG2S", "7 16")])["shapes"],
             json!([["compressions", 7], ["compressions", 16]])
         );
         assert_eq!(
-            config("ordinary", &[("BITZ_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
+            config(&[("BITZ_SHA_MNUMROWS_LOG2S", "18 30")])["shapes"],
             json!([["mnumrows", 18], ["mnumrows", 30]])
         );
-        for (mode, settings) in [
-            ("ordinary", vec![("BITZ_BENCH_SHAPES", "6")]),
-            ("ordinary", vec![("BITZ_SHA_MNUMROWS_LOG2S", "17")]),
-            ("ordinary", vec![("BITZ_SHA_MNUMROWS_LOG2S", "31")]),
-            ("product", vec![("BITZ_SHA_PRODUCT_TS", "6")]),
-            ("product", vec![("BITZ_SHA_PRODUCT_TS", "29")]),
-            ("product", vec![("BITZ_BENCH_SHAPES", "14")]),
-            ("product", vec![("BITZ_SHA_MNUMROWS_LOG2S", "24")]),
-            (
-                "ordinary",
-                vec![
-                    ("BITZ_SHA_PRODUCT_TS", "13"),
-                    ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
-                ],
-            ),
-            (
-                "ordinary",
-                vec![
-                    ("BITZ_BENCH_SHAPES", "14"),
-                    ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
-                ],
-            ),
+        for settings in [
+            vec![("BITZ_BENCH_SHAPES", "6")],
+            vec![("BITZ_SHA_MNUMROWS_LOG2S", "17")],
+            vec![("BITZ_SHA_MNUMROWS_LOG2S", "31")],
+            vec![
+                ("BITZ_BENCH_SHAPES", "14"),
+                ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
+            ],
         ] {
-            assert!(
-                !child(mode, &settings).status.success(),
-                "accepted {mode}: {settings:?}"
-            );
+            assert!(!child(&settings).status.success(), "accepted {settings:?}");
         }
     }
 }

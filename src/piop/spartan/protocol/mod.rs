@@ -26,6 +26,7 @@ pub mod binding;
 pub mod bitify;
 pub mod linear;
 pub mod bitz_opener;
+pub mod product;
 use crate::bitz::{LinearClaim, VirtualStatement};
 use bitz_opener::{BitZOpeningProof, opening_params, opening_shape, pcs_from_config};
 pub use bitz_opener::{prove_reduced, verify_reduced};
@@ -201,6 +202,11 @@ pub enum ProtocolError {
     /// `V(r_h) H(r_h)`.
     #[error("the inner sumcheck has an inconsistent terminal product")]
     InvalidInnerTerminalClaim,
+
+    /// The product-slot sumcheck's terminal evaluations do not reproduce
+    /// its last round claim.
+    #[error("the product-slot sumcheck has an inconsistent terminal claim")]
+    InvalidProductTerminalClaim,
 
     /// The committed source assignment does not contain its shared leading one.
     #[error("the source assignment has a malformed shared constant cell")]

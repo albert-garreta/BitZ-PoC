@@ -20,7 +20,7 @@ fn run(executable: &Path, directory: &Path, args: &[&str], env: &[(&str, &str)])
 fn every_entrypoint_handles_help_and_errors_before_work() {
     let build = Command::new(env!("CARGO")).current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["build", "--benches", "--bin", "hybrid-u32-sha256", "--profile", "dev",
-            "--features", "span-metrics,bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid,bench-peak-memory",
+            "--features", "span-metrics,bench-internals,native-mul-compare,sha256-ecdsa-compare,hybrid,bench-peak-memory",
             "--message-format=json", "--offline"])
         .stderr(Stdio::inherit()).output().unwrap();
     assert!(build.status.success(), "benchmark build failed");
@@ -66,7 +66,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             &args,
             &[
                 ("BITZ_BENCH_REPS", "invalid"),
-                ("BITZ_SHA_COMPARE_REPS", "invalid"),
                 ("BITZ_HYBRID_BINIUS_LOG_INV_RATE", "invalid"),
             ],
         );
@@ -111,9 +110,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("multiswap", "BITZ_BENCH_REPS"),
         ("lambda_sweep", "BITZ_BENCH_REPS"),
         ("sha256_compressions", "BITZ_BENCH_REPS"),
-        ("sha256_chain", "BITZ_BENCH_REPS"),
-        ("sha256_product_layout", "BITZ_BENCH_REPS"),
-        ("sha256_e2e_compare", "BITZ_SHA_COMPARE_REPS"),
     ] {
         let out = run(
             &executables[name],
@@ -134,18 +130,15 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
     }
     for (name, variable, value) in [
         ("cm_and", "BITZ_CM_EXPONENTS", "14"),
-        ("sha256_chain", "BITZ_BENCH_SHAPES", "6"),
         ("lambda_sweep", "BITZ_BENCH_SHAPES", "17"),
         ("pcs", "BITZ_BENCH_FILL", "0"),
         ("pcs", "BITZ_BENCH_FILL", "1.1"),
         ("pcs", "BITZ_BENCH_FILL", "NaN"),
         ("pcs", "BITZ_BENCH_FILL", "inf"),
         ("sha256_compressions", "BITZ_SHA_INNER_PREFIX_VARS", "5"),
-        ("sha256_compressions", "BITZ_SHA_PRODUCT_TS", "29"),
+        ("sha256_compressions", "BITZ_OPENER", "forest"),
         ("sha256_compressions", "BITZ_SHA_MNUMROWS_LOG2S", "17"),
         ("sha256_compressions", "BITZ_SHA_LOG2S", "3"),
-        ("sha256_e2e_compare", "BITZ_SHA_COMPARE_EXPONENTS", "6"),
-        ("sha256_e2e_compare", "BITZ_BENCH_SHAPES", "17"),
     ] {
         let out = run(
             &executables[name],
@@ -210,16 +203,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             directory.path(),
             &["proof", "--workload", "u64", "--w", "0"],
             &[]
-        )
-        .status
-        .success()
-    );
-    assert!(
-        !run(
-            &executables["sha256_e2e_compare"],
-            directory.path(),
-            &[],
-            &[("BITZ_SHA_COMPARE_PREFLIGHT_CHILD", "unknown")]
         )
         .status
         .success()

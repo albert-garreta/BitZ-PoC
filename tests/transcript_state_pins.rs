@@ -29,12 +29,12 @@ use bitz::piop::spartan::multiswap::{
 };
 use bitz::piop::spartan::{
     BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, Sha128ReferenceSchedule,
-    Sha256CompressionStatement, commit_sha256_chain_witness, commit_sha256_compression_witness,
-    generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
-    prepare_sha256_chain_batch_with_profile,
+    Sha256CompressionStatement, commit_sha256_compression_witness,
+    generate_sha256_compression_witnesses,
+    prepare_sha256_compression_batch_block_with_profile,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-    prepare_sha256_compression_batch_with_profile, prove_sha256_chain, prove_sha256_compressions,
-    verify_sha256_chain, verify_sha256_compressions,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
+    verify_sha256_compressions,
 };
 use bitz::transcript::Blake3Transcript;
 use blake3::Hasher;
@@ -76,34 +76,46 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "dcb8c5cb43072493814c01b2f462418acb8a1b6613d066a81f162c8ebdb801ec",
     ),
     (
+        "sha256/2p7/block/lambda100",
+        "373712a958fefabf7dc5bf2598f1a8c40b4fd13cbbd2237e52924f9ec61b9595",
+        "373712a958fefabf7dc5bf2598f1a8c40b4fd13cbbd2237e52924f9ec61b9595",
+        "2a98020af76f6c9b85995f609009042254a469b8c563414d33be7de43a608924",
+    ),
+    (
+        "sha256/2p7/block/private-io/lambda100",
+        "13d3ff0a6266b3fba1e4da888d418e754d25c35b685721eec1e25777682b7140",
+        "13d3ff0a6266b3fba1e4da888d418e754d25c35b685721eec1e25777682b7140",
+        "e13805039c7d227600c1703524ea36f9e41e0a0173ae6440f576d9cda44a7fb4",
+    ),
+    (
         "sha256/2p7/lambda100",
-        "af3344c170275f485fcbd389ee21d16a183e1052e7e5bee8949e7cb31f2edd65",
-        "af3344c170275f485fcbd389ee21d16a183e1052e7e5bee8949e7cb31f2edd65",
-        "f2aa1a41a69e1b736424c98a72a887b249d4429653d76cbc4789cc0f083598f8",
+        "a03a3bf646962fab44b15e926982da1aa81f78acb366e90c4504b835fc54dbe8",
+        "a03a3bf646962fab44b15e926982da1aa81f78acb366e90c4504b835fc54dbe8",
+        "03cae73bb617b1ef208a08d13f256d0133988e302ae77737e7f482a34ad81064",
     ),
     (
         "sha256/2p7/lambda128",
-        "42b844f34615edc18ce7ee8538eb22bfeaadef0b3e0ea171239c7257d6d1c674",
-        "42b844f34615edc18ce7ee8538eb22bfeaadef0b3e0ea171239c7257d6d1c674",
-        "02303f1dea6f215bff2e0e2a3f3b92981db77d80cfbe3928562bed8be5328225",
+        "c0e0361530c0f79ea3a59caa0a239e2e3ced46577d8188d0e7872ce42a64abb4",
+        "c0e0361530c0f79ea3a59caa0a239e2e3ced46577d8188d0e7872ce42a64abb4",
+        "4cc2e1883c8f78797555e9a1bee7ea294687852555bbf4d4c0fc3135898f521c",
     ),
     (
         "sha256/2p7/reference",
-        "008fbac72cbdce8c16b29b018ba1046168d830222fa055e8d7cacc6426c354ac",
-        "008fbac72cbdce8c16b29b018ba1046168d830222fa055e8d7cacc6426c354ac",
-        "a86f1efca01f31229728c522e6c0a8317ca44a31bcec34c6c3d35d3ec38effaf",
+        "f34f5c9f6c245dbb331248662324812e600317b4efadb3cd6550c5eaf8cf6f40",
+        "f34f5c9f6c245dbb331248662324812e600317b4efadb3cd6550c5eaf8cf6f40",
+        "4818fd453d6847c55c183b93b4a95d9a18406e736d7c0b4c0bc9b93cad3b0b0b",
     ),
     (
-        "sha256_chain/2p7/lambda100",
-        "56d2484895a33caa0e6741b60c22198eba0cd8de1b84cb8f9abe47603de3cc32",
-        "56d2484895a33caa0e6741b60c22198eba0cd8de1b84cb8f9abe47603de3cc32",
-        "a7b56cbc90faaabd39c77f83c03475e867118880942de6ffb14357204f9e8dd1",
+        "sha256/2p9/block/private-io/lambda100",
+        "f7b6d26aa0505eb24ba9636eead7bf3abbdefd07b33399f2cf60c09175d77cf3",
+        "f7b6d26aa0505eb24ba9636eead7bf3abbdefd07b33399f2cf60c09175d77cf3",
+        "18efc3254d9e140dbe5ff97cd296cfb2d082acea1728d604394668793faa7695",
     ),
     (
-        "sha256_chain/2p7/lambda128",
-        "26f9af15b1361b48b5c0ff9c491f587a0653faf461ef34fb9d4ee7d363c874c3",
-        "26f9af15b1361b48b5c0ff9c491f587a0653faf461ef34fb9d4ee7d363c874c3",
-        "c466119bd769900ccaf12d3ff51de85a58dceb241dbe51125f55b476a33ae87c",
+        "sha256/legacy-rows24/lambda100",
+        "0a709bd5a9818613b0d43c09fec6eb4e20175e135164d53129545b1ab3a75cda",
+        "0a709bd5a9818613b0d43c09fec6eb4e20175e135164d53129545b1ab3a75cda",
+        "dfb72de61cbc50783bc4903e003785482f9214c63f29376882d00463105687f1",
     ),
     (
         "sha256_ecdsa/2p3/allrows/lambda100",
@@ -128,18 +140,6 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "3ced815cce60cd3fef31a7cefd217934adecdcd302c3d027437a6f5c74cdf11e",
         "3ced815cce60cd3fef31a7cefd217934adecdcd302c3d027437a6f5c74cdf11e",
         "10f8f719e55af0405c3b2e619d09a92a7b566202293777075e947a2bbbf5adfb",
-    ),
-    (
-        "sha256/fixed98-t13/2p14",
-        "00705725b4771c66a0a8b2a7e7ddb4ecea7873744f42978ddb2637458e06554f",
-        "00705725b4771c66a0a8b2a7e7ddb4ecea7873744f42978ddb2637458e06554f",
-        "a59af2aad21f85f8e86f04be4c8e77b99c1c78a369d11560fd42babf66c5ce30",
-    ),
-    (
-        "sha256/legacy-rows21/lambda100",
-        "9de471457f342e9cb7a49401a0d86a681b2cde8cab003030df0945cef056ac5a",
-        "9de471457f342e9cb7a49401a0d86a681b2cde8cab003030df0945cef056ac5a",
-        "9aee817f733ef94860399e0478f3cb23f985326c9990ef736ccabe8b31c62252",
     ),
     (
         "u128_mul/2p15/lambda100",
@@ -398,15 +398,28 @@ fn sha256_inputs(instances: usize) -> Vec<([u32; 8], [u32; 16])> {
         .collect()
 }
 
-fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256CompressionBatch) {
-    let inputs = sha256_inputs(prepared.instances());
-    let witness = generate_sha256_compression_witnesses(prepared, &inputs).expect("witness");
-    let statements: Vec<_> = inputs
+fn sha256_statements(
+    inputs: &[([u32; 8], [u32; 16])],
+    witness: &bitz::piop::spartan::Sha256CompressionWitnessBatch,
+) -> Vec<Sha256CompressionStatement> {
+    inputs
         .iter()
         .copied()
         .zip(witness.outputs().iter().copied())
         .map(|(input, output)| Sha256CompressionStatement::new(input, output))
-        .collect();
+        .collect()
+}
+
+/// Proves and pins one batch: the statement is empty for a private-I/O
+/// batch, the inputs and outputs otherwise.
+fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256CompressionBatch) {
+    let inputs = sha256_inputs(prepared.instances());
+    let witness = generate_sha256_compression_witnesses(prepared, &inputs).expect("witness");
+    let statements = if prepared.private_io() {
+        Vec::new()
+    } else {
+        sha256_statements(&inputs, &witness)
+    };
     let hint = commit_sha256_compression_witness(prepared, &witness).expect("commit");
     let mut pt = Blake3Transcript::new();
     let proof =
@@ -415,10 +428,12 @@ fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256Compress
     verify_sha256_compressions(&mut vt, prepared, &statements, &hint.commitment, &proof)
         .expect("verify");
     let bitz_bytes = proof.bitz().to_bytes();
+    let product_nonces = proof.product().map_or(&[][..], |product| product.nonces());
     let nonces = nonces_le(
         proof
             .inner_nonces()
             .iter()
+            .chain(product_nonces)
             .copied()
             .chain([proof.initial_nonce(), proof.terminal_nonce()]),
     );
@@ -449,56 +464,65 @@ fn sha256_2p7_lambda128() {
     sha256_pin("sha256/2p7/lambda128", &prepared);
 }
 
+/// The legacy inner-sumcheck path needs a non-power-of-two batch: `2^24`
+/// cells hold 1025 compressions of the `2^14`-stride relation (`2^21` holds
+/// exactly 128 and opens the product tensor).
 #[test]
-fn sha256_legacy_inner_sumcheck_rows21_lambda100() {
+fn sha256_legacy_inner_sumcheck_rows24_lambda100() {
     let prepared =
-        prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(21)
+        prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(24)
             .expect("prepare");
-    sha256_pin("sha256/legacy-rows21/lambda100", &prepared);
+    assert_eq!(prepared.instances(), 1025);
+    sha256_pin("sha256/legacy-rows24/lambda100", &prepared);
 }
 
-#[cfg(feature = "bench-internals")]
+/// The SHA bench's opening: BitZ on the `Id ⊗ M` block-layout commitment
+/// (the opening forks its own transcript after the claim frame).
 #[test]
-fn sha256_fixed98_product_t13_2p14() {
+fn sha256_2p7_block_lambda100() {
     let prepared =
-        bitz::piop::spartan::prepare_sha256_compression_batch_for_product_t_fixed98(14, 13)
-            .expect("prepare");
-    sha256_pin("sha256/fixed98-t13/2p14", &prepared);
+        prepare_sha256_compression_batch_block_with_profile::<Lambda100>(7).expect("prepare");
+    sha256_pin("sha256/2p7/block/lambda100", &prepared);
 }
 
-// ---------------------------------------------------------------- SHA-256 chain
+/// The block opening at `2^9` compressions: the smallest SHA grid (`t + s =
+/// 23`) on which the forest reads nibble rows, so the pin covers that path
+/// (the `2^7` pins run below it).
+#[test]
+fn sha256_2p9_block_private_io_lambda100() {
+    let prepared = prepare_sha256_compression_batch_block_with_profile::<Lambda100>(9)
+        .expect("prepare")
+        .with_private_io();
+    sha256_pin("sha256/2p9/block/private-io/lambda100", &prepared);
+}
 
-fn sha256_chain_pin<P: IopSecurityProfile>(name: &str) {
-    const EXPONENT: usize = 7;
-    let prepared = prepare_sha256_chain_batch_with_profile::<P>(EXPONENT).expect("prepare");
-    let blocks: Vec<[u32; 16]> = (0..1usize << EXPONENT)
-        .map(|i| std::array::from_fn(|j| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32)))
-        .collect();
-    let witness = generate_sha256_chain_witnesses(&prepared, &blocks).expect("witness");
-    let statement = witness.statement();
-    let hint = commit_sha256_chain_witness(&prepared, &witness).expect("commit");
-    let mut pt = Blake3Transcript::new();
-    let proof = prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
-    let mut vt = Blake3Transcript::new();
-    verify_sha256_chain(&mut vt, &prepared, &statement, &hint.commitment, &proof).expect("verify");
-    let bitz_bytes = proof.bitz().to_bytes();
-    let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
-    pin(
-        name,
-        &pt,
-        &vt,
-        &[&hint.commitment.root, &bitz_bytes, &nonces],
+/// The same batch with nothing public (Flock's `sha2_proof` statement): the
+/// statement is empty, and the proof neither takes a statement nor verifies
+/// as the public-I/O proof.
+#[test]
+fn sha256_2p7_block_private_io_lambda100() {
+    let public =
+        prepare_sha256_compression_batch_block_with_profile::<Lambda100>(7).expect("prepare");
+    let prepared = public.clone().with_private_io();
+    let inputs = sha256_inputs(prepared.instances());
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
+    let statements = sha256_statements(&inputs, &witness);
+    let hint = commit_sha256_compression_witness(&prepared, &witness).expect("commit");
+    let mut rejected = Blake3Transcript::new();
+    assert!(
+        prove_sha256_compressions(&mut rejected, &prepared, &statements, &witness, &hint).is_err(),
+        "a private-I/O batch takes no statement"
     );
-}
-
-#[test]
-fn sha256_chain_2p7_lambda100() {
-    sha256_chain_pin::<Lambda100>("sha256_chain/2p7/lambda100");
-}
-
-#[test]
-fn sha256_chain_2p7_lambda128() {
-    sha256_chain_pin::<Lambda128>("sha256_chain/2p7/lambda128");
+    let mut pt = Blake3Transcript::new();
+    let proof =
+        prove_sha256_compressions(&mut pt, &prepared, &[], &witness, &hint).expect("prove");
+    let mut cross = Blake3Transcript::new();
+    assert!(
+        verify_sha256_compressions(&mut cross, &public, &statements, &hint.commitment, &proof)
+            .is_err(),
+        "a private-I/O proof does not verify as a public-I/O proof"
+    );
+    sha256_pin("sha256/2p7/block/private-io/lambda100", &prepared);
 }
 
 // ---------------------------------------------------------------- CM-AND

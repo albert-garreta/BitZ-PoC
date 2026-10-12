@@ -1,7 +1,7 @@
 # Native AIR + WHIR benchmark runs
 
-The optional `plonky3-whir` mod32 multiplication backend and fixed-IV SHA
-comparison retain the multilinear AIR zerocheck/sumcheck PIOP. WHIR commits
+The optional `plonky3-whir` mod32 multiplication backend retains the
+multilinear AIR zerocheck/sumcheck PIOP. WHIR commits
 Reed–Solomon codewords and proves the PIOP's prescribed multilinear evaluation
 claims directly. The multiplication runner also retains `plonky3-fri` as a
 default backend with its univariate STARK quotient PIOP and fixed FRI settings.
@@ -14,8 +14,8 @@ results do not represent the new mod32 relation.
 ## Tuning and measurement
 
 Every ordinary invocation tunes independently for each workload and input size.
-SHA uses BabyBear extension degrees 4 and 5; mod32 multiplication uses
-Goldilocks extension degrees 2 and 5. Both search constant folding parameters
+Mod32 multiplication uses Goldilocks extension degrees 2 and 5. The search
+covers constant folding parameters
 2 and 4, starting log-inverse rates 1, 2, and 3, grinding caps 8 and 12, and
 either the native round
 rate schedule or a schedule capped at log-inverse rate 4. This is 48 candidates.
@@ -27,7 +27,7 @@ schedules are derived by the pinned WHIR implementation for these rates.
 Only security-eligible candidates run. One verified preliminary trial selects
 up to four fastest candidates. Each finalist receives one warmup and five tuning
 trials, and the lowest median wins. Ties use parameter ordering. Set
-`--tuning-reps` for multiplication (`BITZ_WHIR_TUNING_REPS` for SHA) to change the finalist repetition count. The winner stays
+`--tuning-reps` to change the finalist repetition count. The winner stays
 fixed for that case's warmup and fresh measured repetitions. Every repetition
 regenerates the witness and verifies its complete proof.
 
@@ -38,8 +38,8 @@ interval. The existing online-prover and verification metrics remain separate.
 The multiplication RSS child uses the same selected parameters and records
 whole-case memory, including setup and verification.
 
-Multiplication stores tuning evidence in its campaign manifest; SHA saves
-`whir-<workload>-<exponent>.json`. Both include every candidate's
+Multiplication stores tuning evidence in its campaign manifest, including
+every candidate's
 eligibility, preliminary/finalist timings, selected parameters, security report,
 and total tuning time. A case without an eligible candidate saves its reason
 instead of producing a measurement. Unexpected prover, verifier, or subprocess
@@ -88,10 +88,3 @@ repetitions. The manifest stores the selection and tuning evidence; the RSS
 worker replays the exact selection and never tunes. Heap runs require explicit
 parameters and a separate instrumented binary. See the
 [multiplication guide](native-mul-compare.md) for the current result format.
-
-The independent SHA comparison retains its own experiment-specific interface:
-
-```sh
-RAYON_NUM_THREADS=8 BITZ_SHA_COMPARE_EXPONENTS=7 \
-BITZ_SHA_COMPARE_BACKENDS=plonky3-whir bash scripts/run_native_sha256_compare.sh
-```
