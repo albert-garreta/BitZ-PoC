@@ -1634,7 +1634,7 @@ mod tests {
     #[test]
     fn serial_and_parallel_word_binding_preserve_complete_proof_contents() {
         const BATCH: usize = 1024;
-        let pools = [1, 2, 8].map(|threads| {
+        let pools = [1, 2, 8, 16].map(|threads| {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
                 .stack_size(8 << 20)
@@ -1666,6 +1666,11 @@ mod tests {
                     let proof = prepared.prove(committed).unwrap();
                     assert_eq!(proof.source_root(), &root);
                     prepared.verify(&public, &proof).unwrap();
+                    if threads == 16 {
+                        pools[1]
+                            .install(|| prepared.verify(&public, &proof))
+                            .unwrap();
+                    }
                     // Derived Debug includes every proof field, including all
                     // ring, arithmetic, bridge, joint, opening and PCS nonces.
                     // This compares contents within one build, not a wire codec.
@@ -1673,7 +1678,7 @@ mod tests {
                 })
             };
             let reference = run(&pools[1], 2);
-            for (index, threads) in [(0, 1), (2, 8)] {
+            for (index, threads) in [(0, 1), (2, 8), (3, 16)] {
                 let optimized = run(&pools[index], threads);
                 assert_eq!(reference.0, optimized.0, "degree={N}, security={target}");
                 assert_eq!(reference.1, optimized.1, "degree={N}, security={target}");

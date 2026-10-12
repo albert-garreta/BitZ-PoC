@@ -1,0 +1,21 @@
+arithmetic-n1024-b9-s100-t16-seed42-baseline.cache-prime
+arithmetic-n1024-b9-s100-t16-seed42-baseline
+arithmetic-n1024-b9-s100-t16-seed42-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9523163966855261, "prove_ms": 0.950805602627721, "witness_commit_ms": 0.9609328005499699, "verify_ms": 0.9515159973172075, "process_peak_rss_kib": 0.992898848035348}}
+arithmetic-n1024-b9-s100-t16-seed43-candidate.cache-prime
+arithmetic-n1024-b9-s100-t16-seed43-candidate
+arithmetic-n1024-b9-s100-t16-seed43-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.9556961374966626, "prove_ms": 0.9542761293303859, "witness_commit_ms": 1.0875313044582164, "verify_ms": 0.9430592605511224, "process_peak_rss_kib": 0.9795221843003413}}
+arithmetic-n1024-b9-s100-t16-seed44-baseline.cache-prime
+arithmetic-n1024-b9-s100-t16-seed44-baseline
+arithmetic-n1024-b9-s100-t16-seed44-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 100, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9664360095048833, "prove_ms": 0.9629894213948752, "witness_commit_ms": 0.9035942276101558, "verify_ms": 0.9552910577922877, "process_peak_rss_kib": 1.006710337114555}}
+arithmetic-n1024-b9-s128-t16-seed42-candidate
+arithmetic-n1024-b9-s128-t16-seed42-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 42, "ratios": {"total_prover_ms": 0.9759772362272777, "prove_ms": 0.9778358457604975, "witness_commit_ms": 0.8601099722610218, "verify_ms": 0.9544873263503053, "process_peak_rss_kib": 1.0100590771195912}}
+arithmetic-n1024-b9-s128-t16-seed43-baseline
+arithmetic-n1024-b9-s128-t16-seed43-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 43, "ratios": {"total_prover_ms": 0.97401827487631, "prove_ms": 0.9743356774724977, "witness_commit_ms": 0.9911514842355157, "verify_ms": 0.9588147244835383, "process_peak_rss_kib": 0.9976437323279924}}
+arithmetic-n1024-b9-s128-t16-seed44-candidate
+arithmetic-n1024-b9-s128-t16-seed44-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 9, "security_bits": 128, "threads": 16}, "seed": 44, "ratios": {"total_prover_ms": 0.9780526921248428, "prove_ms": 0.9762703160910783, "witness_commit_ms": 1.1442203463130523, "verify_ms": 0.9551364204177836, "process_peak_rss_kib": 0.9926007556675063}}

@@ -1,0 +1,18 @@
+{
+  "git_head": "33f266903921270df4be76aff538e637aed9ac6b",
+  "binaries": {
+    "falcon_algebraic": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-single-thread-128-20261008T214640Z/binaries/falcon_algebraic",
+      "sha256": "47f2688974fd3aa49d54b2e91507af3483ddef6b4b13ccc6fde7ece528c2d6ad"
+    },
+    "falcon_hybrid": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-single-thread-128-20261008T214640Z/binaries/falcon_hybrid",
+      "sha256": "a89cb0148c03c4ebcf0f2867507642bd70029b28ed553405af83304e3bc91e74"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "cpu": 6,
+  "sibling": 22,
+  "governor": "powersave",
+  "timestamp_utc": "2026-10-08T21:51:16Z"
+}

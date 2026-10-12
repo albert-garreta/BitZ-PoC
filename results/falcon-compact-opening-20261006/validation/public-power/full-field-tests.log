@@ -1,0 +1,344 @@
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+warning: function `square_n` is never used
+   --> src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+warning: unused import: `ConstZero`
+  --> tests/flock_diff.rs:11:28
+   |
+11 | use num_traits::{ConstOne, ConstZero, Inv, Zero};
+   |                            ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ConstOne`
+  --> tests/flock_diff.rs:11:18
+   |
+11 | use num_traits::{ConstOne, ConstZero, Inv, Zero};
+   |                  ^^^^^^^^
+
+warning: unused import: `Zero`
+  --> tests/flock_diff.rs:11:44
+   |
+11 | use num_traits::{ConstOne, ConstZero, Inv, Zero};
+   |                                            ^^^^
+
+warning: `field` (test "flock_diff") generated 3 warnings
+warning: unused import: `ConstZero`
+  --> tests/ghash_vectors.rs:17:28
+   |
+17 | use num_traits::{ConstOne, ConstZero};
+   |                            ^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ConstOne`
+  --> tests/ghash_vectors.rs:17:18
+   |
+17 | use num_traits::{ConstOne, ConstZero};
+   |                  ^^^^^^^^
+
+warning: `field` (test "ghash_vectors") generated 2 warnings
+warning: unused import: `num_traits::ConstZero`
+  --> src/gf128/wide.rs:80:9
+   |
+80 |     use num_traits::ConstZero;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `field` (lib test) generated 6 warnings (5 duplicates)
+    Finished `release` profile [optimized] target(s) in 19.35s
+     Running unittests src/lib.rs (vendor/field/target/release/deps/field-15a6821d35781370)
+
+running 54 tests
+test binary::gf8::tests::add_is_xor ... ok
+test binary::gf8::tests::associativity_random ... ok
+test binary::gf8::tests::fermat_little_theorem ... ok
+test binary::gf8::tests::fips_197_test_vectors ... ok
+test binary::gf8::tests::inv_roundtrip ... ok
+test binary::gf8::tests::mul_commutativity_exhaustive ... ok
+test binary::gf8::tests::mul_identities ... ok
+test binary::gf8::tests::mul_known_values ... ok
+test binary::gf8::tests::software_matches_neon ... ok
+test gf128::kernels::x86_64::tests::four_lane_products_match_every_monomial_pair ... ok
+test gf128::kernels::x86_64::tests::four_lane_products_match_scalar_with_offsets_and_boundary_words ... ok
+test gf128::kernels::x86_64::tests::wide_lanes_preserve_exact_parts_accumulation_and_cancellation ... ok
+test gf128::portable::tests::boundary_products ... ok
+test gf128::portable::tests::clmul128_matches_polynomial_convolution ... ok
+test gf128::portable::tests::clmul64_matches_the_coefficient_definition ... ok
+test gf128::portable::tests::dense_products_and_top_nibbles_match_the_definition ... ok
+test gf128::portable::tests::reduce_matches_long_division ... ok
+test gf128::portable::tests::square_matches_the_general_multiply ... ok
+test gf128::pow::tests::byte_window_products_handle_zero_and_sparse_exponents ... ok
+test gf128::pow::tests::comb_matches_the_general_pow ... ok
+test gf128::pow::tests::generator_is_x ... ok
+test gf128::pow::tests::group_order_and_frobenius ... ok
+test gf128::pow::tests::inverse_matches_fermat ... ok
+test gf128::pow::tests::is_generator_rejects_proper_subgroups ... ok
+test gf128::pow::tests::order_factorization_is_complete ... ok
+test gf128::pow::tests::pow_matches_repeated_multiplication ... ok
+test gf128::pow::tests::square_n_is_repeated_squaring ... ok
+test gf128::sumcheck::avx512::tests::avx512_fused_round_and_fold_match_scalar_with_tails ... ok
+test gf128::sumcheck::avx512::tests::avx512_grid_matches_scalar_at_every_fold_depth ... ok
+test gf128::sumcheck::x86::tests::grid_matches_generic_including_untouched_storage ... ok
+test gf128::tests::addition_is_xor_and_self_inverse ... ok
+test gf128::tests::byte_encoding_round_trips ... ok
+test gf128::tests::div_by_zero_panics - should panic ... ok
+test gf128::tests::layout_matches_flock ... ok
+test gf128::tests::mul_x_matches_multiply_by_generator ... ok
+test gf128::tests::multiplication_distributes_over_addition ... ok
+test gf128::tests::multiplication_is_commutative_and_associative ... ok
+test gf128::tests::reduction_boundary_products ... ok
+test gf128::tests::square_matches_self_multiply ... ok
+test gf128::tests::squaring_is_additive ... ok
+test gf128::tests::u128_conversion_is_the_bit_pattern ... ok
+test gf128::tests::zero_and_one_are_identities ... ok
+test gf128::wide::tests::adding_reduced_elements_matches_upcast ... ok
+test gf128::wide::tests::constructors_agree_with_the_field ... ok
+test gf128::wide::tests::deferred_sum_matches_eager_sum ... ok
+test gf128::wide::tests::reduction_is_linear ... ok
+test gf128::x86_64::tests::pclmul_matches_portable_before_and_after_reduction ... ok
+test preparation::public_power_tests::public_byte_buckets_match_binary_power_and_previous_tree ... ok
+test preparation::public_power_tests::public_byte_buckets_support_composite_ring_and_prime_providers ... ok
+test preparation::public_power_tests::public_fallback_windows_and_private_tables_match_binary_power ... ok
+test preparation::public_power_tests::public_limb_power_abba_microbenchmark ... ignored, isolated public exponentiation timing; run on an otherwise idle pinned CPU
+test prime::Q100Field ... ok
+test prime::barrett128::tests::arbitrary_width_remainders_and_montgomery_scales ... ok
+test prime::sampling::tests::public_windows_match_binary_exponentiation ... ok
+
+test result: ok. 53 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/allocation_contract.rs (vendor/field/target/release/deps/allocation_contract-5db00fb855b1c664)
+
+running 3 tests
+test caller_owned_operations_allocate_nothing ... ok
+test convenience_helpers_allocate_only_their_outputs_and_scratch ... ok
+test prepared_wide_and_signed_operations_allocate_nothing ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/batch_layout.rs (vendor/field/target/release/deps/batch_layout-0c2d6c0f7539d163)
+
+running 1 test
+test two_limb_batch_handles_word_alignment_and_empty_or_partial_slices ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/binary_projection.rs (vendor/field/target/release/deps/binary_projection-09acb6a2d453ffef)
+
+running 1 test
+test prepared_projection_matches_polynomial_evaluation_for_offsets_and_tails ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/binary_providers.rs (vendor/field/target/release/deps/binary_providers-a80e3ccc74110e2d)
+
+running 5 tests
+test aes_field_and_embedding_match_independent_upstream ... ok
+test b127_arithmetic_matches_polynomial_long_division ... ok
+test exact_polynomials_keep_domain_and_coefficients ... ok
+test gf128_mixed_mac_and_zero_preserving_batch_inverse ... ok
+test prepared_multiplication_and_b127_square_chains_match_references ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/borrowed_integers.rs (vendor/field/target/release/deps/borrowed_integers-aa9f956e5f0d79cb)
+
+running 3 tests
+test TinyOps ... ok
+test borrowed_projection_matches_big_integer_arithmetic ... ok
+test empty_views_are_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/canonical_boundaries.rs (vendor/field/target/release/deps/canonical_boundaries-5e129a6fed091512)
+
+running 3 tests
+test canonical_u128_operations_and_bounded_redc_match_integer_oracle ... ok
+test incremental_accumulators_and_merges_preserve_each_scale ... ok
+test weighted_pairs_cover_short_full_and_wide_integer_domains ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/flock_diff.rs (vendor/field/target/release/deps/flock_diff-9a1a0b3501a18c15)
+
+running 3 tests
+test inverse_matches_flock ... ok
+test layouts_are_interchangeable ... ok
+test multiply_matches_flock_software ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fused_sumcheck.rs (vendor/field/target/release/deps/fused_sumcheck-e9a1c81cb2597d7a)
+
+running 3 tests
+test prepared_binary_accumulation_preserves_the_interleaved_product_domain ... ok
+test shape_errors_precede_writes ... ok
+test weighted_rounds_fused_folds_and_grids_match_polynomial_evaluation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ghash_vectors.rs (vendor/field/target/release/deps/ghash_vectors-d42c724debb338a3)
+
+running 2 tests
+test ghash_matches_nist_gcm_vectors ... ok
+test nist_bit_order_shim_round_trips ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integer_construction.rs (vendor/field/target/release/deps/integer_construction-e8e402e06df174b5)
+
+running 1 test
+test signed_native_construction_is_exact_or_rejected ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/modular_and_preparation.rs (vendor/field/target/release/deps/modular_and_preparation-8d37c9a78b6510be)
+
+running 3 tests
+test composite_and_even_moduli_support_exact_units ... ok
+test prepared_division_and_products_match_bigints ... ok
+test prepared_inverse_and_fixed_base_ladder ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/native_dot_rounds.rs (vendor/field/target/release/deps/native_dot_rounds-fd76244e57e06042)
+
+running 4 tests
+test canonical_products_keep_the_representation_without_a_projection_pass ... ok
+test native_rounds_and_folds_preserve_the_inner_product_polynomial ... ok
+test shape_errors_precede_reads_and_writes ... ok
+test signed_and_field_rounds_preserve_extremes_and_read_order ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_signed.rs (vendor/field/target/release/deps/native_signed-8448456cbc17ab77)
+
+running 2 tests
+test native_signed_mac_preserves_runtime_and_static_scales ... ok
+test signed_views_preserve_declared_width_and_reject_narrowing ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/prepared_reduction.rs (vendor/field/target/release/deps/prepared_reduction-31e4f8f3b2919710)
+
+running 3 tests
+test prepared_division_all_widths_padding_and_power_boundaries ... ok
+test prepared_odd_inverse_full_width_composite_and_unreduced_inputs ... ok
+test prepared_odd_inverse_units_nonunits_and_padded_widths ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/setup_and_folding.rs (vendor/field/target/release/deps/setup_and_folding-6bbd9ccb88ffdfdc)
+
+running 8 tests
+test SeventeenField ... ok
+test canonical_codec_rejects_modulus_and_preserves_full_width ... ok
+test folds_preserve_offsets_output_representation_and_in_place_prefix ... ok
+test prefix_fold_matches_sequential_low_bit_folds_and_mapped_reads ... ok
+test prime_search_boundaries_and_failure_budgets ... ok
+test prime_search_rejects_weak_policy_before_reading_randomness ... ok
+test public_field_sampling_is_bounded_and_nonzero_sampling_excludes_zero ... ok
+test signed_fold_handles_difference_larger_than_signed_width ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/signed_projection.rs (vendor/field/target/release/deps/signed_projection-d18f0892948785b4)
+
+running 3 tests
+test projection_rejects_a_larger_declared_width - should panic ... ok
+test signed_dot_carries_and_sign_corrections_over_long_inputs ... ok
+test signed_horner_full_padded_and_small_prime_widths ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/static_operators.rs (vendor/field/target/release/deps/static_operators-40d89a62054c2a64)
+
+running 3 tests
+test SmallField ... ok
+test static_field_power_inverse_and_division_cover_zero ... ok
+test static_operators_and_context_calls_agree ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/typed_arithmetic.rs (vendor/field/target/release/deps/typed_arithmetic-f4f2f613ff172e53)
+
+running 7 tests
+test division_and_width_conversions ... ok
+test dynamic_prime_scalar_mixed_and_delayed_arithmetic ... ok
+test exact_full_width_products_and_signed_batches ... ok
+test multiword_carry_chains_match_bigint ... ok
+test native_checked_arithmetic_matches_rust ... ok
+test static_context_layout_native_widths_and_mapped_order ... ok
+test wrapping_signed_products_match_bigint ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests field
+
+running 2 tests
+test src/lib.rs - (line 6) ... ok
+test src/prime/sampling.rs - prime::sampling::define_prime_field (line 389) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test src/lib.rs - (line 16) - compile fail ... ok
+test src/lib.rs - (line 27) - compile fail ... ok
+test src/lib.rs - (line 36) - compile fail ... ok
+test src/lib.rs - (line 47) - compile fail ... ok
+test src/lib.rs - (line 55) - compile fail ... ok
+test src/lib.rs - (line 63) - compile fail ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+all doctests ran in 0.19s; merged doctests compilation took 0.11s

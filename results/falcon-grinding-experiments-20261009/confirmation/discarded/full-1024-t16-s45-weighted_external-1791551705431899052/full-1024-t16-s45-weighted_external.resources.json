@@ -1,0 +1,346 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 7.529149093024898,
+  "max_rss_kib": 3306848,
+  "sibling_busy_pct": {
+    "22": 0.5319148936170213,
+    "23": 1.5957446808510638,
+    "20": 0.2663115845539281,
+    "21": 0.8,
+    "18": 0.5319148936170213,
+    "19": 0.5312084993359893,
+    "16": 0.8010680907877169,
+    "17": 1.0652463382157125,
+    "30": 0.9333333333333333,
+    "31": 0.9320905459387483,
+    "28": 0.3994673768308921,
+    "29": 1.3297872340425532,
+    "26": 2.396804260985353,
+    "27": 1.3333333333333333,
+    "24": 1.5978695073235685,
+    "25": 0.9308510638297872
+  },
+  "involuntary_context_switches": 13504,
+  "cpu_state_tick_deltas": {
+    "6": {
+      "user": 642,
+      "nice": 0,
+      "system": 95,
+      "idle": 14,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "7": {
+      "user": 393,
+      "nice": 0,
+      "system": 40,
+      "idle": 320,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "4": {
+      "user": 394,
+      "nice": 0,
+      "system": 35,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "5": {
+      "user": 393,
+      "nice": 0,
+      "system": 36,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "2": {
+      "user": 390,
+      "nice": 0,
+      "system": 38,
+      "idle": 322,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "3": {
+      "user": 391,
+      "nice": 0,
+      "system": 37,
+      "idle": 323,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "0": {
+      "user": 390,
+      "nice": 0,
+      "system": 38,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 1,
+      "steal": 0
+    },
+    "1": {
+      "user": 393,
+      "nice": 0,
+      "system": 34,
+      "idle": 323,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "14": {
+      "user": 393,
+      "nice": 0,
+      "system": 38,
+      "idle": 320,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "15": {
+      "user": 391,
+      "nice": 0,
+      "system": 37,
+      "idle": 320,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "12": {
+      "user": 394,
+      "nice": 0,
+      "system": 36,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "13": {
+      "user": 390,
+      "nice": 0,
+      "system": 39,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "10": {
+      "user": 394,
+      "nice": 0,
+      "system": 39,
+      "idle": 317,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "11": {
+      "user": 393,
+      "nice": 0,
+      "system": 36,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "8": {
+      "user": 389,
+      "nice": 0,
+      "system": 38,
+      "idle": 321,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "9": {
+      "user": 390,
+      "nice": 0,
+      "system": 37,
+      "idle": 323,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "22": {
+      "user": 2,
+      "nice": 0,
+      "system": 2,
+      "idle": 748,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "23": {
+      "user": 9,
+      "nice": 0,
+      "system": 3,
+      "idle": 740,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "20": {
+      "user": 1,
+      "nice": 0,
+      "system": 1,
+      "idle": 749,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "21": {
+      "user": 3,
+      "nice": 0,
+      "system": 3,
+      "idle": 744,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "18": {
+      "user": 3,
+      "nice": 0,
+      "system": 1,
+      "idle": 748,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "19": {
+      "user": 2,
+      "nice": 0,
+      "system": 2,
+      "idle": 749,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "16": {
+      "user": 4,
+      "nice": 0,
+      "system": 2,
+      "idle": 743,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "17": {
+      "user": 6,
+      "nice": 0,
+      "system": 2,
+      "idle": 743,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "30": {
+      "user": 4,
+      "nice": 0,
+      "system": 3,
+      "idle": 743,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "31": {
+      "user": 4,
+      "nice": 0,
+      "system": 3,
+      "idle": 744,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "28": {
+      "user": 2,
+      "nice": 0,
+      "system": 1,
+      "idle": 748,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "29": {
+      "user": 5,
+      "nice": 0,
+      "system": 4,
+      "idle": 742,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 1,
+      "steal": 0
+    },
+    "26": {
+      "user": 12,
+      "nice": 0,
+      "system": 6,
+      "idle": 733,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "27": {
+      "user": 3,
+      "nice": 0,
+      "system": 7,
+      "idle": 740,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "24": {
+      "user": 5,
+      "nice": 4,
+      "system": 3,
+      "idle": 739,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    },
+    "25": {
+      "user": 4,
+      "nice": 1,
+      "system": 2,
+      "idle": 745,
+      "iowait": 0,
+      "irq": 0,
+      "softirq": 0,
+      "steal": 0
+    }
+  }
+}

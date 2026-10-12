@@ -1,0 +1,727 @@
+{
+  "purpose": "correctness-only corpus generation and cached checksum/upstream/native/proof verification; timings excluded",
+  "elapsed_seconds": 62.18676972389221,
+  "results": [
+    {
+      "degree": 512,
+      "seed": 43,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.3891177629702725,
+          "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+          "proof_digest": "63dc43132b1b990162922b3bebce2c12a3bd65fb7e43b105e0084aa3b7a0ae6f",
+          "external_input_ms": 3040.255921
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4374332090374082,
+          "input_digest": "11bf5871e1ba01a4a411b8b5b5545f0f63c96e322fc3309c672e2fc9ce40f3f6",
+          "proof_digest": "63dc43132b1b990162922b3bebce2c12a3bd65fb7e43b105e0084aa3b7a0ae6f",
+          "external_input_ms": 1088.40419
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed43.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "ddefdd4878ee5cf8b5072a67ab6f346ebbdf69cfd02279ea2f8e8c08dbc36a38",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 43,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.486694952996913,
+          "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+          "proof_digest": "520f347ae0cf58c9a01578b7aee75d87e3ac530de47dc74a5169b31b1913c1b4",
+          "external_input_ms": 10835.262733
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.910451376985293,
+          "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+          "proof_digest": "520f347ae0cf58c9a01578b7aee75d87e3ac530de47dc74a5169b31b1913c1b4",
+          "external_input_ms": 2254.889236
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed43.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "ef83ffa30a71c295a3ec501d3c4713df98add235b6664aed095a4a7c1c1f1cd6",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 44,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.3870580450166017,
+          "input_digest": "894a3d2f5b0c14ba01c29fd2ca069b11de961cf2bf716cc7f994a994e9ea0f00",
+          "proof_digest": "39710836dbe97656e33466320acfa23290d1669deebe0b08623ab9111d3aacda",
+          "external_input_ms": 3037.297002
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4345869940007105,
+          "input_digest": "894a3d2f5b0c14ba01c29fd2ca069b11de961cf2bf716cc7f994a994e9ea0f00",
+          "proof_digest": "39710836dbe97656e33466320acfa23290d1669deebe0b08623ab9111d3aacda",
+          "external_input_ms": 1086.163912
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed44.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "3f1ce27d0a84a12840a9dd0a964819d5d9fc6d0c0dfce99b66e16633a47d95e9",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 44,
+      "batch": 1024,
+      "cpu": 6,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.325580498029012,
+          "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+          "proof_digest": "f68e151ef341462a6e48ba9194fd171383c2ecf1c3c9086bf831e4f839310702",
+          "external_input_ms": 10672.244487
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.9103212310001254,
+          "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+          "proof_digest": "f68e151ef341462a6e48ba9194fd171383c2ecf1c3c9086bf831e4f839310702",
+          "external_input_ms": 2256.643364
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed44.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "ed93530a366ca73724c57683adc5fae6ad16466b93aa39c44827e011a38237a6",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 45,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.3845745449652895,
+          "input_digest": "c9331e216fb269ebcc23f3a890ecbdd51564b0d892c05161ed043a234437b0e1",
+          "proof_digest": "51dd06cc417237be84fe72ef0947df5d9f98f5b7f55b89b23c068428054315b4",
+          "external_input_ms": 3042.946121
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4227154690306634,
+          "input_digest": "c9331e216fb269ebcc23f3a890ecbdd51564b0d892c05161ed043a234437b0e1",
+          "proof_digest": "51dd06cc417237be84fe72ef0947df5d9f98f5b7f55b89b23c068428054315b4",
+          "external_input_ms": 1084.505722
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed45.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "23aafa062857f74e28dba3dee41909a96035abb99bd491f4c416a97073f58248",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 45,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.536648314038757,
+          "input_digest": "dd30c82b20d80e9fef15d095f7bd75e5a0085a9ee1806d8848ee3f03221ca987",
+          "proof_digest": "e37690e17df8355d92dcc8cbbe3e1feba21966ad90f3af7de7e8322effe67449",
+          "external_input_ms": 10898.90551
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.888389485015068,
+          "input_digest": "dd30c82b20d80e9fef15d095f7bd75e5a0085a9ee1806d8848ee3f03221ca987",
+          "proof_digest": "e37690e17df8355d92dcc8cbbe3e1feba21966ad90f3af7de7e8322effe67449",
+          "external_input_ms": 2241.731218
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed45.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "9629641fdd310da609fd4123bbd2047847bd11503d84a0f4013aa2c0dd85025e",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 46,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.427614910993725,
+          "input_digest": "c0bffe1cf47709fd31905607d06e1d2cd8ef695743f4d617db02e86360d0a956",
+          "proof_digest": "81383e7970c1d1460c938157713dda02e80d00b25dfc867e4ec044a8d576ca7a",
+          "external_input_ms": 3081.647861
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4446310329949483,
+          "input_digest": "c0bffe1cf47709fd31905607d06e1d2cd8ef695743f4d617db02e86360d0a956",
+          "proof_digest": "81383e7970c1d1460c938157713dda02e80d00b25dfc867e4ec044a8d576ca7a",
+          "external_input_ms": 1096.6576690000002
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed46.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "3c2d60f084d61fd12f37c887366394cb57fa1fe336d752c4af3ec5f6727c9fda",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 46,
+      "batch": 1024,
+      "cpu": 6,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.463681217981502,
+          "input_digest": "cac700da6e55b4c9b615d428471c1ba06ed7298bf982aa7ddf02004a54f17edf",
+          "proof_digest": "1baab42a0a1e1b0d88a76e12c53aa530d8254ac5746b329a7ecf11f9c878ae27",
+          "external_input_ms": 10813.208685
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.913758572016377,
+          "input_digest": "cac700da6e55b4c9b615d428471c1ba06ed7298bf982aa7ddf02004a54f17edf",
+          "proof_digest": "1baab42a0a1e1b0d88a76e12c53aa530d8254ac5746b329a7ecf11f9c878ae27",
+          "external_input_ms": 2264.21114
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed46.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "872b779654762333d2e771b6f6bd863171b4e94c8d873f486559380fe3e74db4",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 47,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.403544341039378,
+          "input_digest": "bee971db723b9bd7fdf6c0134f8a2460b28fee5ff8580c7bf1a32eca6aa2930f",
+          "proof_digest": "c6fc9c8fd1cbe87bdd2efe29541a747f7292d28f1cb36202f585b75d2c849212",
+          "external_input_ms": 3062.018251
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4359313379973173,
+          "input_digest": "bee971db723b9bd7fdf6c0134f8a2460b28fee5ff8580c7bf1a32eca6aa2930f",
+          "proof_digest": "c6fc9c8fd1cbe87bdd2efe29541a747f7292d28f1cb36202f585b75d2c849212",
+          "external_input_ms": 1088.514586
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed47.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "9d56578c698f7dd63fc9fbacd9fbf2433c727faadad7e18660ca7895c0d1461a",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 47,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.393981657980476,
+          "input_digest": "c86cebfcab268d576f2f15621a33744be27bd044369ce17d70aef67d64a46cc4",
+          "proof_digest": "7198531628515a252fa6537efbbe367d1b96566b4e59275a42f8bc7471f43486",
+          "external_input_ms": 10744.747188
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.911856955033727,
+          "input_digest": "c86cebfcab268d576f2f15621a33744be27bd044369ce17d70aef67d64a46cc4",
+          "proof_digest": "7198531628515a252fa6537efbbe367d1b96566b4e59275a42f8bc7471f43486",
+          "external_input_ms": 2260.7536489999998
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed47.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "67138bd3145a7a74e0e5edfcc2d88b1d31655dc959138ca8c0a9a35aec479704",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 48,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.391039836977143,
+          "input_digest": "2526b339fcd00de81e905a73f6c05d717e556745cc3270edad2ca2e4177d3822",
+          "proof_digest": "9bf0f34ba5f86fee910094f8f961a9735c5429d009a47929d446785bead085d8",
+          "external_input_ms": 3050.3104049999997
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4238850509864278,
+          "input_digest": "2526b339fcd00de81e905a73f6c05d717e556745cc3270edad2ca2e4177d3822",
+          "proof_digest": "9bf0f34ba5f86fee910094f8f961a9735c5429d009a47929d446785bead085d8",
+          "external_input_ms": 1085.462894
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed48.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "1477cb5b46a161778bbb809c3c4660d903a817d4510186c2530ae13c5e3571e6",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 48,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.403763731010258,
+          "input_digest": "cd6d2ed52d8af5c9f2fcea5185120bf2b472a0c7ca12ff86204db488ebff371b",
+          "proof_digest": "9a943bbb6d73a4401b3c080d16fcc8b88fef522fac342a1250a02fe9d4d19d53",
+          "external_input_ms": 10765.506926
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.8785944579867646,
+          "input_digest": "cd6d2ed52d8af5c9f2fcea5185120bf2b472a0c7ca12ff86204db488ebff371b",
+          "proof_digest": "9a943bbb6d73a4401b3c080d16fcc8b88fef522fac342a1250a02fe9d4d19d53",
+          "external_input_ms": 2237.785604
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed48.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "cabea6481d04eae1723a70ece2c719a3d2345f91a2fb9d351c5388fb3168867f",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 49,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.440122107975185,
+          "input_digest": "b7db94043bb23a956f8f5de83cb1fd09750ef0ff3ac304f227c4bcf4f58cb039",
+          "proof_digest": "cd38b41cb1a321d3cc8acdae566f088512265f2832afbd3a92811aa704c5c58f",
+          "external_input_ms": 3093.5204289999997
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4470193510060199,
+          "input_digest": "b7db94043bb23a956f8f5de83cb1fd09750ef0ff3ac304f227c4bcf4f58cb039",
+          "proof_digest": "cd38b41cb1a321d3cc8acdae566f088512265f2832afbd3a92811aa704c5c58f",
+          "external_input_ms": 1098.509061
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed49.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "93ad7c123c7bd6f312a59cedef9d5c89b2d57526396602374f9d92bf179b5447",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 49,
+      "batch": 1024,
+      "cpu": 6,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.33025668002665,
+          "input_digest": "3555aa20641204b00584c22bf01de3c366e10f40cf389362daabeac15a38dc04",
+          "proof_digest": "ff25f7958ab051cc0134e887ed49e18d07e81cf997764bb587cfcd0a700aee89",
+          "external_input_ms": 10672.668147
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.9120126590132713,
+          "input_digest": "3555aa20641204b00584c22bf01de3c366e10f40cf389362daabeac15a38dc04",
+          "proof_digest": "ff25f7958ab051cc0134e887ed49e18d07e81cf997764bb587cfcd0a700aee89",
+          "external_input_ms": 2256.593731
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed49.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "7d7b061f4a3415f302b23324de8fc52d68ac59d0f1940686a7225e9fe6931478",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 50,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.39004568697419,
+          "input_digest": "f20319a09f83e3eee4daa4c7c3ed4ef76e6e89bf3067f63dd026d8f141294632",
+          "proof_digest": "b63b45a52c5f0dd63c9a540f5a110f05bf6423a8139f8a538453b6f7bf530d6e",
+          "external_input_ms": 3048.040942
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4348120099748485,
+          "input_digest": "f20319a09f83e3eee4daa4c7c3ed4ef76e6e89bf3067f63dd026d8f141294632",
+          "proof_digest": "b63b45a52c5f0dd63c9a540f5a110f05bf6423a8139f8a538453b6f7bf530d6e",
+          "external_input_ms": 1089.828631
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed50.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "f73556899594c21aa09b03a52701ed6639bdcf23fdcb5c5d008b53b201dd0bff",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 50,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.424894961994141,
+          "input_digest": "94fd1701ed483eae549da136e7adbd33764894aaaa7f498b8172b17a8315569a",
+          "proof_digest": "6d2ea56343e30572869a02eb759530014852b58ed8e177bc2dba9645b39be73b",
+          "external_input_ms": 10776.630185
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.905074817012064,
+          "input_digest": "94fd1701ed483eae549da136e7adbd33764894aaaa7f498b8172b17a8315569a",
+          "proof_digest": "6d2ea56343e30572869a02eb759530014852b58ed8e177bc2dba9645b39be73b",
+          "external_input_ms": 2253.1563979999996
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed50.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "8472ffd022d25ddbfc76207488003bbc0b4590b015898eadb03767f81404431c",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 51,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.3786577970022336,
+          "input_digest": "9728b0fa1dcb83b5a13b1cc3d26e1f6bb70a4211b3af8bb2706ac1b44579f8a0",
+          "proof_digest": "a93a5e5fe1678a5d3533caf4f520d6b229744b76c6c9ebf298628b11d9a68dab",
+          "external_input_ms": 3040.290301
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4207116780453362,
+          "input_digest": "9728b0fa1dcb83b5a13b1cc3d26e1f6bb70a4211b3af8bb2706ac1b44579f8a0",
+          "proof_digest": "a93a5e5fe1678a5d3533caf4f520d6b229744b76c6c9ebf298628b11d9a68dab",
+          "external_input_ms": 1082.081257
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed51.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "17819caf12882c657bc640e507279e7da8c72799f772fb7cf359205493e75bcb",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 51,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.583893783972599,
+          "input_digest": "fc40a96b3e2d349d3d22a0578e4e4371ffa43a15bf848b167d0512ca05e8de5a",
+          "proof_digest": "a278f4e46c976b4ee831f4078de41d49d00a5cfe1824812d57981f81848d75d2",
+          "external_input_ms": 10950.402802999999
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.8938418889883906,
+          "input_digest": "fc40a96b3e2d349d3d22a0578e4e4371ffa43a15bf848b167d0512ca05e8de5a",
+          "proof_digest": "a278f4e46c976b4ee831f4078de41d49d00a5cfe1824812d57981f81848d75d2",
+          "external_input_ms": 2244.599824
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed51.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "3324e6fd021abe7086a4717627ab57f35cd8c166fb0fb00efd43b4895cf43345",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 52,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.4041148890391923,
+          "input_digest": "963513d779fd4cf5f3e74b4080324ce0238f0741423f4bec80cf44af79ec6e08",
+          "proof_digest": "8cf32cfeca93849608d36a22d507c652d91c154d3d0c1aca18469413af529ca1",
+          "external_input_ms": 3060.328434
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4468823010101914,
+          "input_digest": "963513d779fd4cf5f3e74b4080324ce0238f0741423f4bec80cf44af79ec6e08",
+          "proof_digest": "8cf32cfeca93849608d36a22d507c652d91c154d3d0c1aca18469413af529ca1",
+          "external_input_ms": 1094.4188239999999
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed52.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "2ec5d6873d1c40cdfe7db7a8516da865e85e85442a2ea85bc2a397fb892ded7d",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 52,
+      "batch": 1024,
+      "cpu": 6,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.593361752980854,
+          "input_digest": "2b02f8a00116964bf1a7948a1dded82a507dde9b8fea26ad8fe1452ca5fa45e1",
+          "proof_digest": "054bb6cfa48b98567bae019be2231bb91cf94a854704ade6dd68e34aa9a19c64",
+          "external_input_ms": 10949.78265
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.889993649965618,
+          "input_digest": "2b02f8a00116964bf1a7948a1dded82a507dde9b8fea26ad8fe1452ca5fa45e1",
+          "proof_digest": "054bb6cfa48b98567bae019be2231bb91cf94a854704ade6dd68e34aa9a19c64",
+          "external_input_ms": 2247.983654
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed52.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "fd61ae9289393f47256a70a11e4a89c701338d47a7ce89f1ffbb1af5d739403b",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 53,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.409111961023882,
+          "input_digest": "c98e0ceb83f188fef7b5c72f84130d96e45361f6a6d043a8ed0e7afabde315c5",
+          "proof_digest": "b04a73889e719035936f6fc5dc042bd741320fd5259c8605b9af9d9da15b1126",
+          "external_input_ms": 3065.841664
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4459264440229163,
+          "input_digest": "c98e0ceb83f188fef7b5c72f84130d96e45361f6a6d043a8ed0e7afabde315c5",
+          "proof_digest": "b04a73889e719035936f6fc5dc042bd741320fd5259c8605b9af9d9da15b1126",
+          "external_input_ms": 1090.783287
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed53.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "8b1d0e574d2953e148110a72a8a5c8524305b4321ce5f30b46da4dc411f6145e",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 53,
+      "batch": 1024,
+      "cpu": 2,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.570337791985366,
+          "input_digest": "bbcf94880e8d583ae13319340b54dd0583c35cc643e7957e02749a91d67df477",
+          "proof_digest": "452450370331d0a2d929b8d64dfb31cce505e9a2253a98d2fc1078c8eff3dc21",
+          "external_input_ms": 10928.348065
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.8874967269948684,
+          "input_digest": "bbcf94880e8d583ae13319340b54dd0583c35cc643e7957e02749a91d67df477",
+          "proof_digest": "452450370331d0a2d929b8d64dfb31cce505e9a2253a98d2fc1078c8eff3dc21",
+          "external_input_ms": 2247.363642
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed53.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "27be9bd5f0c07334e6b6c458a6f38d41c9d2273becdec698d59da8c08812fff5",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 512,
+      "seed": 54,
+      "batch": 1024,
+      "cpu": 0,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 3.390180722984951,
+          "input_digest": "4fd14993931ebaab8e83099d8a2a6b7ac5de4866067265e6f82351fdf128fd55",
+          "proof_digest": "45b3b4cfcfb8f1c6481913998aeeee976e0184eb930ac2321a4b0427d5880e4b",
+          "external_input_ms": 3051.0096080000003
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 1.4224089589552023,
+          "input_digest": "4fd14993931ebaab8e83099d8a2a6b7ac5de4866067265e6f82351fdf128fd55",
+          "proof_digest": "45b3b4cfcfb8f1c6481913998aeeee976e0184eb930ac2321a4b0427d5880e4b",
+          "external_input_ms": 1083.30961
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n512-b1024-seed54.bin",
+      "cache_bytes": 2494624,
+      "cache_sha256": "a9ac6894dd94ef22097dc4bd8277fce41f6c91251f6c8b86443f7ed737ae9124",
+      "cache_checksum_validated_by_binary": true
+    },
+    {
+      "degree": 1024,
+      "seed": 54,
+      "batch": 1024,
+      "cpu": 4,
+      "existed_before": false,
+      "binary_sha256": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "timing_purpose": "correctness-only, excluded",
+      "verified_proofs": 2,
+      "runs": [
+        {
+          "stage": "generate",
+          "wall_seconds": 11.185954848013353,
+          "input_digest": "ee6a80a9ddc1996a4ed07d4addd2122a952fa021d3df5efcec8035308850a006",
+          "proof_digest": "692d810d6068a54d000d01fa49786e3caf0263aa26dbd8e5ce28fcaee4349ee7",
+          "external_input_ms": 10557.582728
+        },
+        {
+          "stage": "reload",
+          "wall_seconds": 2.8271786930272356,
+          "input_digest": "ee6a80a9ddc1996a4ed07d4addd2122a952fa021d3df5efcec8035308850a006",
+          "proof_digest": "692d810d6068a54d000d01fa49786e3caf0263aa26dbd8e5ce28fcaee4349ee7",
+          "external_input_ms": 2198.453186
+        }
+      ],
+      "cache_file": "/tmp/falcon-algebraic-cases-20261007/fn-dsa-0.3.0-n1024-b1024-seed54.bin",
+      "cache_bytes": 4827296,
+      "cache_sha256": "2fdc3544e36009ab3304067242e16bd251aec0d884b9e530fa8ac72da79681e3",
+      "cache_checksum_validated_by_binary": true
+    }
+  ],
+  "verified_proofs": 48
+}

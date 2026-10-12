@@ -1,0 +1,35 @@
+{
+  "method": "Diagnostic only: one warmup and three samples, Falcon1024 batch1024 security128 seed42, 16 pinned workers. Inclusive spans; do not add nested stages.",
+  "variants": {
+    "baseline": {
+      "prove": {
+        "binding_construction": 27.246772,
+        "binding": 36.708363,
+        "arithmetic": 41.594241999999994,
+        "ring": 10.215837,
+        "bitz": 37.137324,
+        "prove": 102.50771399999999
+      },
+      "verify": {
+        "binding_construction": 26.679138000000002,
+        "verify": 48.242152000000004
+      }
+    },
+    "candidate": {
+      "prove": {
+        "binding_construction": 2.705686,
+        "binding": 13.142501,
+        "arithmetic": 18.126837,
+        "ring": 9.586808000000001,
+        "bitz": 36.914322,
+        "prove": 78.613653
+      },
+      "verify": {
+        "binding_construction": 2.6085119999999997,
+        "verify": 20.60356
+      }
+    }
+  },
+  "all_proof_contents_match": true,
+  "verified_trials": 8
+}

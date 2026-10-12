@@ -1,0 +1,22 @@
+{
+  "base_revision": "d5049443bf438ffb233a2f0fc2b82ed0678116fb",
+  "uncommitted_changes": true,
+  "description": "Accounting diagnostics only; no proof protocol/transcript change. Future size models are not implemented proofs.",
+  "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --example falcon_size_breakdown",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "binary": "target/falcon-native/release/examples/falcon_size_breakdown",
+  "binary_sha256": "6a4967cd7d624c01cc52cb86ba97daefdc45bca89c2ab16d05e5b8e289f76711",
+  "source_sha256": {
+    "Cargo.toml": "29b957512f6f8da99ac608e2d0959931fb28441a707a9840cf26768809b60b9f",
+    "Cargo.lock": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+    "src/piop/spartan/falcon1024_ct/hybrid_size.rs": "b79d1ac28fd7e065b07a83b18edf925d8949ccfa36a58149c86eabbd4a6a839b",
+    "examples/falcon_size_breakdown.rs": "e1ed8d51f6376865d6257f1babfd8ce41295932c13dfcf64dcc92e48d4e54f3a"
+  },
+  "validation": {
+    "full_proofs_verified": 2,
+    "prior_input_proof_digests_and_payloads_match": true,
+    "disjoint_28_component_totals_match": true,
+    "pcs_vector_framing_independently_matches": true,
+    "pcs_parameter_probe_reproduced": true
+  }
+}

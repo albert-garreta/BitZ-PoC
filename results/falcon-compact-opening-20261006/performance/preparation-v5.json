@@ -1,0 +1,61 @@
+{
+  "status": "not_qualified",
+  "created_at": 1791329711.3205657,
+  "candidate_version": "v5",
+  "candidate_frozen": true,
+  "measurements_started": true,
+  "baseline_reused_from": "baseline-build-v4.json",
+  "baseline_binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+  "baseline_binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+  "baseline_source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+  "baseline_integrity": "all frozen files, binary, and lockfile match",
+  "current_compiler_matches_baseline": true,
+  "current_benchmark_overlay_matches_baseline": true,
+  "benchmark_overlay": {
+    "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+    "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+  },
+  "harness_sha256": "5839ec7defd239c847d0fcb71590f7bcecf8819bc71fd5fa30f35fab52a89493",
+  "qualification_method": "unchanged: all16 cells, seeds42..101, 1warmup+3measured,16workers,paired arithmetic-mean bootstrap upper95<=1.02 for both metrics; meanpayload strictly smaller",
+  "cpu_affinity_policy": "linux-x86_64-falcon-serial-aux-pinned-v1",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "cache_reference_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+  "planned_candidate_source": "/tmp/falcon-compact-opening-candidate-v5",
+  "planned_candidate_binary": "/tmp/falcon-compact-opening-binaries/candidate-v5",
+  "planned_builds": "builds-v5.json",
+  "planned_output": "v5",
+  "run_condition": "candidate microbenefits and correctness passed, source finalized, successful canonical build, parent exclusive CPU handoff",
+  "duration_estimate": {
+    "qualification_minutes_range": [
+      80,
+      90
+    ],
+    "cold_and_stages_minutes": 2.5,
+    "v4_cold_extrapolated_process_seconds": 2958.03732065875,
+    "mandatory_per_process_idle_probes_seconds": 1920,
+    "previous_complete_one_source_qualification_seconds": 5073.650222539902,
+    "limitations": "grinding variability, final bootstrap/integrity overhead, and host idle waits; excludes builds and correctness"
+  },
+  "candidate_source_manifest_sha256": "47e3d269adf4ef9f885f43b6c00e4f2643af08c2da635c844e66a3aa31067528",
+  "candidate_binary_sha256": "94793f886ae34d32f6fa12eacdaa7045c394b56524c77f265a72117169aacd6c",
+  "completed_pairs": 301,
+  "verified_proofs": 2408,
+  "diagnostic_profile_proofs": 264
+}

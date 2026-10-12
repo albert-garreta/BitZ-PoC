@@ -1,0 +1,21 @@
+weighted_external-t1-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.13s
+weighted_external-t1-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external_queries120-t1-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external_queries120-t1-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external-t2-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external-t2-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external_queries120-t2-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external_queries120-t2-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external-t4-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external-t4-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external_queries120-t4-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external_queries120-t4-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external-t8-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external-t8-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external_queries120-t8-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external_queries120-t8-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external-t16-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.12s
+weighted_external-t16-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+weighted_external_queries120-t16-experimental_128 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 795 filtered out; finished in 0.11s
+weighted_external_queries120-t16-experiment_prime test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 799 filtered out; finished in 0.05s
+ALL EXTERNAL-COST VALIDATION PASSED

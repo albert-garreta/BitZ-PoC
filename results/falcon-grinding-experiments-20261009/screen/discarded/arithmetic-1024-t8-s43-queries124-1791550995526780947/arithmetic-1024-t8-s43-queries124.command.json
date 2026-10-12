@@ -1,0 +1,50 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5,2,3,0,1",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/binaries/falcon_algebraic",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "8",
+    "--seed",
+    "43",
+    "--warmup",
+    "1",
+    "--iterations",
+    "7"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "8",
+    "OMP_NUM_THREADS": "8",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+    "BITZ_EXPERIMENT_GLOBAL": "1",
+    "BITZ_EXPERIMENT_QUERY_BITS": "124"
+  },
+  "execution_fingerprint": "6636e7c59f5694f46072d7a8d05ddee6f0996ec93b47451cd67f68e66d656db0",
+  "idle_busy_pct": {
+    "6": 0.0,
+    "7": 0.0,
+    "4": 0.0,
+    "5": 0.0,
+    "2": 0.0,
+    "3": 0.0,
+    "0": 1.0101010101010102,
+    "1": 1.0,
+    "22": 1.9801980198019802,
+    "23": 4.9504950495049505,
+    "20": 0.0,
+    "21": 0.0,
+    "18": 1.9801980198019802,
+    "19": 0.0,
+    "16": 0.0,
+    "17": 0.0
+  }
+}

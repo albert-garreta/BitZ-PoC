@@ -1,0 +1,16 @@
+arithmetic-n1024-b65-s128-t16-seed45-baseline.cache-prime
+arithmetic-n1024-b65-s128-t16-seed45-baseline
+arithmetic-n1024-b65-s128-t16-seed45-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 45, "ratios": {"total_prover_ms": 0.9152400226411374, "prove_ms": 0.9094280408838715, "witness_commit_ms": 0.9903219132324934, "verify_ms": 0.6476908441493922, "process_peak_rss_kib": 1.0310803618946247}}
+arithmetic-n1024-b65-s128-t16-seed46-candidate.cache-prime
+arithmetic-n1024-b65-s128-t16-seed46-candidate
+arithmetic-n1024-b65-s128-t16-seed46-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 46, "ratios": {"total_prover_ms": 0.9182347967144193, "prove_ms": 0.9128431532152026, "witness_commit_ms": 1.0350955051279815, "verify_ms": 0.6431674528655947, "process_peak_rss_kib": 0.9921030756442227}}
+arithmetic-n1024-b65-s128-t16-seed47-baseline.cache-prime
+arithmetic-n1024-b65-s128-t16-seed47-baseline
+arithmetic-n1024-b65-s128-t16-seed47-candidate
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 47, "ratios": {"total_prover_ms": 0.9190546881301005, "prove_ms": 0.9146155873784692, "witness_commit_ms": 0.9917875971723942, "verify_ms": 0.6522332787220001, "process_peak_rss_kib": 0.9935443565181175}}
+arithmetic-n1024-b65-s128-t16-seed48-candidate.cache-prime
+arithmetic-n1024-b65-s128-t16-seed48-candidate
+arithmetic-n1024-b65-s128-t16-seed48-baseline
+{"matched": true, "cell": {"mode": "arithmetic", "degree": 1024, "batch": 65, "security_bits": 128, "threads": 16}, "seed": 48, "ratios": {"total_prover_ms": 0.9161113867997851, "prove_ms": 0.9126005907925171, "witness_commit_ms": 0.9907756047645615, "verify_ms": 0.6484748025178453, "process_peak_rss_kib": 0.9991679667186687}}

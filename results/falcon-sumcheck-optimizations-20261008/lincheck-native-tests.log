@@ -1,0 +1,22 @@
+Captured test-result portion of the completed tool output; compilation diagnostics omitted.
+Command: taskset -c 8-15,24-31 env RUSTFLAGS='-C target-cpu=native' CARGO_TARGET_DIR=/tmp/falcon-simplify-candidate-target CARGO_BUILD_JOBS=8 cargo test --manifest-path vendor/flock-mod/Cargo.toml -p flock-core --release --offline lincheck::tests:: -- --test-threads=2
+
+    Finished `release` profile [optimized] target(s) in 10.46s
+     Running unittests src/lib.rs (/tmp/falcon-simplify-candidate-target/release/deps/flock_core-367f0bfddcdd9f77)
+
+running 13 tests
+test lincheck::tests::eq_table_matches_direct_formula ... ok
+test lincheck::tests::partial_fold_dispatch_handles_small_k ... ok
+test lincheck::tests::partial_fold_fast_matches_serial ... ok
+test lincheck::tests::partial_fold_matches_direct ... ok
+test lincheck::tests::partial_fold_padded_matches_dense ... ok
+test lincheck::tests::partial_fold_is_mle_at_outer_point ... ok
+test lincheck::tests::partial_fold_x86_tiled_matches_serial ... ok
+test lincheck::tests::product_sumcheck_vector_tails_match_reduced_reference ... ok
+test lincheck::tests::product_sumcheck_matches_reduced_reference_through_every_round ... ok
+test lincheck::tests::sparse_row_fold_matches_dense ... ok
+test lincheck::tests::verify_rejects_mutations ... ok
+test lincheck::tests::verify_rejects_shape_errors ... ok
+test lincheck::tests::prove_verify_roundtrip_honest ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 302 filtered out; finished in 0.00s

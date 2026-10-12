@@ -1,0 +1,117 @@
+[bench_gate] falcon-compact-opening-stages: idle 100% (streak 1/4)
+[bench_gate] falcon-compact-opening-stages: idle 100% (streak 2/4)
+[bench_gate] falcon-compact-opening-stages: idle 100% (streak 3/4)
+[bench_gate] falcon-compact-opening-stages: idle 100% (streak 4/4)
+[bench_gate] native-s100-b1-t16-seed42-baseline: idle 99% (streak 1/1)
+START stages native-s100-b1-t16-seed42-baseline
+DONE native-s100-b1-t16-seed42-baseline {"total_prover_ms": 34.380597, "proof_verify_ms": 14.995227, "witness_commit_ms": 1.105794, "proof_prove_ms": 33.274803}
+[bench_gate] native-s100-b1-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s100-b1-t16-seed42-candidate
+DONE native-s100-b1-t16-seed42-candidate {"total_prover_ms": 33.693036, "proof_verify_ms": 14.760012, "witness_commit_ms": 1.104902, "proof_prove_ms": 32.588134}
+MATCHED (('native', 100, 1), 42)
+[bench_gate] native-s100-b3-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s100-b3-t16-seed42-baseline
+DONE native-s100-b3-t16-seed42-baseline {"total_prover_ms": 41.030742, "proof_verify_ms": 16.392232999999997, "witness_commit_ms": 2.632476, "proof_prove_ms": 38.398266}
+[bench_gate] native-s100-b3-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s100-b3-t16-seed42-candidate
+DONE native-s100-b3-t16-seed42-candidate {"total_prover_ms": 42.594082, "proof_verify_ms": 16.787139999999997, "witness_commit_ms": 2.507799, "proof_prove_ms": 40.086283}
+MATCHED (('native', 100, 3), 42)
+[bench_gate] native-s100-b32-t16-seed42-baseline: idle 99% (streak 1/1)
+START stages native-s100-b32-t16-seed42-baseline
+DONE native-s100-b32-t16-seed42-baseline {"total_prover_ms": 62.499607, "proof_verify_ms": 15.965714999999998, "witness_commit_ms": 7.2423649999999995, "proof_prove_ms": 55.257242}
+[bench_gate] native-s100-b32-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s100-b32-t16-seed42-candidate
+DONE native-s100-b32-t16-seed42-candidate {"total_prover_ms": 63.480035, "proof_verify_ms": 17.878788, "witness_commit_ms": 7.203352, "proof_prove_ms": 56.276683}
+MATCHED (('native', 100, 32), 42)
+[bench_gate] native-s100-b1024-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s100-b1024-t16-seed42-baseline
+DONE native-s100-b1024-t16-seed42-baseline {"total_prover_ms": 762.38187, "proof_verify_ms": 64.99716699999999, "witness_commit_ms": 126.46375700000002, "proof_prove_ms": 635.9181130000001}
+[bench_gate] native-s100-b1024-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s100-b1024-t16-seed42-candidate
+DONE native-s100-b1024-t16-seed42-candidate {"total_prover_ms": 761.998554, "proof_verify_ms": 63.86481200000001, "witness_commit_ms": 125.447853, "proof_prove_ms": 636.550701}
+MATCHED (('native', 100, 1024), 42)
+[bench_gate] native-s128-b1-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s128-b1-t16-seed42-baseline
+DONE native-s128-b1-t16-seed42-baseline {"total_prover_ms": 62.286212, "proof_verify_ms": 15.395205, "witness_commit_ms": 1.057983, "proof_prove_ms": 61.228229}
+[bench_gate] native-s128-b1-t16-seed42-candidate: idle 99% (streak 1/1)
+START stages native-s128-b1-t16-seed42-candidate
+DONE native-s128-b1-t16-seed42-candidate {"total_prover_ms": 62.040658, "proof_verify_ms": 15.211877000000001, "witness_commit_ms": 1.0893929999999998, "proof_prove_ms": 60.951265}
+MATCHED (('native', 128, 1), 42)
+[bench_gate] native-s128-b3-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s128-b3-t16-seed42-baseline
+DONE native-s128-b3-t16-seed42-baseline {"total_prover_ms": 84.20792699999998, "proof_verify_ms": 17.543623, "witness_commit_ms": 2.811895, "proof_prove_ms": 81.39603199999999}
+[bench_gate] native-s128-b3-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s128-b3-t16-seed42-candidate
+DONE native-s128-b3-t16-seed42-candidate {"total_prover_ms": 82.280787, "proof_verify_ms": 16.97148, "witness_commit_ms": 2.570708, "proof_prove_ms": 79.71007900000001}
+MATCHED (('native', 128, 3), 42)
+[bench_gate] native-s128-b32-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s128-b32-t16-seed42-baseline
+DONE native-s128-b32-t16-seed42-baseline {"total_prover_ms": 112.163026, "proof_verify_ms": 16.611248, "witness_commit_ms": 6.673057, "proof_prove_ms": 105.489969}
+[bench_gate] native-s128-b32-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages native-s128-b32-t16-seed42-candidate
+DONE native-s128-b32-t16-seed42-candidate {"total_prover_ms": 112.68728899999999, "proof_verify_ms": 15.856337000000002, "witness_commit_ms": 7.557462, "proof_prove_ms": 105.12982699999999}
+MATCHED (('native', 128, 32), 42)
+[bench_gate] native-s128-b1024-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages native-s128-b1024-t16-seed42-baseline
+DONE native-s128-b1024-t16-seed42-baseline {"total_prover_ms": 947.359297, "proof_verify_ms": 67.056606, "witness_commit_ms": 129.182185, "proof_prove_ms": 818.177112}
+[bench_gate] native-s128-b1024-t16-seed42-candidate: idle 99% (streak 1/1)
+START stages native-s128-b1024-t16-seed42-candidate
+DONE native-s128-b1024-t16-seed42-candidate {"total_prover_ms": 945.4364649999999, "proof_verify_ms": 65.464011, "witness_commit_ms": 126.03468500000001, "proof_prove_ms": 819.4017799999999}
+MATCHED (('native', 128, 1024), 42)
+[bench_gate] shared-prime-s100-b1-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s100-b1-t16-seed42-baseline
+DONE shared-prime-s100-b1-t16-seed42-baseline {"total_prover_ms": 35.36443, "proof_verify_ms": 15.928885000000001, "witness_commit_ms": 1.088491, "proof_prove_ms": 34.275939}
+[bench_gate] shared-prime-s100-b1-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s100-b1-t16-seed42-candidate
+DONE shared-prime-s100-b1-t16-seed42-candidate {"total_prover_ms": 35.495737999999996, "proof_verify_ms": 15.793429000000001, "witness_commit_ms": 1.129719, "proof_prove_ms": 34.366018999999994}
+MATCHED (('shared-prime', 100, 1), 42)
+[bench_gate] shared-prime-s100-b3-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s100-b3-t16-seed42-baseline
+DONE shared-prime-s100-b3-t16-seed42-baseline {"total_prover_ms": 42.03376, "proof_verify_ms": 17.356859, "witness_commit_ms": 2.651451, "proof_prove_ms": 39.382309}
+[bench_gate] shared-prime-s100-b3-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s100-b3-t16-seed42-candidate
+DONE shared-prime-s100-b3-t16-seed42-candidate {"total_prover_ms": 41.945814, "proof_verify_ms": 16.986257000000002, "witness_commit_ms": 2.6719, "proof_prove_ms": 39.273914}
+MATCHED (('shared-prime', 100, 3), 42)
+[bench_gate] shared-prime-s100-b32-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s100-b32-t16-seed42-baseline
+DONE shared-prime-s100-b32-t16-seed42-baseline {"total_prover_ms": 63.113428, "proof_verify_ms": 18.872989999999998, "witness_commit_ms": 7.264957, "proof_prove_ms": 55.848470999999996}
+[bench_gate] shared-prime-s100-b32-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s100-b32-t16-seed42-candidate
+DONE shared-prime-s100-b32-t16-seed42-candidate {"total_prover_ms": 62.973264, "proof_verify_ms": 17.747218, "witness_commit_ms": 6.921177, "proof_prove_ms": 56.052087}
+MATCHED (('shared-prime', 100, 32), 42)
+[bench_gate] shared-prime-s100-b1024-t16-seed42-baseline: idle 99% (streak 1/1)
+START stages shared-prime-s100-b1024-t16-seed42-baseline
+DONE shared-prime-s100-b1024-t16-seed42-baseline {"total_prover_ms": 691.705098, "proof_verify_ms": 52.987544, "witness_commit_ms": 128.776166, "proof_prove_ms": 562.928932}
+[bench_gate] shared-prime-s100-b1024-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s100-b1024-t16-seed42-candidate
+DONE shared-prime-s100-b1024-t16-seed42-candidate {"total_prover_ms": 690.984694, "proof_verify_ms": 53.591527, "witness_commit_ms": 126.691328, "proof_prove_ms": 564.293366}
+MATCHED (('shared-prime', 100, 1024), 42)
+[bench_gate] shared-prime-s128-b1-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s128-b1-t16-seed42-baseline
+DONE shared-prime-s128-b1-t16-seed42-baseline {"total_prover_ms": 64.817588, "proof_verify_ms": 17.143966, "witness_commit_ms": 1.089343, "proof_prove_ms": 63.728245}
+[bench_gate] shared-prime-s128-b1-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s128-b1-t16-seed42-candidate
+DONE shared-prime-s128-b1-t16-seed42-candidate {"total_prover_ms": 64.042349, "proof_verify_ms": 16.774416, "witness_commit_ms": 1.122526, "proof_prove_ms": 62.919823}
+MATCHED (('shared-prime', 128, 1), 42)
+[bench_gate] shared-prime-s128-b3-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s128-b3-t16-seed42-baseline
+DONE shared-prime-s128-b3-t16-seed42-baseline {"total_prover_ms": 83.564137, "proof_verify_ms": 18.094817, "witness_commit_ms": 2.596146, "proof_prove_ms": 80.967991}
+[bench_gate] shared-prime-s128-b3-t16-seed42-candidate: idle 99% (streak 1/1)
+START stages shared-prime-s128-b3-t16-seed42-candidate
+DONE shared-prime-s128-b3-t16-seed42-candidate {"total_prover_ms": 84.46431100000001, "proof_verify_ms": 17.783948000000002, "witness_commit_ms": 2.5852649999999997, "proof_prove_ms": 81.879046}
+MATCHED (('shared-prime', 128, 3), 42)
+[bench_gate] shared-prime-s128-b32-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s128-b32-t16-seed42-baseline
+DONE shared-prime-s128-b32-t16-seed42-baseline {"total_prover_ms": 113.33701900000001, "proof_verify_ms": 17.567538, "witness_commit_ms": 7.2419839999999995, "proof_prove_ms": 106.09503500000001}
+[bench_gate] shared-prime-s128-b32-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s128-b32-t16-seed42-candidate
+DONE shared-prime-s128-b32-t16-seed42-candidate {"total_prover_ms": 109.507226, "proof_verify_ms": 17.332873, "witness_commit_ms": 6.925645, "proof_prove_ms": 102.581581}
+MATCHED (('shared-prime', 128, 32), 42)
+[bench_gate] shared-prime-s128-b1024-t16-seed42-baseline: idle 100% (streak 1/1)
+START stages shared-prime-s128-b1024-t16-seed42-baseline
+DONE shared-prime-s128-b1024-t16-seed42-baseline {"total_prover_ms": 922.121043, "proof_verify_ms": 58.632524, "witness_commit_ms": 126.32717900000002, "proof_prove_ms": 795.793864}
+[bench_gate] shared-prime-s128-b1024-t16-seed42-candidate: idle 100% (streak 1/1)
+START stages shared-prime-s128-b1024-t16-seed42-candidate
+DONE shared-prime-s128-b1024-t16-seed42-candidate {"total_prover_ms": 925.9898890000001, "proof_verify_ms": 56.574816999999996, "witness_commit_ms": 127.752698, "proof_prove_ms": 798.237191}
+MATCHED (('shared-prime', 128, 1024), 42)
+CAMPAIGN_RESULT diagnostic

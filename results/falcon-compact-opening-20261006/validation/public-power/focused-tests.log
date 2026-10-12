@@ -1,0 +1,9 @@
+
+running 4 tests
+test preparation::public_power_tests::public_byte_buckets_match_binary_power_and_previous_tree ... ok
+test preparation::public_power_tests::public_byte_buckets_support_composite_ring_and_prime_providers ... ok
+test preparation::public_power_tests::public_fallback_windows_and_private_tables_match_binary_power ... ok
+test preparation::public_power_tests::public_limb_power_abba_microbenchmark ... ignored, isolated public exponentiation timing; run on an otherwise idle pinned CPU
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 50 filtered out; finished in 0.01s
+

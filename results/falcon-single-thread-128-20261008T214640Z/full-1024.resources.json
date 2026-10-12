@@ -1,0 +1,16 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 29.014715267985594,
+  "user_cpu_s": 27.440657,
+  "system_cpu_s": 1.4607679999999998,
+  "cpu_utilization_pct": 99.60954203086531,
+  "process_peak_rss_kib": 3297644,
+  "major_page_faults": 0,
+  "minor_page_faults": 2593088,
+  "voluntary_context_switches": 11609,
+  "involuntary_context_switches": 13837,
+  "sibling_busy_pct": 0.0,
+  "selected_cpu_busy_pct": 99.65517241379311,
+  "affinity_violations": [],
+  "observation_count": 29
+}

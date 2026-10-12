@@ -1,0 +1,12 @@
+{
+  "files_checked": 655,
+  "changed_from_baseline": [
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs"
+  ],
+  "workspace_differs_from_tested_snapshot": [],
+  "rustfmt_check": "passed",
+  "git_diff_check": "passed",
+  "word_binding_tests_passed": 10,
+  "complete_proof_content_tests_passed": 2
+}

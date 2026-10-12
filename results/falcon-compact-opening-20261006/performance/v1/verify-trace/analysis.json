@@ -1,0 +1,126 @@
+{
+  "qualifying": false,
+  "scope": "succinct Ligerito verifier only; excludes compact terminal reconstruction before entry",
+  "stages": {
+    "baseline": {
+      "warmup": {
+        "total_ms": 1.72,
+        "merkle multi-proofs": 0.22,
+        "sample_distinct_queries": 0.39,
+        "enforced_sum (eq+dot)": 0.02,
+        "residual basis eval": 0.75,
+        "eval_b (yr_len positions)": 0.31
+      },
+      "measured": [
+        {
+          "total_ms": 2.24,
+          "merkle multi-proofs": 0.22,
+          "sample_distinct_queries": 0.39,
+          "enforced_sum (eq+dot)": 0.02,
+          "residual basis eval": 1.26,
+          "eval_b (yr_len positions)": 0.31
+        },
+        {
+          "total_ms": 1.73,
+          "merkle multi-proofs": 0.22,
+          "sample_distinct_queries": 0.39,
+          "enforced_sum (eq+dot)": 0.02,
+          "residual basis eval": 0.76,
+          "eval_b (yr_len positions)": 0.31
+        },
+        {
+          "total_ms": 1.59,
+          "merkle multi-proofs": 0.28,
+          "sample_distinct_queries": 0.44,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.58,
+          "eval_b (yr_len positions)": 0.24
+        },
+        {
+          "total_ms": 1.36,
+          "merkle multi-proofs": 0.17,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.59,
+          "eval_b (yr_len positions)": 0.24
+        },
+        {
+          "total_ms": 1.35,
+          "merkle multi-proofs": 0.17,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.59,
+          "eval_b (yr_len positions)": 0.24
+        }
+      ],
+      "median": {
+        "total_ms": 1.59,
+        "merkle multi-proofs": 0.22,
+        "sample_distinct_queries": 0.39,
+        "enforced_sum (eq+dot)": 0.01,
+        "residual basis eval": 0.59,
+        "eval_b (yr_len positions)": 0.24
+      }
+    },
+    "candidate": {
+      "warmup": {
+        "total_ms": 1.36,
+        "merkle multi-proofs": 0.17,
+        "sample_distinct_queries": 0.32,
+        "enforced_sum (eq+dot)": 0.01,
+        "residual basis eval": 0.59,
+        "eval_b (yr_len positions)": 0.25
+      },
+      "measured": [
+        {
+          "total_ms": 1.36,
+          "merkle multi-proofs": 0.17,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.59,
+          "eval_b (yr_len positions)": 0.24
+        },
+        {
+          "total_ms": 1.34,
+          "merkle multi-proofs": 0.17,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.58,
+          "eval_b (yr_len positions)": 0.24
+        },
+        {
+          "total_ms": 1.35,
+          "merkle multi-proofs": 0.17,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.58,
+          "eval_b (yr_len positions)": 0.24
+        },
+        {
+          "total_ms": 1.37,
+          "merkle multi-proofs": 0.18,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.59,
+          "eval_b (yr_len positions)": 0.25
+        },
+        {
+          "total_ms": 1.37,
+          "merkle multi-proofs": 0.18,
+          "sample_distinct_queries": 0.31,
+          "enforced_sum (eq+dot)": 0.01,
+          "residual basis eval": 0.59,
+          "eval_b (yr_len positions)": 0.25
+        }
+      ],
+      "median": {
+        "total_ms": 1.36,
+        "merkle multi-proofs": 0.17,
+        "sample_distinct_queries": 0.31,
+        "enforced_sum (eq+dot)": 0.01,
+        "residual basis eval": 0.59,
+        "eval_b (yr_len positions)": 0.24
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "sources_unchanged": true,
+  "all_24_proofs_verified": true,
+  "matched_inputs_between_variants": true,
+  "all_threads_pinned": true,
+  "all_security_ledgers_at_least_128_bits": true,
+  "all_smt_siblings_idle": true,
+  "all_runs_zero_major_page_faults": true,
+  "global_and_auxiliary_pools_one_worker_each": true,
+  "checks": [
+    {
+      "configuration": "arithmetic-512",
+      "proofs_verified": 6,
+      "algebraic_security_bits": 128.94486324698008,
+      "peak_rss_mib": 127.10546875,
+      "sibling_busy_pct": 0.0,
+      "major_page_faults": 0
+    },
+    {
+      "configuration": "full-512",
+      "proofs_verified": 6,
+      "algebraic_security_bits": 129.47139033919117,
+      "peak_rss_mib": 2300.73828125,
+      "sibling_busy_pct": 0.0,
+      "major_page_faults": 0
+    },
+    {
+      "configuration": "arithmetic-1024",
+      "proofs_verified": 6,
+      "algebraic_security_bits": 128.8651372844124,
+      "peak_rss_mib": 226.046875,
+      "sibling_busy_pct": 0.0,
+      "major_page_faults": 0
+    },
+    {
+      "configuration": "full-1024",
+      "proofs_verified": 6,
+      "algebraic_security_bits": 129.40858281396686,
+      "peak_rss_mib": 3220.35546875,
+      "sibling_busy_pct": 0.0,
+      "major_page_faults": 0
+    }
+  ]
+}

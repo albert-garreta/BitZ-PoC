@@ -1,0 +1,73 @@
+{
+  "cwd": "/home/john-wu/code/BitZ-pcs",
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "environment": {
+    "CARGO_BUILD_JOBS": "1",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "4 (full suite only)"
+  },
+  "features": "field default features; no extra --features argument",
+  "commands": [
+    "CARGO_BUILD_JOBS=1 RUSTFLAGS='-C target-cpu=native' cargo test --manifest-path vendor/field/Cargo.toml --offline --release --lib --no-run",
+    "vendor/field/target/release/deps/field-15a6821d35781370 preparation::public_power_tests --test-threads=1",
+    "taskset -c 0 vendor/field/target/release/deps/field-15a6821d35781370 preparation::public_power_tests::public_limb_power_abba_microbenchmark --exact --ignored --nocapture --test-threads=1",
+    "CARGO_BUILD_JOBS=1 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=4 cargo test --manifest-path vendor/field/Cargo.toml --offline --release -- --test-threads=1"
+  ],
+  "source_and_binary_sha256": {
+    "vendor/field/src/preparation.rs": "3c05eaee0cccd1a83ddf1ee2a07d38355c50decaf86ff6f4f2515b7a6688451b",
+    "src/piop/spartan/falcon1024_ct/hybrid_bridge.rs": "64c749edf832fe78ab52adc81b6bb7d28f62da7929ec15db6f2b93169b310f5f",
+    "vendor/field/Cargo.toml": "8c57586a92aa38c737f27df0342e547ff18465eabeba1e4028b398fc7f8cb0f1",
+    "vendor/field/Cargo.lock": "d68bf57de84599c31c1042c58cbe1833ed4f2f7711e6a1caf3304fb102db8236",
+    "vendor/field/target/release/deps/field-15a6821d35781370": "08e755a755e4b8956b61fa9db2fc483345fdecd84c0bbaa99701e48375d71d15"
+  },
+  "log_sha256": {
+    "build.log": "24c2b08ddc69ca0b8267b28e3e182b4dd8c371148a356b1927f8fb4c2c690b43",
+    "focused-tests.log": "adc52506a600d7fe0ba02cbb9f72f6af28b6a9c6ac2bff3d8e54c7472d5ea825",
+    "microbenchmark.log": "977248807ff734c575837c06f5f8cd6badbd827597fc4ae608c158163d82b4bd",
+    "full-field-tests.log": "fd662a1c4378e61f1da81fcf4c94a7c7c37734a18f0aa49a5073bcdd7e5b4b88"
+  },
+  "tests": {
+    "full_suite_passed": 119,
+    "full_suite_failed": 0,
+    "full_suite_ignored": 1,
+    "groups": 21,
+    "focused_passed": 3,
+    "isolated_microbenchmark_passed": 1
+  },
+  "microbenchmark": {
+    "cpu": 0,
+    "setup": "13 public equality coordinates over prime 2^128-159; 8192 canonical weights, split into low113/high15-bit limbs",
+    "table": "same precomputed generator table for both algorithms; table construction and generator search outside timing",
+    "old": "test-only frozen previous 16-byte balanced product",
+    "new": "production pow_public selected balanced byte prefixes",
+    "warmup": "4 previous/current pairs; each timed sample loops 16 times",
+    "measurement": "48 ABBA groups, 96 samples per method, 16 repetitions per sample; reported mean milliseconds per 8192 weights",
+    "split": {
+      "previous_ms": 0.650197,
+      "current_ms": 0.348355,
+      "ratio": 0.535769,
+      "saved_ms": 0.301841
+    },
+    "full128_control": {
+      "previous_ms": 0.33417,
+      "current_ms": 0.327227,
+      "ratio": 0.979224,
+      "saved_ms": 0.006943
+    }
+  },
+  "limitations": [
+    "This is a public exponentiation microbenchmark, not Falcon end-to-end qualification.",
+    "The representative 128-bit prime stresses 15-bit upper limbs; current native Falcon primes are 126-bit, so actual upper limbs are at most 13 bits and select the same 2-byte bucket.",
+    "No timing claim is made for generator/comb caching; first-use preparation remains inside the normal first call.",
+    "Root integration and cached_generator_comb_matches_fresh_preparation remain pending at archival time."
+  ],
+  "independent_review": {
+    "reviewer": "/root/joint_source_api_plan",
+    "verdict": "PASS; no findings",
+    "scope": "Public width selection, old full-width tree equivalence, private exponentiation unchanged, generic ring identity behavior, fixed generator cache configuration and thread safety",
+    "reviewed_source_sha256": {
+      "vendor/field/src/preparation.rs": "3c05eaee0cccd1a83ddf1ee2a07d38355c50decaf86ff6f4f2515b7a6688451b",
+      "src/piop/spartan/falcon1024_ct/hybrid_bridge.rs": "64c749edf832fe78ab52adc81b6bb7d28f62da7929ec15db6f2b93169b310f5f"
+    }
+  }
+}

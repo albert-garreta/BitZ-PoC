@@ -1,0 +1,19 @@
+{
+  "head": "7fbadd3da46f9c67469d3c50845219290ca119c8",
+  "source": "/tmp/bitz-falcon-binding16-production-source-20261012",
+  "shared_target": "/home/john-wu/code/BitZ-pcs/target",
+  "features": "falcon-hybrid",
+  "rustflags": "-C target-cpu=native",
+  "preserved_other_change": "prepared first word fold; same word_binding.rs and word_binding_tests.rs in both variants",
+  "source_files": 563,
+  "comparison": "production baseline differs from candidate only by removal of 16 from optimized_binding selector",
+  "unrelated_cargo_change_excluded": true,
+  "baseline_binary": {
+    "path": "/tmp/bitz-falcon-binding16-binaries-20261012/production-baseline",
+    "sha256": "73d9e25f83c0b8b7aa9a9eafa7773ecadbcd3a81b0846dc59f5da91ec572307f"
+  },
+  "candidate_binary": {
+    "path": "/tmp/bitz-falcon-binding16-binaries-20261012/production-candidate",
+    "sha256": "6c48dd1ceef99dba7642d91fc2f87a7046184177c038f7b7640072187294ca0d"
+  }
+}

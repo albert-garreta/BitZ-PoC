@@ -1,0 +1,29 @@
+{
+  "status": "pass",
+  "cases": 16,
+  "checked_fields": [
+    "proof_debug_digest",
+    "proof_payload_bytes",
+    "source_root",
+    "input_digest",
+    "grinding_diagnostics"
+  ],
+  "files": [
+    "native-s100-b1-t16-seed42-candidate.jsonl",
+    "native-s100-b1024-t16-seed42-candidate.jsonl",
+    "native-s100-b3-t16-seed42-candidate.jsonl",
+    "native-s100-b32-t16-seed42-candidate.jsonl",
+    "native-s128-b1-t16-seed42-candidate.jsonl",
+    "native-s128-b1024-t16-seed42-candidate.jsonl",
+    "native-s128-b3-t16-seed42-candidate.jsonl",
+    "native-s128-b32-t16-seed42-candidate.jsonl",
+    "shared-prime-s100-b1-t16-seed42-candidate.jsonl",
+    "shared-prime-s100-b1024-t16-seed42-candidate.jsonl",
+    "shared-prime-s100-b3-t16-seed42-candidate.jsonl",
+    "shared-prime-s100-b32-t16-seed42-candidate.jsonl",
+    "shared-prime-s128-b1-t16-seed42-candidate.jsonl",
+    "shared-prime-s128-b1024-t16-seed42-candidate.jsonl",
+    "shared-prime-s128-b3-t16-seed42-candidate.jsonl",
+    "shared-prime-s128-b32-t16-seed42-candidate.jsonl"
+  ]
+}

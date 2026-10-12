@@ -1,0 +1,69 @@
+{
+  "checks": [
+    {
+      "profile": "baseline",
+      "variant": "arithmetic",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09331125897418,
+      "baseline_proof_identical": true
+    },
+    {
+      "profile": "baseline",
+      "variant": "arithmetic",
+      "degree": 1024,
+      "verified": true,
+      "security_bits": 128.0932452339251,
+      "baseline_proof_identical": true
+    },
+    {
+      "profile": "baseline",
+      "variant": "full",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09311176920565,
+      "baseline_proof_identical": true
+    },
+    {
+      "profile": "baseline",
+      "variant": "full",
+      "degree": 1024,
+      "verified": true,
+      "security_bits": 128.0931479114912,
+      "baseline_proof_identical": true
+    },
+    {
+      "profile": "weighted",
+      "variant": "arithmetic",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09449973617356,
+      "baseline_proof_identical": false
+    },
+    {
+      "profile": "weighted",
+      "variant": "full",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09316974036835,
+      "baseline_proof_identical": false
+    },
+    {
+      "profile": "queries120",
+      "variant": "arithmetic",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09317654019657,
+      "baseline_proof_identical": false
+    },
+    {
+      "profile": "queries120",
+      "variant": "full",
+      "degree": 512,
+      "verified": true,
+      "security_bits": 128.09324213312797,
+      "baseline_proof_identical": false
+    }
+  ],
+  "purpose": "correctness only; simultaneous compilation excludes these from performance analysis"
+}

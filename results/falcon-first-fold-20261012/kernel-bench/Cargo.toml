@@ -1,0 +1,11 @@
+[package]
+name = "falcon-first-fold-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+field = { path = "../../../vendor/field" }
+
+[profile.release]
+lto = true
+codegen-units = 1

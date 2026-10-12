@@ -1,0 +1,52 @@
+[
+  {
+    "event": "observed_start",
+    "epoch": 1791552163.5290174,
+    "pid": 3972368,
+    "name": "falcon_hybrid",
+    "cwd": "/proc/3972368/cwd",
+    "affinity": [
+      6
+    ]
+  },
+  {
+    "event": "observed_exit",
+    "epoch": 1791552168.5361712,
+    "pid": 3972368,
+    "name": "falcon_hybrid",
+    "cwd": "/proc/3972368/cwd",
+    "affinity": [
+      6
+    ]
+  },
+  {
+    "event": "observed_start",
+    "epoch": 1791552388.8512282,
+    "pid": 3980089,
+    "name": "falcon_hybrid",
+    "cwd": "/proc/3980089/cwd",
+    "affinity": [
+      6
+    ]
+  },
+  {
+    "event": "observed_exit",
+    "epoch": 1791552393.858513,
+    "pid": 3980089,
+    "name": "falcon_hybrid",
+    "cwd": "/proc/3980089/cwd",
+    "affinity": [
+      6
+    ]
+  },
+  {
+    "event": "observed_start",
+    "epoch": 1791552579.122837,
+    "pid": 3989950,
+    "name": "falcon_hybrid",
+    "cwd": "/home/john-wu/.codex/worktrees/b9a8/BitZ-pcs",
+    "affinity": [
+      14
+    ]
+  }
+]

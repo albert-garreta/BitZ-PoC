@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-08",
+  "checkout": {
+    "branch": "generic-falcon",
+    "head": "ac2b42feae0cfcfd86eda449a42edb4942cfa15f",
+    "scope": "Literature and source inspection; no implementation changes or new speedup measurements",
+    "benchmark_context": "1024 signatures; Falcon-512/1024; one core; existing 128-bit target and grinding schedules",
+    "profiles": "results/falcon-single-core-128-20261008/profile/analysis.json"
+  },
+  "papers": [
+    {
+      "id": "speeding-2026",
+      "title": "Speeding Up Sum-Check Proving",
+      "url": "https://cs.nyu.edu/~zd2131/papers/26-speeding-ccs.pdf",
+      "extended_landing": "https://eprint.iacr.org/2026/587",
+      "version_read": "15-page author-hosted CCS 2026 version; downloaded and read locally",
+      "sections": "3.1 small-large arithmetic; 3.3 delayed reduction; 4 multiproduct evaluation; 5.1 round batching; 5.2 streaming; 6 equality; 7 univariate skip",
+      "prior_versions": ["https://eprint.iacr.org/2025/1117", "https://eprint.iacr.org/2024/1046", "https://eprint.iacr.org/2024/1210"]
+    },
+    {
+      "id": "monomial-2026",
+      "title": "The Sum-Check Protocol over the Monomial Basis, and Other Optimizations",
+      "url": "https://quangvdao.github.io/papers/authored/monomial-basis-sum-check.pdf",
+      "landing": "https://eprint.iacr.org/2026/762",
+      "sections": "3 projective protocol; 4.3 PCS compatibility; 5 upper-limb challenges; 6 experiments"
+    },
+    {
+      "id": "timespace-2025",
+      "title": "Time-Space Trade-Offs for Sumcheck",
+      "url": "https://eprint.iacr.org/2025/1473",
+      "implementation": "https://github.com/compsec-epfl/efficient-sumcheck",
+      "coverage": "Primary abstract and authors' implementation; direct ePrint PDF returned HTTP403"
+    },
+    {
+      "id": "hobbit-2025",
+      "title": "Hobbit: Space-Efficient zkSNARK with Optimal Prover Time",
+      "url": "https://www.usenix.org/system/files/usenixsecurity25-pappas.pdf",
+      "sections": "3 streaming sumcheck and its proof-size/verifier tradeoff"
+    }
+  ],
+  "techniques": [
+    {
+      "priority": 1,
+      "technique": "Tune existing small-value round batching for source binding",
+      "paper": "speeding-2026 sections3 and5.1",
+      "problem": "Arithmetic source binding258.50ms and full source binding1278.36ms in Falcon-1024 diagnostic profiles",
+      "mechanism": "Keep early witness-bit work packed and evaluate a short multivariate prefix before materializing the field-valued suffix",
+      "already_present": ["Ternary prefix grid", "Signed small-by-large MACs", "Delayed reduction", "Byte/byte-pair aggregation", "Streaming coefficient replay", "Factored integer/ring overlay"],
+      "experiments": [
+        "Arithmetic K3 versus K4: Falcon-1024 suffix buffer64MiB versus32MiB; Falcon-51232MiB versus16MiB",
+        "Independently qualify the additional optimized BindingOptions kernels at128bits, especially grouped full-source prefix accumulation",
+        "Fuse full overlay coefficient emission with first-tail accumulation; packed arithmetic already has this fusion"
+      ],
+      "assumptions": "One input is Boolean, while the coefficient input is already a general126-bit field element. Only small-by-large benefits apply universally.",
+      "invariant": "Same sumcheck polynomial, messages, challenges, grinding and terminal opening",
+      "failure_modes": ["Extra prefix work can exceed saved tail work", "126-bit modulus changes reduction costs and accumulation limits", "Headline all-small-input paper speedups do not predict gains over the current optimized baseline"],
+      "validation": "Compare round coefficients, terminal claims, continuing transcripts and full proofs across seeds and sampled primes; benchmark on one idle core",
+      "code": ["src/sumcheck/inner/packed/state.rs:82", "src/sumcheck/inner/packed.rs:982", "src/sumcheck/inner/packed/streaming.rs:950", "src/sumcheck/inner/packed/binding_options.rs:15", "src/sumcheck/inner/packed/overlay.rs:147", "src/piop/spartan/falcon1024_algebraic/arithmetic.rs:1166"]
+    },
+    {
+      "priority": 2,
+      "technique": "Extend native arithmetic across multiple Falcon norm rounds",
+      "paper": "speeding-2026 sections5 and6",
+      "problem": "Custom Falcon integer prover uses native inputs only in round0 and then materializes full field tables",
+      "mechanism": "For v row coordinates precompute Q(X)=sum_i eq(rho,i) sum_u S_i(X,u)^2; accumulate each instance's grid sums in integers, apply its field weight afterward, and answer v ordinary rounds before materializing folded S",
+      "knobs": "v=2,3,4; start with arithmetic-only K1 before combined full K4 relation",
+      "bound": "Conservative Falcon-1024 arithmetic v4 bound using i16 magnitudes: extended value<=2^19, square sum over128 suffix rows<=2^45, so i64 suffices for each native instance subtotal",
+      "allocation_effect": "First folded table N/16 instead of N/2 at v4: eightfold reduction for that table only",
+      "related_microoptimization": "For arithmetic norm row-round q(t)=a+b*t+c*t^2, accumulate a and c only and recover b=claim-2*a-c; current code explicitly accumulates x*d. Handle equality-factor instance rounds separately.",
+      "scope_limit": "Existing diagnostic arithmetic norm29.10ms of552.62ms prover; full combined integer outer112.91ms of4134.28ms. This limits end-to-end gains.",
+      "invariant": "Identical ordinary round messages and current security schedule",
+      "failure_modes": ["Full norm and rejection have distinct equality factors; one mixed claim cannot independently reconstruct both cofactors", "Bounds must include supported malformed/raw source values and padding", "Zero equality factors need explicit handling"],
+      "validation": "Differential polynomial/transcript tests against current prover, native-bound tests, negative witness tests and full verification",
+      "code": ["src/piop/spartan/falcon_integer.rs:173", "src/piop/spartan/falcon_integer.rs:207", "src/piop/spartan/falcon_integer.rs:296", "src/piop/spartan/falcon1024_algebraic/arithmetic.rs:251"]
+    },
+    {
+      "priority": 3,
+      "technique": "Apply existing binary arithmetic and streaming techniques to remaining gaps",
+      "paper": "speeding-2026 sections3 and5; small-field precursor2024/1046",
+      "already_present": ["Joint binder seven packed rounds", "WFBitZ low-cardinality/JIT prefix tables", "GKR Gruen and split equality", "Keccak six-variable univariate reduction and SIMD zerocheck"],
+      "experiments": [
+        "Port delayed GF2^128 product accumulation and suitable SIMD kernels into Flock lincheck's scalar reduced-product loops",
+        "Preserve tensor/gather structure longer during full joint-binder preparation;213.94ms of308.84ms is preparation, while dense fold is only3.72ms",
+        "For generic BitZ PCS uses outside these Falcon runs, fuse round computation and folds and reuse buffers"
+      ],
+      "invariant": "Same binary-field polynomial and transcript",
+      "failure_modes": ["Forest leaves are low-cardinality full-field values, not all GF2 inputs", "Generic BitZ reducer is bypassed by the measured Falcon joint-opening path", "Existing fused kernels must not be counted as new work"],
+      "validation": "Compare per-round field outputs and transcripts, then profile total Keccak/joint-binder latency",
+      "code": ["vendor/flock-mod/crates/flock-core/src/lincheck.rs:1118", "vendor/flock-mod/crates/flock-core/src/lincheck.rs:1209", "vendor/flock-mod/crates/flock-core/src/zerocheck/multilinear.rs:818", "src/hybrid/joint_sumcheck.rs:632", "src/bitz/sumcheck.rs:176", "src/bitz/sumcheck.rs:454"]
+    },
+    {
+      "priority": 4,
+      "technique": "Memory-budgeted repeated streaming windows",
+      "paper": "speeding-2026 section5.2; timespace-2025; hobbit-2025 section3",
+      "problem": "A longer-term memory/scaling target rather than the first latency target for current batches",
+      "mechanism": "Replay/regenerate source coefficients over a schedule of windows, switching to dense cached folding once it fits the memory budget",
+      "already_present": "Source binding already streams its initial coefficients and materializes only a reduced suffix",
+      "experiment": "Impose explicit32/64MiB binder scratch budgets and compare extra source-replay cost with reduced working set",
+      "failure_modes": ["Less memory can cost more CPU time", "Hobbit changes the protocol and trades buffer size against proof size and verification; it is not just a buffer-management patch", "Reducing binder scratch alone does not eliminate all full-prover peakRSS"],
+      "validation": "Measure end-to-end time and RSS, not just allocation size; distinguish unchanged-transcript streaming algorithms from protocol replacements"
+    },
+    {
+      "priority": 5,
+      "technique": "Projective or univariate protocol experiments",
+      "paper": "monomial-2026 sections3-5; speeding-2026 section7",
+      "projective_candidate": "Use projective interpolation so a fold has form a+r*b. This changes the polynomial interpretation and requires adapting structured coefficient evaluation and BitZ terminal openings.",
+      "univariate_candidate": "Existing test-only inner skip replaces several ordinary rounds with one higher-degree prefix. Its final Lagrange-weighted claims need two bridges to the original multilinear openings.",
+      "not_applicable_directly": "The monomial paper's narrow upper-limb challenge optimization targets about256-bit fields; current126-bit field has no spare128-bit challenge domain to exploit that way.",
+      "security": "New domains, round identities, terminal obligations and any degree/challenge changes require complete128-bit accounting and protocol versioning",
+      "failure_modes": ["Projective interpolation is different from the infinity extrapolation point already used by ordinary sumcheck", "Bridge costs can erase univariate-skip gains", "Reducing challenge entropy to cheap64-bit values would change the security budget"],
+      "validation": "Prototype full verifier and opening composition before claiming an end-to-end speedup",
+      "code": ["src/sumcheck/inner/skipped_experiment.rs:132", "src/sumcheck/outer/univariate.rs:1"]
+    }
+  ],
+  "already_implemented_or_poor_fit": [
+    "Generic outer already has equality cofactor reconstruction, split equality tables, native first-round arithmetic and fused fold/next-message passes: src/sumcheck/outer/ordinary.rs:668,858,1098",
+    "New high-degree multiproduct recursion in speeding-2026 section4 is not a direct improvement for the degree2 source binder; concrete benefit begins at larger product degree",
+    "The128-bit BindingOptions gate disables additional tuning, not the central small-value algorithm",
+    "No paper-reported speedup is treated as a measurement or prediction for this checkout"
+  ]
+}

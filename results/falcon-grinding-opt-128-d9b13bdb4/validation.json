@@ -1,0 +1,8 @@
+{
+  "sources_unchanged": true,
+  "verified_proofs": 120,
+  "configurations": 20,
+  "matched_inputs_between_variants": true,
+  "workers_pinned_to_distinct_physical_cores": true,
+  "all_security_ledgers_at_least_128_bits": true
+}

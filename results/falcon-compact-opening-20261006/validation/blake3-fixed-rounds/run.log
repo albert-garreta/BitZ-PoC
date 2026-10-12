@@ -1,0 +1,38 @@
+workers=[(0, [0]), (1, [1]), (2, [2]), (3, [3]), (4, [4]), (5, [5]), (6, [6]), (7, [7]), (8, [8]), (9, [9]), (10, [10]), (11, [11]), (12, [12]), (13, [13]), (14, [14]), (15, [15])] main=[0] AVX512F=true
+scalar reference len=32 seeds=8
+scalar reference len=32 seeds=16
+scalar reference len=32 seeds=24
+scalar reference len=32 seeds=32
+scalar reference len=32 seeds=40
+scalar reference len=32 seeds=48
+scalar reference len=32 seeds=56
+scalar reference len=32 seeds=64
+measured len=32 bits=12 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=13 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=14 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=15 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=16 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=17 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=18 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=19 cases=64 reps=4 ABBA/BAAB
+measured len=32 bits=20 cases=64 reps=4 ABBA/BAAB
+scalar reference len=16 seeds=8
+scalar reference len=16 seeds=16
+scalar reference len=16 seeds=24
+scalar reference len=16 seeds=32
+scalar reference len=16 seeds=40
+scalar reference len=16 seeds=48
+scalar reference len=16 seeds=56
+scalar reference len=16 seeds=64
+measured len=16 bits=12 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=13 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=14 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=15 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=16 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=17 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=18 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=19 cases=64 reps=4 ABBA/BAAB
+measured len=16 bits=20 cases=64 reps=4 ABBA/BAAB
+throughput complete prefix_len=32
+throughput complete prefix_len=16
+all 1152 cases match independent scalar oracle; measured 18432 calls

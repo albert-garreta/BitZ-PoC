@@ -273,6 +273,49 @@ fn word_proof_matches_dense_reference_rounds_and_terminals() {
 }
 
 #[test]
+fn first_word_fold_matches_independent_signed_bit_reference() {
+    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        for batch in [1, 3, 17] {
+            let layout = Layout::new(batch).unwrap();
+            let source = source_fixture(&layout);
+            let form = form_fixture(&layout, &f);
+            for r in [
+                f.zero(),
+                f.one(),
+                value(-1, &f),
+                F::from_with_cfg(modulus / 2, &f),
+            ] {
+                let mut reference = Reference::new(&form, &source, &f);
+                reference.fold(r, &f);
+                let expected: Vec<_> = reference.weights[0]
+                    .iter()
+                    .zip(&reference.tables[0])
+                    .map(|(&w, &d)| [w, d])
+                    .collect();
+                let expected_sums =
+                    expected
+                        .chunks_exact(2)
+                        .fold([f.zero(); 2], |mut sum, pair| {
+                            sum[0] = f.add(&sum[0], &f.mul(&pair[0][0], &pair[0][1]));
+                            sum[1] = f.add(
+                                &sum[1],
+                                &f.mul(
+                                    &f.sub(&pair[1][0], &pair[0][0]),
+                                    &f.sub(&pair[1][1], &pair[0][1]),
+                                ),
+                            );
+                            sum
+                        });
+                let actual = first_fold(&form, &source, r, &f);
+                assert_eq!(actual.0, expected, "modulus={modulus}, batch={batch}");
+                assert_eq!(actual.1, expected_sums, "modulus={modulus}, batch={batch}");
+            }
+        }
+    }
+}
+
+#[test]
 fn word_kernels_match_dense_reference_at_boolean_challenges() {
     let f = test_field();
     let layout = Layout::new(3).unwrap();

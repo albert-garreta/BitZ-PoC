@@ -1,0 +1,88 @@
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external
+full-512-t16-s42-weighted_external: total=344.62 prove=282.24 verify=32.88 bits=128.093110 sibling=1.52%
+Discarding noisy timing attempt: full-512-t16-s42-weighted_external_queries120
+full-512-t16-s42-weighted_external_queries120: total=345.37 prove=283.37 verify=32.60 bits=128.093242 sibling=1.27%
+arithmetic-512-t8-s42-weighted_external_queries120: total=59.40 prove=53.51 verify=19.97 bits=128.093376 sibling=0.00%
+arithmetic-512-t8-s42-weighted_external: total=59.69 prove=53.89 verify=20.21 bits=128.097134 sibling=0.59%
+Discarding noisy timing attempt: full-1024-t16-s42-weighted_external_queries120
+Discarding noisy timing attempt: full-1024-t16-s42-weighted_external_queries120
+Discarding noisy timing attempt: full-1024-t16-s42-weighted_external_queries120
+full-1024-t16-s42-weighted_external_queries120: total=666.14 prove=546.92 verify=53.76 bits=128.093159 sibling=0.80%
+full-1024-t16-s42-weighted_external: total=663.98 prove=548.03 verify=54.44 bits=128.093263 sibling=1.06%
+arithmetic-1024-t8-s42-weighted_external_queries120: total=116.78 prove=101.08 verify=38.28 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s42-weighted_external: total=115.36 prove=99.92 verify=37.56 bits=128.093634 sibling=0.57%
+arithmetic-512-t8-s43-weighted_external_queries120: total=59.34 prove=53.57 verify=19.98 bits=128.093376 sibling=0.00%
+arithmetic-512-t8-s43-weighted_external: total=59.55 prove=53.97 verify=20.39 bits=128.097134 sibling=0.00%
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+Discarding noisy timing attempt: full-512-t16-s43-weighted_queries120
+full-512-t16-s43-weighted_queries120: total=347.00 prove=283.85 verify=32.41 bits=128.093712 sibling=1.27%
+Discarding noisy timing attempt: full-512-t16-s43-weighted_external
+Discarding noisy timing attempt: full-512-t16-s43-weighted_external
+full-512-t16-s43-weighted_external: total=342.43 prove=279.66 verify=32.80 bits=128.093110 sibling=1.79%
+full-512-t16-s43-queries120: total=350.75 prove=287.86 verify=32.47 bits=128.093242 sibling=1.52%
+Discarding noisy timing attempt: full-512-t16-s43-queries124
+full-512-t16-s43-queries124: total=342.81 prove=277.93 verify=32.84 bits=128.093145 sibling=1.03%
+full-512-t16-s43-weighted: total=349.49 prove=285.38 verify=33.06 bits=128.094391 sibling=1.75%
+Discarding noisy timing attempt: full-512-t16-s43-queries116
+Discarding noisy timing attempt: full-512-t16-s43-queries116
+Discarding noisy timing attempt: full-512-t16-s43-queries116
+full-512-t16-s43-queries116: total=343.98 prove=282.31 verify=32.63 bits=128.093219 sibling=1.78%
+full-512-t16-s43-baseline: total=344.62 prove=282.54 verify=32.86 bits=128.093112 sibling=1.53%
+full-512-t16-s43-weighted_external_queries120: total=347.97 prove=286.76 verify=32.63 bits=128.093242 sibling=0.76%
+full-1024-t16-s43-queries124: total=667.71 prove=548.81 verify=53.96 bits=128.093110 sibling=1.19%
+full-1024-t16-s43-baseline: total=664.84 prove=545.20 verify=54.20 bits=128.093148 sibling=1.59%
+full-1024-t16-s43-weighted: total=668.52 prove=553.42 verify=54.10 bits=128.093732 sibling=1.32%
+full-1024-t16-s43-queries116: total=661.12 prove=544.74 verify=53.67 bits=128.093231 sibling=1.33%
+Discarding noisy timing attempt: full-1024-t16-s43-weighted_queries120
+Discarding noisy timing attempt: full-1024-t16-s43-weighted_queries120
+full-1024-t16-s43-weighted_queries120: total=663.80 prove=545.20 verify=53.98 bits=128.093441 sibling=1.85%
+Discarding noisy timing attempt: full-1024-t16-s43-weighted_external_queries120
+full-1024-t16-s43-weighted_external_queries120: total=664.71 prove=548.63 verify=53.91 bits=128.093159 sibling=1.45%
+full-1024-t16-s43-global: total=665.49 prove=545.60 verify=54.11 bits=128.093238 sibling=1.99%
+full-1024-t16-s43-original: total=659.70 prove=542.37 verify=54.73 bits=128.093148 sibling=1.19%
+Discarding noisy timing attempt: full-1024-t16-s43-queries120
+Discarding noisy timing attempt: full-1024-t16-s43-queries120
+full-1024-t16-s43-queries120: total=665.11 prove=548.03 verify=53.78 bits=128.093159 sibling=1.59%
+full-1024-t16-s43-weighted_external: total=662.10 prove=545.15 verify=54.00 bits=128.093263 sibling=1.33%
+arithmetic-1024-t8-s43-global: total=114.98 prove=99.22 verify=38.01 bits=128.093177 sibling=1.14%
+Discarding noisy timing attempt: arithmetic-1024-t8-s43-weighted_external
+arithmetic-1024-t8-s43-weighted_external: total=115.48 prove=99.84 verify=37.35 bits=128.093634 sibling=0.29%
+arithmetic-1024-t8-s43-weighted: total=114.79 prove=98.98 verify=37.32 bits=128.094010 sibling=1.44%
+arithmetic-1024-t8-s43-original: total=113.84 prove=98.78 verify=38.12 bits=128.093245 sibling=1.44%
+Discarding noisy timing attempt: arithmetic-1024-t8-s43-weighted_external_queries120
+arithmetic-1024-t8-s43-weighted_external_queries120: total=113.82 prove=98.41 verify=37.13 bits=128.093151 sibling=1.74%
+arithmetic-1024-t8-s43-weighted_queries120: total=113.91 prove=98.36 verify=37.72 bits=128.093151 sibling=1.44%
+Discarding noisy timing attempt: arithmetic-1024-t8-s43-queries124
+arithmetic-1024-t8-s43-queries124: total=111.52 prove=96.00 verify=37.17 bits=128.093113 sibling=0.87%
+Discarding noisy timing attempt: arithmetic-1024-t8-s43-queries120
+arithmetic-1024-t8-s43-queries120: total=111.96 prove=96.71 verify=36.98 bits=128.093534 sibling=0.87%
+arithmetic-1024-t8-s43-queries116: total=112.78 prove=97.10 verify=37.19 bits=128.093823 sibling=0.58%
+arithmetic-1024-t8-s43-baseline: total=113.88 prove=98.51 verify=38.07 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s44-queries124: total=112.88 prove=97.49 verify=37.58 bits=128.093113 sibling=0.58%
+arithmetic-1024-t8-s44-original: total=113.32 prove=98.45 verify=38.80 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s44-weighted_external: total=111.84 prove=96.34 verify=37.10 bits=128.093634 sibling=0.29%
+arithmetic-1024-t8-s44-weighted_queries120: total=112.43 prove=96.78 verify=37.19 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s44-queries120: total=113.25 prove=97.92 verify=38.37 bits=128.093534 sibling=0.29%
+arithmetic-1024-t8-s44-baseline: total=112.14 prove=96.77 verify=37.10 bits=128.093245 sibling=1.45%
+arithmetic-1024-t8-s44-global: total=112.31 prove=97.03 verify=37.41 bits=128.093177 sibling=0.58%
+arithmetic-1024-t8-s44-weighted: total=111.60 prove=96.15 verify=37.37 bits=128.094010 sibling=0.87%
+arithmetic-1024-t8-s44-queries116: total=112.44 prove=97.13 verify=37.69 bits=128.093823 sibling=0.58%
+arithmetic-1024-t8-s44-weighted_external_queries120: total=112.42 prove=96.88 verify=37.86 bits=128.093151 sibling=0.57%
+Traceback (most recent call last):
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 86, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 84, in main
+    results=[run(args.phase,kind,degree,t,seed,profile,args.reps) for profile in profiles]
+             ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-experiments-20261009/campaign.py", line 42, in run
+    else:raise RuntimeError('benchmark cores are busy: '+json.dumps(loads))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: benchmark cores are busy: {"6": 0.0, "7": 0.0, "4": 1.0, "5": 1.0, "2": 4.040404040404041, "3": 1.0, "0": 2.0, "1": 1.0, "14": 100.0, "15": 0.0, "12": 1.0101010101010102, "13": 0.0, "10": 0.0, "11": 0.0, "8": 2.0202020202020203, "9": 0.0, "22": 0.0, "23": 2.0202020202020203, "20": 0.0, "21": 1.0, "18": 0.0, "19": 0.0, "16": 1.0, "17": 0.0, "30": 1.0, "31": 0.9900990099009901, "28": 0.0, "29": 0.0, "26": 0.0, "27": 0.0, "24": 0.0, "25": 0.0}

@@ -1,0 +1,11 @@
+Captured test-result portion of the completed tool output; compilation diagnostics omitted.
+Command: taskset -c 8-15,24-31 env RUSTFLAGS='-C target-cpu=x86-64' CARGO_TARGET_DIR=/tmp/falcon-sumcheck-portable-tests-20261008 CARGO_BUILD_JOBS=8 cargo test --manifest-path vendor/flock-mod/Cargo.toml -p flock-core --release --offline lincheck::tests::product_sumcheck -- --test-threads=2
+
+    Finished `release` profile [optimized] target(s) in 9.88s
+     Running unittests src/lib.rs (/tmp/falcon-sumcheck-portable-tests-20261008/release/deps/flock_core-450e95600bbcd61b)
+
+running 2 tests
+test lincheck::tests::product_sumcheck_vector_tails_match_reduced_reference ... ok
+test lincheck::tests::product_sumcheck_matches_reduced_reference_through_every_round ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 306 filtered out; finished in 0.02s

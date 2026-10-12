@@ -1,0 +1,11 @@
+{
+  "status": "pass",
+  "phase": "pre-measurement",
+  "baseline_unmodified_files": 816,
+  "identical_benchmark_overlay_files": [
+    "benches/common/falcon_affinity.rs",
+    "benches/falcon_hybrid.rs"
+  ],
+  "candidate_production_files_unchanged_from_v2": 516,
+  "current_candidate_files_verified": 818
+}

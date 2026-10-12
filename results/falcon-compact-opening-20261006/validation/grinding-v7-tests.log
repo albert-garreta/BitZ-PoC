@@ -1,0 +1,17 @@
+
+running 12 tests
+test utils::blake3x4::avx512::tests::high_difficulty_candidates_use_the_complete_hash ... ok
+test utils::blake3x4::tests::avx2_words_match_the_blake3_crate ... ok
+test utils::blake3x4::tests::avx512_words_match_the_blake3_crate ... ok
+test utils::blake3x4::tests::benchmark_nonce_scheduling ... ignored, isolated grinding scheduling benchmark
+test utils::blake3x4::tests::benchmark_x86_nonce_kernels ... ignored, isolated grinding kernel benchmark
+test utils::blake3x4::tests::lanes_match_the_blake3_crate ... ok
+test utils::blake3x4::tests::pool_search_preserves_minimum_across_threads_and_chunks ... ok
+test utils::blake3x4::tests::pool_search_returns_the_serial_minimum ... ok
+test utils::blake3x4::tests::range_edges_match_the_serial_scan ... ok
+test utils::blake3x4::tests::range_scans_match_the_serial_scan ... ok
+test utils::blake3x4::tests::wide_thresholds_use_the_full_hash ... ok
+test utils::blake3x4::tests::x86_kernels_return_the_same_smallest_nonce ... ok
+
+test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 680 filtered out; finished in 0.18s
+

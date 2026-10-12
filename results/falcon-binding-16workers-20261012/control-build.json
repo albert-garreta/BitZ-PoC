@@ -1,0 +1,10 @@
+{
+  "head": "b30f5e445e8c8e64cdf96eed642755ca1bb60f8a",
+  "binary": "/tmp/bitz-falcon-binding16-binaries-20261012/strategy-control",
+  "sha256": "462afe1a8cd811d2799d6e8a77bc2ee0a6814c542d5c6dd9e0b0ac779880df70",
+  "build_command": "RUSTFLAGS=\"-C target-cpu=native\" cargo build --release --locked --offline --features falcon-hybrid,bench-internals --example falcon_algebraic",
+  "source_sha256": {
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "0e55d3cdf48cb4456602900822ded64171c9d9a7b9239061832f5d3ec11c31b5",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "7a75a53115136ee8230565ecb5705dcbb95da88e916e13a19643e30b3f6c6b91"
+  }
+}

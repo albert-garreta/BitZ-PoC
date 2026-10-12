@@ -1,0 +1,4605 @@
+{
+  "threads": 16,
+  "returncode": 0,
+  "elapsed_seconds": 1.5015643950318918,
+  "idle_cpu_deltas": {
+    "cpu": {
+      "ticks": {
+        "user": 20,
+        "nice": 0,
+        "system": 11,
+        "idle": 3168,
+        "iowait": 4,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 3203,
+      "busy_percent": 0.9678426475179519,
+      "state_percent": {
+        "user": 0.6244146113019045,
+        "nice": 0.0,
+        "system": 0.34342803621604745,
+        "idle": 98.90727443022166,
+        "iowait": 0.12488292226038089,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu0": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu1": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu2": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 3,
+        "idle": 98,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 102,
+      "busy_percent": 3.9215686274509802,
+      "state_percent": {
+        "user": 0.9803921568627451,
+        "nice": 0.0,
+        "system": 2.9411764705882355,
+        "idle": 96.07843137254902,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu3": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 1,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 1.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 1.0,
+        "idle": 99.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu4": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu5": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu6": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu7": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu8": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 1,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 1.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 1.0,
+        "idle": 99.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu9": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu10": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu11": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu12": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu13": {
+      "ticks": {
+        "user": 6,
+        "nice": 0,
+        "system": 2,
+        "idle": 92,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 8.0,
+      "state_percent": {
+        "user": 6.0,
+        "nice": 0.0,
+        "system": 2.0,
+        "idle": 92.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu14": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu15": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu16": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu17": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu18": {
+      "ticks": {
+        "user": 5,
+        "nice": 0,
+        "system": 1,
+        "idle": 94,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 6.0,
+      "state_percent": {
+        "user": 5.0,
+        "nice": 0.0,
+        "system": 1.0,
+        "idle": 94.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu19": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu20": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu21": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu22": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.0,
+        "iowait": 1.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu23": {
+      "ticks": {
+        "user": 2,
+        "nice": 0,
+        "system": 0,
+        "idle": 98,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 101,
+      "busy_percent": 1.9801980198019802,
+      "state_percent": {
+        "user": 1.9801980198019802,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 97.02970297029702,
+        "iowait": 0.9900990099009901,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu24": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu25": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu26": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 100,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 101,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.00990099009901,
+        "iowait": 0.9900990099009901,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu27": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu28": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu29": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 99,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu30": {
+      "ticks": {
+        "user": 4,
+        "nice": 0,
+        "system": 2,
+        "idle": 94,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 100,
+      "busy_percent": 6.0,
+      "state_percent": {
+        "user": 4.0,
+        "nice": 0.0,
+        "system": 2.0,
+        "idle": 94.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu31": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 1,
+        "idle": 99,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 101,
+      "busy_percent": 1.9801980198019802,
+      "state_percent": {
+        "user": 0.9900990099009901,
+        "nice": 0.0,
+        "system": 0.9900990099009901,
+        "idle": 98.01980198019803,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    }
+  },
+  "run_cpu_deltas": {
+    "cpu": {
+      "ticks": {
+        "user": 2236,
+        "nice": 0,
+        "system": 10,
+        "idle": 2549,
+        "iowait": 4,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 4799,
+      "busy_percent": 46.801416961867055,
+      "state_percent": {
+        "user": 46.59304021671181,
+        "nice": 0.0,
+        "system": 0.20837674515524068,
+        "idle": 53.11523234007085,
+        "iowait": 0.08335069806209627,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu0": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 1,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 92.71523178807946,
+      "state_percent": {
+        "user": 92.05298013245033,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 7.28476821192053,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu1": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu2": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu3": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu4": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 1,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 92.71523178807946,
+      "state_percent": {
+        "user": 92.05298013245033,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 7.28476821192053,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu5": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 1,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 92.71523178807946,
+      "state_percent": {
+        "user": 92.05298013245033,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 7.28476821192053,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu6": {
+      "ticks": {
+        "user": 138,
+        "nice": 0,
+        "system": 1,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.0,
+        "nice": 0.0,
+        "system": 0.6666666666666666,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu7": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu8": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 10,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 93.28859060402685,
+      "state_percent": {
+        "user": 93.28859060402685,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 6.7114093959731544,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu9": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 1,
+        "idle": 10,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 92.71523178807946,
+      "state_percent": {
+        "user": 92.05298013245033,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 6.622516556291391,
+        "iowait": 0.6622516556291391,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu10": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu11": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 1,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 92.71523178807946,
+      "state_percent": {
+        "user": 92.05298013245033,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 7.28476821192053,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu12": {
+      "ticks": {
+        "user": 138,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 92.61744966442953,
+      "state_percent": {
+        "user": 92.61744966442953,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.382550335570469,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu13": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 10,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 93.28859060402685,
+      "state_percent": {
+        "user": 93.28859060402685,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 6.7114093959731544,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu14": {
+      "ticks": {
+        "user": 139,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 92.66666666666667,
+      "state_percent": {
+        "user": 92.66666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.333333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu15": {
+      "ticks": {
+        "user": 138,
+        "nice": 0,
+        "system": 0,
+        "idle": 11,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 92.61744966442953,
+      "state_percent": {
+        "user": 92.61744966442953,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 7.382550335570469,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu16": {
+      "ticks": {
+        "user": 2,
+        "nice": 0,
+        "system": 1,
+        "idle": 147,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 2.0,
+      "state_percent": {
+        "user": 1.3333333333333333,
+        "nice": 0.0,
+        "system": 0.6666666666666666,
+        "idle": 98.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu17": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 0,
+        "idle": 150,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 0.6622516556291391,
+      "state_percent": {
+        "user": 0.6622516556291391,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.33774834437087,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu18": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 1,
+        "idle": 149,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.6666666666666666,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.6666666666666666,
+        "idle": 99.33333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu19": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 150,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu20": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 1,
+        "idle": 149,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.6666666666666666,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.6666666666666666,
+        "idle": 99.33333333333333,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu21": {
+      "ticks": {
+        "user": 7,
+        "nice": 0,
+        "system": 0,
+        "idle": 142,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 4.666666666666667,
+      "state_percent": {
+        "user": 4.666666666666667,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 94.66666666666667,
+        "iowait": 0.6666666666666666,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu22": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 1,
+        "idle": 149,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 1.3245033112582782,
+      "state_percent": {
+        "user": 0.6622516556291391,
+        "nice": 0.0,
+        "system": 0.6622516556291391,
+        "idle": 98.67549668874172,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu23": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 1,
+        "idle": 148,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 1.3333333333333333,
+      "state_percent": {
+        "user": 0.6666666666666666,
+        "nice": 0.0,
+        "system": 0.6666666666666666,
+        "idle": 98.66666666666667,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu24": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 149,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu25": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 150,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu26": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 0,
+        "idle": 148,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.6666666666666666,
+      "state_percent": {
+        "user": 0.6666666666666666,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 98.66666666666667,
+        "iowait": 0.6666666666666666,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu27": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 149,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.33333333333333,
+        "iowait": 0.6666666666666666,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu28": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 149,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 150,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.33333333333333,
+        "iowait": 0.6666666666666666,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu29": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 0,
+        "idle": 150,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 151,
+      "busy_percent": 0.6622516556291391,
+      "state_percent": {
+        "user": 0.6622516556291391,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 99.33774834437087,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu30": {
+      "ticks": {
+        "user": 1,
+        "nice": 0,
+        "system": 0,
+        "idle": 147,
+        "iowait": 1,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 149,
+      "busy_percent": 0.6711409395973155,
+      "state_percent": {
+        "user": 0.6711409395973155,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 98.65771812080537,
+        "iowait": 0.6711409395973155,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    },
+    "cpu31": {
+      "ticks": {
+        "user": 0,
+        "nice": 0,
+        "system": 0,
+        "idle": 148,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+        "steal": 0
+      },
+      "total_ticks": 148,
+      "busy_percent": 0.0,
+      "state_percent": {
+        "user": 0.0,
+        "nice": 0.0,
+        "system": 0.0,
+        "idle": 100.0,
+        "iowait": 0.0,
+        "irq": 0.0,
+        "softirq": 0.0,
+        "steal": 0.0
+      }
+    }
+  },
+  "cpu_before": {
+    "cpu": {
+      "user": 18694804,
+      "nice": 89799,
+      "system": 2219318,
+      "idle": 1217685777,
+      "iowait": 103419,
+      "irq": 0,
+      "softirq": 52948,
+      "steal": 0
+    },
+    "cpu0": {
+      "user": 1770968,
+      "nice": 1453,
+      "system": 207768,
+      "idle": 36698069,
+      "iowait": 1632,
+      "irq": 0,
+      "softirq": 23998,
+      "steal": 0
+    },
+    "cpu1": {
+      "user": 693143,
+      "nice": 512,
+      "system": 77102,
+      "idle": 37945817,
+      "iowait": 1304,
+      "irq": 0,
+      "softirq": 9065,
+      "steal": 0
+    },
+    "cpu2": {
+      "user": 760064,
+      "nice": 4653,
+      "system": 106630,
+      "idle": 37828377,
+      "iowait": 2385,
+      "irq": 0,
+      "softirq": 2989,
+      "steal": 0
+    },
+    "cpu3": {
+      "user": 640756,
+      "nice": 972,
+      "system": 82677,
+      "idle": 37993137,
+      "iowait": 1836,
+      "irq": 0,
+      "softirq": 1684,
+      "steal": 0
+    },
+    "cpu4": {
+      "user": 595495,
+      "nice": 577,
+      "system": 74195,
+      "idle": 38054555,
+      "iowait": 1566,
+      "irq": 0,
+      "softirq": 985,
+      "steal": 0
+    },
+    "cpu5": {
+      "user": 591020,
+      "nice": 532,
+      "system": 73882,
+      "idle": 38060271,
+      "iowait": 1594,
+      "irq": 0,
+      "softirq": 521,
+      "steal": 0
+    },
+    "cpu6": {
+      "user": 680026,
+      "nice": 310,
+      "system": 76639,
+      "idle": 37973247,
+      "iowait": 1125,
+      "irq": 0,
+      "softirq": 364,
+      "steal": 0
+    },
+    "cpu7": {
+      "user": 591675,
+      "nice": 289,
+      "system": 69446,
+      "idle": 38068759,
+      "iowait": 1096,
+      "irq": 0,
+      "softirq": 267,
+      "steal": 0
+    },
+    "cpu8": {
+      "user": 686957,
+      "nice": 8093,
+      "system": 108527,
+      "idle": 37859128,
+      "iowait": 6615,
+      "irq": 0,
+      "softirq": 1997,
+      "steal": 0
+    },
+    "cpu9": {
+      "user": 479351,
+      "nice": 2411,
+      "system": 76916,
+      "idle": 38126741,
+      "iowait": 5082,
+      "irq": 0,
+      "softirq": 549,
+      "steal": 0
+    },
+    "cpu10": {
+      "user": 1806649,
+      "nice": 22872,
+      "system": 157371,
+      "idle": 36670866,
+      "iowait": 7164,
+      "irq": 0,
+      "softirq": 633,
+      "steal": 0
+    },
+    "cpu11": {
+      "user": 469076,
+      "nice": 1688,
+      "system": 74066,
+      "idle": 38145983,
+      "iowait": 5130,
+      "irq": 0,
+      "softirq": 430,
+      "steal": 0
+    },
+    "cpu12": {
+      "user": 553087,
+      "nice": 2622,
+      "system": 78819,
+      "idle": 38052661,
+      "iowait": 5661,
+      "irq": 0,
+      "softirq": 441,
+      "steal": 0
+    },
+    "cpu13": {
+      "user": 1536801,
+      "nice": 18319,
+      "system": 144897,
+      "idle": 36963592,
+      "iowait": 6219,
+      "irq": 0,
+      "softirq": 1762,
+      "steal": 0
+    },
+    "cpu14": {
+      "user": 580627,
+      "nice": 1321,
+      "system": 72007,
+      "idle": 38045412,
+      "iowait": 4476,
+      "irq": 0,
+      "softirq": 371,
+      "steal": 0
+    },
+    "cpu15": {
+      "user": 465076,
+      "nice": 829,
+      "system": 65571,
+      "idle": 38159414,
+      "iowait": 3651,
+      "irq": 0,
+      "softirq": 2653,
+      "steal": 0
+    },
+    "cpu16": {
+      "user": 206886,
+      "nice": 707,
+      "system": 34504,
+      "idle": 38487028,
+      "iowait": 2130,
+      "irq": 0,
+      "softirq": 280,
+      "steal": 0
+    },
+    "cpu17": {
+      "user": 155181,
+      "nice": 357,
+      "system": 29720,
+      "idle": 38547546,
+      "iowait": 1818,
+      "irq": 0,
+      "softirq": 199,
+      "steal": 0
+    },
+    "cpu18": {
+      "user": 231573,
+      "nice": 883,
+      "system": 37138,
+      "idle": 38459541,
+      "iowait": 2151,
+      "irq": 0,
+      "softirq": 208,
+      "steal": 0
+    },
+    "cpu19": {
+      "user": 210819,
+      "nice": 480,
+      "system": 35098,
+      "idle": 38484039,
+      "iowait": 1986,
+      "irq": 0,
+      "softirq": 199,
+      "steal": 0
+    },
+    "cpu20": {
+      "user": 179563,
+      "nice": 451,
+      "system": 32287,
+      "idle": 38519548,
+      "iowait": 1677,
+      "irq": 0,
+      "softirq": 192,
+      "steal": 0
+    },
+    "cpu21": {
+      "user": 194351,
+      "nice": 488,
+      "system": 33899,
+      "idle": 38502408,
+      "iowait": 1894,
+      "irq": 0,
+      "softirq": 187,
+      "steal": 0
+    },
+    "cpu22": {
+      "user": 108384,
+      "nice": 356,
+      "system": 26477,
+      "idle": 38598352,
+      "iowait": 1570,
+      "irq": 0,
+      "softirq": 178,
+      "steal": 0
+    },
+    "cpu23": {
+      "user": 118628,
+      "nice": 311,
+      "system": 27238,
+      "idle": 38586984,
+      "iowait": 1563,
+      "irq": 0,
+      "softirq": 174,
+      "steal": 0
+    },
+    "cpu24": {
+      "user": 435175,
+      "nice": 1991,
+      "system": 52592,
+      "idle": 38216538,
+      "iowait": 4292,
+      "irq": 0,
+      "softirq": 329,
+      "steal": 0
+    },
+    "cpu25": {
+      "user": 293713,
+      "nice": 1081,
+      "system": 45314,
+      "idle": 38370861,
+      "iowait": 4337,
+      "irq": 0,
+      "softirq": 312,
+      "steal": 0
+    },
+    "cpu26": {
+      "user": 1394446,
+      "nice": 5975,
+      "system": 77425,
+      "idle": 37222741,
+      "iowait": 4958,
+      "irq": 0,
+      "softirq": 388,
+      "steal": 0
+    },
+    "cpu27": {
+      "user": 267459,
+      "nice": 945,
+      "system": 43385,
+      "idle": 38400636,
+      "iowait": 3899,
+      "irq": 0,
+      "softirq": 311,
+      "steal": 0
+    },
+    "cpu28": {
+      "user": 337649,
+      "nice": 1242,
+      "system": 47383,
+      "idle": 38325004,
+      "iowait": 3704,
+      "irq": 0,
+      "softirq": 320,
+      "steal": 0
+    },
+    "cpu29": {
+      "user": 1231085,
+      "nice": 5572,
+      "system": 74206,
+      "idle": 37391591,
+      "iowait": 4622,
+      "irq": 0,
+      "softirq": 390,
+      "steal": 0
+    },
+    "cpu30": {
+      "user": 235060,
+      "nice": 831,
+      "system": 40564,
+      "idle": 38438584,
+      "iowait": 3316,
+      "irq": 0,
+      "softirq": 299,
+      "steal": 0
+    },
+    "cpu31": {
+      "user": 194048,
+      "nice": 663,
+      "system": 35561,
+      "idle": 38488331,
+      "iowait": 2950,
+      "irq": 0,
+      "softirq": 258,
+      "steal": 0
+    }
+  },
+  "cpu_after": {
+    "cpu": {
+      "user": 18697040,
+      "nice": 89799,
+      "system": 2219328,
+      "idle": 1217688326,
+      "iowait": 103423,
+      "irq": 0,
+      "softirq": 52948,
+      "steal": 0
+    },
+    "cpu0": {
+      "user": 1771107,
+      "nice": 1453,
+      "system": 207769,
+      "idle": 36698080,
+      "iowait": 1632,
+      "irq": 0,
+      "softirq": 23998,
+      "steal": 0
+    },
+    "cpu1": {
+      "user": 693282,
+      "nice": 512,
+      "system": 77102,
+      "idle": 37945828,
+      "iowait": 1304,
+      "irq": 0,
+      "softirq": 9065,
+      "steal": 0
+    },
+    "cpu2": {
+      "user": 760203,
+      "nice": 4653,
+      "system": 106630,
+      "idle": 37828388,
+      "iowait": 2385,
+      "irq": 0,
+      "softirq": 2989,
+      "steal": 0
+    },
+    "cpu3": {
+      "user": 640895,
+      "nice": 972,
+      "system": 82677,
+      "idle": 37993148,
+      "iowait": 1836,
+      "irq": 0,
+      "softirq": 1684,
+      "steal": 0
+    },
+    "cpu4": {
+      "user": 595634,
+      "nice": 577,
+      "system": 74196,
+      "idle": 38054566,
+      "iowait": 1566,
+      "irq": 0,
+      "softirq": 985,
+      "steal": 0
+    },
+    "cpu5": {
+      "user": 591159,
+      "nice": 532,
+      "system": 73883,
+      "idle": 38060282,
+      "iowait": 1594,
+      "irq": 0,
+      "softirq": 521,
+      "steal": 0
+    },
+    "cpu6": {
+      "user": 680164,
+      "nice": 310,
+      "system": 76640,
+      "idle": 37973258,
+      "iowait": 1125,
+      "irq": 0,
+      "softirq": 364,
+      "steal": 0
+    },
+    "cpu7": {
+      "user": 591814,
+      "nice": 289,
+      "system": 69446,
+      "idle": 38068770,
+      "iowait": 1096,
+      "irq": 0,
+      "softirq": 267,
+      "steal": 0
+    },
+    "cpu8": {
+      "user": 687096,
+      "nice": 8093,
+      "system": 108527,
+      "idle": 37859138,
+      "iowait": 6615,
+      "irq": 0,
+      "softirq": 1997,
+      "steal": 0
+    },
+    "cpu9": {
+      "user": 479490,
+      "nice": 2411,
+      "system": 76917,
+      "idle": 38126751,
+      "iowait": 5083,
+      "irq": 0,
+      "softirq": 549,
+      "steal": 0
+    },
+    "cpu10": {
+      "user": 1806788,
+      "nice": 22872,
+      "system": 157371,
+      "idle": 36670877,
+      "iowait": 7164,
+      "irq": 0,
+      "softirq": 633,
+      "steal": 0
+    },
+    "cpu11": {
+      "user": 469215,
+      "nice": 1688,
+      "system": 74067,
+      "idle": 38145994,
+      "iowait": 5130,
+      "irq": 0,
+      "softirq": 430,
+      "steal": 0
+    },
+    "cpu12": {
+      "user": 553225,
+      "nice": 2622,
+      "system": 78819,
+      "idle": 38052672,
+      "iowait": 5661,
+      "irq": 0,
+      "softirq": 441,
+      "steal": 0
+    },
+    "cpu13": {
+      "user": 1536940,
+      "nice": 18319,
+      "system": 144897,
+      "idle": 36963602,
+      "iowait": 6219,
+      "irq": 0,
+      "softirq": 1762,
+      "steal": 0
+    },
+    "cpu14": {
+      "user": 580766,
+      "nice": 1321,
+      "system": 72007,
+      "idle": 38045423,
+      "iowait": 4476,
+      "irq": 0,
+      "softirq": 371,
+      "steal": 0
+    },
+    "cpu15": {
+      "user": 465214,
+      "nice": 829,
+      "system": 65571,
+      "idle": 38159425,
+      "iowait": 3651,
+      "irq": 0,
+      "softirq": 2653,
+      "steal": 0
+    },
+    "cpu16": {
+      "user": 206888,
+      "nice": 707,
+      "system": 34505,
+      "idle": 38487175,
+      "iowait": 2130,
+      "irq": 0,
+      "softirq": 280,
+      "steal": 0
+    },
+    "cpu17": {
+      "user": 155182,
+      "nice": 357,
+      "system": 29720,
+      "idle": 38547696,
+      "iowait": 1818,
+      "irq": 0,
+      "softirq": 199,
+      "steal": 0
+    },
+    "cpu18": {
+      "user": 231573,
+      "nice": 883,
+      "system": 37139,
+      "idle": 38459690,
+      "iowait": 2151,
+      "irq": 0,
+      "softirq": 208,
+      "steal": 0
+    },
+    "cpu19": {
+      "user": 210819,
+      "nice": 480,
+      "system": 35098,
+      "idle": 38484189,
+      "iowait": 1986,
+      "irq": 0,
+      "softirq": 199,
+      "steal": 0
+    },
+    "cpu20": {
+      "user": 179563,
+      "nice": 451,
+      "system": 32288,
+      "idle": 38519697,
+      "iowait": 1677,
+      "irq": 0,
+      "softirq": 192,
+      "steal": 0
+    },
+    "cpu21": {
+      "user": 194358,
+      "nice": 488,
+      "system": 33899,
+      "idle": 38502550,
+      "iowait": 1895,
+      "irq": 0,
+      "softirq": 187,
+      "steal": 0
+    },
+    "cpu22": {
+      "user": 108385,
+      "nice": 356,
+      "system": 26478,
+      "idle": 38598501,
+      "iowait": 1570,
+      "irq": 0,
+      "softirq": 178,
+      "steal": 0
+    },
+    "cpu23": {
+      "user": 118629,
+      "nice": 311,
+      "system": 27239,
+      "idle": 38587132,
+      "iowait": 1563,
+      "irq": 0,
+      "softirq": 174,
+      "steal": 0
+    },
+    "cpu24": {
+      "user": 435175,
+      "nice": 1991,
+      "system": 52592,
+      "idle": 38216687,
+      "iowait": 4292,
+      "irq": 0,
+      "softirq": 329,
+      "steal": 0
+    },
+    "cpu25": {
+      "user": 293713,
+      "nice": 1081,
+      "system": 45314,
+      "idle": 38371011,
+      "iowait": 4337,
+      "irq": 0,
+      "softirq": 312,
+      "steal": 0
+    },
+    "cpu26": {
+      "user": 1394447,
+      "nice": 5975,
+      "system": 77425,
+      "idle": 37222889,
+      "iowait": 4959,
+      "irq": 0,
+      "softirq": 388,
+      "steal": 0
+    },
+    "cpu27": {
+      "user": 267459,
+      "nice": 945,
+      "system": 43385,
+      "idle": 38400785,
+      "iowait": 3900,
+      "irq": 0,
+      "softirq": 311,
+      "steal": 0
+    },
+    "cpu28": {
+      "user": 337649,
+      "nice": 1242,
+      "system": 47383,
+      "idle": 38325153,
+      "iowait": 3705,
+      "irq": 0,
+      "softirq": 320,
+      "steal": 0
+    },
+    "cpu29": {
+      "user": 1231086,
+      "nice": 5572,
+      "system": 74206,
+      "idle": 37391741,
+      "iowait": 4622,
+      "irq": 0,
+      "softirq": 390,
+      "steal": 0
+    },
+    "cpu30": {
+      "user": 235061,
+      "nice": 831,
+      "system": 40564,
+      "idle": 38438731,
+      "iowait": 3317,
+      "irq": 0,
+      "softirq": 299,
+      "steal": 0
+    },
+    "cpu31": {
+      "user": 194048,
+      "nice": 663,
+      "system": 35561,
+      "idle": 38488479,
+      "iowait": 2950,
+      "irq": 0,
+      "softirq": 258,
+      "steal": 0
+    }
+  },
+  "samples": [
+    {
+      "elapsed_seconds": 0,
+      "stat": {
+        "cpu": {
+          "user": 18694804,
+          "nice": 89799,
+          "system": 2219318,
+          "idle": 1217685777,
+          "iowait": 103419,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1770968,
+          "nice": 1453,
+          "system": 207768,
+          "idle": 36698069,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693143,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945817,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760064,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828377,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640756,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993137,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595495,
+          "nice": 577,
+          "system": 74195,
+          "idle": 38054555,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591020,
+          "nice": 532,
+          "system": 73882,
+          "idle": 38060271,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680026,
+          "nice": 310,
+          "system": 76639,
+          "idle": 37973247,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591675,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068759,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 686957,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479351,
+          "nice": 2411,
+          "system": 76916,
+          "idle": 38126741,
+          "iowait": 5082,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806649,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670866,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469076,
+          "nice": 1688,
+          "system": 74066,
+          "idle": 38145983,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553087,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052661,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536801,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580627,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045412,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465076,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159414,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487028,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155181,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547546,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37138,
+          "idle": 38459541,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484039,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519548,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194351,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502408,
+          "iowait": 1894,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108384,
+          "nice": 356,
+          "system": 26477,
+          "idle": 38598352,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38586984,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216538,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370861,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394446,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222741,
+          "iowait": 4958,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400636,
+          "iowait": 3899,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325004,
+          "iowait": 3704,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231085,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391591,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438584,
+          "iowait": 3316,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488331,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 0.2502749339910224,
+      "stat": {
+        "cpu": {
+          "user": 18695206,
+          "nice": 89799,
+          "system": 2219321,
+          "idle": 1217686166,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1770992,
+          "nice": 1453,
+          "system": 207768,
+          "idle": 36698069,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693167,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945817,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760088,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828377,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640781,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993138,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595520,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054555,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591045,
+          "nice": 532,
+          "system": 73882,
+          "idle": 38060271,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680050,
+          "nice": 310,
+          "system": 76639,
+          "idle": 37973248,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591700,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068760,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 686982,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479376,
+          "nice": 2411,
+          "system": 76916,
+          "idle": 38126741,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806673,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670866,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469101,
+          "nice": 1688,
+          "system": 74066,
+          "idle": 38145984,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553111,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052661,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536825,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580652,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045412,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465100,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159414,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487053,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547571,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459565,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484064,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519573,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502425,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598376,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38587008,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216563,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370886,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394446,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222765,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400661,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325029,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391616,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438608,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488355,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 0.5005008360021748,
+      "stat": {
+        "cpu": {
+          "user": 18695600,
+          "nice": 89799,
+          "system": 2219324,
+          "idle": 1217686569,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1771017,
+          "nice": 1453,
+          "system": 207768,
+          "idle": 36698069,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693192,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945818,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760113,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828377,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640805,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993138,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595544,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054555,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591069,
+          "nice": 532,
+          "system": 73882,
+          "idle": 38060271,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680075,
+          "nice": 310,
+          "system": 76640,
+          "idle": 37973248,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591724,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068760,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 687006,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479400,
+          "nice": 2411,
+          "system": 76917,
+          "idle": 38126741,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806698,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670867,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469125,
+          "nice": 1688,
+          "system": 74067,
+          "idle": 38145984,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553136,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052661,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536850,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580676,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045413,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465125,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159415,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487078,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547596,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459590,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484089,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519597,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502450,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598401,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38587033,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216587,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370911,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394446,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222790,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400686,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325054,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391641,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438633,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488380,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 0.7506759910029359,
+      "stat": {
+        "cpu": {
+          "user": 18696001,
+          "nice": 89799,
+          "system": 2219324,
+          "idle": 1217686969,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1771042,
+          "nice": 1453,
+          "system": 207768,
+          "idle": 36698069,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693217,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945818,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760138,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828377,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640830,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993138,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595569,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054555,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591094,
+          "nice": 532,
+          "system": 73882,
+          "idle": 38060271,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680100,
+          "nice": 310,
+          "system": 76640,
+          "idle": 37973248,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591749,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068760,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 687031,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479425,
+          "nice": 2411,
+          "system": 76917,
+          "idle": 38126741,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806723,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670867,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469150,
+          "nice": 1688,
+          "system": 74067,
+          "idle": 38145984,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553161,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052661,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536875,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580701,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045413,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465150,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159415,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487103,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547621,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459615,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484114,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519622,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502475,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598426,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38587058,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216612,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370936,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394446,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222815,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400711,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325079,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391666,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438658,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488405,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 1.0008310290286317,
+      "stat": {
+        "cpu": {
+          "user": 18696395,
+          "nice": 89799,
+          "system": 2219326,
+          "idle": 1217687374,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1771067,
+          "nice": 1453,
+          "system": 207768,
+          "idle": 36698070,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693242,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945818,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760163,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828378,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640855,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993138,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595594,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054556,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591119,
+          "nice": 532,
+          "system": 73883,
+          "idle": 38060272,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680124,
+          "nice": 310,
+          "system": 76640,
+          "idle": 37973248,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591774,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068760,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 687056,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479450,
+          "nice": 2411,
+          "system": 76917,
+          "idle": 38126741,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806748,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670867,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469175,
+          "nice": 1688,
+          "system": 74067,
+          "idle": 38145984,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553185,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052662,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536900,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580726,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045413,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465174,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159415,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487128,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547646,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459640,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484139,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519648,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502500,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598451,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38587083,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216637,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370961,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394447,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222840,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400736,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325104,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391691,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438683,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488430,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 1.2509899139986373,
+      "stat": {
+        "cpu": {
+          "user": 18696795,
+          "nice": 89799,
+          "system": 2219326,
+          "idle": 1217687774,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1771092,
+          "nice": 1453,
+          "system": 207769,
+          "idle": 36698070,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693267,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945818,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760188,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828378,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640880,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993138,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595619,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054556,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591144,
+          "nice": 532,
+          "system": 73883,
+          "idle": 38060272,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680149,
+          "nice": 310,
+          "system": 76640,
+          "idle": 37973248,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591799,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068760,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 687081,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859128,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479475,
+          "nice": 2411,
+          "system": 76917,
+          "idle": 38126741,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806773,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670867,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469200,
+          "nice": 1688,
+          "system": 74067,
+          "idle": 38145984,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553210,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052662,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536925,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963592,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580751,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045413,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465199,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159415,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206886,
+          "nice": 707,
+          "system": 34504,
+          "idle": 38487153,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547671,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459665,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484164,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32287,
+          "idle": 38519673,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502525,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598476,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118628,
+          "nice": 311,
+          "system": 27238,
+          "idle": 38587108,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216662,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38370986,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394447,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222865,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400761,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325129,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391716,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235060,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438708,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488455,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 1.5011833040043712,
+      "stat": {
+        "cpu": {
+          "user": 18697040,
+          "nice": 89799,
+          "system": 2219328,
+          "idle": 1217688325,
+          "iowait": 103423,
+          "irq": 0,
+          "softirq": 52948,
+          "steal": 0
+        },
+        "cpu0": {
+          "user": 1771107,
+          "nice": 1453,
+          "system": 207769,
+          "idle": 36698080,
+          "iowait": 1632,
+          "irq": 0,
+          "softirq": 23998,
+          "steal": 0
+        },
+        "cpu1": {
+          "user": 693282,
+          "nice": 512,
+          "system": 77102,
+          "idle": 37945828,
+          "iowait": 1304,
+          "irq": 0,
+          "softirq": 9065,
+          "steal": 0
+        },
+        "cpu2": {
+          "user": 760203,
+          "nice": 4653,
+          "system": 106630,
+          "idle": 37828388,
+          "iowait": 2385,
+          "irq": 0,
+          "softirq": 2989,
+          "steal": 0
+        },
+        "cpu3": {
+          "user": 640895,
+          "nice": 972,
+          "system": 82677,
+          "idle": 37993148,
+          "iowait": 1836,
+          "irq": 0,
+          "softirq": 1684,
+          "steal": 0
+        },
+        "cpu4": {
+          "user": 595634,
+          "nice": 577,
+          "system": 74196,
+          "idle": 38054566,
+          "iowait": 1566,
+          "irq": 0,
+          "softirq": 985,
+          "steal": 0
+        },
+        "cpu5": {
+          "user": 591159,
+          "nice": 532,
+          "system": 73883,
+          "idle": 38060282,
+          "iowait": 1594,
+          "irq": 0,
+          "softirq": 521,
+          "steal": 0
+        },
+        "cpu6": {
+          "user": 680164,
+          "nice": 310,
+          "system": 76640,
+          "idle": 37973258,
+          "iowait": 1125,
+          "irq": 0,
+          "softirq": 364,
+          "steal": 0
+        },
+        "cpu7": {
+          "user": 591814,
+          "nice": 289,
+          "system": 69446,
+          "idle": 38068770,
+          "iowait": 1096,
+          "irq": 0,
+          "softirq": 267,
+          "steal": 0
+        },
+        "cpu8": {
+          "user": 687096,
+          "nice": 8093,
+          "system": 108527,
+          "idle": 37859138,
+          "iowait": 6615,
+          "irq": 0,
+          "softirq": 1997,
+          "steal": 0
+        },
+        "cpu9": {
+          "user": 479490,
+          "nice": 2411,
+          "system": 76917,
+          "idle": 38126751,
+          "iowait": 5083,
+          "irq": 0,
+          "softirq": 549,
+          "steal": 0
+        },
+        "cpu10": {
+          "user": 1806788,
+          "nice": 22872,
+          "system": 157371,
+          "idle": 36670877,
+          "iowait": 7164,
+          "irq": 0,
+          "softirq": 633,
+          "steal": 0
+        },
+        "cpu11": {
+          "user": 469215,
+          "nice": 1688,
+          "system": 74067,
+          "idle": 38145994,
+          "iowait": 5130,
+          "irq": 0,
+          "softirq": 430,
+          "steal": 0
+        },
+        "cpu12": {
+          "user": 553225,
+          "nice": 2622,
+          "system": 78819,
+          "idle": 38052672,
+          "iowait": 5661,
+          "irq": 0,
+          "softirq": 441,
+          "steal": 0
+        },
+        "cpu13": {
+          "user": 1536940,
+          "nice": 18319,
+          "system": 144897,
+          "idle": 36963602,
+          "iowait": 6219,
+          "irq": 0,
+          "softirq": 1762,
+          "steal": 0
+        },
+        "cpu14": {
+          "user": 580766,
+          "nice": 1321,
+          "system": 72007,
+          "idle": 38045423,
+          "iowait": 4476,
+          "irq": 0,
+          "softirq": 371,
+          "steal": 0
+        },
+        "cpu15": {
+          "user": 465214,
+          "nice": 829,
+          "system": 65571,
+          "idle": 38159425,
+          "iowait": 3651,
+          "irq": 0,
+          "softirq": 2653,
+          "steal": 0
+        },
+        "cpu16": {
+          "user": 206888,
+          "nice": 707,
+          "system": 34505,
+          "idle": 38487175,
+          "iowait": 2130,
+          "irq": 0,
+          "softirq": 280,
+          "steal": 0
+        },
+        "cpu17": {
+          "user": 155182,
+          "nice": 357,
+          "system": 29720,
+          "idle": 38547696,
+          "iowait": 1818,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu18": {
+          "user": 231573,
+          "nice": 883,
+          "system": 37139,
+          "idle": 38459690,
+          "iowait": 2151,
+          "irq": 0,
+          "softirq": 208,
+          "steal": 0
+        },
+        "cpu19": {
+          "user": 210819,
+          "nice": 480,
+          "system": 35098,
+          "idle": 38484189,
+          "iowait": 1986,
+          "irq": 0,
+          "softirq": 199,
+          "steal": 0
+        },
+        "cpu20": {
+          "user": 179563,
+          "nice": 451,
+          "system": 32288,
+          "idle": 38519697,
+          "iowait": 1677,
+          "irq": 0,
+          "softirq": 192,
+          "steal": 0
+        },
+        "cpu21": {
+          "user": 194358,
+          "nice": 488,
+          "system": 33899,
+          "idle": 38502550,
+          "iowait": 1895,
+          "irq": 0,
+          "softirq": 187,
+          "steal": 0
+        },
+        "cpu22": {
+          "user": 108385,
+          "nice": 356,
+          "system": 26478,
+          "idle": 38598501,
+          "iowait": 1570,
+          "irq": 0,
+          "softirq": 178,
+          "steal": 0
+        },
+        "cpu23": {
+          "user": 118629,
+          "nice": 311,
+          "system": 27239,
+          "idle": 38587132,
+          "iowait": 1563,
+          "irq": 0,
+          "softirq": 174,
+          "steal": 0
+        },
+        "cpu24": {
+          "user": 435175,
+          "nice": 1991,
+          "system": 52592,
+          "idle": 38216687,
+          "iowait": 4292,
+          "irq": 0,
+          "softirq": 329,
+          "steal": 0
+        },
+        "cpu25": {
+          "user": 293713,
+          "nice": 1081,
+          "system": 45314,
+          "idle": 38371011,
+          "iowait": 4337,
+          "irq": 0,
+          "softirq": 312,
+          "steal": 0
+        },
+        "cpu26": {
+          "user": 1394447,
+          "nice": 5975,
+          "system": 77425,
+          "idle": 37222889,
+          "iowait": 4959,
+          "irq": 0,
+          "softirq": 388,
+          "steal": 0
+        },
+        "cpu27": {
+          "user": 267459,
+          "nice": 945,
+          "system": 43385,
+          "idle": 38400785,
+          "iowait": 3900,
+          "irq": 0,
+          "softirq": 311,
+          "steal": 0
+        },
+        "cpu28": {
+          "user": 337649,
+          "nice": 1242,
+          "system": 47383,
+          "idle": 38325153,
+          "iowait": 3705,
+          "irq": 0,
+          "softirq": 320,
+          "steal": 0
+        },
+        "cpu29": {
+          "user": 1231086,
+          "nice": 5572,
+          "system": 74206,
+          "idle": 37391741,
+          "iowait": 4622,
+          "irq": 0,
+          "softirq": 390,
+          "steal": 0
+        },
+        "cpu30": {
+          "user": 235061,
+          "nice": 831,
+          "system": 40564,
+          "idle": 38438731,
+          "iowait": 3317,
+          "irq": 0,
+          "softirq": 299,
+          "steal": 0
+        },
+        "cpu31": {
+          "user": 194048,
+          "nice": 663,
+          "system": 35561,
+          "idle": 38488479,
+          "iowait": 2950,
+          "irq": 0,
+          "softirq": 258,
+          "steal": 0
+        }
+      }
+    }
+  ],
+  "tick_frequency_hz": 100
+}

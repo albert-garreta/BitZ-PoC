@@ -1,0 +1,31 @@
+{
+  "scope": "first word-binding fold; isolated source snapshot includes pre-existing ring and binding work",
+  "snapshot": "/tmp/bitz-first-fold-20261012/source",
+  "snapshot_manifest_sha256": "e4c489d1d2a06f8ed1e11bcdc0300780c04940b91788f3b086fd30e6a69db5e3",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "flags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "profile": "release; LTO; codegen-units=1",
+  "baseline_binary": "/tmp/bitz-first-fold-20261012/baseline-arithmetic",
+  "baseline_binary_sha256": "9e3cdecff79390d3c8e9f45a65d100826a927ffacdfc178f3af4289524ae318d",
+  "experimental_binaries": {
+    "baseline-arithmetic": "9e3cdecff79390d3c8e9f45a65d100826a927ffacdfc178f3af4289524ae318d",
+    "candidate-arithmetic": "3054e892963c1decbe36f245f6e8bb17d076ad6e3393d39f8c8ca774ec622f46",
+    "biased-arithmetic": "47d3f524b274a9c181c55a527533acc3b1d0920a7ad7049e11d001d9bcd24c56"
+  },
+  "final_binary": "/tmp/bitz-first-fold-20261012/final-arithmetic",
+  "final_binary_sha256": "dcf11f6964832fa6139a524d657a8b0232546c2e91b37aecad32ede0df17e4cf",
+  "final_source_sha256": {
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "d60adfd32da31bf0f415c598d64585381e05ca2b05ae72e9a246f245eaa6b1dd",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "65021e01c097d2f2d1cb15d52ef66c9329345b3187eaafb21e6a0dfb38ee897c"
+  },
+  "test_profile": "opt-level=2; debug=0; incremental=false; native; falcon-hybrid,bench-internals",
+  "unit_tests": {
+    "word_binding": 10,
+    "complete_proof_contents": 2,
+    "failed": 0
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "five_proofs_verified": true,
+  "matches_frozen_v6_cold": {
+    "input_digest": true,
+    "source_root": true,
+    "proof_debug_digest": true,
+    "proof_payload_bytes": true,
+    "grinding_diagnostics": true
+  },
+  "proof_debug_digest": "f2b6a6f1bec29e57f43b3ccac30050196ba225561c6e866ca13cb872581ee53c"
+}

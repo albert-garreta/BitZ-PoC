@@ -1,0 +1,11 @@
+{
+  "cpu": {
+    "busy_pct": 5.98
+  },
+  "cpu6": {
+    "busy_pct": 1.0
+  },
+  "cpu22": {
+    "busy_pct": 0.0
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "sources_unchanged_during_run": false,
+  "all_proofs_verified_and_matched_baseline_digest": true,
+  "all_security_ledgers_at_least_128": true,
+  "all_observed_threads_on_one_logical_cpu": true
+}

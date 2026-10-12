@@ -1,0 +1,68 @@
+{
+  "thread_scaling": [
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "speedup_1_to_16": 3.7348090916650896,
+      "speedup_8_to_16": 0.793831150910071,
+      "security_bits": 128.09331125897418,
+      "proof_bytes": 263042
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "speedup_1_to_16": 3.734099493530612,
+      "speedup_8_to_16": 0.8172802584110661,
+      "security_bits": 128.0932452339251,
+      "proof_bytes": 361738
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "speedup_1_to_16": 5.805719913228874,
+      "speedup_8_to_16": 1.2406395005906758,
+      "security_bits": 128.09311176920565,
+      "proof_bytes": 697322
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "speedup_1_to_16": 5.5171820729826,
+      "speedup_8_to_16": 1.2325665566873052,
+      "security_bits": 128.0931479114912,
+      "proof_bytes": 971410
+    }
+  ],
+  "historical_single_thread_comparison": [
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "before_ms": 305.88755699999996,
+      "after_ms": 281.81758299999996,
+      "speedup": 1.0854097666432687
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "before_ms": 2418.904421,
+      "after_ms": 2015.2284319999999,
+      "speedup": 1.2003127698031606
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "before_ms": 565.077775,
+      "after_ms": 527.9952420000001,
+      "speedup": 1.070232702968183
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "before_ms": 4401.918413,
+      "after_ms": 3731.539011,
+      "speedup": 1.179652256086249
+    }
+  ],
+  "maximum_sibling_busy_pct": 1.5037593984962405,
+  "discarded_attempts": 3
+}

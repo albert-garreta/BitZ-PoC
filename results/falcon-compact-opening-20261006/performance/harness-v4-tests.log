@@ -1,0 +1,25 @@
+test_cpu_list_is_explicit_unique_and_nonnegative (test_qualify_falcon_one_source.AffinityTests.test_cpu_list_is_explicit_unique_and_nonnegative) ... ok
+test_default_preserves_unpinned_historical_records (test_qualify_falcon_one_source.AffinityTests.test_default_preserves_unpinned_historical_records) ... ok
+test_observed_workers_main_and_original_masks_are_all_checked (test_qualify_falcon_one_source.AffinityTests.test_observed_workers_main_and_original_masks_are_all_checked) ... ok
+test_private_verifier_mask_is_checked_on_every_trial (test_qualify_falcon_one_source.AffinityTests.test_private_verifier_mask_is_checked_on_every_trial) ... ok
+test_exact_threshold_and_uncertainty (test_qualify_falcon_one_source.StatisticsTests.test_exact_threshold_and_uncertainty) ... ok
+test_invalid_and_unpaired_values_fail (test_qualify_falcon_one_source.StatisticsTests.test_invalid_and_unpaired_values_fail) ... ok
+test_pairs_are_resampled_together (test_qualify_falcon_one_source.StatisticsTests.test_pairs_are_resampled_together) ... ok
+test_ratio_is_arithmetic_means_not_mean_or_geometric_ratio (test_qualify_falcon_one_source.StatisticsTests.test_ratio_is_arithmetic_means_not_mean_or_geometric_ratio) ... ok
+test_campaign_requires_its_pinned_baseline_and_root_counts (test_qualify_falcon_one_source.ValidationTests.test_campaign_requires_its_pinned_baseline_and_root_counts) ... ok
+test_compact_payload_gate_checks_mean_in_every_case (test_qualify_falcon_one_source.ValidationTests.test_compact_payload_gate_checks_mean_in_every_case) ... ok
+test_compact_payload_gate_is_strict_and_keeps_one_source_default (test_qualify_falcon_one_source.ValidationTests.test_compact_payload_gate_is_strict_and_keeps_one_source_default) ... ok
+test_compact_requires_root_security_and_grinding_equivalence (test_qualify_falcon_one_source.ValidationTests.test_compact_requires_root_security_and_grinding_equivalence) ... ok
+test_insufficient_security_fails (test_qualify_falcon_one_source.ValidationTests.test_insufficient_security_fails) ... ok
+test_missing_root_and_bad_profile_fail (test_qualify_falcon_one_source.ValidationTests.test_missing_root_and_bad_profile_fail) ... ok
+test_partial_qualification_cannot_pass (test_qualify_falcon_one_source.ValidationTests.test_partial_qualification_cannot_pass) ... ok
+test_payload_gate_uses_mean_bytes_not_worst_seed (test_qualify_falcon_one_source.ValidationTests.test_payload_gate_uses_mean_bytes_not_worst_seed) ... ok
+test_roots_may_change_across_versions_but_inputs_may_not (test_qualify_falcon_one_source.ValidationTests.test_roots_may_change_across_versions_but_inputs_may_not) ... ok
+test_stop_marker_finishes_pair_and_cannot_qualify (test_qualify_falcon_one_source.ValidationTests.test_stop_marker_finishes_pair_and_cannot_qualify) ... ok
+test_unverified_warmup_fails (test_qualify_falcon_one_source.ValidationTests.test_unverified_warmup_fails) ... ok
+test_valid_historical_record (test_qualify_falcon_one_source.ValidationTests.test_valid_historical_record) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.068s
+
+OK

@@ -1,0 +1,60 @@
+{
+  "runs": [
+    {
+      "directory": "final-large-optimized",
+      "pairs": 18,
+      "cells": 6,
+      "verified_sample_and_warmup_proofs": 396,
+      "seed_count": 3,
+      "warmup": 2,
+      "samples": 9
+    },
+    {
+      "directory": "final-default-matrix",
+      "pairs": 288,
+      "cells": 96,
+      "verified_sample_and_warmup_proofs": 2304,
+      "seed_count": 3,
+      "warmup": 1,
+      "samples": 3
+    },
+    {
+      "directory": "final-default-12-confirmation",
+      "pairs": 10,
+      "cells": 2,
+      "verified_sample_and_warmup_proofs": 360,
+      "seed_count": 5,
+      "warmup": 3,
+      "samples": 15
+    },
+    {
+      "directory": "final-small-confirmation-n512-b17-s128-t16",
+      "pairs": 5,
+      "cells": 1,
+      "verified_sample_and_warmup_proofs": 340,
+      "seed_count": 5,
+      "warmup": 3,
+      "samples": 31
+    },
+    {
+      "directory": "final-small-confirmation-n1024-b3-s100-t12",
+      "pairs": 5,
+      "cells": 1,
+      "verified_sample_and_warmup_proofs": 340,
+      "seed_count": 5,
+      "warmup": 3,
+      "samples": 31
+    }
+  ],
+  "verified_sample_and_warmup_proofs": 3740,
+  "identity": [
+    "input_digest",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes",
+    "proof_payload_breakdown"
+  ],
+  "all_matched": true,
+  "unit_tests_passed": 12,
+  "qualification": "Finite samples on one machine; no universal latency or nonregression guarantee."
+}

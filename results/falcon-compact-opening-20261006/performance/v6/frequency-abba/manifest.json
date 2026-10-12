@@ -1,0 +1,618 @@
+{
+  "status": "completed",
+  "qualification": false,
+  "purpose": "Observe reported CPU frequencies and stdout arrival times during fresh processes; no policy changes",
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline"
+  ],
+  "protocol": "native",
+  "security": 128,
+  "batch": 1,
+  "seed": 42,
+  "warmup": 1,
+  "measured": 3,
+  "frequency_interval_seconds": 0.05,
+  "frequency_path": "/sys/devices/system/cpu/cpu{0..15}/cpufreq/scaling_cur_freq",
+  "frequency_units": "kHz, driver-reported sample; not hardware-counter effective frequency",
+  "time_axis": "Python time.monotonic_ns; each stdout line timestamped on receipt",
+  "trial_boundary_limit": "A trial interval runs from receipt of prepared/previous-trial line to receipt of trial line; includes untimed bookkeeping and verifier work. Exact substage times unavailable without instrumentation.",
+  "builds": {
+    "baseline": {
+      "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+      "binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+      "sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+      "source_root": "/tmp/falcon-compact-opening-baseline-v4",
+      "source_manifest": "/tmp/falcon-compact-opening-baseline-v4/source-manifest.json",
+      "source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+      "rustflags": "-C target-cpu=native",
+      "features": [
+        "falcon-hybrid"
+      ],
+      "profile": "release",
+      "target_arch": "x86_64",
+      "root_count": 1,
+      "protocols": {
+        "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+        "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+      },
+      "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/falcon-compact-opening-baseline-target cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+      "working_tree": true,
+      "example_overlay_sha256": "5028ea758abab8911f77da68d85acd5f0df89bbf9e32a0844033eac4c72cb11a",
+      "benchmark_affinity_overlay": {
+        "files": {
+          "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+          "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+        },
+        "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+        "unchanged_original_files": 816,
+        "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+        "production_changed": false
+      },
+      "build_log_sha256": "ea1c46c55e48f498ffd067ebaa0fe1303d15c97882829e162da691b45875eac5",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///tmp/falcon-compact-opening-baseline-v4#bitz@0.1.0",
+        "manifest_path": "/tmp/falcon-compact-opening-baseline-v4/Cargo.toml",
+        "target": {
+          "kind": [
+            "bench"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "falcon_hybrid",
+          "src_path": "/tmp/falcon-compact-opening-baseline-v4/benches/falcon_hybrid.rs",
+          "edition": "2024",
+          "required-features": [
+            "falcon-hybrid"
+          ],
+          "doc": false,
+          "doctest": false,
+          "test": false
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [
+          "binius64-bench",
+          "default",
+          "falcon",
+          "falcon-hybrid",
+          "hybrid",
+          "parallel",
+          "span-metrics"
+        ],
+        "filenames": [
+          "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9"
+        ],
+        "executable": "/tmp/falcon-compact-opening-baseline-target/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "fresh": false
+      }
+    },
+    "candidate": {
+      "revision": "9a401286c98db041762b97f48cfe4f1a8d85ce7c",
+      "binary": "/tmp/falcon-compact-opening-binaries/candidate-v6",
+      "sha256": "eefeeb4f57db35192e1f7e192572399d3d078beea82e0db41961be9826c09d41",
+      "source_root": "/tmp/falcon-compact-opening-candidate-v6",
+      "source_manifest": "/tmp/falcon-compact-opening-candidate-v6/source-manifest.json",
+      "source_manifest_sha256": "4b7df033c3e5a80a6fa495406ae8f5092ca846a2e6d9ae01aee9453af9352594",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+      "rustflags": "-C target-cpu=native",
+      "features": [
+        "falcon-hybrid"
+      ],
+      "profile": "release",
+      "target_arch": "x86_64",
+      "root_count": 1,
+      "protocols": {
+        "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+        "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+      },
+      "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+      "working_tree": true,
+      "benchmark_affinity_overlay": {
+        "files": {
+          "benches/falcon_hybrid.rs": "91d9980eda51fcd3556e2800c4c92eb88199572930992bac1e8c2677b3d18054",
+          "benches/common/falcon_affinity.rs": "33e7e823e918b6c71f7f57a292ed5fcd1106b3396e5b1a356825e95867e7ce17"
+        },
+        "patch_sha256": "ad8b6b1f2d6d91c8d224337f61d5d671a08974d23b3f7b56d65350f4e3edf44a",
+        "unchanged_original_files": 816,
+        "original_source_manifest_sha256": "1a64b60d3a1af235c71778ef246546f11e964b7bbce56928f71a033a2ce9d392",
+        "production_changed": false
+      },
+      "build_log_sha256": "a15d1210ec7c4671b2f73561168b590759770c9f72cdd7a0a74c6dee38a9e116",
+      "compiler_artifact": {
+        "reason": "compiler-artifact",
+        "package_id": "path+file:///home/john-wu/code/BitZ-pcs#bitz@0.1.0",
+        "manifest_path": "/home/john-wu/code/BitZ-pcs/Cargo.toml",
+        "target": {
+          "kind": [
+            "bench"
+          ],
+          "crate_types": [
+            "bin"
+          ],
+          "name": "falcon_hybrid",
+          "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_hybrid.rs",
+          "edition": "2024",
+          "required-features": [
+            "falcon-hybrid"
+          ],
+          "doc": false,
+          "doctest": false,
+          "test": false
+        },
+        "profile": {
+          "opt_level": "3",
+          "debuginfo": 0,
+          "debug_assertions": false,
+          "overflow_checks": false,
+          "test": true
+        },
+        "features": [
+          "binius64-bench",
+          "default",
+          "falcon",
+          "falcon-hybrid",
+          "hybrid",
+          "parallel",
+          "span-metrics"
+        ],
+        "filenames": [
+          "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9"
+        ],
+        "executable": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "fresh": false
+      },
+      "working_patch_sha256": "fc397bc46fa301673a07fc8a9435b9c4be0c37ab85422995a95c3f0d7ff209e5"
+    }
+  },
+  "policy_before": {
+    "cpus": {
+      "0": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "1": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "2": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "3": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "4": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "5": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "6": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "7": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "8": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "9": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "10": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "11": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "12": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "13": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "14": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "15": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      }
+    },
+    "boost": "1",
+    "amd_pstate_status": "active"
+  },
+  "environment": {
+    "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+    "BITZ_FALCON_MAIN_CPU": "0",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-one-source-case-cache",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "16"
+  },
+  "runs": [
+    {
+      "label": "baseline",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/baseline-v4",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "3"
+      ],
+      "started_at": 1791334752.4721055,
+      "start_monotonic_ns": 171863583070507,
+      "end_monotonic_ns": 171863819182579,
+      "status": "validated",
+      "frequency_samples": 25,
+      "files": {
+        "1-baseline.jsonl": "1452b7d8f11ec5188bd77b69f5326de3603e195136c7cc694d01025ff65f0afa",
+        "1-baseline.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "1-baseline.frequency.jsonl": "acf4dbb1e75bc5ea850d0d4d676c368cdcf5f58ceab45d94fa02c944a9da3bbd",
+        "1-baseline.events.jsonl": "fae929aae3cc8d374473c7a0ad34a955c72dc3ad23406433bb738324f674b726"
+      }
+    },
+    {
+      "label": "candidate",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/candidate-v6",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "3"
+      ],
+      "started_at": 1791334753.7094314,
+      "start_monotonic_ns": 171864820396210,
+      "end_monotonic_ns": 171865046582800,
+      "status": "validated",
+      "frequency_samples": 25,
+      "files": {
+        "2-candidate.jsonl": "f456ed23e0a489af0696f2814b5cf5a9956a602e4eb892095465e93337d3516c",
+        "2-candidate.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "2-candidate.frequency.jsonl": "d19022602eaa1dbec383f1d74fa5751c4d9c98a554cba152449d41b4ceecc6bd",
+        "2-candidate.events.jsonl": "72b913d881485c672472528962a5b1980c56ef02746a207090cf80b3dc7b656a"
+      }
+    },
+    {
+      "label": "candidate",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/candidate-v6",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "3"
+      ],
+      "started_at": 1791334754.9366674,
+      "start_monotonic_ns": 171866047632230,
+      "end_monotonic_ns": 171866256273473,
+      "status": "validated",
+      "frequency_samples": 25,
+      "files": {
+        "3-candidate.jsonl": "e2dcc2d3c600d53a9b3575d67d2a584bfef63f092d1fb98dc8e567c2c2f5d6d8",
+        "3-candidate.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "3-candidate.frequency.jsonl": "32e3e20c8c89810f3975f7955ff55594b8b8d58abff0d48255d1467a264058de",
+        "3-candidate.events.jsonl": "e8023f4b96ab02d14cffba63cc71219889cc66072d05f942e89ea8ba0f5f9420"
+      }
+    },
+    {
+      "label": "baseline",
+      "command": [
+        "/tmp/falcon-compact-opening-binaries/baseline-v4",
+        "--protocol",
+        "native",
+        "--security",
+        "128",
+        "--batch",
+        "1",
+        "--threads",
+        "16",
+        "--seed",
+        "42",
+        "--warmup",
+        "1",
+        "--iterations",
+        "3"
+      ],
+      "started_at": 1791334756.1464329,
+      "start_monotonic_ns": 171867257397424,
+      "end_monotonic_ns": 171867468511312,
+      "status": "validated",
+      "frequency_samples": 25,
+      "files": {
+        "4-baseline.jsonl": "8126937fcb496b9ced52f053704e24d8b163927c82e25a9337b0dad277642a7f",
+        "4-baseline.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "4-baseline.frequency.jsonl": "38c4713cb2d003767ee0a9826413c6a0ad0955f3becde69e15ba6514abef5dc8",
+        "4-baseline.events.jsonl": "5986a90a896518b3d6ea853a02dfb0959f83db3e26e70d6b8d605a884ca8acfe"
+      }
+    }
+  ],
+  "started_at": 1791334732.4254622,
+  "policy_after": {
+    "cpus": {
+      "0": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "1": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "2": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "3": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "4": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "5": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "6": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "7": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "8": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "9": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "10": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "11": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "12": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "13": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "14": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      },
+      "15": {
+        "scaling_driver": "amd-pstate-epp",
+        "scaling_governor": "powersave",
+        "energy_performance_preference": "balance_performance",
+        "scaling_min_freq": "624194",
+        "scaling_max_freq": "5756452",
+        "cpuinfo_min_freq": "624194",
+        "cpuinfo_max_freq": "5756452"
+      }
+    },
+    "boost": "1",
+    "amd_pstate_status": "active"
+  },
+  "verified_proofs": 16,
+  "final_integrity": "pass",
+  "policy_unchanged": true,
+  "finished_at": 1791334756.3936148
+}

@@ -1,0 +1,218 @@
+{
+  "status": "not_qualified",
+  "complete": false,
+  "qualifying": true,
+  "timing_limit": 1.02,
+  "campaign": "compact-opening",
+  "verified_proofs_in_complete_pairs": 624,
+  "measured_trials_per_seed": [
+    3
+  ],
+  "estimator": "ratio of arithmetic means of per-seed process medians",
+  "confidence": "paired percentile bootstrap, one-sided 95%, fixed 60 seeds",
+  "cells": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 22.7269334,
+          "candidate_mean_ms": 22.763522116666667,
+          "ratio": 1.001609927570196,
+          "lower_one_sided_95": 0.9844811195321101,
+          "upper_one_sided_95": 1.0185559237060013,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "pass"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 14.806591150000001,
+          "candidate_mean_ms": 15.093781433333334,
+          "ratio": 1.019396110855221,
+          "lower_one_sided_95": 0.9988197728297679,
+          "upper_one_sided_95": 1.0401951851320954,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "inconclusive"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.9013598166666666,
+          "candidate_mean_ms": 0.8770274166666666,
+          "ratio": 0.973004787266883,
+          "lower_one_sided_95": 0.9300877957764945,
+          "upper_one_sided_95": 1.016455639057642,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 21.803109783333333,
+          "candidate_mean_ms": 21.8555465,
+          "ratio": 1.0024050108992595,
+          "lower_one_sided_95": 0.9853994884367033,
+          "upper_one_sided_95": 1.0192312327049033,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 54308,
+        "candidate": 54268
+      },
+      "payload": {
+        "maximum_ratio": 0.8695816413259042,
+        "ratio_of_mean_bytes": 0.8683006309366983,
+        "baseline_mean_bytes": 169229.86666666667,
+        "candidate_mean_bytes": 146942.4,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 28.11746961111111,
+          "candidate_mean_ms": 29.008394111111112,
+          "ratio": 1.0316857993383564,
+          "lower_one_sided_95": 0.9953612150498186,
+          "upper_one_sided_95": 1.0716917737682239,
+          "bootstrap_draws": 20000,
+          "pairs": 18,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 15.485966722222223,
+          "candidate_mean_ms": 16.02395838888889,
+          "ratio": 1.034740592971484,
+          "lower_one_sided_95": 0.9948029972944153,
+          "upper_one_sided_95": 1.0756077353615232,
+          "bootstrap_draws": 20000,
+          "pairs": 18,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 1.9359488333333332,
+          "candidate_mean_ms": 1.9291747222222222,
+          "ratio": 0.9965008831873684,
+          "lower_one_sided_95": 0.9680326624572727,
+          "upper_one_sided_95": 1.024089571789518,
+          "bootstrap_draws": 20000,
+          "pairs": 18,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 26.16476188888889,
+          "candidate_mean_ms": 27.090055888888887,
+          "ratio": 1.0353641284384452,
+          "lower_one_sided_95": 0.9978755299684896,
+          "upper_one_sided_95": 1.0767782527237648,
+          "bootstrap_draws": 20000,
+          "pairs": 18,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 67032,
+        "candidate": 65588
+      },
+      "payload": {
+        "maximum_ratio": 0.8654179157279311,
+        "ratio_of_mean_bytes": 0.8637784679302364,
+        "baseline_mean_bytes": 215661.77777777778,
+        "candidate_mean_bytes": 186284,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    }
+  ],
+  "stop_reason": "Stopped after a complete 60-seed cell did not pass the unchanged compact-opening gate: {\"case\": [\"native\", 100, 1], \"payload_ratio\": 0.8683006309366983, \"payload_pass\": true, \"timings\": {\"total_prover_ms\": {\"ratio\": 1.001609927570196, \"upper_one_sided_95\": 1.0185559237060013, \"status\": \"pass\"}, \"proof_verify_ms\": {\"ratio\": 1.019396110855221, \"upper_one_sided_95\": 1.0401951851320954, \"status\": \"inconclusive\"}}}"
+}

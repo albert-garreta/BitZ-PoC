@@ -1,0 +1,22 @@
+import json,pathlib,subprocess
+p=pathlib.Path(__file__).resolve().parent
+profiles=json.loads((p/'profile-analysis.json').read_text());models=json.loads((p/'schedule-model.json').read_text())
+trials=[]
+for f in sorted(p.glob('*-t*.jsonl')):
+ if 'stages' in f.name:continue
+ rows=[json.loads(l) for l in f.read_text().splitlines()]
+ proofs=[r for r in rows if 'verified' in r and r.get('event')!='summary']
+ assert len(proofs)==4 and all(r['verified'] for r in proofs),f
+ trials.append({'configuration':f.stem,'verified_proofs':len(proofs)})
+validation={'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'verified_proofs':sum(r['verified_proofs'] for r in trials),'configurations':trials,'scope':'Diagnostic profiles of existing binaries; hypothetical allocations are analytical only. No modified production prover benchmarked.','model_checks':'All four reproduced current composed security values to absolute tolerance 1e-10 bits. All candidate allocations retain normalized error <=15/16 in the floating-point model. Exact-rational and protocol integration checks remain necessary before adoption.','limitations':['Same input seed 42; repeated trials characterize timing, not nonce-distribution variability.','Instrumentation adds overhead; use original uninstrumented campaign for latency comparisons.','Opening work weight retains current source estimate; observed block counts are higher.','Initial-k survey does not preserve the fixed 16-lane opening geometry and is not a drop-in Falcon configuration.','Query tradeoff sweep includes prime groups in optimization; its 128-query-target case is the comparison baseline.']}
+(p/'validation.json').write_text(json.dumps(validation,indent=2)+'\n')
+lines=['Falcon grinding schedule study','Source: '+validation['commit'],'Batch 1024; 128-bit target; Ryzen 9 9950X3D.','Diagnostic profiles: 1/8/16 threads, one warmup plus three measured trials each; all 48 proofs verified.','', 'Grinding share at previously fastest worker counts (instrumented prove-only):']
+for r in profiles:
+ if r['threads']==(8 if r['variant']=='arithmetic' else 16):
+  z=r['medians'];lines.append(f"  {r['variant']} {r['degree']}, {r['threads']} threads: {z['grinding_ms']:.2f} ms, {z['grinding_pct']:.2f}%")
+lines +=['','Schedule candidates (modeled hash reductions, not measured wall-time improvements):']
+for r in models:
+ c=r['candidates'][1];lines.append(f"  Include prime groups, {r['variant']} {r['degree']}: {c['reduction_pct']:.2f}% fewer expected hashes; ledger {c['security_bits']:.6f} bits.")
+lines +=['','Recommendations:','  1. Measure cost per difficulty/thread class and use accurate boundary counts. The current hash-count model misses dispatch overhead and undercounts outer opening sites (full512: 31 modeled, 60 recorded).','  2. Include prime-field stages in the composed allocation. Preserve a fixed, verifier-bound schedule and the existing 15/16 budget.','  3. Sweep PCS query counts jointly with query grinding. The 120-bit raw query target candidates retain >=128.09 composed bits in the model; full Falcon query counts fall 1061 to 994 across levels while modeled hashes increase about 4% relative to the global-allocation 128-query-target baseline. End-to-end measurements are necessary.','  4. Per-boundary raw-error allocation is a further possible improvement; requires independent degree accounting for each adaptive boundary.','', 'Low-value/unsupported shortcuts:','  Pairwise integer schedule exchanges found <0.05% model improvements in these four cases.','  No native Flock minimum is binding in the current four baseline schedules.','  Changing initial_k from 4 to 5/6 would require opening-layout integration; it is not just a profile swap.','  Changing rate 1/2 to 1/4 increases the modeled UDR fold work and doubles codeword expansion; do not assume it helps grinding.','  Current composed margin is about 0.093 bits; maintain it for apples-to-apples tuning.','', 'Separate finding: src/piop/spartan/falcon1024_algebraic/arithmetic.rs:409 enables optimized binding only at 8 workers (batches 256..1024) and 1 worker (batch1024). 16 workers uses Legacy. This is relevant to the arithmetic 8-to-16 thread slowdown but outside grinding schedule scope.','', 'Limitations:']+['  '+x for x in validation['limitations']]
+(p/'REPORT.txt').write_text('\n'.join(lines)+'\n')
+print('Saved report and validation. Verified proofs:',validation['verified_proofs'])

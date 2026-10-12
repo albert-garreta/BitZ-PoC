@@ -2,7 +2,7 @@
 use super::*;
 use crate::piop::spartan::SpartanField;
 use crate::sumcheck::boundary::RoundBoundaryPolicy;
-use field::FpProductAcc;
+use field::{FpProductAcc, PreparedLinearCombination};
 
 #[cfg(test)]
 #[path = "word_binding_tests.rs"]
@@ -435,21 +435,31 @@ fn dense_sums(values: &[[F; 2]], stride: usize, f: &Cfg) -> [F; 2] {
 
 /// Allocate the sole dense product after the first word fold. Each slot holds
 /// [Lambda, D]. Later folds reuse these slots at a doubling stride.
+#[tracing::instrument(skip_all, name = "falcon_algebraic:word_first_fold")]
 fn first_fold(form: &BindingForm<'_>, source: &Source, r: F, f: &Cfg) -> (Vec<[F; 2]>, [F; 2]) {
+    // Flipping bit 14 maps signed15 a to a+2^14. The interpolation weights
+    // sum to one, so the third term removes this bias in the wide accumulator.
+    // Prepared weights give one Montgomery reduction for the complete fold.
+    let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
+        f,
+        [f.sub(&f.one(), &r), r, f.neg(&small(1 << 14, f))],
+    );
     let mut values = vec![[f.zero(); 2]; form.layout.source_bits() / 32];
     let parts: Vec<_> = crate::cfg_chunks_mut!(values, 1024)
         .enumerate()
         .map(|(chunk, out)| {
             for (j, slot) in out.iter_mut().enumerate() {
                 let i = 2 * (chunk * 1024 + j);
-                let a = decode(word(source, i));
-                let b = decode(word(source, i + 1));
+                let words = [word(source, i), word(source, i + 1)];
                 *slot = [
                     lerp(coefficient(form, i), coefficient(form, i + 1), r, f),
-                    f.add(
-                        &small(a, f),
-                        &f.reduce(f.mul_wide(&r, &field::Z::<1>::from(b - a))),
-                    ),
+                    <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+                        if k == 2 {
+                            1
+                        } else {
+                            u64::from((words[k] ^ 0x4000) & 0x7fff)
+                        }
+                    }),
                 ];
             }
             dense_sums(out, 1, f)

@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "/home/john-wu/code/BitZ-pcs/results/falcon-grinding-opt-128-d9b13bdb4/binaries/falcon_hybrid",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "environment": {
+    "RAYON_NUM_THREADS": "16",
+    "OMP_NUM_THREADS": "16",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+    "BITZ_FALCON_STAGE_TIMINGS": "1"
+  },
+  "source_commit": "d9b13bdb4",
+  "purpose": "diagnostic stage timings; not replacement latency benchmarks"
+}

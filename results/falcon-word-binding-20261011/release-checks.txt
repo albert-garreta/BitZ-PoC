@@ -1,0 +1,24 @@
+running 2 tests
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 843 filtered out; finished in 1.10s
+
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_roundtrip_and_tampering ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 844 filtered out; finished in 0.30s
+
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_128_roundtrip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 844 filtered out; finished in 0.66s
+
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::shared_prime_hybrid_complete_proofs_and_protocol_binding ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 844 filtered out; finished in 1.35s
+

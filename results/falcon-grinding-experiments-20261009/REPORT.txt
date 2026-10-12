@@ -1,0 +1,400 @@
+Falcon grinding/configuration experiments — 2026-10-09
+
+Status: screening and fresh-input confirmation complete. None of the four
+selected schedules established a prove+commit speedup against the same-binary
+baseline: all four paired 95% intervals include no change. Mean paired time
+reductions were 0.06%, 0.17%, 0.20%, and 0.49%. Query tuning did reduce payload
+size. The existing security budget was retained. This is an isolated experiment;
+its source changes have not been promoted to production.
+
+Purpose and scope
+-----------------
+Test whether changing grinding allocation and PCS query counts improves latency
+while retaining the existing 128-bit proof-security target and composed error
+budget. Each input batch contains 1024 signatures. The four workloads are
+Falcon-512 arithmetic, Falcon-1024 arithmetic, Falcon-512 full, and Falcon-1024
+full. Arithmetic benchmarks use 8 workers and full benchmarks use 16 workers,
+the best counts in the preceding 1/2/4/8/16-worker baseline campaign.
+
+Earlier instrumented profiles measured grinding at about 4–6% of prove-only
+time at those worker counts: arithmetic-512 3.74 ms (5.83%), arithmetic-1024
+4.84 ms (4.34%), full-512 17.31 ms (5.82%), and full-1024 22.50 ms (4.00%).
+Those were seed-42 diagnostic profiles, not the latency results of this
+experiment. They indicate limited headroom from grinding alone. Query changes
+can also affect PCS opening, verification, and proof payload size.
+Source: ../falcon-grinding-schedule-study-20261009/profile-analysis.json and its
+raw profiles.
+
+Configurations screened
+-----------------------
+original: saved unmodified binary from the preceding d9b13bdb4 campaign.
+baseline: experimental binary with all experimental controls disabled.
+global: include prime-field stages in the shared grinding-budget allocation.
+weighted: global allocation plus corrected grinding-boundary work counts and
+  the first measured search-cost curves, calibrated from a Rayon worker.
+queries124: global allocation plus a 124-bit raw PCS query target.
+queries120: global allocation plus a 120-bit raw PCS query target.
+queries116: global allocation plus a 116-bit raw PCS query target.
+weighted_queries120: weighted allocation plus the 120-bit raw query target.
+weighted_external: weighted allocation using the second cost calibration,
+  invoked from the external main thread as in the actual prover drivers.
+weighted_external_queries120: weighted_external plus the 120-bit raw query
+  target.
+
+The 124/120/116 labels are raw query targets, not final proof-security targets.
+Additional query grinding compensates for the reduced number of queries.
+These variants also include global allocation; a comparison against baseline
+measures their combined effect. Rate 1/2 and initial folding parameter 4 remain
+fixed. The weighted allocator is a heuristic search, not a demonstrated exact
+global optimum.
+
+The corrected work model includes the bridge's root boundary and uses
+2 + 2 * PCS_block_count outer-opening boundaries at target 128. These are cost
+weights; they do not change the security error numerators.
+
+Measurement method
+------------------
+Hardware: Ryzen 9 9950X3D. Native release build, opt-level 3, fat LTO, one codegen
+unit, RUSTFLAGS=-C target-cpu=native. Saved experimental binaries are reused
+across all profiles, with an additional saved original-binary control.
+
+Screening plan: ten profiles, seeds 42/43/44, all four workloads. Profile and
+workload order is deterministically shuffled. Each execution has one excluded
+warmup and seven measured repetitions. Input digests must agree across profiles
+for a matched workload/seed. Every warmup and measured proof is verified, and
+the execution checks security, proof-digest consistency, and reported worker
+affinity before accepting a result.
+
+Main thread is pinned to CPU 6. Worker order is
+6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9, truncated to the requested count.
+The runner executes on CPU 31. Before a run, selected workers and their SMT
+siblings must be below 5% busy in an idle sample. During an accepted run, every
+unused SMT sibling must be below 2% busy. Rejected raw attempts are retained and
+excluded without considering their measured speed.
+
+The initial three-repeat screening was superseded uniformly by seven repeats
+after short-interval contention rejections; see screen-method-update.json.
+The retry cap later increased from 4 to 30 without changing the 2% acceptance
+criterion; see retry-method-update.json. The pre-run idle-check limit increased
+from 15 to 300 one-second attempts, retaining the same less-than-5% idle
+criterion and less-than-2% in-run sibling criterion. Nineteen screening cases
+that overlapped a known external build were excluded and rerun, including cases
+that had passed the sibling-utilization check. Their identifiers are preserved
+in external-build-exclusions.json. Confirmation also has an external-process
+monitor polling every five seconds, recording observations in
+external-process-events.json. Its polling interval can miss short-lived work;
+it does not establish perfect isolation. CPU tick granularity and unobserved
+external activity remain limitations of this noise control.
+
+For each seed, the summary uses the median of the seven measured repetitions.
+Seeds, rather than repeated deterministic proofs, are the independent sampling
+unit. The analysis computes paired ratios and seed-resampled bootstrap
+intervals. Three screening seeds provide weak evidence for small differences;
+fresh inputs are needed to confirm selected candidates.
+
+Screening completed 120 accepted executions and 960 verified proofs, including
+warmups. Candidate schedules were frozen in selection.json before holdout.
+Confirmation uses fresh seeds 45 through 54 and compares each selected candidate
+with both baseline and original controls, with deterministically shuffled
+workload/profile order (confirm.py). No curves or schedules are refitted using
+holdout measurements.
+
+Confirmation completed all 120 planned executions and 960 verified proofs.
+Together with screening, the accepted timing dataset contains 240 executions,
+1,680 measured proofs and 240 warmups: 1,920 verified proofs in total. There are
+13 distinct input digests per workload across seeds 42 through 54. Original and
+baseline proof digests and payload sizes match in all 52 workload/seed pairs.
+
+The final audit checked 619 source-manifest entries, four binary hashes, cost
+and execution fingerprints, the frozen screening summary, raw medians, input
+identity, security, and affinity/noise criteria. No accepted run overlaps the
+known external-build interval using conservative file-mtime brackets. It passed
+with a flag for external-process observations; see the limitation below and
+external-monitor-review.json. The observed minimum composed accounting was
+128.093109501 bits. Validation passed 157 test executions in 53 invocations;
+repeated tests under different configurations count separately.
+
+Excluded records are counted separately: screening discarded 80 executions /
+640 verified proofs; confirmation discarded 35 / 280; superseded short screening
+retains 7 / 28. Smoke and corpus preparation contributed 8 and 48 additional
+verified proofs for correctness only. None of these excluded/correctness-only
+records contributes to the accepted performance summaries. See final-audit.json.
+
+Metrics
+-------
+Prove measures prepared.prove. Prove+commit includes checked witness derivation,
+packing/commitment, and proving. It excludes reusable preparation, generation
+of signature inputs, and separate native Falcon verification. Full commit
+timing also includes cloning the committed statement, as in its existing driver.
+Proof verification is timed separately. Proof bytes are counted payload bytes,
+including the 32-byte source root, not a measured serialized wire format.
+
+Security and correctness evidence
+---------------------------------
+The allocator preserves the existing composed algebraic/IOP error budget:
+  sum(error terms) <= (15/16) * 2^-128,
+corresponding to at least 128 + log2(16/15), approximately 128.093109, bits in
+that accounting model. Native Flock grinding floors and the 32-bit difficulty
+cap remain enforced. Prime sampling and native-ring terms remain included.
+The actual prepared difficulties and PCS configuration are bound into the
+existing transcript digest and used consistently by prover and verifier.
+
+This retains the repository's existing computational grinding/soundness model;
+successful proofs and accounting tests are not a new cryptographic proof of
+the entire construction. The algebraic/IOP ledger is separate from the hash
+security assumption.
+
+Validation logs show successful allocator/query tests, configuration and nonce
+mutation rejection, and composed-budget checks for the tested configurations.
+Weighted schedules were checked for cost-model thread classes 1/2/4/8/16,
+including both external-cost profiles. These are schedule-validation classes;
+this experiment's end-to-end timing scope remains 8 arithmetic / 16 full.
+With experimental controls disabled, smoke tests matched the saved original
+proof digests in all four workloads. Smoke timings are not used as results.
+
+Arithmetic budget tests independently reconstruct UDR fold/query bounds with
+rational arithmetic for both degrees and every power-of-two capacity through
+1024. Full composition tests cover 14 representative batch sizes, exactly
+aggregate the represented bounds, and check compensated query difficulty.
+Their PCS inputs are floating-point raw error bounds converted to rationals,
+so those tests are not an independent rational derivation of PCS soundness.
+The full exact/mutation unit tests use the existing Falcon-1024 test instance;
+full Falcon-512 is covered by actual verified benchmark proofs, not the same
+unit-test suite. See validation/summary.json and validation-external/summary.json.
+
+Cost-model qualification
+------------------------
+The first calibration ran grinders inside pool.install. Actual prover drivers
+call them from the non-Rayon main thread, where Rayon broadcast uses a blocking
+latch rather than a worker's stealing latch. The second calibration reproduces
+that external entry, global pool, and main/worker CPU arrangement. It leaves the
+first curves intact, so the two weighted variants remain distinguishable.
+
+The external probe recorded 104,576 measured searches across thread classes
+1/2/4/8/16; nonces were checked, with matching minimum nonces across thread
+counts. Cost fits estimate expected search time from actual nonce lengths.
+They preserve parallel-dispatch threshold dips; bits 25–32 are extrapolated
+from measured high-bit throughput. Repeated isolated searches still cannot
+reproduce every cache, clock, sleep, and scheduling state within a full proof.
+End-to-end holdout measurements decide performance, not the cost objective.
+See costs-external/README.txt and costs-external/final-provenance.json.
+
+Results
+-------
+Screening results (seeds 42, 43, 44)
+
+Times are arithmetic means of the per-seed median times, in milliseconds.
+Each row represents three independent seeds and 24 verified proofs including
+warmups. Total ratio is the paired geometric-mean prove+commit ratio relative
+to baseline; below 1 is faster. Payload bytes are mean counted sizes, rounded
+to the nearest byte. Prove and total are summarized separately, so medians
+of their components need not sum exactly. All 40 rows are included below.
+Bootstrap intervals and full precision are retained in screen/summary.json
+and screen/summary.csv; three-seed screening intervals are not confirmation.
+
+Arithmetic Falcon-512, 8 workers
+Profile                        Prove ms  Total ms Verify ms     Bytes  Total ratio
+baseline                          53.88     59.67     20.42    263725      1.00000
+global                            53.80     59.72     20.07    263543      1.00082
+original                          54.42     60.16     20.80    263725      1.00820
+queries116                        54.08     60.02     20.01    247645      1.00585
+queries120                        53.74     59.52     19.94    252634      0.99751
+queries124                        53.81     59.55     20.04    259362      0.99799
+weighted                          53.61     59.35     20.27    262999      0.99474
+weighted_external                 53.83     59.51     20.19    264226      0.99731
+weighted_external_queries120      53.60     59.42     20.08    253317      0.99588
+weighted_queries120               53.63     59.40     19.99    253583      0.99544
+
+Arithmetic Falcon-1024, 8 workers
+Profile                        Prove ms  Total ms Verify ms     Bytes  Total ratio
+baseline                         100.43    115.89     38.15    362399      1.00000
+global                           100.00    115.62     38.14    363402      0.99767
+original                         100.39    115.48     38.19    362399      0.99646
+queries116                       100.04    115.49     37.33    344386      0.99656
+queries120                       100.39    115.90     37.89    350999      1.00011
+queries124                       100.09    115.56     37.78    357247      0.99719
+weighted                          99.88    115.40     37.79    362847      0.99582
+weighted_external                 99.68    115.30     37.58    363242      0.99494
+weighted_external_queries120     100.66    116.15     38.11    349954      1.00229
+weighted_queries120               99.30    114.76     37.44    350413      0.99024
+
+Full Falcon-512, 16 workers
+Profile                        Prove ms  Total ms Verify ms     Bytes  Total ratio
+baseline                         283.17    345.43     32.84    697183      1.00000
+global                           282.39    344.24     32.72    698677      0.99652
+original                         284.76    346.96     32.66    697183      1.00442
+queries116                       282.93    345.14     32.62    665181      0.99916
+queries120                       286.15    348.60     32.61    676541      1.00916
+queries124                       281.56    345.25     32.73    686234      0.99947
+weighted                         285.12    347.67     32.92    698762      1.00646
+weighted_external                281.27    343.51     32.85    698677      0.99445
+weighted_external_queries120     284.24    346.28     32.61    676541      1.00246
+weighted_queries120              284.35    347.37     32.62    675709      1.00561
+
+Full Falcon-1024, 16 workers
+Profile                        Prove ms  Total ms Verify ms     Bytes  Total ratio
+baseline                         545.43    667.11     53.99    972210      1.00000
+global                           547.49    665.29     53.95    970941      0.99727
+original                         546.53    663.02     54.45    972210      0.99386
+queries116                       547.56    663.93     53.71    936479      0.99524
+queries120                       548.31    665.35     53.84    948330      0.99736
+queries124                       549.01    667.44     54.00    958458      1.00049
+weighted                         550.33    667.07     53.95    972551      0.99995
+weighted_external                545.52    662.33     54.09    971645      0.99284
+weighted_external_queries120     547.19    665.00     53.89    948330      0.99685
+weighted_queries120              551.39    669.18     53.79    948757      1.00309
+
+Minimum reported composed accounting across accepted screening profiles:
+128.093109501 bits, above the preserved 128.093109-bit budget threshold.
+
+Frozen holdout candidates
+
+Selection rule: minimum paired geometric-mean prove+commit ratio to baseline
+across the three screening seeds, among the eight experimental configurations;
+both controls are excluded from selection. This is a nomination rule and is
+subject to selection bias until tested on fresh inputs.
+
+  arithmetic Falcon-512, 8 workers: weighted
+    screening ratio 0.99474; 0.53% lower paired total time.
+  arithmetic Falcon-1024, 8 workers: weighted_queries120
+    screening ratio 0.99024; 0.98% lower paired total time.
+  full Falcon-512, 16 workers: weighted_external
+    screening ratio 0.99445; 0.56% lower paired total time.
+  full Falcon-1024, 16 workers: weighted_external
+    screening ratio 0.99284; 0.72% lower paired total time.
+
+The two arithmetic winners use the initial worker-entry cost calibration.
+The caller-context mismatch limits that cost model, but the resulting fixed
+schedules remain valid security-checked candidates. Their actual performance
+must be assessed by the same holdout as the external-calibration full winners.
+A model with more faithful isolated-call timing need not select the fastest
+whole-proof schedule. No speedup is inferred from calibration quality alone.
+
+Some named configurations produce identical proofs. Across all three screening
+seeds, full-512 global and weighted_external have identical proof digests;
+queries120 and weighted_external_queries120 also match for both full degrees.
+Their timing differences are repeated measurements of the same resulting
+proofs, not evidence of distinct schedule improvements. Baseline and original
+proof digests match for every screened workload and seed. The fresh holdout
+tested the nominated full-512 configuration on independent inputs.
+
+Fresh-input confirmation (seeds 45 through 54)
+
+Primary comparison: candidate against baseline within the same experimental
+binary. Each profile row contains ten independent seeds, 70 measured proofs,
+and ten warmups. Times are means of per-seed medians, as in screening.
+
+Workload           Profile                 Prove ms  Total ms Verify ms     Bytes
+arithmetic-512     baseline                   53.90     59.64     20.21    263762
+arithmetic-512     weighted                   53.72     59.60     20.30    263836
+arithmetic-1024    baseline                  100.27    115.88     37.87    363053
+arithmetic-1024    weighted_queries120       100.11    115.68     37.76    350348
+full-512           baseline                  287.77    350.19     32.82    697828
+full-512           weighted_external         287.01    349.47     32.79    697632
+full-1024          baseline                  555.15    672.94     54.07    971685
+full-1024          weighted_external         552.12    669.65     54.07    971816
+
+Paired candidate / baseline ratios with seed-bootstrap 95% intervals:
+Below 1 means less time. These are unadjusted per-comparison intervals.
+
+Workload           Prove ratio [95% CI]           Total ratio [95% CI]           Verify ratio [95% CI]
+arithmetic-512     0.99665 [0.99189, 1.00112]     0.99938 [0.99371, 1.00437]     1.00439 [0.99442, 1.01539]
+arithmetic-1024    0.99842 [0.99436, 1.00228]     0.99829 [0.99471, 1.00184]     0.99689 [0.99074, 1.00296]
+full-512           0.99738 [0.99346, 1.00153]     0.99797 [0.99395, 1.00238]     0.99909 [0.99494, 1.00313]
+full-1024          0.99457 [0.98693, 1.00171]     0.99512 [0.98899, 1.00095]     1.00002 [0.99735, 1.00248]
+
+All four total-time intervals include 1. The same is true for their prove-only
+and verification intervals against baseline. The point estimates are small;
+this dataset does not establish a consistent latency improvement attributable
+to schedule tuning. Sources: confirmation/summary.json and summary.csv.
+
+Secondary comparison: saved original binary
+
+Workload           Candidate total ratio [95% CI]      Baseline/original total ratio
+arithmetic-512     0.99090 [0.98597, 0.99556]          0.99151
+arithmetic-1024    1.00039 [0.99635, 1.00365]          1.00210
+full-512           0.99920 [0.99482, 1.00373]          1.00123
+full-1024          0.99665 [0.98920, 1.00326]          1.00154
+
+Arithmetic-512 appears 0.91% faster than the original binary, but baseline with
+all experiment flags off is already 0.85% faster than that binary. The extra
+schedule effect is only the primary 0.06% estimate. This control difference
+prevents attributing the old-binary comparison entirely to grinding changes.
+Arithmetic-512 and arithmetic-1024 prove-only comparisons against the original
+binary have intervals below 1, but that does not establish a schedule-specific
+prove+commit gain. See confirmation/summary-vs-original.json for all metrics.
+
+External-process limitation
+
+The monitor recorded events, so this was not demonstrated perfect machine
+isolation. Two observations with unresolved working directories may correspond
+to exiting benchmark processes; that attribution is uncertain. A third process
+had an external working directory and was observed after the last accepted run.
+The five-second polling interval permits a short possible overlap with the
+last arithmetic-1024 original-control run. Review and sensitivity calculations
+are recorded in external-monitor-review.json. Retain this limitation when
+interpreting sub-percent differences, including the secondary binary comparison.
+
+Conservative sensitivity checks preserve the conclusion. Excluding full-1024
+seeds 50 and 53 gives a candidate/baseline total ratio of 0.99598 with 95%
+interval [0.98991, 1.00176] across eight inputs. Excluding arithmetic-1024 seed
+54 gives a candidate/original total ratio of 1.00067 [0.99626, 1.00423] across
+nine inputs. Both still include no change. The last external-process observation
+does not affect the arithmetic-1024 candidate/baseline comparison: those two
+runs had completed before the possible overlap window. See sensitivity-summary.json.
+
+Payload and preparation tradeoffs
+
+The arithmetic-1024 weighted_queries120 holdout payload averaged 350,348 bytes
+versus baseline 363,053 bytes, a 3.50% reduction. Its prove+commit and verification
+changes remain statistically inconclusive. Other selected candidates changed
+mean payload sizes by less than 0.1%.
+
+The queries116 screening variant reduced mean payload sizes by about 6.1%,
+5.0%, 4.6%, and 3.7% for arithmetic-512, arithmetic-1024, full-512, and full-1024,
+respectively, with near-flat total-time point estimates. This variant was not
+selected for fresh holdout; those size/latency observations remain screening
+evidence, not a confirmed performance recommendation.
+
+Reusable preparation is excluded from the timed prove+commit metric. Recorded
+preparation means from confirmation were:
+
+Workload            Baseline ms  Candidate ms   Added ms
+arithmetic-512            0.254         0.651      0.396
+arithmetic-1024           0.232         0.833      0.601
+full-512                  4.782         5.239      0.457
+full-1024                 3.117         3.584      0.467
+
+Weighted preparation adds roughly 0.4–0.6 ms in this experimental implementation.
+That cost matters if preparation is repeated for each proof, and is amortized
+when the prepared configuration is reused. It is not included in the apparent
+small prove+commit reductions above. Source: preparation-summary.json.
+
+Conclusion
+
+The experiments do not justify promoting a grinding-schedule change for prover
+latency. Four fresh-input total-time comparisons were inconclusive, and the
+observed grinding share already limits the benefit available from this area.
+Query-count tuning offers a demonstrated payload-size tradeoff while preserving
+the existing security budget: the selected arithmetic-1024 query variant kept
+a roughly 3.5% smaller payload in holdout without an established latency gain.
+Further latency work should target the larger non-grinding stages. If smaller
+proofs are the priority, query tuning merits targeted follow-up with the same
+security accounting and independent-input validation. No production change was
+adopted or pushed as part of these experiments.
+
+Reproducibility and source status
+--------------------------------
+Base commit: d9b13bdb43cd2d3a0901b44f0939293f234661b5.
+Isolated source: /tmp/falcon-grinding-experiment-20261009.
+Patch and source inventory: changes.patch, changed-files.json, source-hashes.json.
+Build records: build-final.jsonl/.stderr and test-build.jsonl/.stderr.
+Binary, configuration, and cost hashes: provenance.json and per-run execution
+fingerprints. The fingerprints include the selected cost file for weighted runs.
+Timing runner and summarizer: campaign.py and analyze.py.
+Inputs and reload validation: corpus-preparation/.
+Original controls: ../falcon-grinding-opt-128-d9b13bdb4/binaries/.
+Raw timing records, commands, resources, and rejected attempts remain under the
+corresponding phase directories. Initial superseded screening is retained in
+screen-short-superseded/. This report does not authorize or record a production
+commit, merge, or push of the experimental implementation.

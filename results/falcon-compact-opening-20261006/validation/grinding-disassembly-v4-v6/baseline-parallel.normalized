@@ -1,0 +1,820 @@
+push   %rbp
+push   %r15
+push   %r14
+push   %r13
+push   %r12
+push   %rbx
+sub    $0xd8,%rsp
+cmp    $0x11,%edx
+mov    %rsi,%rbx
+mov    %rdi,%r14
+mov    %rsi,(%rsp)
+mov    %rdi,0x88(%rsp)
+setb   %al
+test   $0x3,%bl
+sete   %cl
+test   %cl,%al
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x6e>
+mov    %fs:0xffffffffffffff60,%rax
+mov    %edx,0x14(%rsp)
+movq   $0x0,0x80(%rsp)
+movq   $0xffffffffffffffff,0x78(%rsp)
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xb1>
+add    $0x110,%rax
+mov    (%rax),%rcx
+lock incq (%rcx)
+jg     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc3>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    %fs:0xffffffffffffff60,%rax
+mov    %edx,0x14(%rsp)
+movq   $0x0,0x80(%rsp)
+movq   $0xffffffffffffffff,0x78(%rsp)
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x14f>
+add    $0x110,%rax
+mov    (%rax),%rcx
+lock incq (%rcx)
+jg     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x161>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+call   TARGET <rayon_core::registry::global_registry>
+mov    (%rax),%rcx
+lock incq (%rcx)
+jle    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    (%rax),%r13
+lea    0x80(%rsp),%rdx
+lea    0x78(%rsp),%rcx
+mov    %rdx,0x90(%rsp)
+mov    %rcx,0x98(%rsp)
+lea    0x13(%rsp),%rdx
+lea    0x14(%rsp),%rcx
+mov    %rdx,0xa0(%rsp)
+mov    %r14,0xa8(%rsp)
+mov    %rbx,0xb0(%rsp)
+mov    %rcx,0xb8(%rsp)
+mov    %fs:0xffffffffffffff60,%rdx
+mov    0x208(%r13),%r12
+mov    %rdx,0x58(%rsp)
+test   %rdx,%rdx
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x1e6>
+mov    0x110(%rdx),%rax
+lock incq (%rax)
+jle    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    0x100(%rdx),%rcx
+mov    0x110(%rdx),%rax
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x1ea>
+call   TARGET <rayon_core::registry::global_registry>
+mov    (%rax),%rcx
+lock incq (%rcx)
+jle    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    (%rax),%r13
+lea    0x80(%rsp),%rdx
+lea    0x78(%rsp),%rcx
+mov    %rdx,0x90(%rsp)
+mov    %rcx,0x98(%rsp)
+lea    0x13(%rsp),%rdx
+lea    0x14(%rsp),%rcx
+mov    %rdx,0xa0(%rsp)
+mov    %r14,0xa8(%rsp)
+mov    %rbx,0xb0(%rsp)
+mov    %rcx,0xb8(%rsp)
+mov    %fs:0xffffffffffffff60,%rdx
+mov    0x208(%r13),%r12
+mov    %rdx,0x58(%rsp)
+test   %rdx,%rdx
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x235>
+mov    0x110(%rdx),%rax
+lock incq (%rax)
+jle    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    0x100(%rdx),%rcx
+mov    0x110(%rdx),%rax
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x239>
+xor    %eax,%eax
+xor    %ecx,%ecx
+mov    %r12,0x38(%rsp)
+mov    %rax,0x40(%rsp)
+lea    0x0(,%r12,8),%rax
+movq   $0x0,0x48(%rsp)
+mov    %rcx,0x50(%rsp)
+lea    (%rax,%rax,4),%rbp
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x288>
+mov    %rbp,%rdi
+call   *RIP(%rip)
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xbf9>
+mov    %rax,%r15
+cmp    $0x8,%r12
+jae    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x29e>
+xor    %eax,%eax
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x32a>
+xor    %eax,%eax
+xor    %ecx,%ecx
+mov    %r12,0x38(%rsp)
+mov    %rax,0x40(%rsp)
+lea    0x0(,%r12,8),%rax
+movq   $0x0,0x48(%rsp)
+mov    %rcx,0x50(%rsp)
+lea    (%rax,%rax,4),%rbp
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x293>
+mov    %rbp,%rdi
+call   *RIP(%rip)
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc08>
+mov    %rax,%r15
+cmp    $0x8,%r12
+jae    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x5d3>
+xor    %eax,%eax
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x65a>
+mov    $0x8,%r15d
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x368>
+mov    $0x8,%r15d
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x698>
+vmovdqa64 RIP(%rip),%zmm2
+vpbroadcastq RIP(%rip),%zmm3
+vpbroadcastq RIP(%rip),%zmm5
+lea    0x38(%rsp),%rcx
+movabs $0x3fffffffffffff8,%rax
+vpxor  %xmm4,%xmm4,%xmm4
+vpbroadcastq %rcx,%zmm0
+lea    0x90(%rsp),%rcx
+and    %r12,%rax
+vpbroadcastq %rcx,%zmm1
+mov    %rax,%rcx
+nopl   0x0(%rax)
+vpmullq %zmm3,%zmm2,%zmm6
+kxnorb %k0,%k0,%k1
+vpaddq %zmm5,%zmm2,%zmm2
+add    $0xfffffffffffffff8,%rcx
+vpscatterqq %zmm0,(%r15,%zmm6,1){%k1}
+kxnorb %k0,%k0,%k1
+vpscatterqq %zmm1,0x8(%r15,%zmm6,1){%k1}
+kxnorb %k0,%k0,%k1
+vpscatterqq %zmm4,0x10(%r15,%zmm6,1){%k1}
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x2f0>
+cmp    %rax,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x368>
+lea    (%rax,%rax,4),%rcx
+mov    %r12,%rdx
+sub    %rax,%rdx
+lea    0x38(%rsp),%rax
+lea    0x90(%rsp),%rsi
+lea    0x10(%r15,%rcx,8),%rcx
+cs nopw 0x0(%rax,%rax,1)
+mov    %rax,-0x10(%rcx)
+mov    %rsi,-0x8(%rcx)
+movq   $0x0,(%rcx)
+add    $0x28,%rcx
+dec    %rdx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x350>
+mov    %r12,0xc0(%rsp)
+mov    %r15,0xc8(%rsp)
+mov    %r12,0xd0(%rsp)
+mov    0x208(%r13),%rax
+mov    %r12,0x28(%rsp)
+mov    %rax,0x20(%rsp)
+cmp    %r12,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x95f>
+lea    0x180(%r13),%rax
+mov    $0x1,%ecx
+mov    %rax,0x60(%rsp)
+xor    %eax,%eax
+lock cmpxchg %ecx,0x180(%r13)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x9a3>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x9c5>
+movl   $0x0,0xc(%rsp)
+movzbl 0x184(%r13),%eax
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x9e3>
+mov    0x198(%r13),%rax
+mov    %r12,0x28(%rsp)
+mov    %rax,0x20(%rsp)
+cmp    %r12,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xaa3>
+mov    %rbp,0x68(%rsp)
+mov    %r13,0x18(%rsp)
+mov    %r12,0x70(%rsp)
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4a7>
+mov    0x18(%rsp),%rax
+mov    0x70(%rsp),%rbp
+lea    RIP(%rip),%r14
+mov    %r15,%r12
+mov    0x190(%rax),%rbx
+data16 data16 cs nopw 0x0(%rax,%rax,1)
+mov    (%rbx),%rax
+mov    0x108(%rax),%r13
+mov    0x100(%rax),%rax
+mov    0x10(%rbx),%rsi
+mov    %r13,%rcx
+sub    %rax,%rcx
+cmp    %rsi,%rcx
+jge    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x493>
+mov    0x8(%rbx),%rax
+dec    %rsi
+and    %r13,%rsi
+inc    %r13
+shl    $0x4,%rsi
+mov    %r14,(%rax,%rsi,1)
+mov    %r12,0x8(%rax,%rsi,1)
+mov    (%rbx),%rcx
+add    $0x28,%r12
+add    $0x20,%rbx
+dec    %rbp
+mov    %r13,0x108(%rcx)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x440>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4a7>
+add    %rsi,%rsi
+mov    %rbx,%rdi
+vzeroupper
+call   TARGET <<crossbeam_deque::deque::Worker<rayon_core::job::JobRef>>::resize>
+mov    0x10(%rbx),%rsi
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x460>
+cmpb   $0x0,0xc(%rsp)
+mov    0x18(%rsp),%r13
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4c6>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xbbf>
+mov    0x60(%rsp),%rsi
+xor    %eax,%eax
+xchg   %eax,(%rsi)
+mov    0x70(%rsp),%rbp
+cmp    $0x2,%eax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xae7>
+mov    0x208(%r13),%r12
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x516>
+lea    0x1d8(%r13),%rbx
+xor    %r14d,%r14d
+data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+mov    %rbx,%rdi
+mov    %r14,%rsi
+vzeroupper
+call   TARGET <<rayon_core::sleep::Sleep>::wake_specific_thread>
+inc    %r14
+cmp    %r14,%r12
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x500>
+cmpq   $0x0,0x40(%rsp)
+lea    0x48(%rsp),%rsi
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x549>
+cmpq   $0x0,0x58(%rsp)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xb45>
+mov    0x48(%rsp),%rax
+cmp    $0x3,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x554>
+mov    0x58(%rsp),%rdi
+vzeroupper
+call   TARGET <<rayon_core::registry::WorkerThread>::wait_until_cold>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x554>
+mov    %rsi,%rdi
+vzeroupper
+call   TARGET <<rayon_core::latch::LockLatch>::wait>
+test   %rbp,%rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x58a>
+mov    0x68(%rsp),%rax
+lea    (%r15,%rax,1),%rbp
+mov    %r15,%rax
+mov    0x10(%rax),%rcx
+lea    0x28(%rax),%r14
+cmp    $0x1,%rcx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x5b4>
+addq   $0xffffffffffffffd8,0x68(%rsp)
+mov    %r14,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x565>
+mov    %r15,%rdi
+vzeroupper
+call   *RIP(%rip)
+mov    0x40(%rsp),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8db>
+lock decq (%rax)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8db>
+mov    0x40(%rsp),%rdi
+vzeroupper
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8db>
+cmp    $0x2,%rcx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xb85>
+mov    0x18(%rax),%rdi
+mov    0x20(%rax),%rsi
+vzeroupper
+call   TARGET <rayon_core::unwind::resume_unwinding>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+vmovdqa64 RIP(%rip),%zmm2
+vpbroadcastq RIP(%rip),%zmm3
+vpbroadcastq RIP(%rip),%zmm5
+lea    0x38(%rsp),%rcx
+movabs $0x3fffffffffffff8,%rax
+vpxor  %xmm4,%xmm4,%xmm4
+vpbroadcastq %rcx,%zmm0
+lea    0x90(%rsp),%rcx
+and    %r12,%rax
+vpbroadcastq %rcx,%zmm1
+mov    %rax,%rcx
+xchg   %ax,%ax
+vpmullq %zmm3,%zmm2,%zmm6
+kxnorb %k0,%k0,%k1
+vpaddq %zmm5,%zmm2,%zmm2
+add    $0xfffffffffffffff8,%rcx
+vpscatterqq %zmm0,(%r15,%zmm6,1){%k1}
+kxnorb %k0,%k0,%k1
+vpscatterqq %zmm1,0x8(%r15,%zmm6,1){%k1}
+kxnorb %k0,%k0,%k1
+vpscatterqq %zmm4,0x10(%r15,%zmm6,1){%k1}
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x620>
+cmp    %rax,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x698>
+lea    (%rax,%rax,4),%rcx
+mov    %r12,%rdx
+sub    %rax,%rdx
+lea    0x38(%rsp),%rax
+lea    0x90(%rsp),%rsi
+lea    0x10(%r15,%rcx,8),%rcx
+cs nopw 0x0(%rax,%rax,1)
+mov    %rax,-0x10(%rcx)
+mov    %rsi,-0x8(%rcx)
+movq   $0x0,(%rcx)
+add    $0x28,%rcx
+dec    %rdx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x680>
+mov    %r12,0xc0(%rsp)
+mov    %r15,0xc8(%rsp)
+mov    %r12,0xd0(%rsp)
+mov    0x208(%r13),%rax
+mov    %r12,0x28(%rsp)
+mov    %rax,0x20(%rsp)
+cmp    %r12,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x981>
+lea    0x180(%r13),%rax
+mov    $0x1,%ecx
+mov    %rax,0x60(%rsp)
+xor    %eax,%eax
+lock cmpxchg %ecx,0x180(%r13)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xa23>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xa45>
+movl   $0x0,0xc(%rsp)
+movzbl 0x184(%r13),%eax
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xa63>
+mov    0x198(%r13),%rax
+mov    %r12,0x28(%rsp)
+mov    %rax,0x20(%rsp)
+cmp    %r12,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xac5>
+mov    %rbp,0x68(%rsp)
+mov    %r13,0x18(%rsp)
+mov    %r12,0x70(%rsp)
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7d7>
+mov    0x18(%rsp),%rax
+mov    0x70(%rsp),%rbp
+lea    RIP(%rip),%r14
+mov    %r15,%r12
+mov    0x190(%rax),%rbx
+data16 data16 cs nopw 0x0(%rax,%rax,1)
+mov    (%rbx),%rax
+mov    0x108(%rax),%r13
+mov    0x100(%rax),%rax
+mov    0x10(%rbx),%rsi
+mov    %r13,%rcx
+sub    %rax,%rcx
+cmp    %rsi,%rcx
+jge    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7c3>
+mov    0x8(%rbx),%rax
+dec    %rsi
+and    %r13,%rsi
+inc    %r13
+shl    $0x4,%rsi
+mov    %r14,(%rax,%rsi,1)
+mov    %r12,0x8(%rax,%rsi,1)
+mov    (%rbx),%rcx
+add    $0x28,%r12
+add    $0x20,%rbx
+dec    %rbp
+mov    %r13,0x108(%rcx)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x770>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7d7>
+add    %rsi,%rsi
+mov    %rbx,%rdi
+vzeroupper
+call   TARGET <<crossbeam_deque::deque::Worker<rayon_core::job::JobRef>>::resize>
+mov    0x10(%rbx),%rsi
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x790>
+cmpb   $0x0,0xc(%rsp)
+mov    0x18(%rsp),%r13
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7f6>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xbdc>
+mov    0x60(%rsp),%rsi
+xor    %eax,%eax
+xchg   %eax,(%rsi)
+mov    0x70(%rsp),%rbp
+cmp    $0x2,%eax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xb16>
+mov    0x208(%r13),%r12
+test   %r12,%r12
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x846>
+lea    0x1d8(%r13),%rbx
+xor    %r14d,%r14d
+data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+mov    %rbx,%rdi
+mov    %r14,%rsi
+vzeroupper
+call   TARGET <<rayon_core::sleep::Sleep>::wake_specific_thread>
+inc    %r14
+cmp    %r14,%r12
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x830>
+cmpq   $0x0,0x40(%rsp)
+lea    0x48(%rsp),%rsi
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x879>
+cmpq   $0x0,0x58(%rsp)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xb65>
+mov    0x48(%rsp),%rax
+cmp    $0x3,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x884>
+mov    0x58(%rsp),%rdi
+vzeroupper
+call   TARGET <<rayon_core::registry::WorkerThread>::wait_until_cold>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x884>
+mov    %rsi,%rdi
+vzeroupper
+call   TARGET <<rayon_core::latch::LockLatch>::wait>
+test   %rbp,%rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8be>
+mov    0x68(%rsp),%rax
+lea    (%r15,%rax,1),%rbp
+mov    %r15,%rax
+mov    0x10(%rax),%rcx
+lea    0x28(%rax),%r14
+cmp    $0x1,%rcx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x940>
+addq   $0xffffffffffffffd8,0x68(%rsp)
+mov    %r14,%rax
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x895>
+mov    %r15,%rdi
+vzeroupper
+call   *RIP(%rip)
+mov    0x40(%rsp),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8db>
+lock decq (%rax)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8db>
+mov    0x40(%rsp),%rdi
+vzeroupper
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+lock decq 0x0(%r13)
+mov    (%rsp),%rbx
+mov    0x88(%rsp),%r14
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x8f9>
+mov    %r13,%rdi
+vzeroupper
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+mov    0x78(%rsp),%rdx
+mov    $0x1,%eax
+cmp    $0xffffffffffffffff,%rdx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x92b>
+mov    0x14(%rsp),%ecx
+mov    %rbx,%rsi
+mov    %rdx,%rbx
+mov    $0xffffffffffffffff,%rdx
+mov    %r14,%rdi
+vzeroupper
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+movzbl %al,%eax
+mov    %rbx,%rdx
+add    $0xd8,%rsp
+pop    %rbx
+pop    %r12
+pop    %r13
+pop    %r14
+pop    %r15
+pop    %rbp
+vzeroupper
+ret
+cmp    $0x2,%rcx
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xba2>
+mov    0x18(%rax),%rdi
+mov    0x20(%rax),%rsi
+vzeroupper
+call   TARGET <rayon_core::unwind::resume_unwinding>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%r9
+lea    0x20(%rsp),%rsi
+lea    0x28(%rsp),%rdx
+xor    %edi,%edi
+xor    %ecx,%ecx
+vzeroupper
+call   TARGET <core::panicking::assert_failed::<usize, usize>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%r9
+lea    0x20(%rsp),%rsi
+lea    0x28(%rsp),%rdx
+xor    %edi,%edi
+xor    %ecx,%ecx
+vzeroupper
+call   TARGET <core::panicking::assert_failed::<usize, usize>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    0x180(%r13),%rdi
+vzeroupper
+call   TARGET <<std::sys::sync::mutex::futex::Mutex>::lock_contended>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x3cf>
+vzeroupper
+call   TARGET <std::panicking::panic_count::is_zero_slow_path>
+xor    $0x1,%al
+mov    %eax,0xc(%rsp)
+movzbl 0x184(%r13),%eax
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x3e7>
+lea    0x180(%r13),%rax
+mov    %rax,0x28(%rsp)
+mov    0xc(%rsp),%eax
+mov    %al,0x30(%rsp)
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rcx
+lea    RIP(%rip),%r8
+lea    0x28(%rsp),%rdx
+mov    $0x2b,%esi
+vzeroupper
+call   TARGET <core::result::unwrap_failed>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    0x180(%r13),%rdi
+vzeroupper
+call   TARGET <<std::sys::sync::mutex::futex::Mutex>::lock_contended>
+mov    RIP(%rip),%rax
+shl    $1,%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x6ff>
+vzeroupper
+call   TARGET <std::panicking::panic_count::is_zero_slow_path>
+xor    $0x1,%al
+mov    %eax,0xc(%rsp)
+movzbl 0x184(%r13),%eax
+test   %al,%al
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x717>
+lea    0x180(%r13),%rax
+mov    %rax,0x28(%rsp)
+mov    0xc(%rsp),%eax
+mov    %al,0x30(%rsp)
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rcx
+lea    RIP(%rip),%r8
+lea    0x28(%rsp),%rdx
+mov    $0x2b,%esi
+vzeroupper
+call   TARGET <core::result::unwrap_failed>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%r9
+lea    0x20(%rsp),%rsi
+lea    0x28(%rsp),%rdx
+xor    %edi,%edi
+xor    %ecx,%ecx
+vzeroupper
+call   TARGET <core::panicking::assert_failed::<usize, usize>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%r9
+lea    0x20(%rsp),%rsi
+lea    0x28(%rsp),%rdx
+xor    %edi,%edi
+xor    %ecx,%ecx
+vzeroupper
+call   TARGET <core::panicking::assert_failed::<usize, usize>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    $0xca,%edi
+mov    $0x81,%edx
+mov    $0x1,%ecx
+xor    %eax,%eax
+vzeroupper
+call   *RIP(%rip)
+mov    0x208(%r13),%r12
+test   %r12,%r12
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4e9>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x516>
+mov    $0xca,%edi
+mov    $0x81,%edx
+mov    $0x1,%ecx
+xor    %eax,%eax
+vzeroupper
+call   *RIP(%rip)
+mov    0x208(%r13),%r12
+test   %r12,%r12
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x819>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x846>
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rdx
+mov    $0xc,%esi
+vzeroupper
+call   TARGET <core::option::expect_failed>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rdx
+mov    $0xc,%esi
+vzeroupper
+call   TARGET <core::option::expect_failed>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rdx
+mov    $0x28,%esi
+vzeroupper
+call   TARGET <core::panicking::panic>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+lea    RIP(%rip),%rdi
+lea    RIP(%rip),%rdx
+mov    $0x28,%esi
+vzeroupper
+call   TARGET <core::panicking::panic>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+vzeroupper
+call   TARGET <std::panicking::panic_count::is_zero_slow_path>
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4c6>
+movb   $0x1,0x184(%r13)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x4c6>
+vzeroupper
+call   TARGET <std::panicking::panic_count::is_zero_slow_path>
+test   %al,%al
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7f6>
+movb   $0x1,0x184(%r13)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0x7f6>
+mov    $0x8,%edi
+mov    %rbp,%rsi
+call   TARGET <alloc::raw_vec::handle_error>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc15>
+mov    $0x8,%edi
+mov    %rbp,%rsi
+call   TARGET <alloc::raw_vec::handle_error>
+ud2
+mov    0x18(%rsp),%r13
+mov    0x60(%rsp),%rdi
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc5e>
+mov    0x18(%rsp),%r13
+mov    0x60(%rsp),%rdi
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xc75>
+mov    %rax,(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd11>
+mov    %rax,(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xdf7>
+mov    %rax,(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xcf7>
+mov    %rax,(%rsp)
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xddd>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xca5>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xcb8>
+lea    0x180(%r13),%rdi
+mov    %rax,(%rsp)
+movzbl 0xc(%rsp),%esi
+call   TARGET <core::ptr::drop_glue::<std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<bitz::hybrid::sumcheck::Scratch>>>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xca9>
+lea    0x180(%r13),%rdi
+mov    %rax,(%rsp)
+movzbl 0xc(%rsp),%esi
+call   TARGET <core::ptr::drop_glue::<std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<bitz::hybrid::sumcheck::Scratch>>>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xcbc>
+lea    0x28(%rsp),%rdi
+mov    %rax,(%rsp)
+call   TARGET <core::ptr::drop_glue::<std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<[core::option::Option<alloc::boxed::Box<dyn core::ops::function::FnMut<(u32, bool, bool), Output = ()> + core::marker::Send + core::marker::Sync>>; 1]>>>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xca9>
+lea    0x28(%rsp),%rdi
+mov    %rax,(%rsp)
+call   TARGET <core::ptr::drop_glue::<std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<[core::option::Option<alloc::boxed::Box<dyn core::ops::function::FnMut<(u32, bool, bool), Output = ()> + core::marker::Send + core::marker::Sync>>; 1]>>>>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xcbc>
+mov    %rax,(%rsp)
+lea    0xc0(%rsp),%rdi
+call   TARGET <core::ptr::drop_glue::<alloc::vec::Vec<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xcf7>
+mov    %rax,(%rsp)
+lea    0xc0(%rsp),%rdi
+call   TARGET <core::ptr::drop_glue::<alloc::vec::Vec<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xddd>
+mov    %rax,(%rsp)
+sub    %r14,%rbp
+movabs $0xcccccccccccccccd,%rax
+mov    %rbp,%rdx
+mulx   %rax,%rbp,%rbp
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd29>
+mov    %r15,%rdi
+call   *RIP(%rip)
+mov    0x18(%rsp),%r13
+mov    0x40(%rsp),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd11>
+lock decq (%rax)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd11>
+mov    0x40(%rsp),%rdi
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+lock decq 0x0(%r13)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe06>
+mov    %r13,%rdi
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe06>
+mov    RIP(%rip),%r12
+shr    $0x5,%rbp
+add    $0x28,%r14
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd49>
+nopw   0x0(%rax,%rax,1)
+add    $0x28,%r14
+dec    %rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xce9>
+cmpl   $0x2,-0x18(%r14)
+jb     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd40>
+mov    -0x8(%r14),%rbx
+mov    -0x10(%r14),%r13
+mov    (%rbx),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd65>
+mov    %r13,%rdi
+call   *%rax
+cmpq   $0x0,0x8(%rbx)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd40>
+mov    %r13,%rdi
+call   *%r12
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd40>
+call   TARGET <core::panicking::panic_in_cleanup>
+cmpq   $0x0,0x8(%rbx)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd90>
+mov    %r13,%rdi
+call   *RIP(%rip)
+nopl   0x0(%rax)
+dec    %rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe86>
+mov    %r14,%rdi
+lea    0x28(%r14),%rbx
+call   TARGET <core::ptr::drop_glue::<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure
+mov    %rbx,%r14
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xd90>
+call   TARGET <core::panicking::panic_in_cleanup>
+call   TARGET <core::panicking::panic_in_cleanup>
+mov    %rax,(%rsp)
+sub    %r14,%rbp
+movabs $0xcccccccccccccccd,%rax
+mov    %rbp,%rdx
+mulx   %rax,%rbp,%rbp
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe0f>
+mov    %r15,%rdi
+call   *RIP(%rip)
+mov    0x18(%rsp),%r13
+mov    0x40(%rsp),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xdf7>
+lock decq (%rax)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xdf7>
+mov    0x40(%rsp),%rdi
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+lock decq 0x0(%r13)
+jne    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe06>
+mov    %r13,%rdi
+call   TARGET <<alloc::sync::Arc<rayon_core::registry::Registry>>::drop_slow>
+mov    (%rsp),%rdi
+call   TARGET <_Unwind_Resume@plt>
+mov    RIP(%rip),%r12
+shr    $0x5,%rbp
+add    $0x28,%r14
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe29>
+add    $0x28,%r14
+dec    %rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xdcf>
+cmpl   $0x2,-0x18(%r14)
+jb     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe20>
+mov    -0x8(%r14),%rbx
+mov    -0x10(%r14),%r13
+mov    (%rbx),%rax
+test   %rax,%rax
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe45>
+mov    %r13,%rdi
+call   *%rax
+cmpq   $0x0,0x8(%rbx)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe20>
+mov    %r13,%rdi
+call   *%r12
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe20>
+call   TARGET <core::panicking::panic_in_cleanup>
+cmpq   $0x0,0x8(%rbx)
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe70>
+mov    %r13,%rdi
+call   *RIP(%rip)
+nopl   0x0(%rax)
+dec    %rbp
+je     TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe86>
+mov    %r14,%rdi
+lea    0x28(%r14),%rbx
+call   TARGET <core::ptr::drop_glue::<rayon_core::job::StackJob<rayon_core::latch::LatchRef<rayon_core::latch::CountLatch>, &rayon_core::broadcast::broadcast_in<bitz::utils::blake3x4::smallest_pow_nonce_with<8, bitz::utils::blake3x4::first_pow_nonce>::{closure
+mov    %rbx,%r14
+jmp    TARGET <bitz::utils::blake3x4::smallest_pow_nonce+0xe70>
+mov    %r15,%rdi
+call   *RIP(%rip)
+call   TARGET <core::panicking::panic_in_cleanup>
+call   TARGET <core::panicking::panic_in_cleanup>
+call   TARGET <core::panicking::panic_in_cleanup>

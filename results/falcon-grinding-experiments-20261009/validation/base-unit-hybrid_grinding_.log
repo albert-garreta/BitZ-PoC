@@ -1,0 +1,9 @@
+
+running 4 tests
+test hybrid::grinding_allocation::tests::beats_per_group_margins_and_is_deterministic ... ok
+test hybrid::grinding_allocation::tests::meets_budget_and_respects_minimums ... ok
+test hybrid::grinding_allocation::tests::rejects_unreachable_budgets ... ok
+test hybrid::grinding_experiment::tests::costed_allocation_trades_work_without_weakening_error_budget ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 796 filtered out; finished in 0.00s
+

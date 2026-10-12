@@ -1,0 +1,36 @@
+{"status": "waiting", "completed_pairs": null, "active_case": null, "active_seed": null, "qualification_status": null}
+{"status": "running", "completed_pairs": 11, "active_case": ["native", 100, 1], "active_seed": 52, "qualification_status": null}
+{"status": "running", "completed_pairs": 29, "active_case": ["native", 100, 1], "active_seed": 70, "qualification_status": null}
+{"status": "running", "completed_pairs": 48, "active_case": ["native", 100, 1], "active_seed": 89, "qualification_status": null}
+CELL {"case": ["native", 100, 1], "payload_ratio": 0.8683006309366983, "payload_pass": true, "timings": {"total_prover_ms": {"ratio": 0.9845728713152617, "upper_one_sided_95": 0.9958035573212888, "status": "pass"}, "proof_verify_ms": {"ratio": 0.9636633480643048, "upper_one_sided_95": 0.979245712986062, "status": "pass"}}}
+{"status": "running", "completed_pairs": 65, "active_case": ["native", 100, 3], "active_seed": 46, "qualification_status": null}
+{"status": "running", "completed_pairs": 84, "active_case": ["native", 100, 3], "active_seed": 65, "qualification_status": null}
+{"status": "running", "completed_pairs": 102, "active_case": ["native", 100, 3], "active_seed": 83, "qualification_status": null}
+{"status": "running", "completed_pairs": 119, "active_case": ["native", 100, 3], "active_seed": 100, "qualification_status": null}
+CELL {"case": ["native", 100, 3], "payload_ratio": 0.8637139381278457, "payload_pass": true, "timings": {"total_prover_ms": {"ratio": 0.9773680200382007, "upper_one_sided_95": 1.0018140741975063, "status": "pass"}, "proof_verify_ms": {"ratio": 0.9767528684177543, "upper_one_sided_95": 0.9949729241026106, "status": "pass"}}}
+{"status": "running", "completed_pairs": 135, "active_case": ["native", 100, 32], "active_seed": 56, "qualification_status": null}
+{"status": "running", "completed_pairs": 152, "active_case": ["native", 100, 32], "active_seed": 73, "qualification_status": null}
+{"status": "running", "completed_pairs": 168, "active_case": ["native", 100, 32], "active_seed": 89, "qualification_status": null}
+CELL {"case": ["native", 100, 32], "payload_ratio": 0.8937867459135557, "payload_pass": true, "timings": {"total_prover_ms": {"ratio": 0.9901835114019741, "upper_one_sided_95": 0.9962122541716693, "status": "pass"}, "proof_verify_ms": {"ratio": 0.9795623239057492, "upper_one_sided_95": 0.9825034366359223, "status": "pass"}}}
+{"status": "running", "completed_pairs": 181, "active_case": ["native", 100, 1024], "active_seed": 42, "qualification_status": null}
+{"status": "running", "completed_pairs": 184, "active_case": ["native", 100, 1024], "active_seed": 45, "qualification_status": null}
+{"status": "running", "completed_pairs": 187, "active_case": ["native", 100, 1024], "active_seed": 48, "qualification_status": null}
+{"status": "running", "completed_pairs": 191, "active_case": ["native", 100, 1024], "active_seed": 52, "qualification_status": null}
+{"status": "running", "completed_pairs": 193, "active_case": ["native", 100, 1024], "active_seed": 54, "qualification_status": null}
+{"status": "running", "completed_pairs": 197, "active_case": ["native", 100, 1024], "active_seed": 58, "qualification_status": null}
+{"status": "running", "completed_pairs": 198, "active_case": ["native", 100, 1024], "active_seed": 59, "qualification_status": null}
+{"status": "running", "completed_pairs": 201, "active_case": ["native", 100, 1024], "active_seed": 62, "qualification_status": null}
+{"status": "running", "completed_pairs": 205, "active_case": ["native", 100, 1024], "active_seed": 66, "qualification_status": null}
+{"status": "running", "completed_pairs": 209, "active_case": ["native", 100, 1024], "active_seed": 70, "qualification_status": null}
+{"status": "running", "completed_pairs": 212, "active_case": ["native", 100, 1024], "active_seed": 73, "qualification_status": null}
+{"status": "running", "completed_pairs": 215, "active_case": ["native", 100, 1024], "active_seed": 76, "qualification_status": null}
+{"status": "running", "completed_pairs": 216, "active_case": ["native", 100, 1024], "active_seed": 77, "qualification_status": null}
+{"status": "running", "completed_pairs": 219, "active_case": ["native", 100, 1024], "active_seed": 80, "qualification_status": null}
+{"status": "running", "completed_pairs": 223, "active_case": ["native", 100, 1024], "active_seed": 84, "qualification_status": null}
+{"status": "running", "completed_pairs": 227, "active_case": ["native", 100, 1024], "active_seed": 88, "qualification_status": null}
+{"status": "running", "completed_pairs": 231, "active_case": ["native", 100, 1024], "active_seed": 92, "qualification_status": null}
+{"status": "running", "completed_pairs": 234, "active_case": ["native", 100, 1024], "active_seed": 95, "qualification_status": null}
+{"status": "running", "completed_pairs": 237, "active_case": ["native", 100, 1024], "active_seed": 98, "qualification_status": null}
+CELL {"case": ["native", 100, 1024], "payload_ratio": 0.9460701285594171, "payload_pass": true, "timings": {"total_prover_ms": {"ratio": 0.9880615453631453, "upper_one_sided_95": 1.2883862822229155, "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.9540896060451529, "upper_one_sided_95": 1.0764289016854425, "status": "inconclusive"}}}
+STOP_REQUESTED
+{"status": "stopped_at_pair_boundary", "completed_pairs": 242, "active_case": ["native", 128, 1], "active_seed": 43, "qualification_status": "not_qualified"}

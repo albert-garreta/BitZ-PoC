@@ -1,0 +1,6 @@
+   Compiling field v0.1.0 (/tmp/falcon-grinding-experiment-20261009/vendor/field)
+   Compiling flock-core v0.1.0 (/tmp/falcon-grinding-experiment-20261009/vendor/flock-mod/crates/flock-core)
+   Compiling flock-prover v0.1.0 (/tmp/falcon-grinding-experiment-20261009/vendor/flock-mod/crates/flock-prover)
+   Compiling circuit v0.1.0 (/tmp/falcon-grinding-experiment-20261009/crates/circuit)
+   Compiling bitz v0.1.0 (/tmp/falcon-grinding-experiment-20261009)
+    Finished `release` profile [optimized] target(s) in 4m 23s

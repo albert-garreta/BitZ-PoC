@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "taskset",
+    "-c",
+    "14",
+    "cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "--release",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid",
+    "--example",
+    "falcon_algebraic",
+    "--target-dir",
+    "target/falcon-native",
+    "-j",
+    "1",
+    "--message-format=json"
+  ],
+  "environment": {
+    "RUSTFLAGS": "-C target-cpu=native"
+  },
+  "metrics_definitions": {
+    "prover": "prepared.prove call only",
+    "commit_plus_prover": "witness derivation and initial commitment plus prove",
+    "verifier": "prepared.verify call, reading public inputs",
+    "peak_memory": "process maximum resident set including setup and warm-up",
+    "proof_size": "stored payload plus commitment root; public inputs and outer transport framing excluded"
+  }
+}

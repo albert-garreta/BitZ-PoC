@@ -1,0 +1,18 @@
+{
+  "status": "pass",
+  "snapshot": "/tmp/falcon-compact-opening-candidate-v7",
+  "source_files": 818,
+  "source_manifest_sha256": "cece40e49492801a1ecf8ffb33304b75c78534da4e86784e4b9994f34fdbaf7d",
+  "baseline_reuse": "baseline-build-v4.json",
+  "same_affinity_overlay": true,
+  "same_qualification_harness": true,
+  "same_current_and_frozen_sources": true,
+  "same_compiler_and_lockfile": true,
+  "baseline_binary_integrity": "pass",
+  "changes_versus_candidate_v6": {
+    "src/utils/blake3x4/avx512.rs": {
+      "v6": "dd6372ca9d1e2261b78213b435510677e63bd182653c05fbdeb288c1bcacd848",
+      "v7": "29db73960b0485315e041559951c4c117cf64cb6715f473db46d806f3931414a"
+    }
+  }
+}

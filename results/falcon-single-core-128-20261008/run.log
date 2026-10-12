@@ -1,0 +1,32 @@
+Starting arithmetic-512: {"cpu": 6, "sibling": 22, "cpu_busy_pct": 1.2024048096192386, "sibling_busy_pct": 0.40080160320641284, "seconds": 5}
+arithmetic-512: 0/6 verified trials emitted
+arithmetic-512: 2/6 verified trials emitted
+arithmetic-512: 4/6 verified trials emitted
+arithmetic-512: 6/6 verified trials emitted
+Finished arithmetic-512: {"variant": "arithmetic", "degree": 512, "batch": 1024, "threads": 1, "security_target_bits": 128, "algebraic_security_bits": 128.94486324698008, "samples": 5, "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e", "payload_bytes": 263650, "proof_including_root_bytes": 263650, "peak_rss_mib": 128.8984375, "sibling_busy_pct": 0.0, "commit_median_ms": 35.27055, "commit_min_ms": 35.119975, "commit_max_ms": 35.77201, "prover_median_ms": 295.606802, "prover_min_ms": 294.78117, "prover_max_ms": 296.51050299999997, "commit_plus_prover_median_ms": 331.378892, "commit_plus_prover_min_ms": 329.95735199999996, "commit_plus_prover_max_ms": 331.630578, "verifier_median_ms": 55.75622, "verifier_min_ms": 55.284146, "verifier_max_ms": 55.972148}
+Starting full-512: {"cpu": 6, "sibling": 22, "cpu_busy_pct": 0.4, "sibling_busy_pct": 0.0, "seconds": 5}
+full-512: 0/6 verified trials emitted
+full-512: 1/6 verified trials emitted
+full-512: 2/6 verified trials emitted
+full-512: 3/6 verified trials emitted
+full-512: 4/6 verified trials emitted
+full-512: 5/6 verified trials emitted
+full-512: 6/6 verified trials emitted
+Finished full-512: {"variant": "full", "degree": 512, "batch": 1024, "threads": 1, "security_target_bits": 128, "algebraic_security_bits": 129.47139033919117, "samples": 5, "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e", "payload_bytes": 698314, "proof_including_root_bytes": 698346, "peak_rss_mib": 2299.546875, "sibling_busy_pct": 0.0, "commit_median_ms": 340.17888600000003, "commit_min_ms": 338.674619, "commit_max_ms": 342.22111, "prover_median_ms": 2305.147169, "prover_min_ms": 2303.122327, "prover_max_ms": 2314.828732, "commit_plus_prover_median_ms": 2644.574913, "commit_plus_prover_min_ms": 2642.275983, "commit_plus_prover_max_ms": 2657.049842, "verifier_median_ms": 45.814885, "verifier_min_ms": 45.649302000000006, "verifier_max_ms": 46.028479999999995}
+Starting arithmetic-1024: {"cpu": 6, "sibling": 22, "cpu_busy_pct": 0.0, "sibling_busy_pct": 0.0, "seconds": 5}
+arithmetic-1024: 0/6 verified trials emitted
+arithmetic-1024: 1/6 verified trials emitted
+arithmetic-1024: 2/6 verified trials emitted
+arithmetic-1024: 3/6 verified trials emitted
+arithmetic-1024: 4/6 verified trials emitted
+arithmetic-1024: 6/6 verified trials emitted
+Finished arithmetic-1024: {"variant": "arithmetic", "degree": 1024, "batch": 1024, "threads": 1, "security_target_bits": 128, "algebraic_security_bits": 128.8651372844124, "samples": 5, "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39", "payload_bytes": 361386, "proof_including_root_bytes": 361386, "peak_rss_mib": 225.55078125, "sibling_busy_pct": 0.0, "commit_median_ms": 103.252899, "commit_min_ms": 102.499583, "commit_max_ms": 106.96896100000001, "prover_median_ms": 541.754972, "prover_min_ms": 540.743368, "prover_max_ms": 543.525764, "commit_plus_prover_median_ms": 645.228087, "commit_plus_prover_min_ms": 644.254635, "commit_plus_prover_max_ms": 647.712429, "verifier_median_ms": 109.682857, "verifier_min_ms": 109.406163, "verifier_max_ms": 110.068256}
+Starting full-1024: {"cpu": 6, "sibling": 22, "cpu_busy_pct": 0.2, "sibling_busy_pct": 0.0, "seconds": 5}
+full-1024: 0/6 verified trials emitted
+full-1024: 1/6 verified trials emitted
+full-1024: 2/6 verified trials emitted
+full-1024: 3/6 verified trials emitted
+full-1024: 4/6 verified trials emitted
+full-1024: 5/6 verified trials emitted
+full-1024: 6/6 verified trials emitted
+Finished full-1024: {"variant": "full", "degree": 1024, "batch": 1024, "threads": 1, "security_target_bits": 128, "algebraic_security_bits": 129.40858281396686, "samples": 5, "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39", "payload_bytes": 972178, "proof_including_root_bytes": 972210, "peak_rss_mib": 3202.32421875, "sibling_busy_pct": 0.06447453255963895, "commit_median_ms": 637.7203890000001, "commit_min_ms": 634.7905440000001, "commit_max_ms": 645.142706, "prover_median_ms": 4100.127908, "prover_min_ms": 4090.3973929999997, "prover_max_ms": 4103.884196, "commit_plus_prover_median_ms": 4737.8482970000005, "commit_plus_prover_min_ms": 4725.187937, "commit_plus_prover_max_ms": 4748.659336999999, "verifier_median_ms": 80.207364, "verifier_min_ms": 79.961168, "verifier_max_ms": 80.423863}

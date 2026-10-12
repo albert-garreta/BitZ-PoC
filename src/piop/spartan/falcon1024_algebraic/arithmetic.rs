@@ -354,8 +354,8 @@ fn binding_workers() -> usize {
     1
 }
 
-/// Keep unqualified worker counts and trimmed small batches on the original
-/// strategy. Larger domains reuse cached decoders and streamed byte buckets.
+/// Factor equality weights and parallelize coefficient preparation at qualified
+/// worker counts. Keep trimmed small batches on the original strategy.
 pub(super) fn optimized_binding(batch: usize) -> bool {
     #[cfg(feature = "bench-internals")]
     match std::env::var("BITZ_ARITHMETIC_BINDING_STRATEGY") {
@@ -371,7 +371,7 @@ pub(super) fn optimized_binding(batch: usize) -> bool {
             panic!("BITZ_ARITHMETIC_BINDING_STRATEGY must be valid Unicode")
         }
     }
-    matches!(binding_workers(), 1 | 8) && batch > SMALL_BATCH_MAX
+    matches!(binding_workers(), 1 | 8 | 16) && batch > SMALL_BATCH_MAX
 }
 
 fn binding_strategy(batch: usize) -> BindingStrategy {
@@ -1300,7 +1300,7 @@ mod tests {
     #[test]
     fn factored_construction_and_batched_evaluation_match_legacy() {
         #[cfg(feature = "parallel")]
-        let pools: Vec<_> = [1, 8]
+        let pools: Vec<_> = [1, 8, 16]
             .into_iter()
             .map(|threads| {
                 rayon::ThreadPoolBuilder::new()
@@ -1313,7 +1313,7 @@ mod tests {
         // to the modulus where a short Montgomery reduction would be invalid.
         for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
             let field = F::make_cfg(&Uint::from(modulus)).unwrap();
-            for batch in [1, 3, 8, 9, 16] {
+            for batch in [1, 3, 8, 9, 16, 17] {
                 let layout = Layout::new(batch).unwrap();
                 let ring = PreparedClaim {
                     weights_s1: (0..batch * N)

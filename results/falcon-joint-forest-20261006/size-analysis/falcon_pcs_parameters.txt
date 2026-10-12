@@ -1,0 +1,276 @@
+target=100 rate=1/2 blocks=25 pcs_target=107 pcs_error_bits=104.327571701
+level=0 depth=21 lane_log=4 folds=4 queries=241 qbits=100.022711 pgbits=109.000014
+level=1 depth=19 lane_log=3 folds=3 queries=148 qbits=100.352036 pgbits=110.415060
+level=2 depth=17 lane_log=3 folds=3 queries=121 qbits=100.430957 pgbits=112.192706
+level=3 depth=15 lane_log=3 folds=3 queries=110 qbits=100.349918 pgbits=114.093316
+level=4 depth=13 lane_log=3 folds=3 queries=105 qbits=100.227600 pgbits=116.046566
+level=5 depth=11 lane_log=3 folds=3 queries=103 qbits=100.261301 pgbits=118.025654
+block=fold/0/0 bits=0
+block=fold/0/1 bits=0
+block=fold/0/2 bits=0
+block=fold/0/3 bits=0
+block=queries/0 bits=7
+block=introduce/0+fold0 bits=0
+block=fold/1/1 bits=0
+block=fold/1/2 bits=0
+block=queries/1 bits=7
+block=introduce/1+fold0 bits=0
+block=fold/2/1 bits=0
+block=fold/2/2 bits=0
+block=queries/2 bits=7
+block=introduce/2+fold0 bits=0
+block=fold/3/1 bits=0
+block=fold/3/2 bits=0
+block=queries/3 bits=7
+block=introduce/3+fold0 bits=0
+block=fold/4/1 bits=0
+block=fold/4/2 bits=0
+block=queries/4 bits=7
+block=introduce/4+fold0 bits=0
+block=fold/5/1 bits=0
+block=fold/5/2 bits=0
+block=queries/5 bits=7
+target=100 rate=1/4 blocks=25 pcs_target=107 pcs_error_bits=103.953072148
+level=0 depth=22 lane_log=4 folds=4 queries=148 qbits=100.354316 pgbits=107.415040
+level=1 depth=20 lane_log=3 folds=3 queries=121 qbits=100.438060 pgbits=109.192653
+level=2 depth=18 lane_log=3 folds=3 queries=110 qbits=100.375441 pgbits=111.093135
+level=3 depth=16 lane_log=3 folds=3 queries=105 qbits=100.324736 pgbits=113.045899
+level=4 depth=14 lane_log=3 folds=3 queries=103 qbits=100.641694 pgbits=115.023086
+level=5 depth=12 lane_log=3 folds=3 queries=102 qbits=100.639406 pgbits=117.012753
+block=fold/0/0 bits=0
+block=fold/0/1 bits=0
+block=fold/0/2 bits=0
+block=fold/0/3 bits=0
+block=queries/0 bits=7
+block=introduce/0+fold0 bits=0
+block=fold/1/1 bits=0
+block=fold/1/2 bits=0
+block=queries/1 bits=7
+block=introduce/1+fold0 bits=0
+block=fold/2/1 bits=0
+block=fold/2/2 bits=0
+block=queries/2 bits=7
+block=introduce/2+fold0 bits=0
+block=fold/3/1 bits=0
+block=fold/3/2 bits=0
+block=queries/3 bits=7
+block=introduce/3+fold0 bits=0
+block=fold/4/1 bits=0
+block=fold/4/2 bits=0
+block=queries/4 bits=7
+block=introduce/4+fold0 bits=0
+block=fold/5/1 bits=0
+block=fold/5/2 bits=0
+block=queries/5 bits=7
+target=100 rate=1/8 blocks=25 pcs_target=107 pcs_error_bits=103.726308883
+level=0 depth=23 lane_log=4 folds=4 queries=121 qbits=100.438948 pgbits=106.192646
+level=1 depth=21 lane_log=3 folds=3 queries=110 qbits=100.378632 pgbits=108.093113
+level=2 depth=19 lane_log=3 folds=3 queries=105 qbits=100.336882 pgbits=110.045816
+level=3 depth=17 lane_log=3 folds=3 queries=103 qbits=100.689311 pgbits=112.022766
+level=4 depth=15 lane_log=3 folds=3 queries=102 qbits=100.827876 pgbits=114.011495
+level=5 depth=13 lane_log=3 folds=3 queries=101 qbits=100.325235 pgbits=116.006358
+block=fold/0/0 bits=1
+block=fold/0/1 bits=1
+block=fold/0/2 bits=1
+block=fold/0/3 bits=1
+block=queries/0 bits=7
+block=introduce/0+fold0 bits=0
+block=fold/1/1 bits=0
+block=fold/1/2 bits=0
+block=queries/1 bits=7
+block=introduce/1+fold0 bits=0
+block=fold/2/1 bits=0
+block=fold/2/2 bits=0
+block=queries/2 bits=7
+block=introduce/2+fold0 bits=0
+block=fold/3/1 bits=0
+block=fold/3/2 bits=0
+block=queries/3 bits=7
+block=introduce/3+fold0 bits=0
+block=fold/4/1 bits=0
+block=fold/4/2 bits=0
+block=queries/4 bits=7
+block=introduce/4+fold0 bits=0
+block=fold/5/1 bits=0
+block=fold/5/2 bits=0
+block=queries/5 bits=7
+target=100 rate=1/16 blocks=25 pcs_target=107 pcs_error_bits=103.445329182
+level=0 depth=24 lane_log=4 folds=4 queries=110 qbits=100.379030 pgbits=105.093110
+level=1 depth=22 lane_log=3 folds=3 queries=105 qbits=100.338401 pgbits=107.045805
+level=2 depth=20 lane_log=3 folds=3 queries=103 qbits=100.695265 pgbits=109.022726
+level=3 depth=18 lane_log=3 folds=3 queries=102 qbits=100.851452 pgbits=111.011338
+level=4 depth=16 lane_log=3 folds=3 queries=101 qbits=100.418581 pgbits=113.005735
+level=5 depth=14 lane_log=3 folds=3 queries=101 qbits=100.662332 pgbits=115.003175
+block=fold/0/0 bits=2
+block=fold/0/1 bits=2
+block=fold/0/2 bits=2
+block=fold/0/3 bits=2
+block=queries/0 bits=7
+block=introduce/0+fold0 bits=0
+block=fold/1/1 bits=0
+block=fold/1/2 bits=0
+block=queries/1 bits=7
+block=introduce/1+fold0 bits=0
+block=fold/2/1 bits=0
+block=fold/2/2 bits=0
+block=queries/2 bits=7
+block=introduce/2+fold0 bits=0
+block=fold/3/1 bits=0
+block=fold/3/2 bits=0
+block=queries/3 bits=7
+block=introduce/3+fold0 bits=0
+block=fold/4/1 bits=0
+block=fold/4/2 bits=0
+block=queries/4 bits=7
+block=introduce/4+fold0 bits=0
+block=fold/5/1 bits=0
+block=fold/5/2 bits=0
+block=queries/5 bits=7
+target=128 rate=1/2 blocks=30 pcs_target=135 pcs_error_bits=130.302917792
+level=0 depth=21 lane_log=4 folds=4 queries=309 qbits=128.244887 pgbits=109.000014
+level=1 depth=19 lane_log=3 folds=3 queries=189 qbits=128.152262 pgbits=110.415060
+level=2 depth=17 lane_log=3 folds=3 queries=155 qbits=128.651226 pgbits=112.192706
+level=3 depth=15 lane_log=3 folds=3 queries=141 qbits=128.630349 pgbits=114.093316
+level=4 depth=13 lane_log=3 folds=3 queries=135 qbits=128.864057 pgbits=116.046566
+level=5 depth=11 lane_log=3 folds=3 queries=132 qbits=128.490211 pgbits=118.025654
+block=fold/0/0 bits=26
+block=fold/0/1 bits=26
+block=fold/0/2 bits=26
+block=fold/0/3 bits=26
+block=queries/0 bits=11
+block=introduce/0 bits=7
+block=fold/1/0 bits=25
+block=fold/1/1 bits=25
+block=fold/1/2 bits=25
+block=queries/1 bits=11
+block=introduce/1 bits=7
+block=fold/2/0 bits=23
+block=fold/2/1 bits=23
+block=fold/2/2 bits=23
+block=queries/2 bits=11
+block=introduce/2 bits=7
+block=fold/3/0 bits=21
+block=fold/3/1 bits=21
+block=fold/3/2 bits=21
+block=queries/3 bits=11
+block=introduce/3 bits=7
+block=fold/4/0 bits=19
+block=fold/4/1 bits=19
+block=fold/4/2 bits=19
+block=queries/4 bits=11
+block=introduce/4 bits=7
+block=fold/5/0 bits=17
+block=fold/5/1 bits=17
+block=fold/5/2 bits=17
+block=queries/5 bits=11
+target=128 rate=1/4 blocks=30 pcs_target=135 pcs_error_bits=130.319308189
+level=0 depth=22 lane_log=4 folds=4 queries=189 qbits=128.155174 pgbits=107.415040
+level=1 depth=20 lane_log=3 folds=3 queries=155 qbits=128.660325 pgbits=109.192653
+level=2 depth=18 lane_log=3 folds=3 queries=141 qbits=128.663065 pgbits=111.093135
+level=3 depth=16 lane_log=3 folds=3 queries=134 qbits=128.033472 pgbits=113.045899
+level=4 depth=14 lane_log=3 folds=3 queries=131 qbits=128.000601 pgbits=115.023086
+level=5 depth=12 lane_log=3 folds=3 queries=130 qbits=128.265909 pgbits=117.012753
+block=fold/0/0 bits=28
+block=fold/0/1 bits=28
+block=fold/0/2 bits=28
+block=fold/0/3 bits=28
+block=queries/0 bits=11
+block=introduce/0 bits=7
+block=fold/1/0 bits=26
+block=fold/1/1 bits=26
+block=fold/1/2 bits=26
+block=queries/1 bits=11
+block=introduce/1 bits=7
+block=fold/2/0 bits=24
+block=fold/2/1 bits=24
+block=fold/2/2 bits=24
+block=queries/2 bits=11
+block=introduce/2 bits=7
+block=fold/3/0 bits=22
+block=fold/3/1 bits=22
+block=fold/3/2 bits=22
+block=queries/3 bits=11
+block=introduce/3 bits=7
+block=fold/4/0 bits=20
+block=fold/4/1 bits=20
+block=fold/4/2 bits=20
+block=queries/4 bits=11
+block=introduce/4 bits=7
+block=fold/5/0 bits=18
+block=fold/5/1 bits=18
+block=fold/5/2 bits=18
+block=queries/5 bits=11
+target=128 rate=1/8 blocks=30 pcs_target=135 pcs_error_bits=130.272123408
+level=0 depth=23 lane_log=4 folds=4 queries=155 qbits=128.661462 pgbits=106.192646
+level=1 depth=21 lane_log=3 folds=3 queries=141 qbits=128.667155 pgbits=108.093113
+level=2 depth=19 lane_log=3 folds=3 queries=134 qbits=128.048973 pgbits=110.045816
+level=3 depth=17 lane_log=3 folds=3 queries=131 qbits=128.061163 pgbits=112.022766
+level=4 depth=15 lane_log=3 folds=3 queries=130 qbits=128.506116 pgbits=114.011495
+level=5 depth=13 lane_log=3 folds=3 queries=129 qbits=128.138172 pgbits=116.006358
+block=fold/0/0 bits=29
+block=fold/0/1 bits=29
+block=fold/0/2 bits=29
+block=fold/0/3 bits=29
+block=queries/0 bits=11
+block=introduce/0 bits=7
+block=fold/1/0 bits=27
+block=fold/1/1 bits=27
+block=fold/1/2 bits=27
+block=queries/1 bits=11
+block=introduce/1 bits=7
+block=fold/2/0 bits=25
+block=fold/2/1 bits=25
+block=fold/2/2 bits=25
+block=queries/2 bits=11
+block=introduce/2 bits=7
+block=fold/3/0 bits=23
+block=fold/3/1 bits=23
+block=fold/3/2 bits=23
+block=queries/3 bits=11
+block=introduce/3 bits=7
+block=fold/4/0 bits=21
+block=fold/4/1 bits=21
+block=fold/4/2 bits=21
+block=queries/4 bits=11
+block=introduce/4 bits=7
+block=fold/5/0 bits=19
+block=fold/5/1 bits=19
+block=fold/5/2 bits=19
+block=queries/5 bits=11
+target=128 rate=1/16 blocks=30 pcs_target=135 pcs_error_bits=130.248983509
+level=0 depth=24 lane_log=4 folds=4 queries=141 qbits=128.667666 pgbits=105.093110
+level=1 depth=22 lane_log=3 folds=3 queries=134 qbits=128.050911 pgbits=107.045805
+level=2 depth=20 lane_log=3 folds=3 queries=131 qbits=128.068735 pgbits=109.022726
+level=3 depth=18 lane_log=3 folds=3 queries=130 qbits=128.536164 pgbits=111.011338
+level=4 depth=16 lane_log=3 folds=3 queries=129 qbits=128.257395 pgbits=113.005735
+level=5 depth=14 lane_log=3 folds=3 queries=129 qbits=128.568721 pgbits=115.003175
+block=fold/0/0 bits=30
+block=fold/0/1 bits=30
+block=fold/0/2 bits=30
+block=fold/0/3 bits=30
+block=queries/0 bits=11
+block=introduce/0 bits=7
+block=fold/1/0 bits=28
+block=fold/1/1 bits=28
+block=fold/1/2 bits=28
+block=queries/1 bits=11
+block=introduce/1 bits=7
+block=fold/2/0 bits=26
+block=fold/2/1 bits=26
+block=fold/2/2 bits=26
+block=queries/2 bits=11
+block=introduce/2 bits=7
+block=fold/3/0 bits=24
+block=fold/3/1 bits=24
+block=fold/3/2 bits=24
+block=queries/3 bits=11
+block=introduce/3 bits=7
+block=fold/4/0 bits=22
+block=fold/4/1 bits=22
+block=fold/4/2 bits=22
+block=queries/4 bits=11
+block=introduce/4 bits=7
+block=fold/5/0 bits=20
+block=fold/5/1 bits=20
+block=fold/5/2 bits=20
+block=queries/5 bits=11

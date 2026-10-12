@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 20.01252009900054,
+  "peak_rss_kib": 3116324,
+  "user_s": 18.624647,
+  "system_s": 1.151854,
+  "sibling_busy_pct": 0.0,
+  "affinity_violations": []
+}

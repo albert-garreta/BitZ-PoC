@@ -1,0 +1,1608 @@
+{
+  "runs": [
+    {
+      "threads": 8,
+      "returncode": 0,
+      "sample_scale": 8,
+      "elapsed_seconds": 16.767192185972817,
+      "run_cpu_deltas": {
+        "cpu": {
+          "ticks": {
+            "user": 13353,
+            "nice": 5,
+            "system": 102,
+            "idle": 40151,
+            "iowait": 1,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 53613,
+          "busy_percent": 25.10771641206424,
+          "state_percent": {
+            "user": 24.90627273235969,
+            "nice": 0.009326096282618022,
+            "system": 0.19025236416540764,
+            "idle": 74.89041836867924,
+            "iowait": 0.0018652192565236044,
+            "irq": 0.0,
+            "softirq": 0.0018652192565236044,
+            "steal": 0.0
+          }
+        },
+        "cpu0": {
+          "ticks": {
+            "user": 1655,
+            "nice": 0,
+            "system": 3,
+            "idle": 18,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 98.92601431980907,
+          "state_percent": {
+            "user": 98.74701670644392,
+            "nice": 0.0,
+            "system": 0.17899761336515513,
+            "idle": 1.0739856801909309,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu1": {
+          "ticks": {
+            "user": 1655,
+            "nice": 0,
+            "system": 4,
+            "idle": 18,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 98.92665474060823,
+          "state_percent": {
+            "user": 98.68813357185451,
+            "nice": 0.0,
+            "system": 0.2385211687537269,
+            "idle": 1.073345259391771,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu2": {
+          "ticks": {
+            "user": 1655,
+            "nice": 0,
+            "system": 4,
+            "idle": 18,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 98.92665474060823,
+          "state_percent": {
+            "user": 98.68813357185451,
+            "nice": 0.0,
+            "system": 0.2385211687537269,
+            "idle": 1.073345259391771,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu3": {
+          "ticks": {
+            "user": 1655,
+            "nice": 0,
+            "system": 3,
+            "idle": 19,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 98.8670244484198,
+          "state_percent": {
+            "user": 98.68813357185451,
+            "nice": 0.0,
+            "system": 0.17889087656529518,
+            "idle": 1.1329755515802027,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu4": {
+          "ticks": {
+            "user": 1654,
+            "nice": 0,
+            "system": 5,
+            "idle": 19,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1678,
+          "busy_percent": 98.86769964243146,
+          "state_percent": {
+            "user": 98.56972586412395,
+            "nice": 0.0,
+            "system": 0.29797377830750893,
+            "idle": 1.132300357568534,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu5": {
+          "ticks": {
+            "user": 1654,
+            "nice": 0,
+            "system": 4,
+            "idle": 18,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 98.92601431980907,
+          "state_percent": {
+            "user": 98.68735083532219,
+            "nice": 0.0,
+            "system": 0.2386634844868735,
+            "idle": 1.0739856801909309,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu6": {
+          "ticks": {
+            "user": 1658,
+            "nice": 0,
+            "system": 5,
+            "idle": 13,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 99.22434367541766,
+          "state_percent": {
+            "user": 98.92601431980907,
+            "nice": 0.0,
+            "system": 0.29832935560859186,
+            "idle": 0.7756563245823389,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu7": {
+          "ticks": {
+            "user": 1656,
+            "nice": 0,
+            "system": 4,
+            "idle": 18,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1678,
+          "busy_percent": 98.92729439809297,
+          "state_percent": {
+            "user": 98.68891537544697,
+            "nice": 0.0,
+            "system": 0.23837902264600716,
+            "idle": 1.0727056019070322,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu8": {
+          "ticks": {
+            "user": 7,
+            "nice": 0,
+            "system": 4,
+            "idle": 1658,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 1670,
+          "busy_percent": 0.718562874251497,
+          "state_percent": {
+            "user": 0.41916167664670656,
+            "nice": 0.0,
+            "system": 0.23952095808383234,
+            "idle": 99.2814371257485,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.059880239520958084,
+            "steal": 0.0
+          }
+        },
+        "cpu9": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 4,
+            "idle": 1668,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.417910447761194,
+          "state_percent": {
+            "user": 0.1791044776119403,
+            "nice": 0.0,
+            "system": 0.23880597014925373,
+            "idle": 99.58208955223881,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu10": {
+          "ticks": {
+            "user": 33,
+            "nice": 0,
+            "system": 18,
+            "idle": 1622,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1673,
+          "busy_percent": 3.048416019127316,
+          "state_percent": {
+            "user": 1.972504482964734,
+            "nice": 0.0,
+            "system": 1.0759115361625822,
+            "idle": 96.95158398087268,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu11": {
+          "ticks": {
+            "user": 11,
+            "nice": 0,
+            "system": 5,
+            "idle": 1658,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1674,
+          "busy_percent": 0.955794504181601,
+          "state_percent": {
+            "user": 0.6571087216248507,
+            "nice": 0.0,
+            "system": 0.2986857825567503,
+            "idle": 99.0442054958184,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu12": {
+          "ticks": {
+            "user": 6,
+            "nice": 0,
+            "system": 7,
+            "idle": 1661,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1674,
+          "busy_percent": 0.7765830346475507,
+          "state_percent": {
+            "user": 0.35842293906810035,
+            "nice": 0.0,
+            "system": 0.41816009557945044,
+            "idle": 99.22341696535246,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu13": {
+          "ticks": {
+            "user": 10,
+            "nice": 2,
+            "system": 6,
+            "idle": 1655,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1673,
+          "busy_percent": 1.0759115361625822,
+          "state_percent": {
+            "user": 0.5977286312014346,
+            "nice": 0.1195457262402869,
+            "system": 0.3586371787208607,
+            "idle": 98.92408846383742,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu14": {
+          "ticks": {
+            "user": 3,
+            "nice": 2,
+            "system": 4,
+            "idle": 1668,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 0.5366726296958855,
+          "state_percent": {
+            "user": 0.17889087656529518,
+            "nice": 0.11926058437686345,
+            "system": 0.2385211687537269,
+            "idle": 99.46332737030411,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu15": {
+          "ticks": {
+            "user": 4,
+            "nice": 0,
+            "system": 3,
+            "idle": 1666,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 1674,
+          "busy_percent": 0.4778972520908005,
+          "state_percent": {
+            "user": 0.23894862604540024,
+            "nice": 0.0,
+            "system": 0.17921146953405018,
+            "idle": 99.5221027479092,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.05973715651135006,
+            "steal": 0.0
+          }
+        },
+        "cpu16": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1676,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 0.05963029218843172,
+          "state_percent": {
+            "user": 0.05963029218843172,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94036970781157,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu17": {
+          "ticks": {
+            "user": 2,
+            "nice": 0,
+            "system": 1,
+            "idle": 1674,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 0.17889087656529518,
+          "state_percent": {
+            "user": 0.11926058437686345,
+            "nice": 0.0,
+            "system": 0.05963029218843172,
+            "idle": 99.82110912343471,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu18": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1675,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.059665871121718374,
+          "state_percent": {
+            "user": 0.059665871121718374,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94033412887828,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu19": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1675,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.059665871121718374,
+          "state_percent": {
+            "user": 0.059665871121718374,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94033412887828,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu20": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1674,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.05970149253731343,
+          "state_percent": {
+            "user": 0.05970149253731343,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94029850746269,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu21": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1675,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.059665871121718374,
+          "state_percent": {
+            "user": 0.059665871121718374,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94033412887828,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu22": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 0,
+            "idle": 1676,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1677,
+          "busy_percent": 0.05963029218843172,
+          "state_percent": {
+            "user": 0.05963029218843172,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.94036970781157,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu23": {
+          "ticks": {
+            "user": 0,
+            "nice": 0,
+            "system": 1,
+            "idle": 1675,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.059665871121718374,
+          "state_percent": {
+            "user": 0.0,
+            "nice": 0.0,
+            "system": 0.059665871121718374,
+            "idle": 99.94033412887828,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu24": {
+          "ticks": {
+            "user": 5,
+            "nice": 0,
+            "system": 1,
+            "idle": 1669,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.3582089552238806,
+          "state_percent": {
+            "user": 0.29850746268656714,
+            "nice": 0.0,
+            "system": 0.05970149253731343,
+            "idle": 99.64179104477611,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu25": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 1,
+            "idle": 1670,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.29850746268656714,
+          "state_percent": {
+            "user": 0.1791044776119403,
+            "nice": 0.0,
+            "system": 0.05970149253731343,
+            "idle": 99.70149253731343,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.05970149253731343,
+            "steal": 0.0
+          }
+        },
+        "cpu26": {
+          "ticks": {
+            "user": 6,
+            "nice": 0,
+            "system": 1,
+            "idle": 1667,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1674,
+          "busy_percent": 0.41816009557945044,
+          "state_percent": {
+            "user": 0.35842293906810035,
+            "nice": 0.0,
+            "system": 0.05973715651135006,
+            "idle": 99.58183990442055,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu27": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 1,
+            "idle": 1669,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1673,
+          "busy_percent": 0.2390914524805738,
+          "state_percent": {
+            "user": 0.17931858936043035,
+            "nice": 0.0,
+            "system": 0.05977286312014345,
+            "idle": 99.76090854751942,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu28": {
+          "ticks": {
+            "user": 2,
+            "nice": 1,
+            "system": 2,
+            "idle": 1670,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.29850746268656714,
+          "state_percent": {
+            "user": 0.11940298507462686,
+            "nice": 0.05970149253731343,
+            "system": 0.11940298507462686,
+            "idle": 99.70149253731343,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu29": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 4,
+            "idle": 1668,
+            "iowait": 1,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.41766109785202865,
+          "state_percent": {
+            "user": 0.17899761336515513,
+            "nice": 0.0,
+            "system": 0.2386634844868735,
+            "idle": 99.52267303102626,
+            "iowait": 0.059665871121718374,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu30": {
+          "ticks": {
+            "user": 2,
+            "nice": 0,
+            "system": 3,
+            "idle": 1670,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1675,
+          "busy_percent": 0.29850746268656714,
+          "state_percent": {
+            "user": 0.11940298507462686,
+            "nice": 0.0,
+            "system": 0.1791044776119403,
+            "idle": 99.70149253731343,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu31": {
+          "ticks": {
+            "user": 4,
+            "nice": 0,
+            "system": 2,
+            "idle": 1670,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 1676,
+          "busy_percent": 0.35799522673031026,
+          "state_percent": {
+            "user": 0.2386634844868735,
+            "nice": 0.0,
+            "system": 0.11933174224343675,
+            "idle": 99.64200477326969,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        }
+      }
+    },
+    {
+      "threads": 16,
+      "returncode": 0,
+      "sample_scale": 8,
+      "elapsed_seconds": 9.007617502007633,
+      "run_cpu_deltas": {
+        "cpu": {
+          "ticks": {
+            "user": 14306,
+            "nice": 0,
+            "system": 63,
+            "idle": 14431,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 28801,
+          "busy_percent": 49.89410089927433,
+          "state_percent": {
+            "user": 49.671886392833585,
+            "nice": 0.0,
+            "system": 0.2187424047776119,
+            "idle": 50.10589910072567,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0034721016631366966,
+            "steal": 0.0
+          }
+        },
+        "cpu0": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 3,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 99.00221729490022,
+          "state_percent": {
+            "user": 98.66962305986696,
+            "nice": 0.0,
+            "system": 0.3325942350332594,
+            "idle": 0.9977827050997783,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu1": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 2,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 99.00110987791344,
+          "state_percent": {
+            "user": 98.77913429522752,
+            "nice": 0.0,
+            "system": 0.22197558268590456,
+            "idle": 0.9988901220865705,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu2": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 2,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 99.11111111111111,
+          "state_percent": {
+            "user": 98.88888888888889,
+            "nice": 0.0,
+            "system": 0.2222222222222222,
+            "idle": 0.8888888888888888,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu3": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 99.11209766925639,
+          "state_percent": {
+            "user": 98.89012208657047,
+            "nice": 0.0,
+            "system": 0.22197558268590456,
+            "idle": 0.8879023307436182,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu4": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 1,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 99.11111111111111,
+          "state_percent": {
+            "user": 99.0,
+            "nice": 0.0,
+            "system": 0.1111111111111111,
+            "idle": 0.8888888888888888,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu5": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 99.00221729490022,
+          "state_percent": {
+            "user": 98.78048780487805,
+            "nice": 0.0,
+            "system": 0.22172949002217296,
+            "idle": 0.9977827050997783,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu6": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 6,
+            "idle": 3,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 99.66666666666667,
+          "state_percent": {
+            "user": 99.0,
+            "nice": 0.0,
+            "system": 0.6666666666666666,
+            "idle": 0.3333333333333333,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu7": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 1,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 99.0,
+          "state_percent": {
+            "user": 98.88888888888889,
+            "nice": 0.0,
+            "system": 0.1111111111111111,
+            "idle": 1.0,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu8": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 99.00221729490022,
+          "state_percent": {
+            "user": 98.78048780487805,
+            "nice": 0.0,
+            "system": 0.22172949002217296,
+            "idle": 0.9977827050997783,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu9": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 99.00221729490022,
+          "state_percent": {
+            "user": 98.78048780487805,
+            "nice": 0.0,
+            "system": 0.22172949002217296,
+            "idle": 0.9977827050997783,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu10": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 99.00221729490022,
+          "state_percent": {
+            "user": 98.78048780487805,
+            "nice": 0.0,
+            "system": 0.22172949002217296,
+            "idle": 0.9977827050997783,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu11": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 1,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 99.11012235817574,
+          "state_percent": {
+            "user": 98.99888765294772,
+            "nice": 0.0,
+            "system": 0.11123470522803114,
+            "idle": 0.8898776418242491,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu12": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 99.11209766925639,
+          "state_percent": {
+            "user": 98.89012208657047,
+            "nice": 0.0,
+            "system": 0.22197558268590456,
+            "idle": 0.8879023307436182,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu13": {
+          "ticks": {
+            "user": 891,
+            "nice": 0,
+            "system": 2,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 99.11209766925639,
+          "state_percent": {
+            "user": 98.89012208657047,
+            "nice": 0.0,
+            "system": 0.22197558268590456,
+            "idle": 0.8879023307436182,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu14": {
+          "ticks": {
+            "user": 890,
+            "nice": 0,
+            "system": 2,
+            "idle": 8,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 99.11111111111111,
+          "state_percent": {
+            "user": 98.88888888888889,
+            "nice": 0.0,
+            "system": 0.2222222222222222,
+            "idle": 0.8888888888888888,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu15": {
+          "ticks": {
+            "user": 889,
+            "nice": 0,
+            "system": 1,
+            "idle": 9,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 98.99888765294772,
+          "state_percent": {
+            "user": 98.88765294771969,
+            "nice": 0.0,
+            "system": 0.11123470522803114,
+            "idle": 1.0011123470522802,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu16": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 1,
+            "idle": 892,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 896,
+          "busy_percent": 0.44642857142857145,
+          "state_percent": {
+            "user": 0.33482142857142855,
+            "nice": 0.0,
+            "system": 0.11160714285714286,
+            "idle": 99.55357142857143,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu17": {
+          "ticks": {
+            "user": 4,
+            "nice": 0,
+            "system": 0,
+            "idle": 895,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 0.5555555555555556,
+          "state_percent": {
+            "user": 0.4444444444444444,
+            "nice": 0.0,
+            "system": 0.0,
+            "idle": 99.44444444444444,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.1111111111111111,
+            "steal": 0.0
+          }
+        },
+        "cpu18": {
+          "ticks": {
+            "user": 5,
+            "nice": 0,
+            "system": 1,
+            "idle": 895,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 1,
+            "steal": 0
+          },
+          "total_ticks": 902,
+          "busy_percent": 0.7760532150776053,
+          "state_percent": {
+            "user": 0.5543237250554324,
+            "nice": 0.0,
+            "system": 0.11086474501108648,
+            "idle": 99.22394678492239,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.11086474501108648,
+            "steal": 0.0
+          }
+        },
+        "cpu19": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 1,
+            "idle": 898,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 0.2222222222222222,
+          "state_percent": {
+            "user": 0.1111111111111111,
+            "nice": 0.0,
+            "system": 0.1111111111111111,
+            "idle": 99.77777777777777,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu20": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 1,
+            "idle": 897,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 0.4439511653718091,
+          "state_percent": {
+            "user": 0.33296337402885684,
+            "nice": 0.0,
+            "system": 0.11098779134295228,
+            "idle": 99.55604883462819,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu21": {
+          "ticks": {
+            "user": 2,
+            "nice": 0,
+            "system": 4,
+            "idle": 895,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 901,
+          "busy_percent": 0.6659267480577137,
+          "state_percent": {
+            "user": 0.22197558268590456,
+            "nice": 0.0,
+            "system": 0.4439511653718091,
+            "idle": 99.33407325194229,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu22": {
+          "ticks": {
+            "user": 0,
+            "nice": 0,
+            "system": 1,
+            "idle": 898,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 0.11123470522803114,
+          "state_percent": {
+            "user": 0.0,
+            "nice": 0.0,
+            "system": 0.11123470522803114,
+            "idle": 99.88876529477197,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu23": {
+          "ticks": {
+            "user": 7,
+            "nice": 0,
+            "system": 2,
+            "idle": 891,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 1.0,
+          "state_percent": {
+            "user": 0.7777777777777778,
+            "nice": 0.0,
+            "system": 0.2222222222222222,
+            "idle": 99.0,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu24": {
+          "ticks": {
+            "user": 2,
+            "nice": 0,
+            "system": 5,
+            "idle": 893,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 900,
+          "busy_percent": 0.7777777777777778,
+          "state_percent": {
+            "user": 0.2222222222222222,
+            "nice": 0.0,
+            "system": 0.5555555555555556,
+            "idle": 99.22222222222223,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu25": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 1,
+            "idle": 895,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 0.44493882091212456,
+          "state_percent": {
+            "user": 0.3337041156840934,
+            "nice": 0.0,
+            "system": 0.11123470522803114,
+            "idle": 99.55506117908787,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu26": {
+          "ticks": {
+            "user": 3,
+            "nice": 0,
+            "system": 2,
+            "idle": 893,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 898,
+          "busy_percent": 0.5567928730512249,
+          "state_percent": {
+            "user": 0.33407572383073497,
+            "nice": 0.0,
+            "system": 0.22271714922049,
+            "idle": 99.44320712694878,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu27": {
+          "ticks": {
+            "user": 9,
+            "nice": 0,
+            "system": 3,
+            "idle": 887,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 1.3348164627363737,
+          "state_percent": {
+            "user": 1.0011123470522802,
+            "nice": 0.0,
+            "system": 0.3337041156840934,
+            "idle": 98.66518353726363,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu28": {
+          "ticks": {
+            "user": 7,
+            "nice": 0,
+            "system": 2,
+            "idle": 890,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 899,
+          "busy_percent": 1.0011123470522802,
+          "state_percent": {
+            "user": 0.778642936596218,
+            "nice": 0.0,
+            "system": 0.22246941045606228,
+            "idle": 98.99888765294772,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu29": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 1,
+            "idle": 896,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 898,
+          "busy_percent": 0.22271714922049,
+          "state_percent": {
+            "user": 0.111358574610245,
+            "nice": 0.0,
+            "system": 0.111358574610245,
+            "idle": 99.77728285077951,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu30": {
+          "ticks": {
+            "user": 1,
+            "nice": 0,
+            "system": 3,
+            "idle": 894,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 898,
+          "busy_percent": 0.44543429844098,
+          "state_percent": {
+            "user": 0.111358574610245,
+            "nice": 0.0,
+            "system": 0.33407572383073497,
+            "idle": 99.55456570155901,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        },
+        "cpu31": {
+          "ticks": {
+            "user": 4,
+            "nice": 0,
+            "system": 2,
+            "idle": 892,
+            "iowait": 0,
+            "irq": 0,
+            "softirq": 0,
+            "steal": 0
+          },
+          "total_ticks": 898,
+          "busy_percent": 0.6681514476614699,
+          "state_percent": {
+            "user": 0.44543429844098,
+            "nice": 0.0,
+            "system": 0.22271714922049,
+            "idle": 99.33184855233853,
+            "iowait": 0.0,
+            "irq": 0.0,
+            "softirq": 0.0,
+            "steal": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "replaces_threads": [
+    8,
+    16
+  ]
+}

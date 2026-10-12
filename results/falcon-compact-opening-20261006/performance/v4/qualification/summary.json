@@ -1,0 +1,178 @@
+{
+  "status": "not_qualified",
+  "complete": false,
+  "qualifying": true,
+  "timing_limit": 1.02,
+  "campaign": "compact-opening",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "verified_proofs_in_complete_pairs": 488,
+  "measured_trials_per_seed": [
+    3
+  ],
+  "estimator": "ratio of arithmetic means of per-seed process medians",
+  "confidence": "paired percentile bootstrap, one-sided 95%, fixed 60 seeds",
+  "cells": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 21.92567875,
+          "candidate_mean_ms": 22.313790916666665,
+          "ratio": 1.0177012612057297,
+          "lower_one_sided_95": 1.0071372447253617,
+          "upper_one_sided_95": 1.0282768184679798,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "inconclusive"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 14.089141516666666,
+          "candidate_mean_ms": 14.412671383333333,
+          "ratio": 1.0229630645901278,
+          "lower_one_sided_95": 1.005730827249041,
+          "upper_one_sided_95": 1.040531015300828,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "inconclusive"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.8124921166666667,
+          "candidate_mean_ms": 0.8082895333333333,
+          "ratio": 0.9948275395574607,
+          "lower_one_sided_95": 0.9846939400396424,
+          "upper_one_sided_95": 1.0049799055280506,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 21.1094272,
+          "candidate_mean_ms": 21.500272583333334,
+          "ratio": 1.0185152055349627,
+          "lower_one_sided_95": 1.0078929321301409,
+          "upper_one_sided_95": 1.0291889746687957,
+          "bootstrap_draws": 20000,
+          "pairs": 60,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 54260,
+        "candidate": 52824
+      },
+      "payload": {
+        "maximum_ratio": 0.8695816413259042,
+        "ratio_of_mean_bytes": 0.8683006309366983,
+        "baseline_mean_bytes": 169229.86666666667,
+        "candidate_mean_bytes": 146942.4,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 63828,
+        "candidate": 63204
+      },
+      "payload": {
+        "maximum_ratio": 0.8637043603523741,
+        "ratio_of_mean_bytes": 0.8637043603523741,
+        "baseline_mean_bytes": 216588,
+        "candidate_mean_bytes": 187068,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    }
+  ],
+  "stop_reason": "Stopped after a complete 60-seed cell did not pass the unchanged compact-opening gate: {\"case\": [\"native\", 100, 1], \"payload_ratio\": 0.8683006309366983, \"payload_pass\": true, \"timings\": {\"total_prover_ms\": {\"ratio\": 1.0177012612057297, \"upper_one_sided_95\": 1.0282768184679798, \"status\": \"inconclusive\"}, \"proof_verify_ms\": {\"ratio\": 1.0229630645901278, \"upper_one_sided_95\": 1.040531015300828, \"status\": \"inconclusive\"}}}"
+}

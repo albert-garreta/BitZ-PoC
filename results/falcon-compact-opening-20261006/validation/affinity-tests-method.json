@@ -1,0 +1,53 @@
+{
+  "method": "Compile the benchmark-only module directly as a Rust test crate, reusing the existing native release dependency rlibs; no Cargo rebuild or product code changes. The archived invocation reruns the already-built test executable.",
+  "cwd": "/home/john-wu/code/BitZ-pcs",
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "compile_command": [
+    "rustc",
+    "--edition",
+    "2024",
+    "--test",
+    "--cfg",
+    "feature=\"parallel\"",
+    "-C",
+    "target-cpu=native",
+    "-C",
+    "opt-level=1",
+    "benches/common/falcon_affinity.rs",
+    "-L",
+    "dependency=target/falcon-native/release/deps",
+    "--extern",
+    "serde=target/falcon-native/release/deps/libserde-698071cdb347831f.rlib",
+    "--extern",
+    "rayon=target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib",
+    "--extern",
+    "libc=target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib",
+    "-o",
+    "/tmp/falcon-affinity-tests"
+  ],
+  "run_command": [
+    "/tmp/falcon-affinity-tests",
+    "--test-threads=1"
+  ],
+  "archived_at_utc": "2026-10-06T23:02:57.892454+00:00",
+  "exit_code": 0,
+  "tests_passed": 5,
+  "test_binary": "/tmp/falcon-affinity-tests",
+  "test_binary_sha256": "285d47633a411f7c990929644a01e8f8b6b189f439c9677dd3fd73a1a1692efc",
+  "input_sha256": {
+    "benches/common/falcon_affinity.rs": "8adc931e13c1482d36a0f4f83e12d2f378456ec61a0c0be03e80480215764acc",
+    "benches/falcon_hybrid.rs": "adfbf06ee0caf8913171ebb6fe7bd1909e8d733de670184c7597e86c6e504b2d",
+    "Cargo.lock": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+    "target/falcon-native/release/deps/libserde-698071cdb347831f.rlib": "a88fb02d0fff7aeb216c062cf96481a7e7180c7fb6f5eb6f884fa5a4ff6d8042",
+    "target/falcon-native/release/deps/librayon-0dc4adbb859c4fb1.rlib": "ace8b7ca7046914f2c505eb610e9447cf11b2eacb9d33773938cb53d6cef3a25",
+    "target/falcon-native/release/deps/liblibc-7c3ee37e9725c524.rlib": "f62b9732159f382f5d21384bfdbd6bc58bd213d867d47fda68d971011d105a88"
+  },
+  "log_sha256": "87c3a3d81d37ba89443edbe3abd9acbaa86a90d1867fb0e59dbeba8c662c5404",
+  "coverage": [
+    "unset affinity and explicit CPU order",
+    "malformed, partial, duplicate and count-mismatched CPU requests",
+    "original-mask and cpu_set_t capacity rejection",
+    "actual current-thread pinning with caller-mask isolation",
+    "actual Rayon worker startup acknowledgments and singleton affinity readback"
+  ]
+}

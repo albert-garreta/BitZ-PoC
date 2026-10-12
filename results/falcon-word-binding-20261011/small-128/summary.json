@@ -1,0 +1,64 @@
+[
+  {
+    "degree": 512,
+    "batch": 3,
+    "security": 128,
+    "threads": 8,
+    "prove_ms": {
+      "r7": 5.274857,
+      "word": 5.100483,
+      "change_percent": -3.3057578622510575
+    },
+    "total_prover_ms": {
+      "r7": 5.4435215,
+      "word": 5.2611065,
+      "change_percent": -3.3510476628043073
+    },
+    "verify_ms": {
+      "r7": 2.888719,
+      "word": 2.859794,
+      "change_percent": -1.0013088846647977
+    },
+    "process_peak_rss_kib": {
+      "r7": 20702.0,
+      "word": 20282.0,
+      "change_percent": -2.028789488938265
+    },
+    "proof_payload_bytes": {
+      "r7": 97352.0,
+      "word": 96576.0,
+      "change_percent": -0.7971074040594939
+    }
+  },
+  {
+    "degree": 1024,
+    "batch": 3,
+    "security": 128,
+    "threads": 8,
+    "prove_ms": {
+      "r7": 5.5365825,
+      "word": 5.2916795,
+      "change_percent": -4.423360439404633
+    },
+    "total_prover_ms": {
+      "r7": 5.802135,
+      "word": 5.605503499999999,
+      "change_percent": -3.388950791389733
+    },
+    "verify_ms": {
+      "r7": 2.9659050000000002,
+      "word": 2.9030665000000004,
+      "change_percent": -2.1186956426453185
+    },
+    "process_peak_rss_kib": {
+      "r7": 21442.0,
+      "word": 20944.0,
+      "change_percent": -2.322544538755711
+    },
+    "proof_payload_bytes": {
+      "r7": 98096.0,
+      "word": 97960.0,
+      "change_percent": -0.13863969988582303
+    }
+  }
+]

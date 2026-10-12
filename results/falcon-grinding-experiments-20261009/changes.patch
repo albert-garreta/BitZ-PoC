@@ -1,0 +1,1309 @@
+--- a/src/hybrid/mod.rs
++++ b/src/hybrid/mod.rs
+@@ -17,6 +17,8 @@
+ pub(crate) mod block_grinding;
+ #[cfg(feature = "falcon-hybrid")]
+ pub(crate) mod grinding_allocation;
++#[cfg(feature = "falcon-hybrid")]
++pub(crate) mod grinding_experiment;
+ mod channel;
+ mod codec;
+ #[cfg(feature = "falcon-hybrid")]
+--- a/src/ligerito_flock/configuration.rs
++++ b/src/ligerito_flock/configuration.rs
+@@ -1,5 +1,6 @@
+ //! Checked Ligerito-only policy. Enclosing protocols own their security target;
+-//! this module never reads process environment or configures another PCS.
++//! Experimental copy: query schedules are selected only when resolving a
++//! configuration and become part of its transcript-bound identity.
+ 
+ use super::*;
+ 
+@@ -105,6 +106,24 @@
+     }
+ 
+     pub fn resolve(self, packed_vars: usize, target: usize) -> Result<ResolvedLigerito, String> {
++        let request = match std::env::var("BITZ_EXPERIMENT_QUERY_BITS") {
++            Ok(request) => Some(request),
++            Err(std::env::VarError::NotPresent) => None,
++            Err(error) => return Err(format!("invalid BITZ_EXPERIMENT_QUERY_BITS: {error}")),
++        };
++        self.resolve_with_query_request(packed_vars, target, request.as_deref())
++    }
++
++    fn resolve_with_query_request(
++        self,
++        packed_vars: usize,
++        target: usize,
++        request: Option<&str>,
++    ) -> Result<ResolvedLigerito, String> {
++        let query_bits = experimental_query_bits(request)?;
++        if query_bits.is_some() && (self != Self::MATCHED_UDR || target != 128) {
++            return Err("experimental queries require MATCHED_UDR at target 128".into());
++        }
+         let m = packed_vars
+             .checked_add(LOG_PACKING)
+             .ok_or("Ligerito dimension overflow")?;
+@@ -143,6 +162,9 @@
+                 config
+             }
+         };
++        if let Some(query_bits) = query_bits {
++            apply_experimental_queries(&mut security, query_bits)?;
++        }
+         security.hash = "blake3".into();
+         security.validate()?;
+         let ood_bits = ood_round_bits(&security, packed_vars);
+@@ -166,6 +188,47 @@
+             digest,
+         })
+     }
++}
++
++const EXPERIMENTAL_QUERY_PREFIX: &str =
++    "udr_maximal_radius_with_fold_grinding/experimental-raw-query-bits=";
++
++fn experimental_query_bits(request: Option<&str>) -> Result<Option<usize>, String> {
++    match request {
++        None | Some("off" | "128") => Ok(None),
++        Some("124") => Ok(Some(124)),
++        Some("120") => Ok(Some(120)),
++        Some("116") => Ok(Some(116)),
++        _ => Err("BITZ_EXPERIMENT_QUERY_BITS must be off, 128, 124, 120 or 116".into()),
++    }
++}
++
++fn apply_experimental_queries(
++    security: &mut LigeritoSecurityConfig,
++    query_bits: usize,
++) -> Result<(), String> {
++    for level in &mut security.levels {
++        if level.regime != SoundnessRegime::Udr || level.target_security_bits != 128 {
++            return Err("experimental query schedule requires 128-bit UDR levels".into());
++        }
++        // Keep the native 128-bit target. Query-phase grinding supplies only
++        // the query shortfall; it never receives credit for fold soundness.
++        level.queries = (1..=100_000)
++            .find(|&queries| {
++                level.queries = queries;
++                level.paper_predicted_bits().1 + 1e-3 >= query_bits as f64
++            })
++            .ok_or("experimental UDR query search did not converge")?;
++        let (fold_bits, raw_query_bits) = level.paper_predicted_bits();
++        if !fold_bits.is_finite() || !raw_query_bits.is_finite() {
++            return Err("non-finite experimental UDR soundness".into());
++        }
++        level.grinding_bits = (128.0 - raw_query_bits).ceil().max(0.0) as usize;
++        level.expected_eps_pg_bits = fold_bits;
++        level.expected_eps_query_bits = raw_query_bits;
++    }
++    security.analysis_version = format!("{EXPERIMENTAL_QUERY_PREFIX}{query_bits}");
++    security.validate()
+ }
+ 
+ fn validate_geometry(packed_vars: usize, rate: usize, initial_k: usize) -> Result<(), String> {
+@@ -270,8 +333,11 @@
+         let requested = report["requested_profile"]
+             .as_str()
+             .ok_or("missing requested profile")?;
++        // Reconstruct the recorded policy without consulting process state.
++        // Exact report equality below rejects a forged or unsupported marker.
++        let query_request = config.analysis_version.strip_prefix(EXPERIMENTAL_QUERY_PREFIX);
+         let resolved = LigeritoSelection::parse(requested, config.target_security_bits)?
+-            .resolve(config.log_n, config.target_security_bits)?;
++            .resolve_with_query_request(config.log_n, config.target_security_bits, query_request)?;
+         let ood = if report["outer_ood"] == true {
+             let grinding_bits = report["outer_ood_grinding_bits"]
+                 .as_u64()
+@@ -325,6 +391,56 @@
+     }
+ 
+     #[test]
++    fn experimental_queries_preserve_baseline_and_reject_unknown_requests() {
++        let selection = LigeritoSelection::MATCHED_UDR;
++        let baseline = selection.resolve_with_query_request(23, 128, None).unwrap();
++        for request in ["off", "128"] {
++            let explicit = selection.resolve_with_query_request(23, 128, Some(request)).unwrap();
++            assert_eq!(baseline.digest(), explicit.digest());
++            assert_eq!(
++                bincode::serialize(baseline.security()).unwrap(),
++                bincode::serialize(explicit.security()).unwrap()
++            );
++        }
++        for request in ["", "0", "112", "127", "129", "120 ", "typo"] {
++            assert!(selection.resolve_with_query_request(23, 128, Some(request)).is_err());
++        }
++        assert!(selection.resolve_with_query_request(23, 100, Some("120")).is_err());
++        assert!(LigeritoSelection::ValidatedUdr
++            .resolve_with_query_request(23, 128, Some("120")).is_err());
++    }
++
++    #[test]
++    fn experimental_queries_preserve_security_and_bind_the_actual_schedule() {
++        let selection = LigeritoSelection::MATCHED_UDR;
++        let baseline = selection.resolve_with_query_request(23, 128, None).unwrap();
++        assert_eq!(baseline.prover().queries.iter().sum::<usize>(), 1061);
++        for request in ["124", "120", "116"] {
++            let resolved = selection.resolve_with_query_request(23, 128, Some(request)).unwrap();
++            assert_eq!(resolved.security().target_security_bits, 128);
++            assert_eq!(resolved.prover().initial_k, 4);
++            assert_eq!(resolved.prover().log_inv_rates[0], 1);
++            assert_eq!(resolved.prover().queries, resolved.verifier().queries);
++            assert_eq!(resolved.prover().grinding_bits, resolved.verifier().grinding_bits);
++            assert_eq!(resolved.prover().fold_grinding_bits, baseline.prover().fold_grinding_bits);
++            assert_ne!(resolved.digest(), baseline.digest());
++            for level in &resolved.security().levels {
++                assert!(level.expected_eps_query_bits + level.grinding_bits as f64 >= 128.0);
++                assert!(fold_round_bits(level).into_iter().all(|bits| bits >= 128.0));
++            }
++            if request == "120" {
++                assert_eq!(resolved.prover().queries, [290, 177, 145, 132, 126, 124]);
++                assert_eq!(resolved.prover().queries.iter().sum::<usize>(), 994);
++            }
++            let report = resolved.report("udrg:1:4", None);
++            ResolvedLigerito::validate_report(&report).unwrap();
++            let mut tampered = report.clone();
++            tampered["configuration"]["levels"][0]["queries"] = 1.into();
++            assert!(ResolvedLigerito::validate_report(&tampered).is_err());
++        }
++    }
++
++    #[test]
+     fn production_geometry_and_ood_are_resolved_together() {
+         for m in 20..=35 {
+             for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
+--- a/src/piop/spartan/falcon/hybrid.rs
++++ b/src/piop/spartan/falcon/hybrid.rs
+@@ -10,7 +10,7 @@
+         grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
+     },
+     hybrid_sumcheck::{self as joint, Coefficients, Gather, Tensor},
+-    opening::{FalconBindingPrefixProof, prove_binding_prefix, verify_binding_prefix},
++    opening::{FalconBindingPrefixProof, prove_binding_prefix_with_schedule, verify_binding_prefix_with_schedule},
+ };
+ use crate::{
+     hybrid::{
+@@ -37,11 +37,14 @@
+     FalconError::Piop(e.to_string())
+ }
+ 
+-/// Ledger terms whose difficulties the prime-field schedule fixes.
+-fn fixed_terms(layout: &FalconSourceLayout, target_bits: usize) -> Vec<(&'static str, f64)> {
++/// Ledger terms outside the binary/PCS allocation, using the prepared prime schedule.
++fn fixed_terms(
++    layout: &FalconSourceLayout,
++    target_bits: usize,
++    schedule: &super::FalconSecuritySchedule,
++    projection_bits: u32,
++) -> Vec<(&'static str, f64)> {
+     let d = layout.capacity().ilog2() as usize;
+-    let schedule =
+-        super::FalconSecuritySchedule::for_layout(target_bits, layout).expect("prepared target");
+     let numerators = super::piop::FalconSecurityNumerators::for_layout(layout);
+     let prime_bits = super::shared_ring::prime_bounds(target_bits)
+         .expect("prepared shared target")
+@@ -76,7 +79,7 @@
+             "integer polynomial projection",
+             prime(
+                 2 * EXTENSION_DEGREE - 2,
+-                super::shared_ring::projection_grinding_bits(target_bits),
++                projection_bits,
+             ),
+         ),
+         (
+@@ -139,8 +142,8 @@
+     ]
+ }
+ 
+-/// Work-optimal difficulties for the binary groups and every Ligerito block,
+-/// under the budget left by the fixed terms (see [`ALLOCATION_BUDGET`]).
++/// Allocate the composed budget to binary and PCS groups, optionally including
++/// the prime stages in the isolated 128-bit experiment.
+ fn allocate_grinding(
+     layout: &FalconSourceLayout,
+     bridge_mode: hybrid_bridge::BridgeMode,
+@@ -148,8 +151,11 @@
+     geometry: &shared::Geometry<SOURCE_COUNT>,
+     ligerito: &ResolvedLigerito,
+     target_bits: usize,
+-) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+-    use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
++) -> Result<(BinaryGrinding, GrindingPlan, super::FalconSecuritySchedule, u32), FalconError> {
++    use crate::hybrid::{grinding_allocation::GrindingGroup, grinding_experiment};
++    let mut prime = super::FalconSecuritySchedule::for_layout(target_bits, layout)
++        .expect("prepared target");
++    let mut projection_bits = super::shared_ring::projection_grinding_bits(target_bits);
+     // Block structure, raw errors and native Flock work do not depend on the
+     // plan's target; its difficulties are replaced below.
+     let mut pcs = GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
+@@ -158,7 +164,8 @@
+     let mut groups = vec![
+         GrindingGroup {
+             raw_error: gf(hybrid_bridge::error_numerator(layout, bridge_mode)),
+-            sites: hybrid_bridge::grinding_sites(layout) as f64,
++            sites: (hybrid_bridge::grinding_sites(layout)
++                + usize::from(grinding_experiment::corrected_sites())) as f64,
+             min_bits: 0,
+         },
+         GrindingGroup {
+@@ -174,7 +181,15 @@
+         // One boundary per ring-switch and support draw; a work weight only.
+         GrindingGroup {
+             raw_error: gf(256),
+-            sites: (geometry.packed_log() + 8) as f64,
++            // At 128 bits all PCS blocks must grind (each raw error is at
++            // least 2^-128). Each therefore adds a PoW-seed draw and, after
++            // absorbing its nonce, a challenge block. Ring switch and padding
++            // account for the two initial boundaries.
++            sites: if grinding_experiment::corrected_sites() && target_bits == 128 {
++                (2 + 2 * pcs.blocks.len()) as f64
++            } else {
++                (geometry.packed_log() + 8) as f64
++            },
+             min_bits: 0,
+         },
+     ];
+@@ -188,15 +203,48 @@
+         sites: 1.0,
+         min_bits: block.native_bits.unwrap_or(0),
+     }));
+-    let fixed: f64 = fixed_terms(layout, target_bits)
+-        .iter()
+-        .map(|(_, error)| error)
+-        .sum();
++    let pcs_start = 4 + KECCAK_SLABS;
++    let pcs_end = groups.len();
++    let fixed = if grinding_experiment::global() && target_bits == 128 {
++        let n = super::piop::FalconSecurityNumerators::for_layout(layout);
++        let floor = super::shared_ring::prime_bounds(target_bits)?.0.ilog2() as i32;
++        groups.extend([
++            (n.norm_instances, 1),
++            (n.relation_batching, 1),
++            (n.outer_point, 1),
++            (n.integer_rounds, super::piop::rejection_row_rounds(layout)),
++            (n.linear, 1),
++            (n.binding, layout.source_bits().ilog2() as usize),
++            (2 * EXTENSION_DEGREE - 2, 1),
++        ].map(|(numerator, sites)| GrindingGroup {
++            raw_error: numerator as f64 * 2f64.powi(-floor),
++            sites: sites as f64,
++            min_bits: 0,
++        }));
++        let d = layout.capacity().ilog2() as usize;
++        2f64.powi(-144) + (4 * d + 2 * N + 1) as f64
++            / crate::piop::spartan::falcon_parameters::field_cardinality(EXTENSION_DEGREE).as_f64()
++    } else {
++        fixed_terms(layout, target_bits, &prime, projection_bits)
++            .iter().map(|(_, error)| error).sum()
++    };
+     let budget = ALLOCATION_BUDGET * 2f64.powi(-(target_bits as i32)) - fixed;
+-    let bits = allocate(&groups, budget).map_err(error)?;
+-    let (head, blocks) = bits.split_at(4 + KECCAK_SLABS);
+-    for (block, &b) in pcs.blocks.iter_mut().zip(blocks) {
++    let bits = grinding_experiment::allocate(&groups, budget, pcs_start..pcs_end).map_err(error)?;
++    let head = &bits[..pcs_start];
++    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[pcs_start..pcs_end]) {
+         block.bits = b;
++    }
++    if grinding_experiment::global() && target_bits == 128 {
++        let g = &bits[pcs_end..];
++        prime = super::FalconSecuritySchedule {
++            norm_instance_bits: g[0],
++            relation_batching_bits: g[1],
++            outer_point_bits: g[2],
++            integer_round_bits: g[3],
++            linear_point_bits: g[4],
++            binding_round_bits: g[5],
++        };
++        projection_bits = g[6];
+     }
+     Ok((
+         BinaryGrinding {
+@@ -207,6 +255,8 @@
+             keccak: std::array::from_fn(|i| head[4 + i]),
+         },
+         pcs,
++        prime,
++        projection_bits,
+     ))
+ }
+ struct LinkGrinding;
+@@ -266,6 +316,8 @@
+     ligerito: ResolvedLigerito,
+     pcs_grinding: GrindingPlan,
+     grinding: BinaryGrinding,
++    prime_grinding: super::FalconSecuritySchedule,
++    projection_bits: u32,
+     scratch: Mutex<Scratch>,
+ }
+ 
+@@ -333,9 +385,9 @@
+         let ligerito = LigeritoSelection::MATCHED_UDR
+             .resolve(geometry.packed_log(), target_bits)
+             .map_err(error)?;
+-        // The binary groups and every Ligerito challenge block share the
+-        // budget left by the fixed prime-field schedule, split work-optimally.
+-        let (grinding, pcs_grinding) = allocate_grinding(
++        // The experiment can share this budget with the prime-field stages;
++        // retain the resulting schedule for the ledger, prover and verifier.
++        let (grinding, pcs_grinding, prime_grinding, projection_bits) = allocate_grinding(
+             &layout,
+             bridge_mode,
+             &keccak,
+@@ -353,6 +405,8 @@
+             ligerito,
+             pcs_grinding,
+             grinding,
++            prime_grinding,
++            projection_bits,
+             scratch: Mutex::default(),
+         };
+         hybrid_bridge::validate_layout(
+@@ -405,7 +459,7 @@
+     }
+ 
+     pub fn security(&self) -> FalconHybridSecurity {
+-        let mut terms = fixed_terms(&self.layout, self.target_bits);
++        let mut terms = fixed_terms(&self.layout, self.target_bits, &self.prime_grinding, self.projection_bits);
+         terms.extend(allocated_terms(
+             &self.layout,
+             self.bridge_mode,
+@@ -582,12 +636,11 @@
+         let bridge_layout = self.layout.bitz_params();
+         h.update(&(bridge_layout.row_vars as u64).to_le_bytes());
+         h.update(&(bridge_layout.col_vars as u64).to_le_bytes());
+-        h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
++        h.update(&self.projection_bits.to_le_bytes());
+ 
+         h.update(b"hash-to-point:transcript-bound-public-selection;canonical-mask;first-N-accepted;linear-C-remainder-routing;quadratic-rejection/v1");
+         h.update(&(super::HASH_TO_POINT_SAMPLES as u64).to_le_bytes());
+-        let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
+-            .expect("prepared security");
++        let schedule = self.prime_grinding;
+         for bits in [
+             schedule.norm_instance_bits,
+             schedule.outer_point_bits,
+@@ -653,13 +706,15 @@
+     ) -> Result<FalconHybridProof, FalconError> {
+         let (mut t, digest) = self.transcript(&committed.statement)?;
+         let arithmetic_span = tracing::info_span!("falcon_hybrid:arithmetic_prefix").entered();
+-        let (arithmetic, row_weights, bridge_claim) = prove_binding_prefix(
++        let (arithmetic, row_weights, bridge_claim) = prove_binding_prefix_with_schedule(
+             &mut t,
+             &self.layout,
+             &committed.statement.public,
+             &committed.traces,
+             &committed.arithmetic,
+             self.target_bits,
++            &self.prime_grinding,
++            self.projection_bits,
+         )?;
+         drop(arithmetic_span);
+         let bridge_span = tracing::info_span!("falcon_hybrid:binary_bridge").entered();
+@@ -752,6 +807,9 @@
+             Some(&mut pcs),
+         )
+         .map_err(error)?;
++        if crate::hybrid::grinding_experiment::corrected_sites() && self.target_bits == 128 {
++            assert_eq!(opening_t.block_count(), 2 + 2 * self.pcs_grinding.blocks.len());
++        }
+         let opening_nonces = opening_t.finish();
+         drop(opening_span);
+         Ok(FalconHybridProof {
+@@ -772,12 +830,14 @@
+         proof: &FalconHybridProof,
+     ) -> Result<(), FalconError> {
+         let (mut t, digest) = self.transcript(statement)?;
+-        let bridge_claim = verify_binding_prefix(
++        let bridge_claim = verify_binding_prefix_with_schedule(
+             &mut t,
+             &self.layout,
+             &statement.public,
+             &proof.arithmetic,
+             self.target_bits,
++            &self.prime_grinding,
++            self.projection_bits,
+         )?;
+         let a = hybrid_bridge::verify(
+             &mut t,
+@@ -1321,53 +1381,108 @@
+         }
+     }
+ 
++    fn assert_exact_composed_grinding_budget(prepared: &PreparedFalconHybrid) {
++        use num_bigint::BigUint;
++        const SCALE: usize = 300;
++        let batch = prepared.batch();
++        let target = prepared.target_bits();
++        let ring_denominator = BigUint::from(super::super::Q as u64).pow(EXTENSION_DEGREE as u32);
++        let layout = prepared.layout;
++        let d = layout.capacity().ilog2() as usize;
++        let schedule = prepared.prime_grinding;
++        let n = super::super::piop::FalconSecurityNumerators::for_layout(&layout);
++        let mut dyadic = BigUint::from(1u8) << (SCALE - 144);
++        let prime_bits = if target == 100 { 114 } else { 125 };
++        for (numerator, bits) in [
++            (n.norm_instances, schedule.norm_instance_bits),
++            (n.relation_batching, schedule.relation_batching_bits),
++            (n.outer_point, schedule.outer_point_bits),
++            (n.integer_rounds, schedule.integer_round_bits),
++            (n.linear, schedule.linear_point_bits),
++            (n.binding, schedule.binding_round_bits),
++            (2 * EXTENSION_DEGREE - 2, prepared.projection_bits),
++        ] {
++            dyadic += BigUint::from(numerator) << (SCALE - prime_bits - bits as usize);
++        }
++        let g = prepared.grinding;
++        let mut binary = vec![
++            (hybrid_bridge::error_numerator(&layout, prepared.bridge_mode), g.bridge),
++            (LINK_ERROR_NUMERATOR, g.links),
++            (2 * prepared.geometry.bit_log(), g.joint),
++            (256, g.opening),
++        ];
++        for (slab, bits) in prepared.keccak.iter().zip(g.keccak) {
++            let security = slab.security(slab.component_for_bits(bits)).unwrap();
++            assert_eq!(security.grinding_bits, bits);
++            binary.push((slab.raw_error_numerator(), bits));
++        }
++        for (numerator, bits) in binary {
++            dyadic += BigUint::from(numerator) << (SCALE - 128 - bits as usize);
++        }
++        for block in &prepared.pcs_grinding.blocks {
++            dyadic += dyadic_ceil(block.raw_error, SCALE - block.bits as usize);
++        }
++        let error = dyadic * &ring_denominator + (BigUint::from(4 * d + 2 * N + 1) << SCALE);
++        let budget = (&ring_denominator * 15u8) << (SCALE - target - 4);
++        assert!(error <= budget, "batch {batch}, target {target}");
++    }
++
+     #[test]
+     fn composition_meets_both_targets_with_exact_rational_bounds() {
+-        use num_bigint::BigUint;
+-        const SCALE: usize = 300;
+-        let ring_denominator = BigUint::from(super::super::Q as u64).pow(EXTENSION_DEGREE as u32);
+         for batch in 1usize..=1024 {
+             for target in [100, 128] {
+                 let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
+-                let layout = prepared.layout;
+-                let d = layout.capacity().ilog2() as usize;
+-                let schedule = super::super::FalconSecuritySchedule::for_layout(target, &layout).unwrap();
+-                let n = super::super::piop::FalconSecurityNumerators::for_layout(&layout);
+-                let mut dyadic = BigUint::from(1u8) << (SCALE - 144);
+-                let prime_bits = if target == 100 { 114 } else { 125 };
+-                for (numerator, bits) in [
+-                    (n.norm_instances, schedule.norm_instance_bits),
+-                    (n.relation_batching, schedule.relation_batching_bits),
+-                    (n.outer_point, schedule.outer_point_bits),
+-                    (n.integer_rounds, schedule.integer_round_bits),
+-                    (n.linear, schedule.linear_point_bits),
+-                    (n.binding, schedule.binding_round_bits),
+-                    (2 * EXTENSION_DEGREE - 2, super::super::shared_ring::projection_grinding_bits(target)),
+-                ] {
+-                    dyadic += BigUint::from(numerator) << (SCALE - prime_bits - bits as usize);
+-                }
+-                let g = prepared.grinding;
+-                let mut binary = vec![
+-                    (hybrid_bridge::error_numerator(&layout, prepared.bridge_mode), g.bridge),
+-                    (LINK_ERROR_NUMERATOR, g.links),
+-                    (2 * prepared.geometry.bit_log(), g.joint),
+-                    (256, g.opening),
+-                ];
+-                for (slab, bits) in prepared.keccak.iter().zip(g.keccak) {
+-                    let security = slab.security(slab.component_for_bits(bits)).unwrap();
+-                    assert_eq!(security.grinding_bits, bits);
+-                    binary.push((slab.raw_error_numerator(), bits));
+-                }
+-                for (numerator, bits) in binary {
+-                    dyadic += BigUint::from(numerator) << (SCALE - 128 - bits as usize);
+-                }
+-                for block in &prepared.pcs_grinding.blocks {
+-                    dyadic += dyadic_ceil(block.raw_error, SCALE - block.bits as usize);
+-                }
+-                let error = dyadic * &ring_denominator + (BigUint::from(4 * d + 2 * N + 1) << SCALE);
+-                let budget = &ring_denominator << (SCALE - target);
+-                assert!(error <= budget, "batch {batch}, target {target}");
+-            }
++                assert_exact_composed_grinding_budget(&prepared);
++            }
++        }
++    }
++
++    #[test]
++    fn experimental_128_composition_keeps_exact_budget_with_query_grinding() {
++        for batch in [1, 2, 3, 7, 8, 9, 31, 32, 33, 255, 256, 257, 1023, 1024] {
++            let prepared = PreparedFalconHybrid::prepare(batch, 128, 1024).unwrap();
++            assert_exact_composed_grinding_budget(&prepared);
++            for block in &prepared.pcs_grinding.blocks {
++                assert!(block.bits >= block.native_bits.unwrap_or(0));
++                assert!(block.bits <= crate::hybrid::grinding_allocation::MAX_BITS);
++            }
++            for (level, params) in prepared.ligerito.security().levels.iter().enumerate() {
++                let label = format!("queries/{level}");
++                let block = prepared.pcs_grinding.blocks.iter()
++                    .find(|block| block.label == label).unwrap();
++                // A lower raw query target is compensated by the actual
++                // allocated query difficulty, which can exceed Flock's floor.
++                let raw_query_bits = params.paper_predicted_bits().1;
++                assert!(raw_query_bits + f64::from(block.bits) >= 128.0);
++            }
++        }
++    }
++
++    #[test]
++    fn experiment_prime_grinding_is_bound_and_rejects_replay() {
++        let mut prepared = PreparedFalconHybrid::prepare(1, 128, 1024).unwrap();
++        let committed = prepared.commit(public(1)).unwrap();
++        let statement = committed.statement.clone();
++        let proof = prepared.prove(committed).unwrap();
++        prepared.verify(&statement, &proof).unwrap();
++        let original = prepared.prime_grinding;
++        let projection = prepared.projection_bits;
++        let original_digest = prepared.transcript(&statement).unwrap().1;
++        for field in 0..7 {
++            prepared.prime_grinding = original;
++            prepared.projection_bits = projection;
++            let bits = match field {
++                0 => &mut prepared.prime_grinding.norm_instance_bits,
++                1 => &mut prepared.prime_grinding.relation_batching_bits,
++                2 => &mut prepared.prime_grinding.outer_point_bits,
++                3 => &mut prepared.prime_grinding.integer_round_bits,
++                4 => &mut prepared.prime_grinding.linear_point_bits,
++                5 => &mut prepared.prime_grinding.binding_round_bits,
++                _ => &mut prepared.projection_bits,
++            };
++            *bits += 1;
++            assert_ne!(prepared.transcript(&statement).unwrap().1, original_digest);
++            assert!(prepared.verify(&statement, &proof).is_err(), "prime field {field}");
+         }
+     }
+ 
+--- a/src/piop/spartan/falcon/opening.rs
++++ b/src/piop/spartan/falcon/opening.rs
+@@ -159,6 +159,24 @@
+     source: &FalconSourceWitness,
+     target_bits: usize,
+ ) -> Result<(FalconBindingPrefixProof, Vec<u128>, BridgeClaim), FalconError> {
++    prove_binding_prefix_with_schedule(
++        transcript, layout, statement, traces, source, target_bits,
++        &security_schedule(layout, target_bits)?,
++        super::shared_ring::projection_grinding_bits(target_bits),
++    )
++}
++
++#[allow(clippy::too_many_arguments)]
++pub(super) fn prove_binding_prefix_with_schedule(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    statement: &FalconPublicStatement,
++    traces: &[FalconVerificationTrace],
++    source: &FalconSourceWitness,
++    target_bits: usize,
++    schedule: &super::FalconSecuritySchedule,
++    projection_bits: u32,
++) -> Result<(FalconBindingPrefixProof, Vec<u128>, BridgeClaim), FalconError> {
+     statement.validate(layout.batch())?;
+     if statement.batch() != layout.batch()
+         || statement.messages.len() != layout.batch()
+@@ -179,10 +197,10 @@
+     let selection = Selection::from_traces(traces)?;
+     bind_selection(transcript, &selection);
+     let (ring, field, projected) =
+-        super::shared_ring::prove(transcript, layout, statement, traces, source, target_bits)?;
++        super::shared_ring::prove_with_projection(transcript, layout, statement, traces, source, target_bits, projection_bits)?;
+     let (piop_proof, algebraic) =
+-        super::piop::prove_falcon_piop_in_field(transcript, layout, traces, target_bits, &field)?;
+-    let linear_point_nonce = grind_linear_point(transcript, layout, target_bits, None)?;
++        super::piop::prove_falcon_piop_in_field_with_schedule(transcript, layout, traces, target_bits, &field, schedule)?;
++    let linear_point_nonce = grind_linear_point(transcript, schedule.linear_point_bits, None)?;
+     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
+     let mut integer = prepare_binding_form(
+         transcript,
+@@ -224,8 +242,7 @@
+     let (output, binding_nonces) = prove_binding_inner(
+         transcript,
+         &field,
+-        layout,
+-        target_bits,
++        schedule.binding_round_bits,
+         target,
+         FactoredOverlayInput::new(
+             &integer,
+@@ -270,17 +287,16 @@
+ fn prove_binding_inner<V>(
+     transcript: &mut impl Transcript,
+     field: &Cfg,
+-    layout: &FalconSourceLayout,
+-    target_bits: usize,
++    binding_bits: u32,
+     target: F,
+     input: V,
+ ) -> Result<(crate::sumcheck::inner::InnerSumcheckOutput<F>, Vec<u64>), FalconError>
+ where
+     V: crate::sumcheck::inner::input::Input<Cfg, Weights = ()>,
+ {
+-    if target_bits == 128 {
++    if binding_bits != 0 {
+         let mut boundary = ProverGrindingRoundBoundary::<BindingGrinding>::with_round_offset(
+-            security_schedule(layout, target_bits)?.binding_round_bits,
++            binding_bits,
+             0,
+         );
+         let output = prove_inner_sumcheck(field, transcript, target, input, (), &mut boundary)
+@@ -301,32 +317,50 @@
+     proof: &FalconBindingPrefixProof,
+     target_bits: usize,
+ ) -> Result<BridgeClaim, FalconError> {
++    verify_binding_prefix_with_schedule(
++        transcript, layout, statement, proof, target_bits,
++        &security_schedule(layout, target_bits)?,
++        super::shared_ring::projection_grinding_bits(target_bits),
++    )
++}
++
++#[allow(clippy::too_many_arguments)]
++pub(super) fn verify_binding_prefix_with_schedule(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    statement: &FalconPublicStatement,
++    proof: &FalconBindingPrefixProof,
++    target_bits: usize,
++    schedule: &super::FalconSecuritySchedule,
++    projection_bits: u32,
++) -> Result<BridgeClaim, FalconError> {
+     statement.validate(layout.batch())?;
+     if statement.batch() != layout.batch()
+         || statement.messages.len() != layout.batch()
+         || !matches!(target_bits, 100 | 128)
+-        || (target_bits == 100 && !proof.binding_nonces.is_empty())
++        || (schedule.binding_round_bits == 0 && !proof.binding_nonces.is_empty())
+     {
+         return Err(piop("Falcon prefix proof shape mismatch"));
+     }
+     if proof.linear_point_nonce.is_some()
+-        != (security_schedule(layout, target_bits)?.linear_point_bits != 0)
++        != (schedule.linear_point_bits != 0)
+     {
+         return Err(piop("linear-point grinding nonce shape mismatch"));
+     }
+     let selection = Selection::from_masks(proof.selection_masks.clone(), layout.batch())?;
+     bind_selection(transcript, &selection);
+     let (field, projected) =
+-        super::shared_ring::verify(transcript, layout, statement, &proof.ring, target_bits)?;
+-    let algebraic = super::piop::verify_falcon_piop_in_field(
++        super::shared_ring::verify_with_projection(transcript, layout, statement, &proof.ring, target_bits, projection_bits)?;
++    let algebraic = super::piop::verify_falcon_piop_in_field_with_schedule(
+         transcript,
+         layout,
+         &statement.signatures,
+         &proof.piop,
+         target_bits,
+         &field,
++        schedule,
+     )?;
+-    grind_linear_point(transcript, layout, target_bits, proof.linear_point_nonce)?;
++    grind_linear_point(transcript, schedule.linear_point_bits, proof.linear_point_nonce)?;
+     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
+     let integer = prepare_binding_form(
+         transcript,
+@@ -341,9 +375,9 @@
+     let merge = squeeze(transcript, &field)?;
+     let target = field.add(&projected.target, &field.mul(&merge, &integer.target()?));
+     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
+-    let (point, final_claims) = if target_bits == 128 {
++    let (point, final_claims) = if schedule.binding_round_bits != 0 {
+         let mut boundary = VerifierGrindingRoundBoundary::<BindingGrinding>::new(
+-            security_schedule(layout, target_bits)?.binding_round_bits,
++            schedule.binding_round_bits,
+             &proof.binding_nonces,
+         );
+         SumcheckProof::verify_batch_with_round_boundary(
+@@ -409,11 +443,9 @@
+ 
+ fn grind_linear_point(
+     transcript: &mut impl Transcript,
+-    layout: &FalconSourceLayout,
+-    target_bits: usize,
++    bits: u32,
+     nonce: Option<u64>,
+ ) -> Result<Option<u64>, FalconError> {
+-    let bits = security_schedule(layout, target_bits)?.linear_point_bits;
+     if bits == 0 {
+         return if nonce.is_none() {
+             Ok(None)
+--- a/src/piop/spartan/falcon/piop.rs
++++ b/src/piop/spartan/falcon/piop.rs
+@@ -188,7 +188,6 @@
+         },
+     }
+ }
+-#[tracing::instrument(skip_all, name = "falcon_arithmetic:integer_outer")]
+ pub(super) fn prove_falcon_piop_in_field(
+     transcript: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+@@ -196,11 +195,23 @@
+     target_bits: usize,
+     field: &Cfg,
+ ) -> Result<(FalconPiopProof, FalconPiopClaims), FalconError> {
++    prove_falcon_piop_in_field_with_schedule(transcript, layout, traces, target_bits, field, &security_schedule(layout, target_bits)?)
++}
++
++#[tracing::instrument(skip_all, name = "falcon_arithmetic:integer_outer")]
++#[allow(clippy::too_many_arguments)]
++pub(super) fn prove_falcon_piop_in_field_with_schedule(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    traces: &[FalconVerificationTrace],
++    target_bits: usize,
++    field: &Cfg,
++    schedule: &FalconSecuritySchedule,
++) -> Result<(FalconPiopProof, FalconPiopClaims), FalconError> {
+     if traces.len() != layout.batch() {
+         return Err(piop("invalid integer witness batch"));
+     }
+     header(transcript, layout, target_bits, field)?;
+-    let schedule = security_schedule(layout, target_bits)?;
+     let instance_nonce = nonce::<NormInstanceGrinding>(transcript, schedule.norm_instance_bits)?;
+     let rho = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
+     let weights = eq_table(&rho, field).map_err(|e| piop(e.to_string()))?;
+@@ -274,13 +285,25 @@
+     target_bits: usize,
+     field: &Cfg,
+ ) -> Result<FalconPiopClaims, FalconError> {
++    verify_falcon_piop_in_field_with_schedule(transcript, layout, signatures, proof, target_bits, field, &security_schedule(layout, target_bits)?)
++}
++
++#[allow(clippy::too_many_arguments)]
++pub(super) fn verify_falcon_piop_in_field_with_schedule(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    signatures: &[FalconSignatureCt],
++    proof: &FalconPiopProof,
++    target_bits: usize,
++    field: &Cfg,
++    schedule: &FalconSecuritySchedule,
++) -> Result<FalconPiopClaims, FalconError> {
+     if signatures.len() != layout.batch() {
+         return Err(piop("invalid public signature batch"));
+     }
+     header(transcript, layout, target_bits, field)?;
+     validate_field_elements(&[proof.slack], field).map_err(|e| piop(e.to_string()))?;
+     validate_field_elements(&proof.terminal, field).map_err(|e| piop(e.to_string()))?;
+-    let schedule = security_schedule(layout, target_bits)?;
+     check_nonce::<NormInstanceGrinding>(
+         transcript,
+         schedule.norm_instance_bits,
+--- a/src/piop/spartan/falcon/shared_ring.rs
++++ b/src/piop/spartan/falcon/shared_ring.rs
+@@ -135,7 +135,6 @@
+     const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/shared-ring/projection-grinding/v3";
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_shared_ring:prove")]
+ pub(super) fn prove(
+     transcript: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+@@ -143,6 +142,20 @@
+     traces: &[FalconVerificationTrace],
+     source: &FalconSourceWitness,
+     target_bits: usize,
++) -> Result<(Proof, Cfg, ProjectedClaim), FalconError> {
++    prove_with_projection(transcript, layout, statement, traces, source, target_bits, projection_grinding_bits(target_bits))
++}
++
++#[tracing::instrument(skip_all, name = "falcon_shared_ring:prove")]
++#[allow(clippy::too_many_arguments)]
++pub(super) fn prove_with_projection(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    statement: &FalconPublicStatement,
++    traces: &[FalconVerificationTrace],
++    source: &FalconSourceWitness,
++    target_bits: usize,
++    projection_bits: u32,
+ ) -> Result<(Proof, Cfg, ProjectedClaim), FalconError> {
+     validate_context(layout, statement, target_bits)?;
+     if traces.len() != layout.batch()
+@@ -156,7 +169,7 @@
+             "shared ring witness shape or public statement mismatch",
+         ));
+     }
+-    bind_parameters(transcript, layout, target_bits)?;
++    bind_parameters(transcript, layout, target_bits, projection_bits)?;
+     let r = sample_point(transcript, b"instances", layout.capacity().ilog2() as usize)?;
+     let lambda = equality_weights(&r);
+     let certificate = certificate(traces, &lambda);
+@@ -194,7 +207,7 @@
+         grind_and_absorb(
+             transcript,
+             GrindingRound::<ProjectionGrinding>::new(0),
+-            projection_grinding_bits(target_bits),
++            projection_bits,
+         )
+         .map_err(|e| error(e.to_string()))?
+     };
+@@ -213,13 +226,25 @@
+     ))
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_shared_ring:verify")]
+ pub(super) fn verify(
+     transcript: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+     statement: &FalconPublicStatement,
+     proof: &Proof,
+     target_bits: usize,
++) -> Result<(Cfg, VerifierProjectedClaim), FalconError> {
++    verify_with_projection(transcript, layout, statement, proof, target_bits, projection_grinding_bits(target_bits))
++}
++
++#[tracing::instrument(skip_all, name = "falcon_shared_ring:verify")]
++#[allow(clippy::too_many_arguments)]
++pub(super) fn verify_with_projection(
++    transcript: &mut impl Transcript,
++    layout: &FalconSourceLayout,
++    statement: &FalconPublicStatement,
++    proof: &Proof,
++    target_bits: usize,
++    projection_bits: u32,
+ ) -> Result<(Cfg, VerifierProjectedClaim), FalconError> {
+     validate_context(layout, statement, target_bits)?;
+     let rounds = layout.capacity().ilog2() as usize;
+@@ -231,7 +256,7 @@
+     {
+         return Err(error("invalid shared ring proof encoding"));
+     }
+-    bind_parameters(transcript, layout, target_bits)?;
++    bind_parameters(transcript, layout, target_bits, projection_bits)?;
+     let r = sample_point(transcript, b"instances", rounds)?;
+     transcript.absorb_slice(b"quotient-certificate");
+     absorb_extensions(transcript, &proof.certificate);
+@@ -259,7 +284,7 @@
+         verify_and_absorb(
+             transcript,
+             GrindingRound::<ProjectionGrinding>::new(0),
+-            projection_grinding_bits(target_bits),
++            projection_bits,
+             proof.projection_nonce,
+         )
+         .map_err(|e| error(e.to_string()))?;
+@@ -297,6 +322,7 @@
+     t: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+     target: usize,
++    projection_bits: u32,
+ ) -> Result<(), FalconError> {
+     let (prime_min, prime_max) = prime_bounds(target)?;
+     t.absorb_slice(DOMAIN);
+@@ -326,7 +352,7 @@
+     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
+     t.absorb_slice(&prime_min.to_le_bytes());
+     t.absorb_slice(&prime_max.to_le_bytes());
+-    t.absorb_slice(&projection_grinding_bits(target).to_le_bytes());
++    t.absorb_slice(&projection_bits.to_le_bytes());
+     Ok(())
+ }
+ 
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -55,6 +55,7 @@
+     target_bits: usize,
+     geometry: shared::Geometry<1>,
+     schedule: Schedule,
++    carry_bits: u32,
+     ligerito: ResolvedLigerito,
+     pcs_grinding: GrindingPlan,
+     grinding: BinaryGrinding,
+@@ -142,7 +143,7 @@
+             return Err(error("algebraic security must be 100 or 128 bits"));
+         }
+         let d = layout.capacity().ilog2() as usize;
+-        let schedule = Schedule {
++        let mut schedule = Schedule {
+             norm_instance_bits: grind(target_bits, d, 125),
+             norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
+             merge_bits: grind(target_bits, 3, 125),
+@@ -152,14 +153,16 @@
+         let ligerito = LigeritoSelection::MATCHED_UDR
+             .resolve(geometry.packed_log(), target_bits)
+             .map_err(error)?;
++        let mut carry_bits = carry_grinding(target_bits);
+         let (grinding, pcs_grinding) =
+-            allocate_grinding(&layout, &geometry, &ligerito, &schedule, target_bits)?;
++            allocate_grinding(&layout, &geometry, &ligerito, &mut schedule, &mut carry_bits, target_bits)?;
+         bridge::validate_layout(&layout.bitz_params(), BridgeMode::TwoLimbs, PRIME_MAX)?;
+         let prepared = Self {
+             layout,
+             target_bits,
+             geometry,
+             schedule,
++            carry_bits,
+             ligerito,
+             pcs_grinding,
+             grinding,
+@@ -191,7 +194,7 @@
+     }
+ 
+     pub fn security(&self) -> FalconAlgebraicSecurity {
+-        let mut terms = fixed_terms(&self.layout, self.target_bits, &self.schedule);
++        let mut terms = fixed_terms(&self.layout, &self.schedule, self.carry_bits);
+         let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
+         terms.extend([
+             (
+@@ -223,7 +226,7 @@
+     }
+ 
+     fn carry_grinding(&self) -> u32 {
+-        carry_grinding(self.target_bits)
++        self.carry_bits
+     }
+ 
+     /// Validate, pack and commit the algebraic witness. No signature hashing.
+@@ -584,8 +587,8 @@
+ /// Ledger terms whose difficulties the prime-field schedule fixes.
+ fn fixed_terms(
+     layout: &Layout,
+-    target_bits: usize,
+     schedule: &Schedule,
++    carry_bits: u32,
+ ) -> Vec<(&'static str, f64)> {
+     let d = layout.capacity().ilog2() as usize;
+     let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
+@@ -598,7 +601,7 @@
+         ),
+         (
+             "ring coordinate projection",
+-            prime(10, carry_grinding(target_bits)),
++            prime(10, carry_bits),
+         ),
+         (
+             "per-signature norm identity",
+@@ -622,10 +625,11 @@
+     layout: &Layout,
+     geometry: &shared::Geometry<1>,
+     ligerito: &ResolvedLigerito,
+-    schedule: &Schedule,
++    schedule: &mut Schedule,
++    carry_bits: &mut u32,
+     target_bits: usize,
+ ) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+-    use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
++    use crate::hybrid::{grinding_allocation::GrindingGroup, grinding_experiment as experiment};
+     // Block structure, raw errors and native Flock work do not depend on the
+     // plan's target; its difficulties are replaced below.
+     let mut pcs = GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
+@@ -635,7 +639,7 @@
+     let mut groups = vec![
+         GrindingGroup {
+             raw_error: gf(bridge::error_numerator(&params, BridgeMode::TwoLimbs)),
+-            sites: bridge::message_count(&params) as f64,
++            sites: (bridge::message_count(&params) + usize::from(experiment::corrected_sites())) as f64,
+             min_bits: 0,
+         },
+         GrindingGroup {
+@@ -646,7 +650,7 @@
+         // One boundary per ring-switch and support draw; a work weight only.
+         GrindingGroup {
+             raw_error: gf(256),
+-            sites: (geometry.packed_log() + 8) as f64,
++            sites: if experiment::corrected_sites() && target_bits == 128 { (2 + 2 * pcs.blocks.len()) as f64 } else { (geometry.packed_log() + 8) as f64 },
+             min_bits: 0,
+         },
+     ];
+@@ -655,14 +659,36 @@
+         sites: 1.0,
+         min_bits: block.native_bits.unwrap_or(0),
+     }));
+-    let fixed: f64 = fixed_terms(layout, target_bits, schedule)
+-        .iter()
+-        .map(|(_, error)| error)
+-        .sum();
++    let pcs_end = groups.len();
++    let terms = fixed_terms(layout, schedule, *carry_bits);
++    let optimize_prime = experiment::global() && target_bits == 128;
++    let fixed: f64 = if optimize_prime {
++        let d = layout.capacity().ilog2() as usize;
++        for (numerator, sites) in [
++            (10, 1),
++            (d, 1),
++            (3 * (COEFFICIENT_LOG + 1 + d), COEFFICIENT_LOG + 1 + d),
++            (3, 1),
++            (2 * (COEFFICIENT_LOG + 5 + d), COEFFICIENT_LOG + 5 + d),
++        ] {
++            groups.push(GrindingGroup { raw_error: numerator as f64 * 2f64.powi(-125), sites: sites as f64, min_bits: 1 });
++        }
++        terms[..2].iter().map(|(_, error)| error).sum()
++    } else {
++        terms.iter().map(|(_, error)| error).sum()
++    };
+     let budget = ALLOCATION_BUDGET * 2f64.powi(-(target_bits as i32)) - fixed;
+-    let bits = allocate(&groups, budget).map_err(error)?;
+-    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[3..]) {
++    let bits = experiment::allocate(&groups, budget, 3..pcs_end).map_err(error)?;
++    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[3..pcs_end]) {
+         block.bits = b;
++    }
++    if optimize_prime {
++        let p = &bits[pcs_end..];
++        *carry_bits = p[0];
++        schedule.norm_instance_bits = p[1];
++        schedule.norm_round_bits = p[2];
++        schedule.merge_bits = p[3];
++        schedule.binding_bits = p[4];
+     }
+     Ok((
+         BinaryGrinding {
+@@ -682,6 +708,137 @@
+ mod tests {
+     use super::*;
+     use num_bigint::BigUint;
++
++    /// Ceiling of a positive rational at a fixed binary resolution. This
++    /// independent check never exponentiates a floating-point security bound.
++    fn rational_dyadic_ceil(numerator: BigUint, denominator: &BigUint, scale: usize) -> BigUint {
++        ((numerator << scale) + denominator - 1u8) / denominator
++    }
++
++    fn exact_experimental_error(prepared: &PreparedFalconAlgebraic, scale: usize) -> BigUint {
++        let d = prepared.capacity().ilog2() as usize;
++        let mut error = BigUint::from(1u8) << (scale - 144);
++        error += BigUint::from(2 * N - 2 + d) << (scale - 149);
++        for (numerator, bits) in [
++            (10, prepared.carry_bits),
++            (d, prepared.schedule.norm_instance_bits),
++            (3 * (COEFFICIENT_LOG + 1 + d), prepared.schedule.norm_round_bits),
++            (3, prepared.schedule.merge_bits),
++            (2 * (COEFFICIENT_LOG + 5 + d), prepared.schedule.binding_bits),
++        ] {
++            error += BigUint::from(numerator) << (scale - 125 - bits as usize);
++        }
++        for (numerator, bits) in [
++            (bridge::error_numerator(&prepared.layout.bitz_params(), BridgeMode::TwoLimbs), prepared.grinding.bridge),
++            (2 * prepared.geometry.bit_log(), prepared.grinding.joint),
++            (256, prepared.grinding.opening),
++        ] {
++            error += BigUint::from(numerator) << (scale - 128 - bits as usize);
++        }
++        let config = prepared.ligerito.security();
++        let mut blocks = prepared.pcs_grinding.blocks.iter();
++        for (level_index, level) in config.levels.iter().enumerate() {
++            assert_eq!(level.regime, flock_core::pcs::ligerito::SoundnessRegime::Udr);
++            assert_eq!(level.proximity_loss, Some(0.0));
++            assert_eq!(level.ood_samples, 0);
++            // R = inverse rate, M = message columns, n = R*M, delta*n = (R-1)*M.
++            // gamma = delta/2 - 3/(delta*n), kept as an exact rational.
++            let rate = BigUint::from(1u8) << level.log_inv_rate;
++            let columns = BigUint::from(1u8) << level.log_msg_cols;
++            let codeword = &rate * &columns;
++            let delta_n = (&rate - 1u8) * &columns;
++            let denominator = 2u8 * &rate * &delta_n;
++            let gamma_numerator = (&rate - 1u8) * &delta_n - 6u8 * &rate;
++            let folds = if level_index == 0 { config.initial_k } else { level.k_recursive };
++            for round in 0..folds {
++                let block = blocks.next().unwrap();
++                assert_eq!(block.label, format!("fold/{level_index}/{round}"));
++                assert!(block.bits >= block.native_bits.unwrap_or(0));
++                // UDR pg = (gamma*n + 1)/2^128, plus two fold algebraic errors.
++                let numerator = &gamma_numerator * &codeword + 3u8 * &denominator;
++                error += rational_dyadic_ceil(numerator, &denominator, scale - 128 - block.bits as usize);
++            }
++            let block = blocks.next().unwrap();
++            assert_eq!(block.label, format!("queries/{level_index}"));
++            assert!(block.bits >= block.native_bits.unwrap_or(0));
++            let query_numerator = (&denominator - &gamma_numerator).pow(level.queries as u32);
++            let query_denominator = denominator.pow(level.queries as u32);
++            error += rational_dyadic_ceil(query_numerator, &query_denominator, scale - block.bits as usize);
++            let alpha_vars = level.queries.next_power_of_two().ilog2() as usize;
++            let suffix = usize::from(level_index + 1 == config.levels.len());
++            error += BigUint::from(alpha_vars + suffix) << (scale - 128 - block.bits as usize);
++            if level_index + 1 < config.levels.len() {
++                let block = blocks.next().unwrap();
++                assert_eq!(block.label, format!("introduce/{level_index}"));
++                error += BigUint::from(1u8) << (scale - 128 - block.bits as usize);
++            }
++        }
++        assert!(blocks.next().is_none());
++        error
++    }
++
++    #[test]
++    fn experimental_128_schedule_has_exact_rational_security_at_every_capacity() {
++        const SCALE: usize = 300;
++        let q = BigUint::from(Q as u64);
++        assert!(q.pow(11) - &q >= (BigUint::from(1u8) << 149usize));
++        let budget = BigUint::from(15u8) << (SCALE - 128 - 4);
++        // Process-level experiment controls are read by preparation only;
++        // run this test separately for each campaign configuration.
++        for log_batch in 0..=10 {
++            let batch = 1usize << log_batch;
++            let prepared = PreparedFalconAlgebraic::new(batch, 128).unwrap();
++            let bound = exact_experimental_error(&prepared, SCALE);
++            assert!(bound <= budget, "degree={N}, batch={batch}, error={bound}, budget={budget}");
++        }
++    }
++
++    #[test]
++    fn experimental_128_schedule_rejects_nonce_and_configuration_mutations() {
++        let mut prepared = PreparedFalconAlgebraic::new(1, 128).unwrap();
++        let (public, witness) = fixture(1);
++        let proof = prepared.prove(prepared.commit(public.clone(), witness).unwrap()).unwrap();
++        prepared.verify(&public, &proof).unwrap();
++        assert_eq!(proof.bridge.nonces.len(), bridge::message_count(&prepared.layout.bitz_params()) + 1);
++        assert_eq!(proof.opening_nonces.len(), 2 + 2 * prepared.pcs_grinding.blocks.len());
++        for mutation in 0..8 {
++            let mut bad = proof.clone();
++            match mutation {
++                0 => { bad.opening.ligerito.grinding_nonces.pop(); },
++                1 => { bad.opening.ligerito.fold_grinding_nonces.pop(); },
++                2 => { bad.opening_nonces.pop(); },
++                3 => { bad.pcs_nonces.push(0); },
++                4 => { bad.ring.projection_nonce = None; },
++                5 => { bad.arithmetic.norm.grinding_nonces.pop(); },
++                6 => { bad.arithmetic.binding_nonces.pop(); },
++                _ => { bad.opening.ligerito.initial_proof.opened_rows.pop(); },
++            }
++            assert!(prepared.verify(&public, &bad).is_err(), "mutation={mutation}");
++        }
++        let (_, digest) = prepared.transcript(&public, &proof.source_root).unwrap();
++        // Increasing any stored schedule component preserves security but
++        // must still reject a proof bound to the previous configuration.
++        for component in 0..9 {
++            let change = |p: &mut PreparedFalconAlgebraic, increase: bool| {
++                let bits = match component {
++                    0 => &mut p.carry_bits,
++                    1 => &mut p.schedule.norm_instance_bits,
++                    2 => &mut p.schedule.norm_round_bits,
++                    3 => &mut p.schedule.merge_bits,
++                    4 => &mut p.schedule.binding_bits,
++                    5 => &mut p.grinding.bridge,
++                    6 => &mut p.grinding.joint,
++                    7 => &mut p.grinding.opening,
++                    _ => &mut p.pcs_grinding.blocks[0].bits,
++                };
++                if increase { *bits += 1; } else { *bits -= 1; }
++            };
++            change(&mut prepared, true);
++            assert_ne!(prepared.transcript(&public, &proof.source_root).unwrap().1, digest);
++            assert!(prepared.verify(&public, &proof).is_err(), "component={component}");
++            change(&mut prepared, false);
++        }
++    }
+ 
+     pub(super) fn fixture(batch: usize) -> (FalconAlgebraicStatement, FalconAlgebraicWitness) {
+         let mut key = [0; N];
+--- /dev/null
++++ b/src/hybrid/grinding_experiment.rs
+@@ -0,0 +1,114 @@
++//! Temporary experiment controls, confined to the archived experiment checkout.
++//! Every derived difficulty/configuration is bound by Falcon's existing digest;
++//! environment variables are consulted only while preparing that configuration.
++use super::grinding_allocation::{self, GrindingGroup, MAX_BITS};
++use std::ops::Range;
++
++fn flag(name: &str) -> bool {
++    match std::env::var(name) {
++        Err(std::env::VarError::NotPresent) => false,
++        Ok(value) if value == "0" => false,
++        Ok(value) if value == "1" => true,
++        _ => panic!("invalid experimental boolean {name}"),
++    }
++}
++pub(crate) fn global() -> bool { flag("BITZ_EXPERIMENT_GLOBAL") }
++pub(crate) fn corrected_sites() -> bool { flag("BITZ_EXPERIMENT_CORRECTED_SITES") }
++
++pub(crate) fn allocate(groups: &[GrindingGroup], budget: f64, pcs: Range<usize>) -> Result<Vec<u32>, String> {
++    let baseline = grinding_allocation::allocate(groups, budget)?;
++    let Some(path) = std::env::var_os("BITZ_EXPERIMENT_COST_FILE") else { return Ok(baseline) };
++    let threads = std::env::var("BITZ_EXPERIMENT_COST_THREADS").map_err(|_| "missing cost-model thread class")?;
++    let input = std::fs::read(path).map_err(|e| e.to_string())?;
++    let data: serde_json::Value = serde_json::from_slice(&input).map_err(|e| e.to_string())?;
++    let read_curve = |name: &str| -> Result<Vec<f64>, String> {
++        let values = data["curves_unconstrained"][&threads][name].as_array().ok_or("missing cost curve")?;
++        if values.len() != 33 { return Err("cost curve must contain difficulties 0..32".into()) }
++        let result: Vec<f64> = values.iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect();
++        if result.iter().any(|v| !v.is_finite() || *v < 0.) {
++            return Err("cost curve must be finite and nonnegative".into())
++        }
++        Ok(result)
++    };
++    let spartan = read_curve("spartan")?;
++    let lig = read_curve("pcs")?;
++    let costs: Vec<Vec<f64>> = groups.iter().enumerate().map(|(i,g)| {
++        let curve = if pcs.contains(&i) { &lig } else { &spartan };
++        curve.iter().map(|c| c * g.sites).collect()
++    }).collect();
++    allocate_costed(groups, budget, &costs, baseline)
++}
++
++fn allocate_costed(groups: &[GrindingGroup], budget: f64, costs: &[Vec<f64>], fallback: Vec<u32>) -> Result<Vec<u32>, String> {
++    let error = |bits: &[u32]| groups.iter().zip(bits).map(|(g,b)| g.raw_error * 2f64.powi(-(*b as i32))).sum::<f64>();
++    let work = |bits: &[u32]| costs.iter().zip(bits).map(|(c,b)| c[*b as usize]).sum::<f64>();
++    // A harder search can be faster when it switches to the parallel kernel.
++    // Remove dominated difficulties before marginal allocation; every remaining
++    // step strictly increases modeled time while decreasing its error.
++    let choices: Vec<Vec<u32>> = groups.iter().enumerate().map(|(i,g)| {
++        (g.min_bits..=MAX_BITS).filter(|&b| ((b+1)..=MAX_BITS).all(|harder| costs[i][harder as usize] > costs[i][b as usize])).collect()
++    }).collect();
++    let mut bits: Vec<u32> = choices.iter().map(|c|c[0]).collect();
++    while error(&bits) > budget {
++        let mut best = None;
++        for (i,g) in groups.iter().enumerate() {
++            let b = bits[i];
++            let Some(&next) = choices[i].iter().find(|&&x|x>b) else {continue};
++            if g.raw_error == 0. {continue}
++            let ratio = g.raw_error * (2f64.powi(-(b as i32))-2f64.powi(-(next as i32))) / (costs[i][next as usize]-costs[i][b as usize]);
++            if best.is_none_or(|(_,_,score)|ratio>score) {best=Some((i,next,ratio))}
++        }
++        let (i,next,_) = best.ok_or("unreachable costed grinding budget")?;
++        bits[i]=next;
++    }
++    let mut order:Vec<usize>=(0..groups.len()).collect();
++    order.sort_by(|&i,&j|costs[j][bits[j] as usize].total_cmp(&costs[i][bits[i] as usize]).then(i.cmp(&j)));
++    for i in order {
++        while let Some(&previous) = choices[i].iter().rev().find(|&&x|x<bits[i]) {
++            let saved=bits[i];bits[i]=previous;
++            if error(&bits)>budget {bits[i]=saved;break}
++        }
++    }
++    let fallback: Vec<u32> = fallback.iter().enumerate().map(|(i,&b)| *choices[i].iter().find(|&&x|x>=b).unwrap()).collect();
++    if work(&fallback) < work(&bits) {bits=fallback}
++    // Exchange a few bits between groups to cross dispatch-cost discontinuities.
++    loop {
++        let e=error(&bits);let w=work(&bits);let mut best=None;
++        for i in 0..groups.len() {
++            for down in 1..=3.min(bits[i]-groups[i].min_bits) {
++                for j in 0..groups.len() {
++                    if i==j {continue}
++                    for up in 1..=3.min(MAX_BITS-bits[j]) {
++                        let next_e=e+groups[i].raw_error*2f64.powi(-(bits[i] as i32))*(2f64.powi(down as i32)-1.)
++                            +groups[j].raw_error*2f64.powi(-(bits[j] as i32))*(2f64.powi(-(up as i32))-1.);
++                        let next_w=w+costs[i][(bits[i]-down) as usize]-costs[i][bits[i] as usize]
++                            +costs[j][(bits[j]+up) as usize]-costs[j][bits[j] as usize];
++                        if next_e<=budget && next_w<w-1e-9 && best.is_none_or(|(bw,_,_,_,_)|next_w<bw) {
++                            // Check the canonical summation too, avoiding acceptance due to cancellation.
++                            let mut candidate=bits.clone();candidate[i]-=down;candidate[j]+=up;
++                            if error(&candidate)<=budget && work(&candidate)<w-1e-9 { best=Some((work(&candidate),i,j,down,up)); }
++                        }
++                    }
++                }
++            }
++        }
++        let Some((_,i,j,down,up))=best else {break};bits[i]-=down;bits[j]+=up;
++    }
++    if error(&bits)>budget {return Err("costed allocation misses composed budget".into())}
++    Ok(bits)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn costed_allocation_trades_work_without_weakening_error_budget() {
++        let groups=[GrindingGroup{raw_error:1.,sites:1.,min_bits:0},GrindingGroup{raw_error:1.,sites:1.,min_bits:0}];
++        let fallback=grinding_allocation::allocate(&groups,0.625).unwrap();
++        let costs=vec![(0..33).map(|b|10.*2f64.powi(b)).collect(),(0..33).map(|b|2f64.powi(b)).collect()];
++        let chosen=allocate_costed(&groups,0.625,&costs,fallback.clone()).unwrap();
++        let e=groups.iter().zip(&chosen).map(|(g,b)|g.raw_error*2f64.powi(-(*b as i32))).sum::<f64>();
++        let work=|b:&[u32]|costs.iter().zip(b).map(|(c,b)|c[*b as usize]).sum::<f64>();
++        assert!(e<=0.625);assert!(work(&chosen)<work(&fallback));assert_eq!(chosen,vec![1,3]);
++    }
++}

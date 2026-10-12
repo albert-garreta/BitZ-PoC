@@ -1,0 +1,230 @@
+push   %rbp
+push   %r15
+push   %r14
+push   %r13
+push   %r12
+push   %rbx
+sub    $0x78,%rsp
+mov    %edx,0xc(%rsp)
+mov    %rsi,%r12
+mov    %rdi,%r15
+mov    RIP(%rip),%rbx
+cmp    $0x2,%rbx
+jbe    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3e>
+mov    0xc(%rsp),%r13d
+lea    -0x1(%r13),%eax
+cmp    $0x100,%eax
+jae    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x195>
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1ca>
+mov    RIP(%rip),%rax
+cmp    $0x2,%rax
+ja     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1a2>
+movzbl RIP(%rip),%eax
+test   %al,%al
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1a2>
+movzbl %al,%eax
+cmp    $0x1,%eax
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x87>
+cmp    $0x2,%eax
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0xc2>
+lea    RIP(%rip),%rdi
+call   TARGET <<tracing_core::callsite::DefaultCallsite>::register>
+test   %al,%al
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1a2>
+movzbl %al,%eax
+cmp    $0x2,%eax
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0xc2>
+mov    RIP(%rip),%rsi
+mov    RIP(%rip),%rax
+lea    RIP(%rip),%rdi
+cmp    $0x2,%rax
+lea    RIP(%rip),%rax
+cmove  RIP(%rip),%rdi
+cmove  RIP(%rip),%rax
+call   *0x28(%rax)
+test   %al,%al
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1a2>
+mov    RIP(%rip),%r14
+lea    0xc(%rsp),%rcx
+movq   $0x1,0x58(%rsp)
+lea    RIP(%rip),%r13
+lea    RIP(%rip),%rbp
+lea    0x10(%rsp),%rsi
+mov    %rcx,0x48(%rsp)
+lea    RIP(%rip),%rcx
+mov    %rcx,0x50(%rsp)
+lea    0x48(%rsp),%rcx
+mov    %rcx,0x60(%rsp)
+movq   $0x1,0x68(%rsp)
+lea    0x30(%r14),%rax
+mov    %rax,0x70(%rsp)
+mov    RIP(%rip),%rax
+mov    %r14,0x20(%rsp)
+cmp    $0x2,%rax
+lea    0x58(%rsp),%rax
+cmove  RIP(%rip),%r13
+cmove  RIP(%rip),%rbp
+mov    %rax,0x28(%rsp)
+movq   $0x1,0x10(%rsp)
+mov    %r13,%rdi
+call   *0x38(%rbp)
+movq   $0x0,0x10(%rsp)
+mov    %r13,0x18(%rsp)
+mov    %rbp,0x20(%rsp)
+mov    %rax,0x28(%rsp)
+lea    0x28(%rsp),%rsi
+mov    %rax,0x38(%rsp)
+mov    %r14,0x30(%rsp)
+mov    %r13,%rdi
+mov    %rbp,0x40(%rsp)
+call   *0x60(%rbp)
+xor    %r14d,%r14d
+mov    0xc(%rsp),%r13d
+lea    -0x1(%r13),%eax
+cmp    $0x100,%eax
+jb     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1ca>
+movl   $0x0,(%r15)
+mov    %r13d,0x4(%r15)
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1fb>
+mov    $0x2,%r14d
+movq   $0x2,0x10(%rsp)
+movq   $0x0,0x30(%rsp)
+mov    0xc(%rsp),%r13d
+lea    -0x1(%r13),%eax
+cmp    $0x100,%eax
+jae    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x195>
+cmp    $0xb,%r13d
+jbe    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x264>
+mov    $0x20,%esi
+mov    %r12,%rdi
+mov    %r13d,%edx
+call   TARGET <bitz::utils::blake3x4::smallest_pow_nonce>
+mov    $0x2,%ecx
+cmp    $0x1,%rax
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x1f8>
+mov    $0xffffffff,%ecx
+mov    %rdx,0x8(%r15)
+mov    %ecx,(%r15)
+cmp    $0x3,%rbx
+mov    0x40(%rsp),%rbx
+setae  %al
+cmp    $0x2,%r14
+sete   %cl
+or     %al,%cl
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x336>
+mov    0x18(%rsp),%rdi
+lea    0x28(%rsp),%rsi
+cmp    $0x1,%r14
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x236>
+mov    0x10(%rbx),%rax
+dec    %rax
+and    $0xfffffffffffffff0,%rax
+lea    0x10(%rdi,%rax,1),%rdi
+call   *0x68(%rbx)
+mov    0x18(%rsp),%rdi
+test   $0x1,%r14b
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x254>
+mov    0x10(%rbx),%rax
+dec    %rax
+and    $0xfffffffffffffff0,%rax
+lea    0x10(%rdi,%rax,1),%rdi
+mov    0x38(%rsp),%rsi
+call   *0x80(%rbx)
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x319>
+mov    $0x20,%esi
+mov    $0xffffffffffffffff,%rcx
+mov    %r12,%rdi
+xor    %edx,%edx
+mov    %r13d,%r8d
+call   TARGET <bitz::utils::blake3x4::first_pow_nonce>
+test   $0x1,%al
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x286>
+mov    %rdx,%rbp
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x2ad>
+mov    $0x20,%esi
+mov    $0xffffffffffffffff,%rdx
+mov    $0xffffffffffffffff,%rbp
+mov    %r12,%rdi
+mov    %r13d,%ecx
+call   TARGET <bitz::utils::blake3x4::pow_ok>
+mov    $0x2,%ecx
+test   %al,%al
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x2b6>
+mov    $0xffffffff,%ecx
+mov    %rbp,0x8(%r15)
+cmp    $0x3,%rbx
+mov    0x40(%rsp),%rbx
+mov    %ecx,(%r15)
+setae  %al
+cmp    $0x2,%r14
+sete   %cl
+or     %al,%cl
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x336>
+mov    0x18(%rsp),%rdi
+lea    0x28(%rsp),%rsi
+cmp    $0x1,%r14
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x2f0>
+mov    0x10(%rbx),%rax
+dec    %rax
+and    $0xfffffffffffffff0,%rax
+lea    0x10(%rdi,%rax,1),%rdi
+call   *0x68(%rbx)
+mov    0x18(%rsp),%rdi
+test   $0x1,%r14b
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x30e>
+mov    0x10(%rbx),%rax
+dec    %rax
+and    $0xfffffffffffffff0,%rax
+lea    0x10(%rdi,%rax,1),%rdi
+mov    0x38(%rsp),%rsi
+call   *0x80(%rbx)
+test   %r14,%r14
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x336>
+mov    0x18(%rsp),%rax
+lock decq (%rax)
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x336>
+mov    0x18(%rsp),%rdi
+mov    %rbx,%rsi
+call   TARGET <<alloc::sync::Arc<dyn tracing_core::subscriber::Subscriber + core::marker::Send + core::marker::Sync>>::drop_slow>
+add    $0x78,%rsp
+pop    %rbx
+pop    %r12
+pop    %r13
+pop    %r14
+pop    %r15
+pop    %rbp
+ret
+mov    %rax,%r15
+lea    0x10(%rsp),%rdi
+call   TARGET <core::ptr::drop_glue::<core::option::Option<tracing::span::Inner>>>
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3ba>
+call   TARGET <core::panicking::panic_in_cleanup>
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x36f>
+mov    %rax,%r15
+lea    0x10(%rsp),%rdi
+call   TARGET <core::ptr::drop_glue::<core::option::Option<tracing::span::Inner>>>
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3ba>
+call   TARGET <core::panicking::panic_in_cleanup>
+mov    %rax,%r15
+jmp    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3b0>
+mov    %rax,%r15
+cmp    $0x2,%rbx
+ja     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3ba>
+cmp    $0x2,%r14
+je     TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3b0>
+mov    0x18(%rsp),%rdi
+lea    0x28(%rsp),%rsi
+cmp    $0x1,%r14
+jne    TARGET <bitz::piop::spartan::grinding::find_grinding_nonce+0x3a8>
+mov    0x40(%rsp),%rax
+mov    0x10(%rax),%rax
+dec    %rax
+and    $0xfffffffffffffff0,%rax
+lea    0x10(%rdi,%rax,1),%rdi
+mov    0x40(%rsp),%rax
+call   *0x68(%rax)
+lea    0x10(%rsp),%rdi
+call   TARGET <core::ptr::drop_glue::<tracing::span::Span>>
+mov    %r15,%rdi
+call   TARGET <_Unwind_Resume@plt>
+call   TARGET <core::panicking::panic_in_cleanup>

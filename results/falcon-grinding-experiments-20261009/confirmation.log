@@ -1,0 +1,156 @@
+arithmetic-1024-t8-s45-original: total=116.34 prove=101.31 verify=38.36 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s45-baseline: total=116.11 prove=100.56 verify=38.06 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s45-weighted_queries120: total=116.81 prove=100.79 verify=38.06 bits=128.093151 sibling=0.00%
+full-1024-t16-s45-original: total=670.88 prove=553.49 verify=54.32 bits=128.093148 sibling=1.97%
+Discarding noisy timing attempt: full-1024-t16-s45-weighted_external
+Discarding noisy timing attempt: full-1024-t16-s45-weighted_external
+full-1024-t16-s45-weighted_external: total=665.68 prove=547.08 verify=54.16 bits=128.093263 sibling=1.86%
+Discarding noisy timing attempt: full-1024-t16-s45-baseline
+Discarding noisy timing attempt: full-1024-t16-s45-baseline
+full-1024-t16-s45-baseline: total=677.41 prove=558.50 verify=53.95 bits=128.093148 sibling=1.95%
+arithmetic-512-t8-s45-original: total=60.05 prove=54.27 verify=20.76 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s45-weighted: total=59.70 prove=53.81 verify=20.44 bits=128.094500 sibling=1.76%
+arithmetic-512-t8-s45-baseline: total=59.13 prove=53.39 verify=19.93 bits=128.093311 sibling=0.00%
+Discarding noisy timing attempt: full-512-t16-s45-weighted_external
+Discarding noisy timing attempt: full-512-t16-s45-weighted_external
+full-512-t16-s45-weighted_external: total=346.04 prove=284.35 verify=32.93 bits=128.093110 sibling=1.76%
+full-512-t16-s45-original: total=350.22 prove=287.60 verify=32.61 bits=128.093112 sibling=1.50%
+Discarding noisy timing attempt: full-512-t16-s45-baseline
+full-512-t16-s45-baseline: total=348.01 prove=285.73 verify=32.68 bits=128.093112 sibling=1.75%
+arithmetic-512-t8-s46-weighted: total=59.57 prove=53.82 verify=20.44 bits=128.094500 sibling=0.59%
+arithmetic-512-t8-s46-baseline: total=60.29 prove=54.19 verify=20.48 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s46-original: total=60.23 prove=54.39 verify=20.30 bits=128.093311 sibling=1.14%
+full-512-t16-s46-original: total=354.21 prove=292.61 verify=32.35 bits=128.093112 sibling=1.00%
+full-512-t16-s46-weighted_external: total=354.02 prove=291.92 verify=32.76 bits=128.093110 sibling=1.73%
+full-512-t16-s46-baseline: total=356.29 prove=293.87 verify=32.86 bits=128.093112 sibling=1.49%
+full-1024-t16-s46-baseline: total=677.26 prove=558.81 verify=54.19 bits=128.093148 sibling=1.69%
+Discarding noisy timing attempt: full-1024-t16-s46-original
+Discarding noisy timing attempt: full-1024-t16-s46-original
+Discarding noisy timing attempt: full-1024-t16-s46-original
+full-1024-t16-s46-original: total=675.38 prove=558.84 verify=54.34 bits=128.093148 sibling=1.55%
+Discarding noisy timing attempt: full-1024-t16-s46-weighted_external
+full-1024-t16-s46-weighted_external: total=668.11 prove=549.78 verify=53.95 bits=128.093263 sibling=1.05%
+arithmetic-1024-t8-s46-weighted_queries120: total=115.46 prove=99.58 verify=37.56 bits=128.093151 sibling=0.58%
+arithmetic-1024-t8-s46-baseline: total=116.20 prove=100.54 verify=38.25 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s46-original: total=114.68 prove=99.81 verify=37.82 bits=128.093245 sibling=0.29%
+Discarding noisy timing attempt: full-1024-t16-s47-baseline
+full-1024-t16-s47-baseline: total=669.95 prove=551.37 verify=54.07 bits=128.093148 sibling=1.70%
+Discarding noisy timing attempt: full-1024-t16-s47-weighted_external
+full-1024-t16-s47-weighted_external: total=671.22 prove=554.33 verify=54.16 bits=128.093263 sibling=1.44%
+full-1024-t16-s47-original: total=666.07 prove=550.22 verify=54.39 bits=128.093148 sibling=1.31%
+arithmetic-512-t8-s47-weighted: total=59.53 prove=53.74 verify=20.14 bits=128.094500 sibling=0.00%
+arithmetic-512-t8-s47-baseline: total=59.57 prove=53.96 verify=20.60 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s47-original: total=60.20 prove=54.43 verify=20.75 bits=128.093311 sibling=1.13%
+arithmetic-1024-t8-s47-original: total=115.50 prove=100.67 verify=38.49 bits=128.093245 sibling=0.00%
+arithmetic-1024-t8-s47-weighted_queries120: total=115.83 prove=100.14 verify=38.04 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s47-baseline: total=115.73 prove=99.99 verify=37.76 bits=128.093245 sibling=0.28%
+full-512-t16-s47-weighted_external: total=351.09 prove=289.11 verify=32.65 bits=128.093110 sibling=1.00%
+Discarding noisy timing attempt: full-512-t16-s47-original
+full-512-t16-s47-original: total=350.12 prove=287.65 verify=32.56 bits=128.093112 sibling=1.75%
+Discarding noisy timing attempt: full-512-t16-s47-baseline
+full-512-t16-s47-baseline: total=352.09 prove=289.78 verify=32.78 bits=128.093112 sibling=1.75%
+full-512-t16-s48-original: total=348.22 prove=286.34 verify=32.69 bits=128.093112 sibling=1.75%
+full-512-t16-s48-baseline: total=347.32 prove=285.44 verify=32.70 bits=128.093112 sibling=0.50%
+full-512-t16-s48-weighted_external: total=348.18 prove=284.50 verify=32.84 bits=128.093110 sibling=1.01%
+arithmetic-512-t8-s48-baseline: total=59.60 prove=53.86 verify=20.30 bits=128.093311 sibling=1.70%
+arithmetic-512-t8-s48-original: total=59.72 prove=54.09 verify=20.44 bits=128.093311 sibling=0.00%
+arithmetic-512-t8-s48-weighted: total=59.75 prove=53.71 verify=20.21 bits=128.094500 sibling=0.59%
+arithmetic-1024-t8-s48-original: total=115.78 prove=100.89 verify=38.86 bits=128.093245 sibling=0.57%
+arithmetic-1024-t8-s48-baseline: total=115.44 prove=99.77 verify=37.35 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s48-weighted_queries120: total=115.15 prove=99.85 verify=37.12 bits=128.093151 sibling=0.86%
+full-1024-t16-s48-baseline: total=669.91 prove=554.08 verify=54.10 bits=128.093148 sibling=1.18%
+full-1024-t16-s48-weighted_external: total=668.54 prove=551.14 verify=54.04 bits=128.093263 sibling=1.58%
+Discarding noisy timing attempt: full-1024-t16-s48-original
+full-1024-t16-s48-original: total=670.77 prove=551.91 verify=54.44 bits=128.093148 sibling=1.18%
+full-1024-t16-s49-original: total=676.94 prove=558.65 verify=54.43 bits=128.093148 sibling=1.95%
+Discarding noisy timing attempt: full-1024-t16-s49-weighted_external
+Discarding noisy timing attempt: full-1024-t16-s49-weighted_external
+Discarding noisy timing attempt: full-1024-t16-s49-weighted_external
+full-1024-t16-s49-weighted_external: total=669.62 prove=553.00 verify=54.12 bits=128.093263 sibling=1.31%
+full-1024-t16-s49-baseline: total=677.47 prove=558.71 verify=53.87 bits=128.093148 sibling=1.82%
+arithmetic-1024-t8-s49-baseline: total=116.66 prove=101.22 verify=38.00 bits=128.093245 sibling=0.85%
+arithmetic-1024-t8-s49-original: total=116.94 prove=102.07 verify=38.79 bits=128.093245 sibling=0.28%
+arithmetic-1024-t8-s49-weighted_queries120: total=115.32 prove=99.98 verify=38.13 bits=128.093151 sibling=0.87%
+full-512-t16-s49-original: total=348.11 prove=285.73 verify=32.49 bits=128.093112 sibling=1.75%
+Discarding noisy timing attempt: full-512-t16-s49-baseline
+full-512-t16-s49-baseline: total=348.26 prove=285.69 verify=32.67 bits=128.093112 sibling=1.51%
+full-512-t16-s49-weighted_external: total=353.07 prove=288.78 verify=32.75 bits=128.093110 sibling=1.99%
+arithmetic-512-t8-s49-weighted: total=59.94 prove=53.79 verify=20.23 bits=128.094500 sibling=0.00%
+arithmetic-512-t8-s49-original: total=60.32 prove=54.54 verify=20.69 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s49-baseline: total=59.68 prove=54.07 verify=20.36 bits=128.093311 sibling=0.57%
+full-1024-t16-s50-original: total=665.42 prove=549.89 verify=54.24 bits=128.093148 sibling=1.32%
+Discarding noisy timing attempt: full-1024-t16-s50-weighted_external
+full-1024-t16-s50-weighted_external: total=668.49 prove=549.19 verify=53.99 bits=128.093263 sibling=1.58%
+full-1024-t16-s50-baseline: total=665.46 prove=548.06 verify=54.41 bits=128.093148 sibling=1.05%
+arithmetic-1024-t8-s50-baseline: total=115.94 prove=100.33 verify=37.67 bits=128.093245 sibling=0.57%
+arithmetic-1024-t8-s50-weighted_queries120: total=115.73 prove=99.92 verify=37.14 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s50-original: total=115.52 prove=100.54 verify=38.19 bits=128.093245 sibling=0.57%
+arithmetic-512-t8-s50-baseline: total=60.00 prove=54.21 verify=20.24 bits=128.093311 sibling=0.00%
+arithmetic-512-t8-s50-original: total=60.24 prove=54.51 verify=20.72 bits=128.093311 sibling=0.00%
+arithmetic-512-t8-s50-weighted: total=58.89 prove=53.15 verify=20.11 bits=128.094500 sibling=0.60%
+Discarding noisy timing attempt: full-512-t16-s50-weighted_external
+full-512-t16-s50-weighted_external: total=348.45 prove=285.78 verify=32.74 bits=128.093110 sibling=2.00%
+full-512-t16-s50-original: total=347.43 prove=284.42 verify=32.98 bits=128.093112 sibling=1.75%
+full-512-t16-s50-baseline: total=350.59 prove=285.96 verify=33.02 bits=128.093112 sibling=1.75%
+arithmetic-512-t8-s51-original: total=59.39 prove=53.89 verify=20.06 bits=128.093311 sibling=1.70%
+arithmetic-512-t8-s51-baseline: total=59.00 prove=53.31 verify=19.90 bits=128.093311 sibling=0.57%
+arithmetic-512-t8-s51-weighted: total=59.30 prove=53.54 verify=19.92 bits=128.094500 sibling=0.59%
+arithmetic-1024-t8-s51-baseline: total=115.49 prove=99.64 verify=37.66 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s51-original: total=114.74 prove=100.00 verify=38.37 bits=128.093245 sibling=0.57%
+arithmetic-1024-t8-s51-weighted_queries120: total=115.50 prove=100.14 verify=38.08 bits=128.093151 sibling=0.86%
+Discarding noisy timing attempt: full-512-t16-s51-baseline
+full-512-t16-s51-baseline: total=351.73 prove=290.71 verify=32.70 bits=128.093112 sibling=2.00%
+Discarding noisy timing attempt: full-512-t16-s51-original
+full-512-t16-s51-original: total=351.22 prove=289.14 verify=32.67 bits=128.093112 sibling=1.49%
+full-512-t16-s51-weighted_external: total=350.47 prove=287.85 verify=32.95 bits=128.093110 sibling=1.50%
+Discarding noisy timing attempt: full-1024-t16-s51-original
+full-1024-t16-s51-original: total=670.23 prove=553.77 verify=54.36 bits=128.093148 sibling=1.57%
+full-1024-t16-s51-weighted_external: total=675.55 prove=558.35 verify=54.38 bits=128.093263 sibling=1.57%
+full-1024-t16-s51-baseline: total=674.08 prove=556.97 verify=54.05 bits=128.093148 sibling=1.17%
+arithmetic-1024-t8-s52-original: total=115.64 prove=100.39 verify=38.29 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s52-weighted_queries120: total=115.61 prove=100.22 verify=37.46 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s52-baseline: total=114.67 prove=99.38 verify=37.26 bits=128.093245 sibling=0.86%
+full-1024-t16-s52-original: total=668.29 prove=551.85 verify=54.32 bits=128.093148 sibling=1.58%
+full-1024-t16-s52-baseline: total=665.48 prove=547.93 verify=54.07 bits=128.093148 sibling=1.32%
+full-1024-t16-s52-weighted_external: total=665.25 prove=548.93 verify=53.91 bits=128.093263 sibling=1.45%
+arithmetic-512-t8-s52-baseline: total=59.49 prove=53.88 verify=20.02 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s52-weighted: total=59.31 prove=53.46 verify=20.13 bits=128.094500 sibling=1.18%
+arithmetic-512-t8-s52-original: total=60.57 prove=54.81 verify=21.09 bits=128.093311 sibling=0.00%
+full-512-t16-s52-baseline: total=352.01 prove=289.43 verify=33.12 bits=128.093112 sibling=1.75%
+full-512-t16-s52-original: total=351.28 prove=288.65 verify=33.19 bits=128.093112 sibling=1.24%
+Discarding noisy timing attempt: full-512-t16-s52-weighted_external
+full-512-t16-s52-weighted_external: total=347.44 prove=285.43 verify=32.69 bits=128.093110 sibling=0.50%
+arithmetic-512-t8-s53-baseline: total=59.84 prove=53.97 verify=20.06 bits=128.093311 sibling=1.12%
+arithmetic-512-t8-s53-original: total=60.45 prove=54.71 verify=20.88 bits=128.093311 sibling=0.56%
+arithmetic-512-t8-s53-weighted: total=59.71 prove=53.67 verify=20.42 bits=128.094500 sibling=0.59%
+full-1024-t16-s53-baseline: total=681.51 prove=564.58 verify=54.13 bits=128.093148 sibling=1.94%
+full-1024-t16-s53-weighted_external: total=667.15 prove=550.10 verify=54.02 bits=128.093263 sibling=1.31%
+full-1024-t16-s53-original: total=686.04 prove=565.85 verify=54.58 bits=128.093148 sibling=1.42%
+full-512-t16-s53-baseline: total=349.86 prove=287.40 verify=32.62 bits=128.093112 sibling=0.75%
+full-512-t16-s53-weighted_external: total=349.40 prove=287.66 verify=32.73 bits=128.093110 sibling=1.99%
+full-512-t16-s53-original: total=348.48 prove=285.20 verify=32.71 bits=128.093112 sibling=1.50%
+arithmetic-1024-t8-s53-baseline: total=116.06 prove=100.38 verify=38.74 bits=128.093245 sibling=0.85%
+arithmetic-1024-t8-s53-original: total=115.46 prove=100.45 verify=38.52 bits=128.093245 sibling=0.29%
+arithmetic-1024-t8-s53-weighted_queries120: total=115.87 prove=100.56 verify=38.14 bits=128.093151 sibling=0.58%
+full-512-t16-s54-baseline: total=345.69 prove=283.71 verify=33.02 bits=128.093112 sibling=1.01%
+Discarding noisy timing attempt: full-512-t16-s54-weighted_external
+full-512-t16-s54-weighted_external: total=346.55 prove=284.75 verify=32.82 bits=128.093110 sibling=1.26%
+Discarding noisy timing attempt: full-512-t16-s54-original
+Discarding noisy timing attempt: full-512-t16-s54-original
+full-512-t16-s54-original: total=348.20 prove=285.98 verify=32.76 bits=128.093112 sibling=1.76%
+Discarding noisy timing attempt: full-1024-t16-s54-baseline
+Discarding noisy timing attempt: full-1024-t16-s54-baseline
+Discarding noisy timing attempt: full-1024-t16-s54-baseline
+Discarding noisy timing attempt: full-1024-t16-s54-baseline
+full-1024-t16-s54-baseline: total=670.91 prove=552.49 verify=53.91 bits=128.093148 sibling=1.57%
+Discarding noisy timing attempt: full-1024-t16-s54-original
+full-1024-t16-s54-original: total=669.10 prove=552.83 verify=54.57 bits=128.093148 sibling=1.71%
+Discarding noisy timing attempt: full-1024-t16-s54-weighted_external
+full-1024-t16-s54-weighted_external: total=676.87 prove=559.35 verify=54.02 bits=128.093263 sibling=1.95%
+arithmetic-512-t8-s54-baseline: total=59.82 prove=54.12 verify=20.21 bits=128.093311 sibling=1.13%
+arithmetic-512-t8-s54-weighted: total=60.35 prove=54.46 verify=20.97 bits=128.094500 sibling=1.18%
+arithmetic-512-t8-s54-original: total=60.35 prove=54.74 verify=20.92 bits=128.093311 sibling=0.56%
+arithmetic-1024-t8-s54-weighted_queries120: total=115.55 prove=99.89 verify=37.83 bits=128.093151 sibling=0.29%
+arithmetic-1024-t8-s54-baseline: total=116.51 prove=100.83 verify=38.00 bits=128.093245 sibling=1.14%
+arithmetic-1024-t8-s54-original: total=115.79 prove=101.05 verify=38.79 bits=128.093245 sibling=0.29%
+FRESH-INPUT CONFIRMATION COMPLETE

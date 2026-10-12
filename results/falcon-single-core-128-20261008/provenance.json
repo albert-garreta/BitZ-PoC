@@ -1,0 +1,18 @@
+{
+  "git_head": "ac2b42feae0cfcfd86eda449a42edb4942cfa15f",
+  "binaries": {
+    "falcon_algebraic": {
+      "path": "/tmp/falcon-single-core-128-20261008-binaries/falcon_algebraic",
+      "sha256": "3515192027be488abe6213bfcaac43a7801e9b22e556d7968829a57fa5d13d01"
+    },
+    "falcon_hybrid": {
+      "path": "/tmp/falcon-single-core-128-20261008-binaries/falcon_hybrid",
+      "sha256": "7fc5eb78cb35c3879a309613191d7bf1abb583356b1bb8ef59596fe4d5d76331"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "cpu": 6,
+  "sibling": 22,
+  "governor": "powersave",
+  "timestamp_utc": "2026-10-08T16:08:13Z"
+}

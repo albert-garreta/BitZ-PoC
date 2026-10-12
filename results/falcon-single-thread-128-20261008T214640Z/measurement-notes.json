@@ -1,0 +1,16 @@
+{
+  "workload": "1024 distinct original-Falcon signatures per configuration; fn-dsa 0.3.0; 32-byte messages; seed 42; matching input digest between full and arithmetic at each degree",
+  "trials": "One warm-up followed by five measured trials in one fresh process per configuration; table timings are medians; every proof including warm-ups verified",
+  "machine": "AMD Ryzen 9 9950X3D; CPU 6, SMT sibling 22; 96 MiB shared L3; powersave governor with boost enabled",
+  "single_core": "RAYON_NUM_THREADS=1 and --threads 1; both global and auxiliary pools have one worker; main and all worker/helper threads pinned to CPU 6. Runtime helper threads exist but cannot execute simultaneously on multiple CPUs. Affinities sampled every second. Each configuration requires CPU 6 and its SMT sibling CPU 22 below 2% busy in a preceding five-second check; per-run sibling load recorded and checked below 2%. No exclusive OS core reservation. SMT sibling busy percentage was exactly 0% in the aggregate CPU-tick accounting during every run.",
+  "build": "Current checkout 33f266903921270df4be76aff538e637aed9ac6b with pre-existing user changes; release opt-level 3, -C target-cpu=native, fat LTO and one codegen unit. Offline locked build; logs, source hashes and copied executable hashes retained. Tracing and allocator instrumentation disabled.",
+  "security": "Explicit 128-bit target under repository computational grinding model; composed algebraic/IOP security accounting checked >=128 for all four configurations; BLAKE3 collision bound stated separately by implementation",
+  "prover_time": "Prepared prove call, excluding initial witness commitment",
+  "commit_plus_prover_time": "Checked witness derivation, packing, initial source commitment and proof generation; configuration setup and input generation excluded. Public-target hashing is external for arithmetic.",
+  "verifier_time": "Prepared verification against public statement, using one configured worker; setup excluded",
+  "peak_memory": "Process-wide maximum resident set (RSS) from Linux wait4 rusage, including preparation, warm-up, persistent caches and measured trials; not phase-isolated prover heap",
+  "proof_size": "Canonical stored payload including 32-byte source commitment root, excluding public inputs and outer framing. Full API excludes its external root, so add 32 bytes; arithmetic API already includes root. No complete Falcon transport codec is defined.",
+  "scope": "Full includes SHAKE/HashToPoint and arithmetic relation. Arithmetic proves short s1,s2 for public h,t and assumes caller establishes desired HashToPoint target.",
+  "units": "1 KiB = 1024 bytes; 1 MiB = 1024 KiB",
+  "peak_performance": "Fastest observed throughput among five measured repeats of the fixed seed-42 batch: 1024 divided by minimum prover or commit-plus-prover seconds; not a hardware maximum or representative average across random seeds."
+}

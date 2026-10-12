@@ -267,6 +267,10 @@ name = "grind_probe"
 required-features = ["parallel", "span-metrics"]
 
 [[example]]
+name = "falcon_size_breakdown"
+required-features = ["falcon-hybrid"]
+
+[[example]]
 name = "hybrid_probe"
 required-features = ["span-metrics", "hybrid"]
 

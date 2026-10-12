@@ -1,0 +1,79 @@
+{
+  "status": "not_qualified",
+  "candidate_version": "v6",
+  "created_at": 1791332223.7652946,
+  "candidate_frozen": true,
+  "measurements_started": true,
+  "planned_changes": [
+    "Compile-time 11-entry PIOP schedule matching the old solver exactly. No production grinding changes."
+  ],
+  "baseline_reused_from": "baseline-build-v4.json",
+  "baseline_binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+  "baseline_binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+  "baseline_source_root": "/tmp/falcon-compact-opening-baseline-v4",
+  "baseline_source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+  "compiler_matches_baseline": true,
+  "cargo_lock_matches_baseline": true,
+  "benchmark_affinity_overlay_matches_baseline": true,
+  "harness_sha256": "5839ec7defd239c847d0fcb71590f7bcecf8819bc71fd5fa30f35fab52a89493",
+  "cpu_affinity_policy": "linux-x86_64-falcon-serial-aux-pinned-v1",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "qualification_method": "Unchanged: all 16 cells, exactly seeds 42\u2013101, one warmup and three measured proofs, 16 workers, paired arithmetic-mean bootstrap upper 95% bound <= 1.02 for both metrics; mean payload strictly smaller.",
+  "proof_equivalence_reference": {
+    "version": "v5",
+    "candidate_binary_sha256": "94793f886ae34d32f6fa12eacdaa7045c394b56524c77f265a72117169aacd6c",
+    "directory": "v5/cold",
+    "required_cases": 16,
+    "fields": [
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "source_root",
+      "input_digest",
+      "security_terms",
+      "grinding_diagnostics",
+      "protocol"
+    ]
+  },
+  "planned_source": "/tmp/falcon-compact-opening-candidate-v6",
+  "planned_binary": "/tmp/falcon-compact-opening-binaries/candidate-v6",
+  "planned_builds": "builds-v6.json",
+  "planned_output": "v6",
+  "cache_reference_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+  "duration_estimate_minutes": [
+    80,
+    90
+  ],
+  "diagnostics_estimate_minutes": 2.5,
+  "prior_evidence_preserved": [
+    "v1",
+    "v2",
+    "v3 (unmeasured)",
+    "v4",
+    "v5",
+    "v5/repeated-profile128-seed42",
+    "v5/repeated-profile128-seed43"
+  ],
+  "run_condition": "root finalizes production; source frozen and canonical build succeeds; integration correctness passes; explicit CPU handoff",
+  "candidate_source_manifest_sha256": "4b7df033c3e5a80a6fa495406ae8f5092ca846a2e6d9ae01aee9453af9352594",
+  "candidate_binary_sha256": "eefeeb4f57db35192e1f7e192572399d3d078beea82e0db41961be9826c09d41",
+  "completed_pairs": 301,
+  "verified_proofs": 2408,
+  "final_integrity": "pass"
+}

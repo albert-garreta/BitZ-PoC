@@ -1,0 +1,54 @@
+{
+  "frozen_epoch": 1791551674.6310263,
+  "selection_rule": "Minimum paired geometric mean prove+commit ratio to experimental baseline across screening seeds42,43,44; choose among all8 experimental configurations, excluding the2 controls.",
+  "screen_summary_sha256": "4594ffcf8485012b07f128e68821f4b6a50b6e6639ab8bb8bb4904949c6c9fd7",
+  "candidates": [
+    {
+      "variant": "arithmetic",
+      "degree": 512,
+      "threads": 8,
+      "profile": "weighted",
+      "total_paired_ratio": 0.9947440865687037
+    },
+    {
+      "variant": "arithmetic",
+      "degree": 1024,
+      "threads": 8,
+      "profile": "weighted_queries120",
+      "total_paired_ratio": 0.9902369943612277
+    },
+    {
+      "variant": "full",
+      "degree": 512,
+      "threads": 16,
+      "profile": "weighted_external",
+      "total_paired_ratio": 0.9944476276509386
+    },
+    {
+      "variant": "full",
+      "degree": 1024,
+      "threads": 16,
+      "profile": "weighted_external",
+      "total_paired_ratio": 0.9928407051665509
+    }
+  ],
+  "holdout_seeds": [
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54
+  ],
+  "controls": [
+    "baseline",
+    "original"
+  ],
+  "measurement_repeats": 7,
+  "warmup_repeats": 1,
+  "interpretation": "Initial worker-context cost profiles remain valid schedule candidates despite calibration-context limitation. Holdout evaluates actual performance; no refitting based on holdout."
+}

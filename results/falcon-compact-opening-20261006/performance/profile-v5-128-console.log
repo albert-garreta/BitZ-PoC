@@ -1,0 +1,5 @@
+[bench_gate] falcon-v5-native128-repeated-profile: idle 100% (streak 1/1)
+DONE 1-baseline {'total_prover_ms': 43.664907, 'proof_verify_ms': 13.128544, 'witness_commit_ms': 0.7059264999999999, 'proof_prove_ms': 42.963869}
+DONE 2-candidate {'total_prover_ms': 43.346508, 'proof_verify_ms': 12.675657000000001, 'witness_commit_ms': 0.7019185, 'proof_prove_ms': 42.643467}
+DONE 3-candidate {'total_prover_ms': 43.2642675, 'proof_verify_ms': 12.4642415, 'witness_commit_ms': 0.6948354999999999, 'proof_prove_ms': 42.56335}
+DONE 4-baseline {'total_prover_ms': 43.7461645, 'proof_verify_ms': 13.327917, 'witness_commit_ms': 0.7090624999999999, 'proof_prove_ms': 43.0262065}

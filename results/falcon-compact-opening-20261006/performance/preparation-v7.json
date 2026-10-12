@@ -1,0 +1,50 @@
+{
+  "status": "candidate_binary_frozen_cold_checks_running",
+  "candidate_version": "v7",
+  "created_at": 1791335214.8092117,
+  "candidate_frozen": true,
+  "measurements_started": true,
+  "candidate_source_manifest_sha256": "cece40e49492801a1ecf8ffb33304b75c78534da4e86784e4b9994f34fdbaf7d",
+  "planned_changes": [
+    "Exact fixed-round AVX-512 nonce-scanner specialization; only src/utils/blake3x4/avx512.rs differs from V6."
+  ],
+  "baseline_reused_from": "baseline-build-v4.json",
+  "baseline_binary": "/tmp/falcon-compact-opening-binaries/baseline-v4",
+  "baseline_binary_sha256": "24e7406b6ca503f2d4a4b6824e69c21537a78f79492f7b1b9484091525730e55",
+  "baseline_source_manifest_sha256": "79e796ed36188dd300206bad5133679d672243bcc9fa8a39b6c0cb36041de364",
+  "qualification_method": "Unchanged: all 16 cells, seeds 42\u2013101, one warmup and three measured proofs, 16 workers, paired arithmetic-mean bootstrap upper 95% bound <= 1.02 for both metrics; mean payload strictly smaller.",
+  "cpu_affinity_policy": "linux-x86_64-falcon-serial-aux-pinned-v1",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "harness_sha256": "5839ec7defd239c847d0fcb71590f7bcecf8819bc71fd5fa30f35fab52a89493",
+  "cache_reference_sha256": "dd124d12aef75490d5dbb82dced166d4229deeda0e60d55b1a3802883327ad1c",
+  "proof_equivalence_reference": "V6 candidate cold proofs, all 16 cases; stored digest, payload, source root, input, security terms, grinding records, protocol",
+  "power_settings": "Existing balanced profile unchanged; scoped performance hold was denied by host D-Bus, not automatic approval review.",
+  "power_probe": "profile-control/probe.json",
+  "power_probe_sha256": "4c9dfcd922cb8826cb887d5afce4921b20093932856bf82a8884308f2b789b6e",
+  "planned_builds": "builds-v7.json",
+  "planned_output": "v7",
+  "planned_binary": "/tmp/falcon-compact-opening-binaries/candidate-v7",
+  "run_condition": "Integration passed, successful canonical benchmark build, immutable binary finalized, explicit CPU handoff",
+  "duration_estimate_minutes": [
+    80,
+    90
+  ],
+  "candidate_binary_sha256": "f784b4cdf4a26b657f5390da67c3c0bbb46aa92bb0418cd001b39f486a4c0677"
+}

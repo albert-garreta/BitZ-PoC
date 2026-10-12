@@ -1,0 +1,59 @@
+{
+  "captured_at": 1791336295.5190985,
+  "elapsed_seconds": 2.0092203689855523,
+  "method": "Host /proc process CPU-time deltas across two seconds; names only, no arguments or environment",
+  "active_processes": [
+    {
+      "pid": 9112,
+      "ppid": 6295,
+      "comm": "beam.smp",
+      "cpu_percent_one_core": 5.972465830643929
+    },
+    {
+      "pid": 42683,
+      "ppid": 1,
+      "comm": "codex",
+      "cpu_percent_one_core": 2.488527429434971
+    },
+    {
+      "pid": 2826,
+      "ppid": 1,
+      "comm": "containerd",
+      "cpu_percent_one_core": 0.4977054858869942
+    },
+    {
+      "pid": 2935,
+      "ppid": 2813,
+      "comm": "dbus-daemon",
+      "cpu_percent_one_core": 0.4977054858869942
+    },
+    {
+      "pid": 2936,
+      "ppid": 2813,
+      "comm": "llama-server",
+      "cpu_percent_one_core": 0.4977054858869942
+    },
+    {
+      "pid": 4553,
+      "ppid": 1,
+      "comm": "dockerd",
+      "cpu_percent_one_core": 0.4977054858869942
+    },
+    {
+      "pid": 1185863,
+      "ppid": 1185862,
+      "comm": "python3",
+      "cpu_percent_one_core": 0.4977054858869942
+    },
+    {
+      "pid": 3722630,
+      "ppid": 2813,
+      "comm": "gnome-keyring-d",
+      "cpu_percent_one_core": 0.4977054858869942
+    }
+  ],
+  "compiler_build_processes_at_end": [],
+  "processes_seen_start": 676,
+  "processes_seen_end": 671,
+  "limitation": "Snapshot covers only this two-second interval; exited transient jobs or earlier overlap cannot be ruled out. No jobs terminated or settings changed."
+}

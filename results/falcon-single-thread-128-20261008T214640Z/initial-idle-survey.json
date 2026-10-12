@@ -1,0 +1,166 @@
+{
+  "timestamp_utc": "2026-10-08T21:47:47Z",
+  "duration_s": 5,
+  "cpus": [
+    {
+      "cpu": 0,
+      "busy_pct": 0.998003992015968,
+      "siblings": "0,16"
+    },
+    {
+      "cpu": 1,
+      "busy_pct": 0.4,
+      "siblings": "1,17"
+    },
+    {
+      "cpu": 2,
+      "busy_pct": 1.4,
+      "siblings": "2,18"
+    },
+    {
+      "cpu": 3,
+      "busy_pct": 0.6024096385542169,
+      "siblings": "3,19"
+    },
+    {
+      "cpu": 4,
+      "busy_pct": 0.8,
+      "siblings": "4,20"
+    },
+    {
+      "cpu": 5,
+      "busy_pct": 0.20040080160320642,
+      "siblings": "5,21"
+    },
+    {
+      "cpu": 6,
+      "busy_pct": 0.2,
+      "siblings": "6,22"
+    },
+    {
+      "cpu": 7,
+      "busy_pct": 0.20040080160320642,
+      "siblings": "7,23"
+    },
+    {
+      "cpu": 8,
+      "busy_pct": 0.8,
+      "siblings": "8,24"
+    },
+    {
+      "cpu": 9,
+      "busy_pct": 0.4,
+      "siblings": "9,25"
+    },
+    {
+      "cpu": 10,
+      "busy_pct": 0.4,
+      "siblings": "10,26"
+    },
+    {
+      "cpu": 11,
+      "busy_pct": 0.8016032064128257,
+      "siblings": "11,27"
+    },
+    {
+      "cpu": 12,
+      "busy_pct": 0.1996007984031936,
+      "siblings": "12,28"
+    },
+    {
+      "cpu": 13,
+      "busy_pct": 1.0,
+      "siblings": "13,29"
+    },
+    {
+      "cpu": 14,
+      "busy_pct": 100.0,
+      "siblings": "14,30"
+    },
+    {
+      "cpu": 15,
+      "busy_pct": 0.8,
+      "siblings": "15,31"
+    },
+    {
+      "cpu": 16,
+      "busy_pct": 0.2,
+      "siblings": "0,16"
+    },
+    {
+      "cpu": 17,
+      "busy_pct": 0.0,
+      "siblings": "1,17"
+    },
+    {
+      "cpu": 18,
+      "busy_pct": 0.0,
+      "siblings": "2,18"
+    },
+    {
+      "cpu": 19,
+      "busy_pct": 0.2,
+      "siblings": "3,19"
+    },
+    {
+      "cpu": 20,
+      "busy_pct": 0.0,
+      "siblings": "4,20"
+    },
+    {
+      "cpu": 21,
+      "busy_pct": 0.4,
+      "siblings": "5,21"
+    },
+    {
+      "cpu": 22,
+      "busy_pct": 0.2,
+      "siblings": "6,22"
+    },
+    {
+      "cpu": 23,
+      "busy_pct": 0.1996007984031936,
+      "siblings": "7,23"
+    },
+    {
+      "cpu": 24,
+      "busy_pct": 0.6012024048096193,
+      "siblings": "8,24"
+    },
+    {
+      "cpu": 25,
+      "busy_pct": 0.8,
+      "siblings": "9,25"
+    },
+    {
+      "cpu": 26,
+      "busy_pct": 0.20040080160320642,
+      "siblings": "10,26"
+    },
+    {
+      "cpu": 27,
+      "busy_pct": 0.0,
+      "siblings": "11,27"
+    },
+    {
+      "cpu": 28,
+      "busy_pct": 0.5988023952095808,
+      "siblings": "12,28"
+    },
+    {
+      "cpu": 29,
+      "busy_pct": 0.20040080160320642,
+      "siblings": "13,29"
+    },
+    {
+      "cpu": 30,
+      "busy_pct": 0.0,
+      "siblings": "14,30"
+    },
+    {
+      "cpu": 31,
+      "busy_pct": 0.2,
+      "siblings": "15,31"
+    }
+  ]
+}

@@ -1,0 +1,1926 @@
+{
+  "cells": [
+    {
+      "cell": {
+        "batch": 17,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25092,
+          "candidate_median_of_seed_medians": 24776,
+          "candidate_over_baseline_geomean": 0.9927448498432482,
+          "observed_change_percent": -0.7255150156751822,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9864628125497691,
+            0.9996811732823211
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9996811732823211,
+            0.9864628125497691,
+            0.9921348314606742
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 5.610789,
+          "candidate_median_of_seed_medians": 5.366797,
+          "candidate_over_baseline_geomean": 0.9648409053721531,
+          "observed_change_percent": -3.5159094627846943,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9519229826678565,
+            0.9731575261046468
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9519229826678565,
+            0.9731575261046468,
+            0.9695766870766636
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 5.776503,
+          "candidate_median_of_seed_medians": 5.551366000000001,
+          "candidate_over_baseline_geomean": 0.9657121672769411,
+          "observed_change_percent": -3.428783272305891,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9519599225062739,
+            0.9760178433214698
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9519599225062739,
+            0.9760178433214698,
+            0.969318914581063
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 2.864857,
+          "candidate_median_of_seed_medians": 2.729862,
+          "candidate_over_baseline_geomean": 0.9575669044088668,
+          "observed_change_percent": -4.243309559113317,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9528789744130334,
+            0.9625021946264396
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9625021946264396,
+            0.9528789744130334,
+            0.9573437577444077
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.169129,
+          "candidate_median_of_seed_medians": 0.169721,
+          "candidate_over_baseline_geomean": 1.0212591623228982,
+          "observed_change_percent": 2.125916232289815,
+          "paired_seed_bootstrap_95_percent_interval": [
+            1.0004977786627176,
+            1.0608995567214958
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0004977786627176,
+            1.0035002867633582,
+            1.0608995567214958
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 17,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 24852,
+          "candidate_median_of_seed_medians": 24860,
+          "candidate_over_baseline_geomean": 0.9986004116897473,
+          "observed_change_percent": -0.1399588310252664,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9940818937939859,
+            1.0072475438879047
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9940818937939859,
+            1.0072475438879047,
+            0.9945276034122003
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 8.210113999999999,
+          "candidate_median_of_seed_medians": 8.057356,
+          "candidate_over_baseline_geomean": 0.9796712984406657,
+          "observed_change_percent": -2.0328701559334306,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9686341748726025,
+            0.9858294953710762
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9846447249538567,
+            0.9686341748726025,
+            0.9858294953710762
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 8.374555,
+          "candidate_median_of_seed_medians": 8.217468,
+          "candidate_over_baseline_geomean": 0.9798026172608679,
+          "observed_change_percent": -2.0197382739132075,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9714297655218694,
+            0.9843584916418745
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9836737610799597,
+            0.9714297655218694,
+            0.9843584916418745
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.444413,
+          "candidate_median_of_seed_medians": 3.343461,
+          "candidate_over_baseline_geomean": 0.9653269170545307,
+          "observed_change_percent": -3.4673082945469336,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9621165846379909,
+            0.9706910872767
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9631956344946954,
+            0.9706910872767,
+            0.9621165846379909
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.184398,
+          "candidate_median_of_seed_medians": 0.182615,
+          "candidate_over_baseline_geomean": 1.0195270307276036,
+          "observed_change_percent": 1.9527030727603645,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9547295573414977,
+            1.1133024446747546
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9547295573414977,
+            1.1133024446747546,
+            0.9970173212290805
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 32,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25456,
+          "candidate_median_of_seed_medians": 25492,
+          "candidate_over_baseline_geomean": 0.9976197349507895,
+          "observed_change_percent": -0.2380265049210517,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.988062015503876,
+            1.0075638197289631
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0075638197289631,
+            0.9973287240729101,
+            0.988062015503876
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 5.955901000000001,
+          "candidate_median_of_seed_medians": 5.745804000000001,
+          "candidate_over_baseline_geomean": 0.964552667772648,
+          "observed_change_percent": -3.544733222735197,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9637563370666938,
+            0.9651776480978732
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9647245647635848,
+            0.9637563370666938,
+            0.9651776480978732
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 6.146481,
+          "candidate_median_of_seed_medians": 5.936264,
+          "candidate_over_baseline_geomean": 0.9664352742027663,
+          "observed_change_percent": -3.3564725797233685,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9632423294074323,
+            0.9702778035050634
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9657988042263533,
+            0.9632423294074323,
+            0.9702778035050634
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.0518099999999997,
+          "candidate_median_of_seed_medians": 2.819611,
+          "candidate_over_baseline_geomean": 0.9223403773614077,
+          "observed_change_percent": -7.765962263859228,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9173357186999752,
+            0.9257924932560629
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9239143328057777,
+            0.9257924932560629,
+            0.9173357186999752
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.178778,
+          "candidate_median_of_seed_medians": 0.190961,
+          "candidate_over_baseline_geomean": 1.0574776427412405,
+          "observed_change_percent": 5.747764274124045,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9827747699528583,
+            1.1167313651567867
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9827747699528583,
+            1.1167313651567867,
+            1.0774840995872477
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 32,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 25544,
+          "candidate_median_of_seed_medians": 25500,
+          "candidate_over_baseline_geomean": 0.9936727818625909,
+          "observed_change_percent": -0.6327218137409107,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9888819292201692,
+            1.0033050047214354
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9889008786804377,
+            0.9888819292201692,
+            1.0033050047214354
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 8.58328,
+          "candidate_median_of_seed_medians": 8.304202,
+          "candidate_over_baseline_geomean": 0.9758077588270637,
+          "observed_change_percent": -2.419224117293628,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9674858562227959,
+            0.9805126615935059
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9674858562227959,
+            0.9794786408089247,
+            0.9805126615935059
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 8.764911999999999,
+          "candidate_median_of_seed_medians": 8.50914,
+          "candidate_over_baseline_geomean": 0.9762116788131253,
+          "observed_change_percent": -2.3788321186874684,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9708186459829832,
+            0.9808570042979281
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9708186459829832,
+            0.9769856621896709,
+            0.9808570042979281
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.692411,
+          "candidate_median_of_seed_medians": 3.468629,
+          "candidate_over_baseline_geomean": 0.9384382387703104,
+          "observed_change_percent": -6.15617612296896,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9374849611156225,
+            0.9393940707033968
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9374849611156225,
+            0.938436655440977,
+            0.9393940707033968
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.205979,
+          "candidate_median_of_seed_medians": 0.2061,
+          "candidate_over_baseline_geomean": 1.0352988795150075,
+          "observed_change_percent": 3.529887951500754,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9834166464450377,
+            1.123362784587964
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0044761844654067,
+            0.9834166464450377,
+            1.123362784587964
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 33,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 27028,
+          "candidate_median_of_seed_medians": 26740,
+          "candidate_over_baseline_geomean": 0.9962944092125312,
+          "observed_change_percent": -0.3705590787468793,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.985511531638084,
+            1.014270692504131
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.985511531638084,
+            0.9893443836021903,
+            1.014270692504131
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 6.893594,
+          "candidate_median_of_seed_medians": 6.471827,
+          "candidate_over_baseline_geomean": 0.9407957936839481,
+          "observed_change_percent": -5.920420631605195,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9379463498317463,
+            0.9422479948222814
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9379463498317463,
+            0.9421995261107632,
+            0.9422479948222814
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 7.226965,
+          "candidate_median_of_seed_medians": 6.81208,
+          "candidate_over_baseline_geomean": 0.9437185161882204,
+          "observed_change_percent": -5.628148381177955,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.941735565638834,
+            0.945700745468135
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.941735565638834,
+            0.9437234025624865,
+            0.945700745468135
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.2533819999999998,
+          "candidate_median_of_seed_medians": 2.854317,
+          "candidate_over_baseline_geomean": 0.8772972703655617,
+          "observed_change_percent": -12.27027296344383,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8756000386372307,
+            0.8789565717311923
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8789565717311923,
+            0.8756000386372307,
+            0.8773384127655468
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.33330000000000004,
+          "candidate_median_of_seed_medians": 0.33782799999999996,
+          "candidate_over_baseline_geomean": 1.010963278922766,
+          "observed_change_percent": 1.096327892276605,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9883978397839783,
+            1.0231222708077958
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0217551075959894,
+            0.9883978397839783,
+            1.0231222708077958
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 33,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 27244,
+          "candidate_median_of_seed_medians": 27140,
+          "candidate_over_baseline_geomean": 0.999087189910897,
+          "observed_change_percent": -0.09128100891030444,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9925394967817437,
+            1.0066815144766148
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0066815144766148,
+            0.9980913228600793,
+            0.9925394967817437
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 9.622785,
+          "candidate_median_of_seed_medians": 9.251773,
+          "candidate_over_baseline_geomean": 0.965310061448092,
+          "observed_change_percent": -3.468993855190805,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.961444425912041,
+            0.9678693100975286
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.961444425912041,
+            0.9678693100975286,
+            0.9666284952611778
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 9.965984,
+          "candidate_median_of_seed_medians": 9.610772,
+          "candidate_over_baseline_geomean": 0.9665191986090668,
+          "observed_change_percent": -3.3480801390933235,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9643575586715772,
+            0.9677097806531155
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9643575586715772,
+            0.9677097806531155,
+            0.9674939012286267
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.826275,
+          "candidate_median_of_seed_medians": 3.441126,
+          "candidate_over_baseline_geomean": 0.8995080036832827,
+          "observed_change_percent": -10.049199631671735,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8897647910681336,
+            0.9095267673869449
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9095267673869449,
+            0.8993410039790659,
+            0.8897647910681336
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.336216,
+          "candidate_median_of_seed_medians": 0.347277,
+          "candidate_over_baseline_geomean": 1.0287499874864037,
+          "observed_change_percent": 2.874998748640367,
+          "paired_seed_bootstrap_95_percent_interval": [
+            1.0183314910698702,
+            1.039904057780932
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0183314910698702,
+            1.039904057780932,
+            1.028127751207557
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 65,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 30240,
+          "candidate_median_of_seed_medians": 30188,
+          "candidate_over_baseline_geomean": 0.9970846185635702,
+          "observed_change_percent": -0.2915381436429776,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9941644562334218,
+            0.9988154777573045
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9982804232804233,
+            0.9941644562334218,
+            0.9988154777573045
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 8.938581,
+          "candidate_median_of_seed_medians": 8.11277,
+          "candidate_over_baseline_geomean": 0.9042219574792605,
+          "observed_change_percent": -9.577804252073951,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8972176760512651,
+            0.9078764316439292
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9078764316439292,
+            0.8972176760512651,
+            0.9076127407694801
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 9.528427,
+          "candidate_median_of_seed_medians": 8.706001,
+          "candidate_over_baseline_geomean": 0.909476758179156,
+          "observed_change_percent": -9.052324182084403,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9018664885610184,
+            0.9142428950877155
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9123699472122889,
+            0.9018664885610184,
+            0.9142428950877155
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 4.111684,
+          "candidate_median_of_seed_medians": 3.1423520000000003,
+          "candidate_over_baseline_geomean": 0.7665446191215569,
+          "observed_change_percent": -23.345538087844307,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7642493927062488,
+            0.7687228498237161
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7642493927062488,
+            0.7687228498237161,
+            0.7666681569089007
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.596668,
+          "candidate_median_of_seed_medians": 0.594123,
+          "candidate_over_baseline_geomean": 0.9980033634032033,
+          "observed_change_percent": -0.19966365967967192,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9949292678104023,
+            1.0006217863200306
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0006217863200306,
+            0.9984673170485767,
+            0.9949292678104023
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 65,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 30548,
+          "candidate_median_of_seed_medians": 30208,
+          "candidate_over_baseline_geomean": 0.9996033029218667,
+          "observed_change_percent": -0.039669707813327904,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.984810789577059,
+            1.0112609663480425
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.984810789577059,
+            1.0112609663480425,
+            1.002921646746348
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 11.77299,
+          "candidate_median_of_seed_medians": 11.004958,
+          "candidate_over_baseline_geomean": 0.9363162572204112,
+          "observed_change_percent": -6.368374277958877,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9339103537777202,
+            0.9402879871908641
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9402879871908641,
+            0.9339103537777202,
+            0.9347632164811148
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 12.393884000000002,
+          "candidate_median_of_seed_medians": 11.598730999999999,
+          "candidate_over_baseline_geomean": 0.9394786398516373,
+          "observed_change_percent": -6.0521360148362735,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.935843114232794,
+            0.9431289481126577
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9431289481126577,
+            0.939477982905424,
+            0.935843114232794
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 4.592804,
+          "candidate_median_of_seed_medians": 3.673506,
+          "candidate_over_baseline_geomean": 0.798617258779983,
+          "observed_change_percent": -20.138274122001697,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7873393198649212,
+            0.8088189020151677
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7998394880338896,
+            0.8088189020151677,
+            0.7873393198649212
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.598863,
+          "candidate_median_of_seed_medians": 0.5971690000000001,
+          "candidate_over_baseline_geomean": 0.9969820866957686,
+          "observed_change_percent": -0.3017913304231401,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9933000331006309,
+            0.9988945718803799
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9933000331006309,
+            0.9988945718803799,
+            0.9987618899216822
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 513,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 107664,
+          "candidate_median_of_seed_medians": 106752,
+          "candidate_over_baseline_geomean": 0.9935779741369889,
+          "observed_change_percent": -0.6422025863011105,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9855243722304283,
+            1.003880017907775
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9855243722304283,
+            0.991417744092733,
+            1.003880017907775
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 36.930298,
+          "candidate_median_of_seed_medians": 29.23079,
+          "candidate_over_baseline_geomean": 0.7907635808029586,
+          "observed_change_percent": -20.92364191970414,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7896221304896954,
+            0.7915124324206644
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7911574565398457,
+            0.7915124324206644,
+            0.7896221304896954
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 38.940229,
+          "candidate_median_of_seed_medians": 31.221453999999998,
+          "candidate_over_baseline_geomean": 0.7999937279783449,
+          "observed_change_percent": -20.00062720216551,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7981547449833929,
+            0.8018234598971469
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8000071853712004,
+            0.8018234598971469,
+            0.7981547449833929
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 17.682234,
+          "candidate_median_of_seed_medians": 7.522203,
+          "candidate_over_baseline_geomean": 0.4237217861311354,
+          "observed_change_percent": -57.62782138688646,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.4128660439625445,
+            0.4301038731071969
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.4301038731071969,
+            0.42841026038234675,
+            0.4128660439625445
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 2.065956,
+          "candidate_median_of_seed_medians": 2.003018,
+          "candidate_over_baseline_geomean": 0.9674092432635584,
+          "observed_change_percent": -3.259075673644163,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.91959294450617,
+            1.015479786549718
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.015479786549718,
+            0.969535653227852,
+            0.91959294450617
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 513,
+        "degree": 512,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 107556,
+          "candidate_median_of_seed_medians": 107088,
+          "candidate_over_baseline_geomean": 0.9965527825417988,
+          "observed_change_percent": -0.34472174582012016,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9956487783108334,
+            0.9976241740292524
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9976241740292524,
+            0.9956487783108334,
+            0.9963863949633052
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 41.123958,
+          "candidate_median_of_seed_medians": 32.724225000000004,
+          "candidate_over_baseline_geomean": 0.7989040942566407,
+          "observed_change_percent": -20.109590574335932,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.795745997989785,
+            0.8014441176541668
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.795745997989785,
+            0.8014441176541668,
+            0.7995327021522438
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 43.160519,
+          "candidate_median_of_seed_medians": 34.752551,
+          "candidate_over_baseline_geomean": 0.8083732271043425,
+          "observed_change_percent": -19.162677289565757,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8051930747171969,
+            0.8114751823098822
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8051930747171969,
+            0.8114751823098822,
+            0.8084636375347949
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 18.74351,
+          "candidate_median_of_seed_medians": 8.478771,
+          "candidate_over_baseline_geomean": 0.451301258835186,
+          "observed_change_percent": -54.8698741164814,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.43792763468528567,
+            0.4610007765835511
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.4552978780954029,
+            0.43792763468528567,
+            0.4610007765835511
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 2.0826379999999998,
+          "candidate_median_of_seed_medians": 2.0566880000000003,
+          "candidate_over_baseline_geomean": 0.9940250992278441,
+          "observed_change_percent": -0.59749007721559,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9714434289588495,
+            1.0321005308327864
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9714434289588495,
+            1.0321005308327864,
+            0.9796084782090976
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 17,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 27740,
+          "candidate_median_of_seed_medians": 27452,
+          "candidate_over_baseline_geomean": 0.9940826114149334,
+          "observed_change_percent": -0.591738858506663,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9884643114635905,
+            1.0045328264366136
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9884643114635905,
+            1.0045328264366136,
+            0.9893325645091539
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 6.935374,
+          "candidate_median_of_seed_medians": 6.59475,
+          "candidate_over_baseline_geomean": 0.9477389983672765,
+          "observed_change_percent": -5.226100163272351,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9447142557939144,
+            0.9533201814350603
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9452071522573607,
+            0.9533201814350603,
+            0.9447142557939144
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 7.269926000000001,
+          "candidate_median_of_seed_medians": 6.927649,
+          "candidate_over_baseline_geomean": 0.9506496762615625,
+          "observed_change_percent": -4.93503237384375,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9469241077977413,
+            0.9567596699058559
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9482950425666149,
+            0.9567596699058559,
+            0.9469241077977413
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.351497,
+          "candidate_median_of_seed_medians": 2.975917,
+          "candidate_over_baseline_geomean": 0.8871259899663281,
+          "observed_change_percent": -11.287401003367192,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8844324323343503,
+            0.8890153699077017
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8879366444308319,
+            0.8890153699077017,
+            0.8844324323343503
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.328121,
+          "candidate_median_of_seed_medians": 0.33316999999999997,
+          "candidate_over_baseline_geomean": 1.0025965713210014,
+          "observed_change_percent": 0.25965713210014396,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9599365134836041,
+            1.033961270333075
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.015387616153797,
+            1.033961270333075,
+            0.9599365134836041
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 17,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 27644,
+          "candidate_median_of_seed_medians": 27416,
+          "candidate_over_baseline_geomean": 0.9910104449007988,
+          "observed_change_percent": -0.8989555099201185,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9833598610910144,
+            0.998984329657574
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9833598610910144,
+            0.9907487713211911,
+            0.998984329657574
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 9.474333999999999,
+          "candidate_median_of_seed_medians": 9.094316,
+          "candidate_over_baseline_geomean": 0.9616876490951417,
+          "observed_change_percent": -3.8312350904858294,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9542065063076576,
+            0.9710428442826392
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9598897400070548,
+            0.9710428442826392,
+            0.9542065063076576
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 9.824836999999999,
+          "candidate_median_of_seed_medians": 9.450429,
+          "candidate_over_baseline_geomean": 0.9632010192074764,
+          "observed_change_percent": -3.679898079252364,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9553212263190892,
+            0.9724677398452206
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9618916832920487,
+            0.9724677398452206,
+            0.9553212263190892
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.8190310000000003,
+          "candidate_median_of_seed_medians": 3.454351,
+          "candidate_over_baseline_geomean": 0.8988450696271012,
+          "observed_change_percent": -10.11549303728988,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8946278898873052,
+            0.9045098089017868
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9045098089017868,
+            0.8974263306608418,
+            0.8946278898873052
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.342608,
+          "candidate_median_of_seed_medians": 0.348018,
+          "candidate_over_baseline_geomean": 1.0195286834897916,
+          "observed_change_percent": 1.9528683489791643,
+          "paired_seed_bootstrap_95_percent_interval": [
+            1.009912202867417,
+            1.0336237032108988
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0152015363995568,
+            1.009912202867417,
+            1.0336237032108988
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 32,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 29032,
+          "candidate_median_of_seed_medians": 28824,
+          "candidate_over_baseline_geomean": 0.9928369148444319,
+          "observed_change_percent": -0.7163085155568072,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9914694551458448,
+            0.9951744105887219
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9918710388536787,
+            0.9914694551458448,
+            0.9951744105887219
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 7.427294,
+          "candidate_median_of_seed_medians": 6.907571000000001,
+          "candidate_over_baseline_geomean": 0.9368167785427233,
+          "observed_change_percent": -6.318322145727673,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9267253429594159,
+            0.9439853140217038
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9439853140217038,
+            0.9267253429594159,
+            0.9398265370941287
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 7.812612,
+          "candidate_median_of_seed_medians": 7.29306,
+          "candidate_over_baseline_geomean": 0.9376635244112627,
+          "observed_change_percent": -6.233647558873734,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9277955095982726,
+            0.9438420850798684
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.941433095673497,
+            0.9277955095982726,
+            0.9438420850798684
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 3.72288,
+          "candidate_median_of_seed_medians": 3.147862,
+          "candidate_over_baseline_geomean": 0.8437601443429845,
+          "observed_change_percent": -15.623985565701549,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.836063532609658,
+            0.851177582946536
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.836063532609658,
+            0.851177582946536,
+            0.8441071204951383
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.40475500000000003,
+          "candidate_median_of_seed_medians": 0.38065,
+          "candidate_over_baseline_geomean": 0.9589829305634744,
+          "observed_change_percent": -4.101706943652561,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9385158923299279,
+            0.9780167828861837
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9385158923299279,
+            0.9608258803186683,
+            0.9780167828861837
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 32,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 29084,
+          "candidate_median_of_seed_medians": 29004,
+          "candidate_over_baseline_geomean": 0.9997156216644529,
+          "observed_change_percent": -0.028437833554706415,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.991766158913133,
+            1.005913904552331
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.991766158913133,
+            1.005913904552331,
+            1.0015193370165747
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 10.042409000000001,
+          "candidate_median_of_seed_medians": 9.478402,
+          "candidate_over_baseline_geomean": 0.9460840818208699,
+          "observed_change_percent": -5.39159181791301,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.943837479632626,
+            0.95047332128042
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.95047332128042,
+            0.9439566620027551,
+            0.943837479632626
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 10.444138,
+          "candidate_median_of_seed_medians": 9.884941,
+          "candidate_over_baseline_geomean": 0.9482299327041624,
+          "observed_change_percent": -5.177006729583756,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9464582738754578,
+            0.951783188596511
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.951783188596511,
+            0.9464582738754578,
+            0.946458290765595
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 4.245067,
+          "candidate_median_of_seed_medians": 3.6593590000000003,
+          "candidate_over_baseline_geomean": 0.8641258088594858,
+          "observed_change_percent": -13.587419114051425,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8578687380939517,
+            0.8673672288329018
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8673672288329018,
+            0.8671756568169694,
+            0.8578687380939517
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.401669,
+          "candidate_median_of_seed_medians": 0.405707,
+          "candidate_over_baseline_geomean": 1.00355314317234,
+          "observed_change_percent": 0.3553143172339901,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.997025920136631,
+            1.0115413959379471
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.997025920136631,
+            1.0115413959379471,
+            1.0021460456246314
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 33,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 30664,
+          "candidate_median_of_seed_medians": 30500,
+          "candidate_over_baseline_geomean": 0.9977198061539057,
+          "observed_change_percent": -0.22801938460943472,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9827764827764828,
+            1.0096530133055048
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9827764827764828,
+            1.0096530133055048,
+            1.0009188763454975
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 9.184627,
+          "candidate_median_of_seed_medians": 8.119753000000001,
+          "candidate_over_baseline_geomean": 0.8945637778138419,
+          "observed_change_percent": -10.54362221861581,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8840590913490554,
+            0.903263704807913
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8964747724390332,
+            0.8840590913490554,
+            0.903263704807913
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 9.802325,
+          "candidate_median_of_seed_medians": 8.722463,
+          "candidate_over_baseline_geomean": 0.9026931598485064,
+          "observed_change_percent": -9.730684015149361,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8898361358147174,
+            0.9130980577128539
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9053009947799195,
+            0.8898361358147174,
+            0.9130980577128539
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 4.057502,
+          "candidate_median_of_seed_medians": 3.1343959999999997,
+          "candidate_over_baseline_geomean": 0.7702605110041502,
+          "observed_change_percent": -22.973948899584983,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7640853523655091,
+            0.7742405337524692
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7742405337524692,
+            0.7724940123258102,
+            0.7640853523655091
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.598592,
+          "candidate_median_of_seed_medians": 0.598201,
+          "candidate_over_baseline_geomean": 1.0032549788052991,
+          "observed_change_percent": 0.32549788052991246,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9973822997911534,
+            1.0131088005571862
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9993468004918208,
+            0.9973822997911534,
+            1.0131088005571862
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 33,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 30952,
+          "candidate_median_of_seed_medians": 30720,
+          "candidate_over_baseline_geomean": 0.9965294635737844,
+          "observed_change_percent": -0.34705364262156424,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.991375981464796,
+            1.0057720057720059
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9925045231325924,
+            0.991375981464796,
+            1.0057720057720059
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 16.825334,
+          "candidate_median_of_seed_medians": 11.081653000000001,
+          "candidate_over_baseline_geomean": 0.4940430084363313,
+          "observed_change_percent": -50.59569915636687,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.1954938813627003,
+            0.9344814553338959
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.1954938813627003,
+            0.6600706410939599,
+            0.9344814553338959
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 17.424908,
+          "candidate_median_of_seed_medians": 11.674394,
+          "candidate_over_baseline_geomean": 0.504062213645852,
+          "observed_change_percent": -49.5937786354148,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.2036288078226297,
+            0.9378086896280926
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.20362880782262968,
+            0.6706546743317096,
+            0.9378086896280926
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 4.59602,
+          "candidate_median_of_seed_medians": 3.685018,
+          "candidate_over_baseline_geomean": 0.7970286222984783,
+          "observed_change_percent": -20.297137770152172,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7709246080391869,
+            0.8119146565941836
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7709246080391869,
+            0.8089086196749763,
+            0.8119146565941836
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.602168,
+          "candidate_median_of_seed_medians": 0.599514,
+          "candidate_over_baseline_geomean": 0.9926147816279042,
+          "observed_change_percent": -0.7385218372095825,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9760001708640629,
+            1.006492781632942
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9955925921005433,
+            1.006492781632942,
+            0.9760001708640629
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 65,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 38444,
+          "candidate_median_of_seed_medians": 38244,
+          "candidate_over_baseline_geomean": 0.9972912807117417,
+          "observed_change_percent": -0.2708719288258332,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9947976277182395,
+            0.9990684194182797
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9980127601715302,
+            0.9947976277182395,
+            0.9990684194182797
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 13.26943,
+          "candidate_median_of_seed_medians": 11.660107,
+          "candidate_over_baseline_geomean": 0.8826210819429356,
+          "observed_change_percent": -11.737891805706436,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8780830073333972,
+            0.8869152436718349
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8869152436718349,
+            0.8828871538220636,
+            0.8780830073333972
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 14.066297,
+          "candidate_median_of_seed_medians": 12.490587,
+          "candidate_over_baseline_geomean": 0.8888744618784945,
+          "observed_change_percent": -11.11255381215055,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.8874254155165633,
+            0.8912229425280439
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.8912229425280439,
+            0.8874254155165633,
+            0.8879797575723021
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 6.042205,
+          "candidate_median_of_seed_medians": 3.731245,
+          "candidate_over_baseline_geomean": 0.6121704684714452,
+          "observed_change_percent": -38.782953152855484,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.6003711302248449,
+            0.6187839128444858
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.6187839128444858,
+            0.6003711302248449,
+            0.6175303552262791
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.831452,
+          "candidate_median_of_seed_medians": 0.8105220000000001,
+          "candidate_over_baseline_geomean": 0.9845022163445211,
+          "observed_change_percent": -1.5497783655478936,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9684058730991085,
+            1.015245414445667
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9705583343012709,
+            0.9684058730991085,
+            1.015245414445667
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 65,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 38424,
+          "candidate_median_of_seed_medians": 38252,
+          "candidate_over_baseline_geomean": 0.9957652183961664,
+          "observed_change_percent": -0.4234781603833615,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9910667913160902,
+            1.0007287112221528
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            1.0007287112221528,
+            0.9910667913160902,
+            0.9955236310639184
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 16.369752000000002,
+          "candidate_median_of_seed_medians": 15.09907,
+          "candidate_over_baseline_geomean": 0.9858941330619311,
+          "observed_change_percent": -1.4105866938068923,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9137917300152133,
+            1.1330685852251812
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9137917300152133,
+            0.9255234448608738,
+            1.1330685852251812
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 17.198008,
+          "candidate_median_of_seed_medians": 15.861510999999998,
+          "candidate_over_baseline_geomean": 0.9862164197906362,
+          "observed_change_percent": -1.3783580209363766,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9181835477690206,
+            1.1262075664640678
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9181835477690206,
+            0.9276170857340058,
+            1.1262075664640678
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 6.69548,
+          "candidate_median_of_seed_medians": 4.333173,
+          "candidate_over_baseline_geomean": 0.6486011144946424,
+          "observed_change_percent": -35.13988855053576,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.6408211485583122,
+            0.6535234217711052
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.6408211485583122,
+            0.6515309915941875,
+            0.6535234217711052
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 0.807787,
+          "candidate_median_of_seed_medians": 0.796966,
+          "candidate_over_baseline_geomean": 0.9896790826849313,
+          "observed_change_percent": -1.0320917315068678,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9851971966259646,
+            0.9972799144586808
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9972799144586808,
+            0.9851971966259646,
+            0.9866041419334551
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 513,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 100,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 174784,
+          "candidate_median_of_seed_medians": 175796,
+          "candidate_over_baseline_geomean": 1.001203994519408,
+          "observed_change_percent": 0.12039945194080026,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9979989772550415,
+            1.007403841745748
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9979989772550415,
+            1.007403841745748,
+            0.9982378249725375
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 75.30569,
+          "candidate_median_of_seed_medians": 57.834054,
+          "candidate_over_baseline_geomean": 0.6182282403565827,
+          "observed_change_percent": -38.17717596434173,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.39489280629908396,
+            0.8045613245253376
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.39489280629908396,
+            0.7437177456311734,
+            0.8045613245253376
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 81.537884,
+          "candidate_median_of_seed_medians": 61.236307,
+          "candidate_over_baseline_geomean": 0.6587196113113515,
+          "observed_change_percent": -34.12803886886485,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.4829280258788728,
+            0.8111873965562753
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.4829280258788728,
+            0.7296224292501875,
+            0.8111873965562753
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 32.570465,
+          "candidate_median_of_seed_medians": 12.258599,
+          "candidate_over_baseline_geomean": 0.3726301154023516,
+          "observed_change_percent": -62.736988459764845,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.3641049973443821,
+            0.3775637870407701
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.3641049973443822,
+            0.37637162994142087,
+            0.3775637870407701
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 3.523522,
+          "candidate_median_of_seed_medians": 3.326349,
+          "candidate_over_baseline_geomean": 0.7975963568111176,
+          "observed_change_percent": -20.240364318888236,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.5684341564793364,
+            0.9556079626024744
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.5684341564793364,
+            0.9340917979226467,
+            0.9556079626024744
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "cell": {
+        "batch": 513,
+        "degree": 1024,
+        "mode": "arithmetic",
+        "security_bits": 128,
+        "threads": 16
+      },
+      "metrics": {
+        "process_peak_rss_kib": {
+          "baseline_median_of_seed_medians": 174260,
+          "candidate_median_of_seed_medians": 173552,
+          "candidate_over_baseline_geomean": 0.9971650394519481,
+          "observed_change_percent": -0.2834960548051879,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.9892512547842229,
+            1.0063814158479478
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9892512547842229,
+            0.9959371054745783,
+            1.0063814158479478
+          ]
+        },
+        "prove_ms": {
+          "baseline_median_of_seed_medians": 76.89575599999999,
+          "candidate_median_of_seed_medians": 57.992824,
+          "candidate_over_baseline_geomean": 0.768408176838393,
+          "observed_change_percent": -23.1591823161607,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7541745736916873,
+            0.7875717726799486
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7875717726799486,
+            0.7638602387808631,
+            0.7541745736916873
+          ]
+        },
+        "total_prover_ms": {
+          "baseline_median_of_seed_medians": 80.323307,
+          "candidate_median_of_seed_medians": 61.300548000000006,
+          "candidate_over_baseline_geomean": 0.7768350873053237,
+          "observed_change_percent": -22.31649126946763,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.7631726119045373,
+            0.7944529922517923
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.7944529922517923,
+            0.7732065383964418,
+            0.7631726119045373
+          ]
+        },
+        "verify_ms": {
+          "baseline_median_of_seed_medians": 32.739233,
+          "candidate_median_of_seed_medians": 12.798219,
+          "candidate_over_baseline_geomean": 0.3541127470511712,
+          "observed_change_percent": -64.58872529488289,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.29168478076441196,
+            0.3915540381676967
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.29168478076441196,
+            0.3915540381676967,
+            0.3887936869126148
+          ]
+        },
+        "witness_commit_ms": {
+          "baseline_median_of_seed_medians": 3.38511,
+          "candidate_median_of_seed_medians": 3.339344,
+          "candidate_over_baseline_geomean": 0.9746919289390427,
+          "observed_change_percent": -2.530807106095734,
+          "paired_seed_bootstrap_95_percent_interval": [
+            0.952128467932486,
+            0.9922132515634647
+          ],
+          "review_observed_increase": false,
+          "seed_ratios": [
+            0.9801702937871342,
+            0.9922132515634647,
+            0.952128467932486
+          ]
+        }
+      },
+      "seeds": [
+        42,
+        43,
+        44
+      ]
+    }
+  ],
+  "completed_pairs": 60,
+  "limitations": "Finite-sample comparison on this machine and these inputs only. Each seed contributes the median of repeated proofs in one process per variant. Reported 95% bootstrap intervals resample paired seed ratios, not individual proofs; three seeds give weak uncertainty estimates and do not establish nonregression. Missing fixture caches are primed in a separate untimed process before either paired measurement. RSS is process lifetime high-water memory, including fixture setup and warmups, not per-proof allocated memory. Preparation and fixture generation are excluded from total_prover_ms."
+}

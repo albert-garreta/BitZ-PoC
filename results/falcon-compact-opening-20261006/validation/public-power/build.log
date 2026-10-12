@@ -1,0 +1,157 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling syn v3.0.4
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.11
+   Compiling cc v1.4.4
+   Compiling typenum v1.20.1
+   Compiling syn v2.0.119
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.229
+   Compiling version_check v0.9.5
+   Compiling serde v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling bitflags v2.13.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling cpufeatures v0.3.1
+   Compiling hybrid-array v0.4.14
+   Compiling autocfg v1.5.1
+   Compiling rustix v1.1.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling num-traits v0.2.19
+   Compiling crossbeam-deque v0.8.8
+   Compiling arrayvec v0.7.8
+   Compiling linux-raw-sys v0.12.1
+   Compiling once_cell v1.21.4
+   Compiling syn v1.0.109
+   Compiling either v1.18.0
+   Compiling tracing-core v0.1.36
+   Compiling perfetto-sdk-sys v1.3.0
+   Compiling sha2-asm v0.6.4
+   Compiling thiserror v1.0.69
+   Compiling hashbrown v0.17.1
+   Compiling thiserror v2.0.20
+   Compiling paste v1.0.15
+   Compiling equivalent v1.0.2
+   Compiling rand_core v0.10.1
+   Compiling rayon-core v1.13.0
+   Compiling chacha20 v0.10.2
+   Compiling indexmap v2.14.2
+   Compiling terminal_size v0.4.4
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling thiserror-impl v1.0.69
+   Compiling blake3 v1.8.7
+   Compiling thiserror-impl v2.0.20
+   Compiling binius-utils v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling memchr v2.8.3
+   Compiling zmij v1.0.23
+   Compiling anstyle v1.0.14
+   Compiling toml_write v0.1.2
+   Compiling libc v0.2.189
+   Compiling clap_lex v1.1.0
+   Compiling lazy_static v1.5.0
+   Compiling log v0.4.34
+   Compiling winnow v0.7.15
+   Compiling toml_edit v0.22.27
+   Compiling tracing-log v0.2.0
+   Compiling sharded-slab v0.1.7
+   Compiling clap_builder v4.6.6
+   Compiling digest v0.10.7
+   Compiling trait-set v0.3.0
+   Compiling rand v0.10.2
+   Compiling itertools v0.15.0
+   Compiling array-util v1.0.2
+   Compiling crypto-common v0.2.2
+   Compiling inout v0.2.2
+   Compiling thread_local v1.1.10
+   Compiling tracing-attributes v0.1.31
+   Compiling derive_more-impl v2.1.1
+   Compiling bytemuck_derive v1.12.1
+   Compiling constant_time_eq v0.4.2
+   Compiling serde_json v1.0.151
+   Compiling cpufeatures v0.2.17
+   Compiling pin-project-lite v0.2.17
+   Compiling cmov v0.5.4
+   Compiling cpubits v0.1.1
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.18
+   Compiling smallvec v1.16.0
+   Compiling nu-ansi-term v0.50.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling ctutils v0.4.2
+   Compiling tracing v0.1.44
+   Compiling sha2 v0.10.9
+   Compiling bytemuck v1.25.2
+   Compiling derive_more v2.1.1
+   Compiling cipher v0.5.2
+   Compiling perfetto-sdk v1.1.1
+   Compiling rayon v1.12.0
+   Compiling clap v4.6.6
+   Compiling toml v0.8.23
+   Compiling csv-core v0.1.13
+   Compiling num-integer v0.1.47
+   Compiling bincode v1.3.3
+   Compiling divan-macros v0.1.21
+   Compiling ryu v1.0.23
+   Compiling seq-macro v0.3.6
+   Compiling rand_core v0.9.5
+   Compiling condtype v1.3.0
+   Compiling regex-lite v0.1.9
+   Compiling divan v0.1.21
+   Compiling rand_pcg v0.9.0
+   Compiling binius-field v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling csv v1.4.0
+   Compiling flock-core v0.1.0 (https://github.com/succinctlabs/flock.git?rev=85fc0e7cc002e7ca4dffdff805ba89976e9a5293#85fc0e7c)
+   Compiling num-bigint v0.4.8
+   Compiling tracing-perfetto-sdk v1.0.0
+   Compiling aes v0.9.3
+   Compiling crypto-bigint v0.7.5
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+warning: unused import: `num_traits::ConstZero`
+  --> src/gf128/wide.rs:80:9
+   |
+80 |     use num_traits::ConstZero;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `square_n` is never used
+   --> src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib test) generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 1m 22s
+  Executable unittests src/lib.rs (vendor/field/target/release/deps/field-15a6821d35781370)

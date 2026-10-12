@@ -1,0 +1,1650 @@
+{
+  "status": "passed_with_flags",
+  "started_epoch": 1791552587.3015542,
+  "flags": [
+    "External-process events were recorded; root must interpret possible timing impact."
+  ],
+  "provenance": {
+    "source_files_checked": 619,
+    "binary_sha256": {
+      "experimental/falcon_algebraic": "381a5d1cfd69a5bb2ba21c17268c81dc65f2f59e6b0facf98873bbbcea99fb1e",
+      "experimental/falcon_hybrid": "62e9ddcf634510cf3936aac1c0dc2ad916ee64a55c04ec0c0b5c71a9926f2b9c",
+      "original/falcon_algebraic": "1c57ca082e40f0c7e05a9ddcd616b6e89f132c335516321d6ba83e87b5450a5a",
+      "original/falcon_hybrid": "6d314046bfaecaaf745ce3037857cdda58c1404baa5f731d6b3ad91a2ab4de74"
+    },
+    "source_manifest_sha256": "293876866524d1224c321cfcf9f85a10518ff61529239c2157b2d24f651e208c",
+    "frozen_screen_summary_sha256": "4594ffcf8485012b07f128e68821f4b6a50b6e6639ab8bb8bb4904949c6c9fd7"
+  },
+  "accepted": {
+    "screen": {
+      "accepted_executions": 120,
+      "verified_proofs_including_warmups": 960,
+      "measured_proofs": 840,
+      "warmup_proofs": 120,
+      "minimum_security_bits": 128.09310950050474,
+      "max_unused_smt_sibling_busy_pct": 1.9893899204244032
+    },
+    "confirmation": {
+      "accepted_executions": 120,
+      "verified_proofs_including_warmups": 960,
+      "measured_proofs": 840,
+      "warmup_proofs": 120,
+      "minimum_security_bits": 128.09310950050474,
+      "max_unused_smt_sibling_busy_pct": 1.9950124688279303
+    }
+  },
+  "known_external_build_overlap": {
+    "overlap_count": 0,
+    "build_interval": {
+      "pid": 3929586,
+      "cwd": "/home/john-wu/.codex/worktrees/b9a8/BitZ-pcs",
+      "start_epoch": 1791550970.26,
+      "observed_epoch": 1791551195.2575161,
+      "affinity": [
+        14
+      ],
+      "exit_observed_epoch": 1791551245.2120934
+    },
+    "method": "Conservative command/resources file-mtime brackets; assumes original mtimes preserved.",
+    "accepted_run_intervals": [
+      {
+        "case": "arithmetic-1024-t8-s42-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550106.6191304,
+        "end_epoch_from_resources_mtime": 1791550110.1280856
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550120.1366353,
+        "end_epoch_from_resources_mtime": 1791550123.6462045
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550129.1551018,
+        "end_epoch_from_resources_mtime": 1791550132.6389837
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550115.6382525,
+        "end_epoch_from_resources_mtime": 1791550119.1331024
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550111.1317046,
+        "end_epoch_from_resources_mtime": 1791550114.6345508
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550124.649824,
+        "end_epoch_from_resources_mtime": 1791550128.151885
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550133.6423368,
+        "end_epoch_from_resources_mtime": 1791550137.1495252
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550724.840028,
+        "end_epoch_from_resources_mtime": 1791550728.3373795
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550720.3457942,
+        "end_epoch_from_resources_mtime": 1791550723.8210335
+      },
+      {
+        "case": "arithmetic-1024-t8-s42-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550138.1529434,
+        "end_epoch_from_resources_mtime": 1791550141.600899
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551580.245769,
+        "end_epoch_from_resources_mtime": 1791551583.7496417
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550955.0923207,
+        "end_epoch_from_resources_mtime": 1791550958.6032465
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551551.3160155,
+        "end_epoch_from_resources_mtime": 1791551554.807103
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551575.7521183,
+        "end_epoch_from_resources_mtime": 1791551579.242578
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551571.2356868,
+        "end_epoch_from_resources_mtime": 1791551574.7485101
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551565.7387702,
+        "end_epoch_from_resources_mtime": 1791551569.2317562
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551546.806732,
+        "end_epoch_from_resources_mtime": 1791551550.3128033
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550964.127646,
+        "end_epoch_from_resources_mtime": 1791550967.6228995
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551555.8104565,
+        "end_epoch_from_resources_mtime": 1791551559.268505
+      },
+      {
+        "case": "arithmetic-1024-t8-s43-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551561.272553,
+        "end_epoch_from_resources_mtime": 1791551564.7352538
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551607.2110312,
+        "end_epoch_from_resources_mtime": 1791551610.7138247
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551611.7174575,
+        "end_epoch_from_resources_mtime": 1791551615.2241497
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551589.26088,
+        "end_epoch_from_resources_mtime": 1791551592.7586508
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551620.7361627,
+        "end_epoch_from_resources_mtime": 1791551624.2186909
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551602.7117214,
+        "end_epoch_from_resources_mtime": 1791551606.207785
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551584.752665,
+        "end_epoch_from_resources_mtime": 1791551588.2572634
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551616.2273831,
+        "end_epoch_from_resources_mtime": 1791551619.7329159
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551593.762,
+        "end_epoch_from_resources_mtime": 1791551597.2609828
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551625.2223978,
+        "end_epoch_from_resources_mtime": 1791551628.6834302
+      },
+      {
+        "case": "arithmetic-1024-t8-s44-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551598.264364,
+        "end_epoch_from_resources_mtime": 1791551601.7082503
+      },
+      {
+        "case": "arithmetic-512-t8-s42-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549988.8536925,
+        "end_epoch_from_resources_mtime": 1791549990.6204474
+      },
+      {
+        "case": "arithmetic-512-t8-s42-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549999.853496,
+        "end_epoch_from_resources_mtime": 1791550001.6167512
+      },
+      {
+        "case": "arithmetic-512-t8-s42-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549994.314731,
+        "end_epoch_from_resources_mtime": 1791549996.0821574
+      },
+      {
+        "case": "arithmetic-512-t8-s42-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550002.6203709,
+        "end_epoch_from_resources_mtime": 1791550004.3878248
+      },
+      {
+        "case": "arithmetic-512-t8-s42-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550005.391201,
+        "end_epoch_from_resources_mtime": 1791550007.141223
+      },
+      {
+        "case": "arithmetic-512-t8-s42-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549997.0854695,
+        "end_epoch_from_resources_mtime": 1791549998.8500168
+      },
+      {
+        "case": "arithmetic-512-t8-s42-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549991.6244373,
+        "end_epoch_from_resources_mtime": 1791549993.3113847
+      },
+      {
+        "case": "arithmetic-512-t8-s42-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550671.565645,
+        "end_epoch_from_resources_mtime": 1791550673.252112
+      },
+      {
+        "case": "arithmetic-512-t8-s42-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550668.868442,
+        "end_epoch_from_resources_mtime": 1791550670.5575757
+      },
+      {
+        "case": "arithmetic-512-t8-s42-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550008.1445878,
+        "end_epoch_from_resources_mtime": 1791550009.833419
+      },
+      {
+        "case": "arithmetic-512-t8-s43-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550153.6610162,
+        "end_epoch_from_resources_mtime": 1791550155.4300025
+      },
+      {
+        "case": "arithmetic-512-t8-s43-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550145.3725922,
+        "end_epoch_from_resources_mtime": 1791550147.1300156
+      },
+      {
+        "case": "arithmetic-512-t8-s43-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550150.8939347,
+        "end_epoch_from_resources_mtime": 1791550152.6577072
+      },
+      {
+        "case": "arithmetic-512-t8-s43-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550156.4332848,
+        "end_epoch_from_resources_mtime": 1791550158.1838229
+      },
+      {
+        "case": "arithmetic-512-t8-s43-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550148.1336958,
+        "end_epoch_from_resources_mtime": 1791550149.890833
+      },
+      {
+        "case": "arithmetic-512-t8-s43-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550142.604257,
+        "end_epoch_from_resources_mtime": 1791550144.3691359
+      },
+      {
+        "case": "arithmetic-512-t8-s43-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550161.86966,
+        "end_epoch_from_resources_mtime": 1791550163.5588467
+      },
+      {
+        "case": "arithmetic-512-t8-s43-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550732.0460176,
+        "end_epoch_from_resources_mtime": 1791550733.7340033
+      },
+      {
+        "case": "arithmetic-512-t8-s43-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550729.3581018,
+        "end_epoch_from_resources_mtime": 1791550731.0427287
+      },
+      {
+        "case": "arithmetic-512-t8-s43-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550159.1873868,
+        "end_epoch_from_resources_mtime": 1791550160.8650894
+      },
+      {
+        "case": "arithmetic-512-t8-s44-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551537.030445,
+        "end_epoch_from_resources_mtime": 1791551538.7973692
+      },
+      {
+        "case": "arithmetic-512-t8-s44-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551534.273987,
+        "end_epoch_from_resources_mtime": 1791551536.0268831
+      },
+      {
+        "case": "arithmetic-512-t8-s44-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551525.9837515,
+        "end_epoch_from_resources_mtime": 1791551527.7576194
+      },
+      {
+        "case": "arithmetic-512-t8-s44-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551517.8435106,
+        "end_epoch_from_resources_mtime": 1791551519.6038098
+      },
+      {
+        "case": "arithmetic-512-t8-s44-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551531.514361,
+        "end_epoch_from_resources_mtime": 1791551533.2705512
+      },
+      {
+        "case": "arithmetic-512-t8-s44-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551528.7612846,
+        "end_epoch_from_resources_mtime": 1791551530.5109208
+      },
+      {
+        "case": "arithmetic-512-t8-s44-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551520.6072378,
+        "end_epoch_from_resources_mtime": 1791551522.2942135
+      },
+      {
+        "case": "arithmetic-512-t8-s44-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551539.8009436,
+        "end_epoch_from_resources_mtime": 1791551541.4824662
+      },
+      {
+        "case": "arithmetic-512-t8-s44-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551515.148746,
+        "end_epoch_from_resources_mtime": 1791551516.8401108
+      },
+      {
+        "case": "arithmetic-512-t8-s44-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551523.2977028,
+        "end_epoch_from_resources_mtime": 1791551524.9804306
+      },
+      {
+        "case": "full-1024-t16-s42-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550054.9064343,
+        "end_epoch_from_resources_mtime": 1791550062.5063963
+      },
+      {
+        "case": "full-1024-t16-s42-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550010.8403041,
+        "end_epoch_from_resources_mtime": 1791550018.4247172
+      },
+      {
+        "case": "full-1024-t16-s42-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550036.6787527,
+        "end_epoch_from_resources_mtime": 1791550044.2822666
+      },
+      {
+        "case": "full-1024-t16-s42-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550098.0379195,
+        "end_epoch_from_resources_mtime": 1791550105.6155145
+      },
+      {
+        "case": "full-1024-t16-s42-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550046.2899833,
+        "end_epoch_from_resources_mtime": 1791550053.8998609
+      },
+      {
+        "case": "full-1024-t16-s42-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550028.0510283,
+        "end_epoch_from_resources_mtime": 1791550035.6719704
+      },
+      {
+        "case": "full-1024-t16-s42-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550072.1901248,
+        "end_epoch_from_resources_mtime": 1791550079.7992945
+      },
+      {
+        "case": "full-1024-t16-s42-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550711.7633924,
+        "end_epoch_from_resources_mtime": 1791550719.3371887
+      },
+      {
+        "case": "full-1024-t16-s42-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550703.1588495,
+        "end_epoch_from_resources_mtime": 1791550710.7303934
+      },
+      {
+        "case": "full-1024-t16-s42-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550063.5125785,
+        "end_epoch_from_resources_mtime": 1791550071.1833222
+      },
+      {
+        "case": "full-1024-t16-s43-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550832.67652,
+        "end_epoch_from_resources_mtime": 1791550840.25124
+      },
+      {
+        "case": "full-1024-t16-s43-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550903.5054245,
+        "end_epoch_from_resources_mtime": 1791550911.066024
+      },
+      {
+        "case": "full-1024-t16-s43-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550912.0725837,
+        "end_epoch_from_resources_mtime": 1791550919.628389
+      },
+      {
+        "case": "full-1024-t16-s43-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550849.8633144,
+        "end_epoch_from_resources_mtime": 1791550857.4215868
+      },
+      {
+        "case": "full-1024-t16-s43-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550937.9483647,
+        "end_epoch_from_resources_mtime": 1791550945.5196128
+      },
+      {
+        "case": "full-1024-t16-s43-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550824.07799,
+        "end_epoch_from_resources_mtime": 1791550831.6698508
+      },
+      {
+        "case": "full-1024-t16-s43-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550841.257864,
+        "end_epoch_from_resources_mtime": 1791550848.8565679
+      },
+      {
+        "case": "full-1024-t16-s43-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550946.5262613,
+        "end_epoch_from_resources_mtime": 1791550954.0889435
+      },
+      {
+        "case": "full-1024-t16-s43-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550894.9002311,
+        "end_epoch_from_resources_mtime": 1791550902.4986458
+      },
+      {
+        "case": "full-1024-t16-s43-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550875.7175846,
+        "end_epoch_from_resources_mtime": 1791550883.2938728
+      },
+      {
+        "case": "full-1024-t16-s44-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551247.155195,
+        "end_epoch_from_resources_mtime": 1791551254.7166219
+      },
+      {
+        "case": "full-1024-t16-s44-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551298.656074,
+        "end_epoch_from_resources_mtime": 1791551306.2212534
+      },
+      {
+        "case": "full-1024-t16-s44-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551315.8193495,
+        "end_epoch_from_resources_mtime": 1791551323.3974977
+      },
+      {
+        "case": "full-1024-t16-s44-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551307.2278833,
+        "end_epoch_from_resources_mtime": 1791551314.81337
+      },
+      {
+        "case": "full-1024-t16-s44-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551350.2536938,
+        "end_epoch_from_resources_mtime": 1791551357.8191967
+      },
+      {
+        "case": "full-1024-t16-s44-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551393.2532113,
+        "end_epoch_from_resources_mtime": 1791551400.8216684
+      },
+      {
+        "case": "full-1024-t16-s44-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551376.058002,
+        "end_epoch_from_resources_mtime": 1791551383.63348
+      },
+      {
+        "case": "full-1024-t16-s44-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551264.2905226,
+        "end_epoch_from_resources_mtime": 1791551271.8431115
+      },
+      {
+        "case": "full-1024-t16-s44-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551255.7231753,
+        "end_epoch_from_resources_mtime": 1791551263.2843769
+      },
+      {
+        "case": "full-1024-t16-s44-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551629.690344,
+        "end_epoch_from_resources_mtime": 1791551637.3061216
+      },
+      {
+        "case": "full-512-t16-s42-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549978.8909376,
+        "end_epoch_from_resources_mtime": 1791549982.8567362
+      },
+      {
+        "case": "full-512-t16-s42-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549949.0591135,
+        "end_epoch_from_resources_mtime": 1791549953.0268638
+      },
+      {
+        "case": "full-512-t16-s42-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549973.907481,
+        "end_epoch_from_resources_mtime": 1791549977.8844178
+      },
+      {
+        "case": "full-512-t16-s42-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549954.0339515,
+        "end_epoch_from_resources_mtime": 1791549957.973181
+      },
+      {
+        "case": "full-512-t16-s42-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549983.8635783,
+        "end_epoch_from_resources_mtime": 1791549987.8504932
+      },
+      {
+        "case": "full-512-t16-s42-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549968.9361126,
+        "end_epoch_from_resources_mtime": 1791549972.9007843
+      },
+      {
+        "case": "full-512-t16-s42-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549958.9796994,
+        "end_epoch_from_resources_mtime": 1791549962.9548624
+      },
+      {
+        "case": "full-512-t16-s42-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550653.9177945,
+        "end_epoch_from_resources_mtime": 1791550657.8709216
+      },
+      {
+        "case": "full-512-t16-s42-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550663.8887155,
+        "end_epoch_from_resources_mtime": 1791550667.8399575
+      },
+      {
+        "case": "full-512-t16-s42-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791549944.0933962,
+        "end_epoch_from_resources_mtime": 1791549948.051241
+      },
+      {
+        "case": "full-512-t16-s43-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550813.1487455,
+        "end_epoch_from_resources_mtime": 1791550817.0906096
+      },
+      {
+        "case": "full-512-t16-s43-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550184.421372,
+        "end_epoch_from_resources_mtime": 1791550188.3557577
+      },
+      {
+        "case": "full-512-t16-s43-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550164.5654747,
+        "end_epoch_from_resources_mtime": 1791550168.5360045
+      },
+      {
+        "case": "full-512-t16-s43-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550808.1987002,
+        "end_epoch_from_resources_mtime": 1791550812.1421247
+      },
+      {
+        "case": "full-512-t16-s43-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550773.5081236,
+        "end_epoch_from_resources_mtime": 1791550777.4881544
+      },
+      {
+        "case": "full-512-t16-s43-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550783.4271872,
+        "end_epoch_from_resources_mtime": 1791550787.3455787
+      },
+      {
+        "case": "full-512-t16-s43-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550788.352448,
+        "end_epoch_from_resources_mtime": 1791550792.351829
+      },
+      {
+        "case": "full-512-t16-s43-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550768.5713625,
+        "end_epoch_from_resources_mtime": 1791550772.4959943
+      },
+      {
+        "case": "full-512-t16-s43-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550818.097433,
+        "end_epoch_from_resources_mtime": 1791550822.0706275
+      },
+      {
+        "case": "full-512-t16-s43-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791550753.7320256,
+        "end_epoch_from_resources_mtime": 1791550757.6733932
+      },
+      {
+        "case": "full-512-t16-s44-baseline",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551462.3943024,
+        "end_epoch_from_resources_mtime": 1791551466.3571823
+      },
+      {
+        "case": "full-512-t16-s44-global",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551442.5184839,
+        "end_epoch_from_resources_mtime": 1791551446.4468713
+      },
+      {
+        "case": "full-512-t16-s44-original",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551480.2975,
+        "end_epoch_from_resources_mtime": 1791551484.267332
+      },
+      {
+        "case": "full-512-t16-s44-queries116",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551490.2420905,
+        "end_epoch_from_resources_mtime": 1791551494.1946106
+      },
+      {
+        "case": "full-512-t16-s44-queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551417.7120166,
+        "end_epoch_from_resources_mtime": 1791551421.6752713
+      },
+      {
+        "case": "full-512-t16-s44-queries124",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551401.8282893,
+        "end_epoch_from_resources_mtime": 1791551405.787439
+      },
+      {
+        "case": "full-512-t16-s44-weighted",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551432.609988,
+        "end_epoch_from_resources_mtime": 1791551436.5600147
+      },
+      {
+        "case": "full-512-t16-s44-weighted_external",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551407.794972,
+        "end_epoch_from_resources_mtime": 1791551411.7438238
+      },
+      {
+        "case": "full-512-t16-s44-weighted_external_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551473.3312507,
+        "end_epoch_from_resources_mtime": 1791551477.2895935
+      },
+      {
+        "case": "full-512-t16-s44-weighted_queries120",
+        "phase": "screen",
+        "start_epoch_from_command_mtime": 1791551510.1696274,
+        "end_epoch_from_resources_mtime": 1791551514.1453202
+      },
+      {
+        "case": "arithmetic-1024-t8-s45-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551680.2791479,
+        "end_epoch_from_resources_mtime": 1791551683.7752306
+      },
+      {
+        "case": "arithmetic-1024-t8-s45-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551675.7641222,
+        "end_epoch_from_resources_mtime": 1791551679.2750988
+      },
+      {
+        "case": "arithmetic-1024-t8-s45-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551684.7792304,
+        "end_epoch_from_resources_mtime": 1791551688.2776766
+      },
+      {
+        "case": "arithmetic-1024-t8-s46-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551877.695551,
+        "end_epoch_from_resources_mtime": 1791551881.2066278
+      },
+      {
+        "case": "arithmetic-1024-t8-s46-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551882.2098072,
+        "end_epoch_from_resources_mtime": 1791551885.692334
+      },
+      {
+        "case": "arithmetic-1024-t8-s46-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551873.2271757,
+        "end_epoch_from_resources_mtime": 1791551876.6919265
+      },
+      {
+        "case": "arithmetic-1024-t8-s47-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551949.234523,
+        "end_epoch_from_resources_mtime": 1791551952.7420895
+      },
+      {
+        "case": "arithmetic-1024-t8-s47-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551940.2659414,
+        "end_epoch_from_resources_mtime": 1791551943.7625403
+      },
+      {
+        "case": "arithmetic-1024-t8-s47-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551944.7661805,
+        "end_epoch_from_resources_mtime": 1791551948.2308738
+      },
+      {
+        "case": "arithmetic-1024-t8-s48-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552006.5866516,
+        "end_epoch_from_resources_mtime": 1791552010.0769782
+      },
+      {
+        "case": "arithmetic-1024-t8-s48-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552002.0791192,
+        "end_epoch_from_resources_mtime": 1791552005.582489
+      },
+      {
+        "case": "arithmetic-1024-t8-s48-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552011.0803046,
+        "end_epoch_from_resources_mtime": 1791552014.5818279
+      },
+      {
+        "case": "arithmetic-1024-t8-s49-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552104.4985054,
+        "end_epoch_from_resources_mtime": 1791552108.0251124
+      },
+      {
+        "case": "arithmetic-1024-t8-s49-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552109.0286753,
+        "end_epoch_from_resources_mtime": 1791552112.540086
+      },
+      {
+        "case": "arithmetic-1024-t8-s49-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552113.5433307,
+        "end_epoch_from_resources_mtime": 1791552117.0032883
+      },
+      {
+        "case": "arithmetic-1024-t8-s50-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552181.863282,
+        "end_epoch_from_resources_mtime": 1791552185.3757577
+      },
+      {
+        "case": "arithmetic-1024-t8-s50-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552190.8434627,
+        "end_epoch_from_resources_mtime": 1791552194.3396294
+      },
+      {
+        "case": "arithmetic-1024-t8-s50-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552186.3790987,
+        "end_epoch_from_resources_mtime": 1791552189.8398843
+      },
+      {
+        "case": "arithmetic-1024-t8-s51-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552231.8308513,
+        "end_epoch_from_resources_mtime": 1791552235.3258047
+      },
+      {
+        "case": "arithmetic-1024-t8-s51-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552236.3291714,
+        "end_epoch_from_resources_mtime": 1791552239.8175635
+      },
+      {
+        "case": "arithmetic-1024-t8-s51-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552240.820949,
+        "end_epoch_from_resources_mtime": 1791552244.2742496
+      },
+      {
+        "case": "arithmetic-1024-t8-s52-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552314.1803598,
+        "end_epoch_from_resources_mtime": 1791552317.6771803
+      },
+      {
+        "case": "arithmetic-1024-t8-s52-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552305.1985338,
+        "end_epoch_from_resources_mtime": 1791552308.7020276
+      },
+      {
+        "case": "arithmetic-1024-t8-s52-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552309.7053995,
+        "end_epoch_from_resources_mtime": 1791552313.1768665
+      },
+      {
+        "case": "arithmetic-1024-t8-s53-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552422.3563976,
+        "end_epoch_from_resources_mtime": 1791552425.8801632
+      },
+      {
+        "case": "arithmetic-1024-t8-s53-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552427.8838956,
+        "end_epoch_from_resources_mtime": 1791552431.386666
+      },
+      {
+        "case": "arithmetic-1024-t8-s53-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552432.3903265,
+        "end_epoch_from_resources_mtime": 1791552435.8583767
+      },
+      {
+        "case": "arithmetic-1024-t8-s54-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552567.2425895,
+        "end_epoch_from_resources_mtime": 1791552570.7463007
+      },
+      {
+        "case": "arithmetic-1024-t8-s54-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552571.7499976,
+        "end_epoch_from_resources_mtime": 1791552575.252233
+      },
+      {
+        "case": "arithmetic-1024-t8-s54-weighted_queries120",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552562.7810078,
+        "end_epoch_from_resources_mtime": 1791552566.2392635
+      },
+      {
+        "case": "arithmetic-512-t8-s45-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551755.0554078,
+        "end_epoch_from_resources_mtime": 1791551756.8105443
+      },
+      {
+        "case": "arithmetic-512-t8-s45-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551749.5829794,
+        "end_epoch_from_resources_mtime": 1791551751.3572574
+      },
+      {
+        "case": "arithmetic-512-t8-s45-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551752.3607557,
+        "end_epoch_from_resources_mtime": 1791551754.052768
+      },
+      {
+        "case": "arithmetic-512-t8-s46-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551790.5529194,
+        "end_epoch_from_resources_mtime": 1791551792.3331397
+      },
+      {
+        "case": "arithmetic-512-t8-s46-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551793.3364701,
+        "end_epoch_from_resources_mtime": 1791551795.1006212
+      },
+      {
+        "case": "arithmetic-512-t8-s46-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551787.8517318,
+        "end_epoch_from_resources_mtime": 1791551789.549267
+      },
+      {
+        "case": "arithmetic-512-t8-s47-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551934.7165828,
+        "end_epoch_from_resources_mtime": 1791551936.4882603
+      },
+      {
+        "case": "arithmetic-512-t8-s47-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551937.4918616,
+        "end_epoch_from_resources_mtime": 1791551939.2626076
+      },
+      {
+        "case": "arithmetic-512-t8-s47-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551932.0156505,
+        "end_epoch_from_resources_mtime": 1791551933.713217
+      },
+      {
+        "case": "arithmetic-512-t8-s48-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551993.8477345,
+        "end_epoch_from_resources_mtime": 1791551995.6161542
+      },
+      {
+        "case": "arithmetic-512-t8-s48-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551996.6194823,
+        "end_epoch_from_resources_mtime": 1791551998.381213
+      },
+      {
+        "case": "arithmetic-512-t8-s48-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551999.3847814,
+        "end_epoch_from_resources_mtime": 1791552001.07548
+      },
+      {
+        "case": "arithmetic-512-t8-s49-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552144.5250103,
+        "end_epoch_from_resources_mtime": 1791552146.2881472
+      },
+      {
+        "case": "arithmetic-512-t8-s49-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552141.7532086,
+        "end_epoch_from_resources_mtime": 1791552143.521702
+      },
+      {
+        "case": "arithmetic-512-t8-s49-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552139.0529644,
+        "end_epoch_from_resources_mtime": 1791552140.7499652
+      },
+      {
+        "case": "arithmetic-512-t8-s50-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552195.343034,
+        "end_epoch_from_resources_mtime": 1791552197.112491
+      },
+      {
+        "case": "arithmetic-512-t8-s50-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552198.1156254,
+        "end_epoch_from_resources_mtime": 1791552199.8849392
+      },
+      {
+        "case": "arithmetic-512-t8-s50-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552200.888377,
+        "end_epoch_from_resources_mtime": 1791552202.5703676
+      },
+      {
+        "case": "arithmetic-512-t8-s51-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552226.3857472,
+        "end_epoch_from_resources_mtime": 1791552228.1398897
+      },
+      {
+        "case": "arithmetic-512-t8-s51-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552223.6149724,
+        "end_epoch_from_resources_mtime": 1791552225.3823195
+      },
+      {
+        "case": "arithmetic-512-t8-s51-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552229.1435447,
+        "end_epoch_from_resources_mtime": 1791552230.8272526
+      },
+      {
+        "case": "arithmetic-512-t8-s52-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552344.5730202,
+        "end_epoch_from_resources_mtime": 1791552346.3458438
+      },
+      {
+        "case": "arithmetic-512-t8-s52-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552350.0372229,
+        "end_epoch_from_resources_mtime": 1791552351.8134582
+      },
+      {
+        "case": "arithmetic-512-t8-s52-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552347.3491626,
+        "end_epoch_from_resources_mtime": 1791552349.0339637
+      },
+      {
+        "case": "arithmetic-512-t8-s53-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552372.9130867,
+        "end_epoch_from_resources_mtime": 1791552374.6873097
+      },
+      {
+        "case": "arithmetic-512-t8-s53-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552375.690642,
+        "end_epoch_from_resources_mtime": 1791552377.463323
+      },
+      {
+        "case": "arithmetic-512-t8-s53-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552378.4667103,
+        "end_epoch_from_resources_mtime": 1791552380.1566706
+      },
+      {
+        "case": "arithmetic-512-t8-s54-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552554.5156815,
+        "end_epoch_from_resources_mtime": 1791552556.2912705
+      },
+      {
+        "case": "arithmetic-512-t8-s54-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552560.005784,
+        "end_epoch_from_resources_mtime": 1791552561.777477
+      },
+      {
+        "case": "arithmetic-512-t8-s54-weighted",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552557.2946534,
+        "end_epoch_from_resources_mtime": 1791552559.0023723
+      },
+      {
+        "case": "full-1024-t16-s45-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551740.8609474,
+        "end_epoch_from_resources_mtime": 1791551748.57977
+      },
+      {
+        "case": "full-1024-t16-s45-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551689.2864914,
+        "end_epoch_from_resources_mtime": 1791551696.8941157
+      },
+      {
+        "case": "full-1024-t16-s45-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551715.0139394,
+        "end_epoch_from_resources_mtime": 1791551722.5810196
+      },
+      {
+        "case": "full-1024-t16-s46-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551811.2465606,
+        "end_epoch_from_resources_mtime": 1791551818.9754057
+      },
+      {
+        "case": "full-1024-t16-s46-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551847.1907756,
+        "end_epoch_from_resources_mtime": 1791551854.9297655
+      },
+      {
+        "case": "full-1024-t16-s46-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551864.5991018,
+        "end_epoch_from_resources_mtime": 1791551872.2238228
+      },
+      {
+        "case": "full-1024-t16-s47-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551896.3549817,
+        "end_epoch_from_resources_mtime": 1791551904.003242
+      },
+      {
+        "case": "full-1024-t16-s47-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551923.3813727,
+        "end_epoch_from_resources_mtime": 1791551931.011274
+      },
+      {
+        "case": "full-1024-t16-s47-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551913.6761246,
+        "end_epoch_from_resources_mtime": 1791551921.373897
+      },
+      {
+        "case": "full-1024-t16-s48-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552015.5882459,
+        "end_epoch_from_resources_mtime": 1791552023.23325
+      },
+      {
+        "case": "full-1024-t16-s48-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552042.570529,
+        "end_epoch_from_resources_mtime": 1791552050.236017
+      },
+      {
+        "case": "full-1024-t16-s48-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552025.2405293,
+        "end_epoch_from_resources_mtime": 1791552032.8859525
+      },
+      {
+        "case": "full-1024-t16-s49-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552095.7826319,
+        "end_epoch_from_resources_mtime": 1791552103.4952054
+      },
+      {
+        "case": "full-1024-t16-s49-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552051.2425985,
+        "end_epoch_from_resources_mtime": 1791552058.961568
+      },
+      {
+        "case": "full-1024-t16-s49-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552087.1249452,
+        "end_epoch_from_resources_mtime": 1791552094.7757802
+      },
+      {
+        "case": "full-1024-t16-s50-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552173.2216518,
+        "end_epoch_from_resources_mtime": 1791552180.8600154
+      },
+      {
+        "case": "full-1024-t16-s50-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552147.2949238,
+        "end_epoch_from_resources_mtime": 1791552154.9034033
+      },
+      {
+        "case": "full-1024-t16-s50-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552164.5857172,
+        "end_epoch_from_resources_mtime": 1791552172.2142034
+      },
+      {
+        "case": "full-1024-t16-s51-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552296.5169857,
+        "end_epoch_from_resources_mtime": 1791552304.195291
+      },
+      {
+        "case": "full-1024-t16-s51-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552279.124,
+        "end_epoch_from_resources_mtime": 1791552286.808388
+      },
+      {
+        "case": "full-1024-t16-s51-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552287.8152664,
+        "end_epoch_from_resources_mtime": 1791552295.5103106
+      },
+      {
+        "case": "full-1024-t16-s52-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552327.3124523,
+        "end_epoch_from_resources_mtime": 1791552334.9271529
+      },
+      {
+        "case": "full-1024-t16-s52-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552318.6837935,
+        "end_epoch_from_resources_mtime": 1791552326.3058574
+      },
+      {
+        "case": "full-1024-t16-s52-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552335.9340222,
+        "end_epoch_from_resources_mtime": 1791552343.5697408
+      },
+      {
+        "case": "full-1024-t16-s53-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552381.1635435,
+        "end_epoch_from_resources_mtime": 1791552388.90919
+      },
+      {
+        "case": "full-1024-t16-s53-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552398.5522993,
+        "end_epoch_from_resources_mtime": 1791552406.3034103
+      },
+      {
+        "case": "full-1024-t16-s53-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552389.915895,
+        "end_epoch_from_resources_mtime": 1791552397.5455804
+      },
+      {
+        "case": "full-1024-t16-s54-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552510.0899813,
+        "end_epoch_from_resources_mtime": 1791552517.7393484
+      },
+      {
+        "case": "full-1024-t16-s54-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552528.444132,
+        "end_epoch_from_resources_mtime": 1791552536.0949557
+      },
+      {
+        "case": "full-1024-t16-s54-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552545.81249,
+        "end_epoch_from_resources_mtime": 1791552553.5123298
+      },
+      {
+        "case": "full-512-t16-s45-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551782.8542058,
+        "end_epoch_from_resources_mtime": 1791551786.84839
+      },
+      {
+        "case": "full-512-t16-s45-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551772.8223097,
+        "end_epoch_from_resources_mtime": 1791551776.8321247
+      },
+      {
+        "case": "full-512-t16-s45-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551767.837198,
+        "end_epoch_from_resources_mtime": 1791551771.815659
+      },
+      {
+        "case": "full-512-t16-s46-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551806.1990247,
+        "end_epoch_from_resources_mtime": 1791551810.2399015
+      },
+      {
+        "case": "full-512-t16-s46-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551796.1074808,
+        "end_epoch_from_resources_mtime": 1791551800.124433
+      },
+      {
+        "case": "full-512-t16-s46-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551801.131097,
+        "end_epoch_from_resources_mtime": 1791551805.19242
+      },
+      {
+        "case": "full-512-t16-s47-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551973.83114,
+        "end_epoch_from_resources_mtime": 1791551977.8435733
+      },
+      {
+        "case": "full-512-t16-s47-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551963.8053617,
+        "end_epoch_from_resources_mtime": 1791551967.807256
+      },
+      {
+        "case": "full-512-t16-s47-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551953.7486753,
+        "end_epoch_from_resources_mtime": 1791551957.761565
+      },
+      {
+        "case": "full-512-t16-s48-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551983.8543382,
+        "end_epoch_from_resources_mtime": 1791551987.842496
+      },
+      {
+        "case": "full-512-t16-s48-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551978.8504527,
+        "end_epoch_from_resources_mtime": 1791551982.8473444
+      },
+      {
+        "case": "full-512-t16-s48-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791551988.849378,
+        "end_epoch_from_resources_mtime": 1791551992.84418
+      },
+      {
+        "case": "full-512-t16-s49-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552129.0198216,
+        "end_epoch_from_resources_mtime": 1791552133.0119188
+      },
+      {
+        "case": "full-512-t16-s49-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552118.0098736,
+        "end_epoch_from_resources_mtime": 1791552122.0096474
+      },
+      {
+        "case": "full-512-t16-s49-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552134.0188177,
+        "end_epoch_from_resources_mtime": 1791552138.0494425
+      },
+      {
+        "case": "full-512-t16-s50-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552218.6115534,
+        "end_epoch_from_resources_mtime": 1791552222.611583
+      },
+      {
+        "case": "full-512-t16-s50-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552213.6045675,
+        "end_epoch_from_resources_mtime": 1791552217.6049428
+      },
+      {
+        "case": "full-512-t16-s50-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552208.5927958,
+        "end_epoch_from_resources_mtime": 1791552212.597705
+      },
+      {
+        "case": "full-512-t16-s51-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552250.3001652,
+        "end_epoch_from_resources_mtime": 1791552254.323581
+      },
+      {
+        "case": "full-512-t16-s51-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552260.344639,
+        "end_epoch_from_resources_mtime": 1791552264.3774822
+      },
+      {
+        "case": "full-512-t16-s51-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552265.3842785,
+        "end_epoch_from_resources_mtime": 1791552269.401973
+      },
+      {
+        "case": "full-512-t16-s52-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552352.8201742,
+        "end_epoch_from_resources_mtime": 1791552356.844425
+      },
+      {
+        "case": "full-512-t16-s52-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552357.8509836,
+        "end_epoch_from_resources_mtime": 1791552361.876839
+      },
+      {
+        "case": "full-512-t16-s52-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552367.9240203,
+        "end_epoch_from_resources_mtime": 1791552371.9094296
+      },
+      {
+        "case": "full-512-t16-s53-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552407.3099637,
+        "end_epoch_from_resources_mtime": 1791552411.3218222
+      },
+      {
+        "case": "full-512-t16-s53-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552417.3507295,
+        "end_epoch_from_resources_mtime": 1791552421.3527832
+      },
+      {
+        "case": "full-512-t16-s53-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552412.3289638,
+        "end_epoch_from_resources_mtime": 1791552416.343993
+      },
+      {
+        "case": "full-512-t16-s54-baseline",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552437.8654044,
+        "end_epoch_from_resources_mtime": 1791552441.8395956
+      },
+      {
+        "case": "full-512-t16-s54-original",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552462.9209015,
+        "end_epoch_from_resources_mtime": 1791552466.9111927
+      },
+      {
+        "case": "full-512-t16-s54-weighted_external",
+        "phase": "confirmation",
+        "start_epoch_from_command_mtime": 1791552447.9369287,
+        "end_epoch_from_resources_mtime": 1791552451.9188497
+      }
+    ]
+  },
+  "input_and_control_checks": {
+    "distinct_inputs_per_workload": {
+      "arithmetic-512": 13,
+      "arithmetic-1024": 13,
+      "full-512": 13,
+      "full-1024": 13
+    },
+    "matched_workload_seed_groups": 52,
+    "control_digest_and_size_pairs_checked": 52
+  },
+  "profile_equivalence_artifact": "profile-equivalence.json",
+  "validation": {
+    "validation": {
+      "invocations": 33,
+      "passed_test_executions": 97,
+      "failed_test_executions": 0,
+      "note": "Repeated tests under distinct configurations count separately."
+    },
+    "validation-external": {
+      "invocations": 20,
+      "passed_test_executions": 60,
+      "failed_test_executions": 0,
+      "note": "Repeated tests under distinct configurations count separately."
+    }
+  },
+  "excluded_proofs": {
+    "screen_discarded": {
+      "files": 80,
+      "trials": 640,
+      "verified": 640,
+      "unverified": 0,
+      "sample": 560,
+      "warmup": 80,
+      "unverified_record_files": []
+    },
+    "confirmation_discarded": {
+      "files": 35,
+      "trials": 280,
+      "verified": 280,
+      "unverified": 0,
+      "sample": 245,
+      "warmup": 35,
+      "unverified_record_files": []
+    },
+    "superseded_short_screen_all_attempts": {
+      "files": 7,
+      "trials": 28,
+      "verified": 28,
+      "unverified": 0,
+      "sample": 21,
+      "warmup": 7,
+      "unverified_record_files": []
+    },
+    "note": "Counts raw completed proof records, not unique inputs. Excluded proofs do not contribute to accepted timing statistics."
+  },
+  "correctness_only_proofs": {
+    "smoke": {
+      "files": 8,
+      "trials": 8,
+      "verified": 8,
+      "unverified": 0,
+      "sample": 8,
+      "warmup": 0,
+      "unverified_record_files": []
+    },
+    "corpus_preparation": {
+      "files": 48,
+      "trials": 48,
+      "verified": 48,
+      "unverified": 0,
+      "sample": 48,
+      "warmup": 0,
+      "unverified_record_files": []
+    }
+  },
+  "external_build_excluded_cases": [
+    "arithmetic-1024-t8-s44-weighted_external_queries120",
+    "arithmetic-1024-t8-s43-weighted",
+    "arithmetic-1024-t8-s44-weighted_external",
+    "arithmetic-1024-t8-s43-queries124",
+    "arithmetic-1024-t8-s43-baseline",
+    "arithmetic-1024-t8-s44-queries124",
+    "arithmetic-1024-t8-s44-original",
+    "arithmetic-1024-t8-s43-weighted_external_queries120",
+    "arithmetic-1024-t8-s43-queries120",
+    "arithmetic-1024-t8-s44-queries116",
+    "arithmetic-1024-t8-s43-original",
+    "arithmetic-1024-t8-s44-queries120",
+    "arithmetic-1024-t8-s44-global",
+    "arithmetic-1024-t8-s44-weighted",
+    "arithmetic-1024-t8-s44-weighted_queries120",
+    "arithmetic-1024-t8-s43-queries116",
+    "arithmetic-1024-t8-s43-weighted_queries120",
+    "arithmetic-1024-t8-s44-baseline",
+    "full-1024-t16-s44-weighted_queries120"
+  ],
+  "external_process_events": {
+    "artifact_present": true,
+    "contents": [
+      {
+        "event": "observed_start",
+        "epoch": 1791552163.5290174,
+        "pid": 3972368,
+        "name": "falcon_hybrid",
+        "cwd": "/proc/3972368/cwd",
+        "affinity": [
+          6
+        ]
+      },
+      {
+        "event": "observed_exit",
+        "epoch": 1791552168.5361712,
+        "pid": 3972368,
+        "name": "falcon_hybrid",
+        "cwd": "/proc/3972368/cwd",
+        "affinity": [
+          6
+        ]
+      },
+      {
+        "event": "observed_start",
+        "epoch": 1791552388.8512282,
+        "pid": 3980089,
+        "name": "falcon_hybrid",
+        "cwd": "/proc/3980089/cwd",
+        "affinity": [
+          6
+        ]
+      },
+      {
+        "event": "observed_exit",
+        "epoch": 1791552393.858513,
+        "pid": 3980089,
+        "name": "falcon_hybrid",
+        "cwd": "/proc/3980089/cwd",
+        "affinity": [
+          6
+        ]
+      },
+      {
+        "event": "observed_start",
+        "epoch": 1791552579.122837,
+        "pid": 3989950,
+        "name": "falcon_hybrid",
+        "cwd": "/home/john-wu/.codex/worktrees/b9a8/BitZ-pcs",
+        "affinity": [
+          14
+        ]
+      }
+    ]
+  },
+  "limits": [
+    "Security checks validate the recorded composed accounting and test evidence, not a new proof of cryptographic soundness.",
+    "Affinity checks use benchmark-reported worker pins, not a complete independent /proc affinity history.",
+    "External process monitoring polls periodically and cannot establish perfect machine isolation.",
+    "Repeated deterministic proofs are counted as executions; 13 seeds per workload are the independent inputs."
+  ],
+  "finished_epoch": 1791552587.3826199
+}

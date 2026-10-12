@@ -1,0 +1,28 @@
+
+running 23 tests
+test original::tests::avx2_words_match_the_blake3_crate ... ok
+test original::tests::avx512_words_match_the_blake3_crate ... ok
+test original::tests::benchmark_nonce_scheduling ... ignored, isolated grinding scheduling benchmark
+test original::tests::benchmark_x86_nonce_kernels ... ignored, isolated grinding kernel benchmark
+test original::tests::lanes_match_the_blake3_crate ... ok
+test original::tests::pool_search_preserves_minimum_across_threads_and_chunks ... ok
+test original::tests::pool_search_returns_the_serial_minimum ... ok
+test original::tests::range_edges_match_the_serial_scan ... ok
+test original::tests::range_scans_match_the_serial_scan ... ok
+test original::tests::wide_thresholds_use_the_full_hash ... ok
+test original::tests::x86_kernels_return_the_same_smallest_nonce ... ok
+test specialized::avx512::tests::high_difficulty_candidates_use_the_complete_hash ... ok
+test specialized::tests::avx2_words_match_the_blake3_crate ... ok
+test specialized::tests::avx512_words_match_the_blake3_crate ... ok
+test specialized::tests::benchmark_nonce_scheduling ... ignored, isolated grinding scheduling benchmark
+test specialized::tests::benchmark_x86_nonce_kernels ... ignored, isolated grinding kernel benchmark
+test specialized::tests::lanes_match_the_blake3_crate ... ok
+test specialized::tests::pool_search_preserves_minimum_across_threads_and_chunks ... ok
+test specialized::tests::pool_search_returns_the_serial_minimum ... ok
+test specialized::tests::range_edges_match_the_serial_scan ... ok
+test specialized::tests::range_scans_match_the_serial_scan ... ok
+test specialized::tests::wide_thresholds_use_the_full_hash ... ok
+test specialized::tests::x86_kernels_return_the_same_smallest_nonce ... ok
+
+test result: ok. 19 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.31s
+

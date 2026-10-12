@@ -1,0 +1,125 @@
+{
+  "captured_at": 1791336236.3286517,
+  "qualification_subject": "Immutable candidate-v7 binary and /tmp/falcon-compact-opening-candidate-v7; current working tree is NOT the frozen subject",
+  "frozen_files": 818,
+  "changed_current_files": [
+    {
+      "path": "src/piop/spartan/falcon1024_ct/constraints.rs",
+      "frozen_v7_sha256": "8511691c9625e8fa0b7af9485bcf5c0d5edb83447ff4461f8fc6e1fe60e103b7",
+      "current_sha256": "e761457c4abba986c9cac0c3ed752e37795c1a32e3debbd1f8f6169d1adfd8fc"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/format.rs",
+      "frozen_v7_sha256": "e9942d53b1e14932d6ed87aba39599e1e0f8bbb94ecd2b7a4336744daac2ee67",
+      "current_sha256": "822110abbefe2735359378a09790961c41a1e99b9fa65d1830faaf46ef3db7b6"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hash_to_point.rs",
+      "frozen_v7_sha256": "612fda7577f2cfdca0966a286c45962d84ce56856888c5ce263e8fdc1773c3df",
+      "current_sha256": "9ee5cfa7eb142790d9d60cdbd9619f1f58b7b9b9f0d17852179c3b075c895a23"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid.rs",
+      "frozen_v7_sha256": "02208b1027930fa85378114431e1949708d838d40b642537a91f1a2075dca598",
+      "current_sha256": "d87c1103ffb5ba13dea47b7f584462c38cb61f5cb0ca178fe65a215cb69705c3"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_bridge.rs",
+      "frozen_v7_sha256": "64c749edf832fe78ab52adc81b6bb7d28f62da7929ec15db6f2b93169b310f5f",
+      "current_sha256": "bac33694307c611cd9ad05517bef257f74946437f1c13753401a087cff50ba67"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_keccak.rs",
+      "frozen_v7_sha256": "554ca2b4be00182c28957b8373720e53737e3695eb3cfdb00d7ad07ceefb4e53",
+      "current_sha256": "3115263858516770ce2f9699d1d99ee246f21d497bea0e7db3701b98f86d340b"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_size.rs",
+      "frozen_v7_sha256": "cc5befda0fe81e0201bc4b5ed4936d438bd2df44192101788e7cfd087345d6dd",
+      "current_sha256": "64e1403e6639e2df8e34e1f643fa98612e8bc53ea726e637396a8ca38adb5c87"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs",
+      "frozen_v7_sha256": "b9e845e68a4e8e0b57716ba3e124585c0c872957c18c04ad56a46a7a54e5af36",
+      "current_sha256": "6e3acdf3b5330117b555d49ac8f73ab7e1a68a50a5591231042f73ae8dc69a60"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/keccak.rs",
+      "frozen_v7_sha256": "863d9cc51f23ae45643d49546f0e793800839925256504022a1ca7ac3508925d",
+      "current_sha256": "be6e6d9a29255baa1fae007b147ea3cac4303246d88b7789d12cb22292809c77"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/layout.rs",
+      "frozen_v7_sha256": "cf1b357249ec0d422a3ccc56e1ec6fa98769f06d7e4b2435363289c3ffe98236",
+      "current_sha256": "0fa52988a6445f9383051aa5d1ce23cd98df651c6421b24e8b0ea0039eb0f487"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/mod.rs",
+      "frozen_v7_sha256": "c2bd242369b356f636502a08c0a63893a51810a1b335fe8ef769cddccd041349",
+      "current_sha256": "a9aa2ed700fc33d6c82d135acd5c1f860d57f0de0dfabab984f42690eac866f7"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/native_ring.rs",
+      "frozen_v7_sha256": "a45f6f1b998686993d5328d2724b3ea141d2a9ce748732b1479be038318cc653",
+      "current_sha256": "52444a7d8bada38a2f56979b0274ab6b0bf415953ff744b9d1f1f1eab5024a98"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/opening.rs",
+      "frozen_v7_sha256": "fa6d88d598bd1dd7bd8df3b0082edf9c2ce62f77c93b8667a2396805aa10a660",
+      "current_sha256": "61ba9930538b21140f88cdd4e566f5cba0dac5a432ad7b5e4f2e6cf97bfd4ea5"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/opening_compact.rs",
+      "frozen_v7_sha256": "565dfe4362a18e7b9503830f80948f5ad110f6e6a4c90fbda634d3a0144f6c68",
+      "current_sha256": "f56113fc6f29793a951b13b8d159d129975a14a955881f8486a216b07b1c25db"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/opening_joined.rs",
+      "frozen_v7_sha256": "5dddcf554f735db64f69bb20f89a2992a1396c52440ef263f2e9fa5c8cdcfed2",
+      "current_sha256": "965f89124ad67ab9ae0e4a4d5fbf56e299232018fa9a01928b84e65e500a0679"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/opening_native.rs",
+      "frozen_v7_sha256": "326c65fa8b91f12afe4a7a40bc1ec20ad055b8723df17eb70992185490bacb4c",
+      "current_sha256": "311a120cf9ff89ae30d0151fca4d897b7ba9dd0856f704f7793fd8a6747e9dec"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/piop.rs",
+      "frozen_v7_sha256": "35a73e1f7e4becfa2304f09b99f88ddce3e3e27414bc5f4ddd06e2e731f5900c",
+      "current_sha256": "47800f82966f2d8975d0039100fe4f1b10b9981f0cb020937a3241e73d1b8f32"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/piop_shared.rs",
+      "frozen_v7_sha256": "f36fdc504e5cd8812bc1258bd3962cb6ecf589e4af170f8123ce58470b96e10f",
+      "current_sha256": "d610238972c4cffa165c692c461154334a722b3706714c73bf547d24c1200e86"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/shared_ring.rs",
+      "frozen_v7_sha256": "8af500c97e852a7cd92991f49fcc2840ddf5555e45a8fdaa839270028fada9f3",
+      "current_sha256": "0abcbf7a1bb68cb207b4111e2de1a78e7e3b05deac59de9e048f0d77ff242ef0"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/source.rs",
+      "frozen_v7_sha256": "7194fb7d682c06b5c78ead462c14643dbf24f51616ef106365f81ad34f5d6506",
+      "current_sha256": "fd9335a70ffd97cb02744c19a364f738483a1ed90d4916c3d78cb62b1c86d8ee"
+    },
+    {
+      "path": "src/piop/spartan/falcon1024_ct/verify.rs",
+      "frozen_v7_sha256": "fc14d75c6f928fa64ce987e4aeded4a16708c957eedd9f4b5b0407f5c646d1f9",
+      "current_sha256": "7e3f70228ad6bd0bc522ba46c8ad4151b8dbd828cf8f99b28b6c625f25b48849"
+    },
+    {
+      "path": "src/piop/spartan/mod.rs",
+      "frozen_v7_sha256": "9142be06ebe5d10e8f4edd7acecfa2b866d5c6bc970fd23d5d7d20652634c9e5",
+      "current_sha256": "5bc5ba1c1179067f5f392c1f2964dc20da6e53441ca3a58fd13a912907207077"
+    }
+  ],
+  "missing_current_files": [],
+  "new_untracked_code_files": [
+    "src/piop/spartan/falcon1024_ct/backend.rs",
+    "src/piop/spartan/falcon_extension.rs",
+    "src/piop/spartan/falcon_parameters.rs",
+    "src/piop/spartan/falcon_profiles.rs"
+  ],
+  "action": "Read only; preserved all current files; benchmark continues unchanged"
+}

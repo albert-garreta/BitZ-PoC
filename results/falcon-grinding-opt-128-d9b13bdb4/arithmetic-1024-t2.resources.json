@@ -1,0 +1,24 @@
+{
+  "exit_code": 0,
+  "elapsed_s": 5.003201057028491,
+  "user_cpu_s": 6.151067,
+  "system_cpu_s": 0.5130049999999999,
+  "cpu_utilization_pct": 133.19616629514258,
+  "process_peak_rss_kib": 232152,
+  "major_page_faults": 0,
+  "minor_page_faults": 987323,
+  "voluntary_context_switches": 7705,
+  "involuntary_context_switches": 5829,
+  "sibling_busy_pct": 0.1996007984031936,
+  "sibling_busy_pct_by_cpu": {
+    "22": 0.0,
+    "23": 0.1996007984031936
+  },
+  "selected_cpu_busy_pct": 66.59759519038076,
+  "worker_busy_pct_by_cpu": {
+    "6": 97.59519038076152,
+    "7": 35.6
+  },
+  "affinity_violations": [],
+  "observation_count": 5
+}

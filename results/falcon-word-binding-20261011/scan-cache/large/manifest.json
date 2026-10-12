@@ -1,0 +1,47 @@
+{
+  "binaries": {
+    "r7": {
+      "path": "/tmp/bitz-arithmetic-v8-r7-qualification-binary",
+      "sha256": "ec1c7b55cfba4b7dbce26e4028913a13ccee6b87795f6b5ddaca58b6327ee141"
+    },
+    "word": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/release/examples/falcon_algebraic",
+      "sha256": "7758018460f4fc9403ea030d2cfd3bfea8d3fdaff8d6b34c82f87822b835114a"
+    }
+  },
+  "shapes": [
+    [
+      512,
+      1024,
+      100,
+      1
+    ],
+    [
+      1024,
+      1024,
+      100,
+      1
+    ],
+    [
+      512,
+      1024,
+      128,
+      8
+    ],
+    [
+      1024,
+      1024,
+      128,
+      8
+    ]
+  ],
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "warmup": 1,
+  "iterations": 2,
+  "trace": false,
+  "created_unix": 1791780551.1709702
+}
