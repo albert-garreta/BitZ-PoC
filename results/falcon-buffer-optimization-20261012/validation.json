@@ -1,11 +1,11 @@
 {
   "schema": "bitz/falcon-buffer-optimization/v1",
-  "verified_proofs": 3828,
+  "verified_proofs": 4020,
   "proofs_by_protocol": {
     "bitz/falcon1024-algebraic/non-zk/v10-factored-ring": 902,
     "bitz/falcon512-algebraic/non-zk/v10-factored-ring": 902,
-    "bitz/falcon512-algebraic/non-zk/v9": 1012,
-    "bitz/falcon1024-algebraic/non-zk/v9": 1012
+    "bitz/falcon512-algebraic/non-zk/v9": 1108,
+    "bitz/falcon1024-algebraic/non-zk/v9": 1108
   },
   "frozen_baseline_comparisons": 20,
   "input_source_equality": true,

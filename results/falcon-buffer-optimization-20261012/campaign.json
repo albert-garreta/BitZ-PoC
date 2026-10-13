@@ -114,13 +114,26 @@
     "note": "Explicit selectors in bench-internals; separate from final production canonical-v9 build."
   },
   "final_validation": {
-    "main_verified_proofs": 3828,
+    "main_verified_proofs": 4020,
     "profile_verified_proofs": 144,
-    "total_verified_proofs": 3972,
+    "total_verified_proofs": 4164,
     "all_phases_complete": true,
     "input_source_equality": true,
     "complete_proof_equality_within_protocol": true,
     "max_experimental_payload_growth_percent": 0.5883327809081962,
     "build_source_audit": "build-source-audit.json"
+  },
+  "production_thread_extension": {
+    "phase": "production-threads2-4",
+    "threads": [
+      2,
+      4
+    ],
+    "processes": 96,
+    "verified_proofs": 192,
+    "status": "complete",
+    "binary": "same final production candidate",
+    "comparison": "current defaults across worker counts; no new baseline timing runs",
+    "report": "thread-scaling.json"
   }
 }
