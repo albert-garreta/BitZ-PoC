@@ -1,0 +1,24 @@
+{
+  "files_match": {
+    "scripts/test_falcon_worker_optimization.py": true,
+    "scripts/falcon_worker_optimization.py": true,
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": true,
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": true
+  },
+  "features": [
+    "binius64-bench",
+    "default",
+    "falcon",
+    "falcon-hybrid",
+    "hybrid",
+    "parallel",
+    "span-metrics"
+  ],
+  "bench_internals_absent": true,
+  "binary": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-twelve-workers-20261013/candidate-production",
+    "sha256": "bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511",
+    "cargo_artifact": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-production-target/release/deps/falcon_algebraic-0dec3867da2b78f6"
+  },
+  "source_snapshot": "candidate-production-source.json"
+}

@@ -1,0 +1,7 @@
+{
+  "scripts/falcon_prover_optimization.py": true,
+  "scripts/bench_support.py": true,
+  "scripts/binder_experiments.py": true,
+  "scripts/falcon_buffer_optimization.py": true,
+  "scripts/falcon_arithmetic_optimization.py": true
+}

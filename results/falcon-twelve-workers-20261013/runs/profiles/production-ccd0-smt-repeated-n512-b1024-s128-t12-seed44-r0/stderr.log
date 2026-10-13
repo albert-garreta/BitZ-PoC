@@ -1,0 +1,272 @@
+{"ancestor_ids":[1,2],"elapsed_ms":1.290528,"event":"stage","fields":{},"name":"falcon_algebraic:witness","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","falcon_algebraic:witness"],"span_id":2}
+{"ancestor_ids":[1,2251799813685250],"elapsed_ms":1.221258,"event":"stage","fields":{},"name":"shared_source:encode","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:encode"],"span_id":2251799813685250}
+{"ancestor_ids":[1,4503599627370498],"elapsed_ms":0.24619600000000003,"event":"stage","fields":{},"name":"shared_source:merkle","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:merkle"],"span_id":4503599627370498}
+{"ancestor_ids":[1],"elapsed_ms":3.5316639999999997,"event":"stage","fields":{},"name":"falcon_algebraic:commit","parent":null,"path":["falcon_algebraic:commit"],"span_id":1}
+{"ancestor_ids":[2251799813685249,6755399441055746,3,4],"elapsed_ms":0.7539349999999999,"event":"stage","fields":{"basis_powers_wall_ns":32722,"buffer_allocation_wall_ns":5911,"carry_worker_ns":0,"public_eval_worker_ns":946721,"recurrence_worker_ns":6793885},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":4}
+{"ancestor_ids":[2251799813685249,6755399441055746,3],"elapsed_ms":0.77805,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates"],"span_id":3}
+{"ancestor_ids":[2251799813685249,6755399441055746,2251799813685251],"elapsed_ms":0.146637,"event":"stage","fields":{},"name":"falcon_algebraic_ring:carries","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:carries"],"span_id":2251799813685251}
+{"ancestor_ids":[2251799813685249,6755399441055746,4503599627370499],"elapsed_ms":1.750007,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:collapse"],"span_id":4503599627370499}
+{"ancestor_ids":[2251799813685249,6755399441055746],"elapsed_ms":3.5731819999999996,"event":"stage","fields":{},"name":"falcon_algebraic:ring","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:ring"],"span_id":6755399441055746}
+{"ancestor_ids":[2251799813685249,9007199254740994,6755399441055747],"elapsed_ms":2.317089,"event":"stage","fields":{},"name":"falcon_algebraic:integer_outer","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:integer_outer"],"span_id":6755399441055747}
+{"ancestor_ids":[2251799813685249,9007199254740994,9007199254740995,2251799813685252],"elapsed_ms":0.7265229999999999,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:binding_construction"],"span_id":2251799813685252}
+{"ancestor_ids":[2251799813685249,9007199254740994,9007199254740995,4503599627370500],"elapsed_ms":1.2625659999999999,"event":"stage","fields":{},"name":"falcon_algebraic:word_first_fold","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:word_first_fold"],"span_id":4503599627370500}
+{"ancestor_ids":[2251799813685249,9007199254740994,9007199254740995],"elapsed_ms":5.015999,"event":"stage","fields":{},"name":"falcon_algebraic:binding","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding"],"span_id":9007199254740995}
+{"ancestor_ids":[2251799813685249,9007199254740994],"elapsed_ms":7.369096000000001,"event":"stage","fields":{},"name":"falcon_algebraic:arithmetic","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic"],"span_id":9007199254740994}
+{"ancestor_ids":[2251799813685249,11258999068426242,11258999068426243],"elapsed_ms":0.443297,"event":"stage","fields":{},"name":"falcon_bridge:integer_folds","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:integer_folds"],"span_id":11258999068426243}
+{"ancestor_ids":[2251799813685249,11258999068426242,13510798882111491],"elapsed_ms":0.138602,"event":"stage","fields":{},"name":"falcon_bridge:column_packing","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:column_packing"],"span_id":13510798882111491}
+{"ancestor_ids":[2251799813685249,11258999068426242,15762598695796739],"elapsed_ms":0.065504,"event":"stage","fields":{},"name":"falcon_bridge:power_tables","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:power_tables"],"span_id":15762598695796739}
+bitz:     nibble rows             67.0µs  3039.5 MB faulted
+bitz:     L3 value tables        277.8µs    34.5 MB faulted
+bitz:     levels 5..13 build       1.2ms   128.2 MB faulted
+bitz:   levels ≥4                  1.6ms     0.0 MB faulted
+bitz:   level 12                 205.4µs     0.0 MB faulted
+bitz:   level 11                 132.1µs     0.0 MB faulted
+bitz:   level 10                 152.7µs     0.0 MB faulted
+bitz:   level 9                  186.1µs     0.0 MB faulted
+bitz:   level 8                  233.6µs     0.0 MB faulted
+bitz:   level 7                  269.9µs     0.0 MB faulted
+bitz:   level 6                  424.6µs     0.0 MB faulted
+bitz:   level 5                  428.6µs     0.0 MB faulted
+bitz:     L4 rebuild             294.0µs     0.2 MB faulted
+bitz:   level 4                  981.8µs     0.0 MB faulted
+bitz:     L3 tables                4.8µs     0.0 MB faulted
+bitz:     L3 jit round           331.2µs     0.5 MB faulted
+bitz:     L3 jit fold            325.3µs     0.0 MB faulted
+bitz:     L3 dense tail          537.1µs     0.0 MB faulted
+bitz:   level 3                    1.2ms     0.0 MB faulted
+bitz:     L2 bit round 1         501.5µs     1.5 MB faulted
+bitz:     L2 tables               84.9µs     0.2 MB faulted
+bitz:     L2 jit round           322.4µs     0.0 MB faulted
+bitz:     L2 jit fold            330.5µs     0.0 MB faulted
+bitz:     L2 dense tail          458.8µs     0.0 MB faulted
+bitz:   level 2                    1.8ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   492.7µs     0.7 MB faulted
+bitz:     L1 tables               80.2µs     0.0 MB faulted
+bitz:     L1 jit round           310.6µs     0.0 MB faulted
+bitz:     L1 jit fold            321.0µs     0.0 MB faulted
+bitz:     L1 dense tail          494.2µs     0.0 MB faulted
+bitz:   level 1                    1.8ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   456.6µs     1.1 MB faulted
+bitz:     L0 tables               97.3µs     0.2 MB faulted
+bitz:     L0 jit round           305.0µs     0.0 MB faulted
+bitz:     L0 jit fold            319.1µs     0.0 MB faulted
+bitz:     L0 dense tail          458.2µs     0.0 MB faulted
+bitz:   level 0                    1.7ms     0.0 MB faulted
+{"ancestor_ids":[2251799813685249,11258999068426242,18014398509481987],"elapsed_ms":12.069388,"event":"stage","fields":{},"name":"falcon_bridge:wfbitz_forest","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:wfbitz_forest"],"span_id":18014398509481987}
+{"ancestor_ids":[2251799813685249,11258999068426242],"elapsed_ms":13.100828,"event":"stage","fields":{},"name":"falcon_algebraic:bitz","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:bitz"],"span_id":11258999068426242}
+{"ancestor_ids":[2251799813685249,13510798882111490,20266198323167235],"elapsed_ms":0.44149499999999997,"event":"stage","fields":{},"name":"op:ring_switch","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ring_switch"],"span_id":20266198323167235}
+{"ancestor_ids":[2251799813685249,13510798882111490,22517998136852483,6755399441055748],"elapsed_ms":0.368787,"event":"stage","fields":{},"name":"op:initial_messages","parent":"op:extra_bases","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases","op:initial_messages"],"span_id":6755399441055748}
+{"ancestor_ids":[2251799813685249,13510798882111490,22517998136852483],"elapsed_ms":0.409243,"event":"stage","fields":{},"name":"op:extra_bases","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases"],"span_id":22517998136852483}
+{"ancestor_ids":[2251799813685249,13510798882111490,24769797950537731,9007199254740996],"elapsed_ms":0.114086,"event":"stage","fields":{},"name":"op:deferred_first_fold","parent":"op:ligerito","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito","op:deferred_first_fold"],"span_id":9007199254740996}
+{"ancestor_ids":[2251799813685249,13510798882111490,24769797950537731],"elapsed_ms":2.138591,"event":"stage","fields":{},"name":"op:ligerito","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito"],"span_id":24769797950537731}
+{"ancestor_ids":[2251799813685249,13510798882111490],"elapsed_ms":3.0449140000000003,"event":"stage","fields":{},"name":"falcon_algebraic:pcs","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:pcs"],"span_id":13510798882111490}
+{"ancestor_ids":[2251799813685249],"elapsed_ms":29.324257,"event":"stage","fields":{},"name":"falcon_algebraic:prove","parent":null,"path":["falcon_algebraic:prove"],"span_id":2251799813685249}
+{"ancestor_ids":[4503599627370497,15762598695796738,27021597764222979],"elapsed_ms":0.5686340000000001,"event":"stage","fields":{"basis_powers_wall_ns":33714,"buffer_allocation_wall_ns":7504,"carry_worker_ns":0,"public_eval_worker_ns":959681,"recurrence_worker_ns":4531550},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":27021597764222979}
+{"ancestor_ids":[4503599627370497,15762598695796738],"elapsed_ms":0.5927600000000001,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates"],"span_id":15762598695796738}
+{"ancestor_ids":[4503599627370497,18014398509481986],"elapsed_ms":1.675225,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:collapse"],"span_id":18014398509481986}
+{"ancestor_ids":[4503599627370497,20266198323167234],"elapsed_ms":1.097113,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic:binding_construction"],"span_id":20266198323167234}
+{"ancestor_ids":[4503599627370497],"elapsed_ms":8.202110000000001,"event":"stage","fields":{},"name":"falcon_algebraic:verify","parent":null,"path":["falcon_algebraic:verify"],"span_id":4503599627370497}
+{"ancestor_ids":[6755399441055745,22517998136852482],"elapsed_ms":0.854114,"event":"stage","fields":{},"name":"falcon_algebraic:witness","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","falcon_algebraic:witness"],"span_id":22517998136852482}
+{"ancestor_ids":[6755399441055745,24769797950537730],"elapsed_ms":0.628778,"event":"stage","fields":{},"name":"shared_source:encode","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:encode"],"span_id":24769797950537730}
+{"ancestor_ids":[6755399441055745,27021597764222978],"elapsed_ms":0.122903,"event":"stage","fields":{},"name":"shared_source:merkle","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:merkle"],"span_id":27021597764222978}
+{"ancestor_ids":[6755399441055745],"elapsed_ms":2.0449650000000004,"event":"stage","fields":{},"name":"falcon_algebraic:commit","parent":null,"path":["falcon_algebraic:commit"],"span_id":6755399441055745}
+{"ancestor_ids":[9007199254740993,29273397577908226,29273397577908227,11258999068426244],"elapsed_ms":0.309946,"event":"stage","fields":{"basis_powers_wall_ns":33563,"buffer_allocation_wall_ns":721,"carry_worker_ns":0,"public_eval_worker_ns":1007587,"recurrence_worker_ns":1535641},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":11258999068426244}
+{"ancestor_ids":[9007199254740993,29273397577908226,29273397577908227],"elapsed_ms":0.33330000000000004,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates"],"span_id":29273397577908227}
+{"ancestor_ids":[9007199254740993,29273397577908226,31525197391593475],"elapsed_ms":0.13233999999999999,"event":"stage","fields":{},"name":"falcon_algebraic_ring:carries","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:carries"],"span_id":31525197391593475}
+{"ancestor_ids":[9007199254740993,29273397577908226,33776997205278723],"elapsed_ms":1.675106,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:collapse"],"span_id":33776997205278723}
+{"ancestor_ids":[9007199254740993,29273397577908226],"elapsed_ms":2.614731,"event":"stage","fields":{},"name":"falcon_algebraic:ring","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:ring"],"span_id":29273397577908226}
+{"ancestor_ids":[9007199254740993,31525197391593474,36028797018963971],"elapsed_ms":2.160032,"event":"stage","fields":{},"name":"falcon_algebraic:integer_outer","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:integer_outer"],"span_id":36028797018963971}
+{"ancestor_ids":[9007199254740993,31525197391593474,38280596832649219,13510798882111492],"elapsed_ms":0.720422,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:binding_construction"],"span_id":13510798882111492}
+{"ancestor_ids":[9007199254740993,31525197391593474,38280596832649219,15762598695796740],"elapsed_ms":1.0190659999999998,"event":"stage","fields":{},"name":"falcon_algebraic:word_first_fold","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:word_first_fold"],"span_id":15762598695796740}
+{"ancestor_ids":[9007199254740993,31525197391593474,38280596832649219],"elapsed_ms":5.027501,"event":"stage","fields":{},"name":"falcon_algebraic:binding","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding"],"span_id":38280596832649219}
+{"ancestor_ids":[9007199254740993,31525197391593474],"elapsed_ms":7.223631,"event":"stage","fields":{},"name":"falcon_algebraic:arithmetic","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic"],"span_id":31525197391593474}
+{"ancestor_ids":[9007199254740993,33776997205278722,40532396646334467],"elapsed_ms":0.421697,"event":"stage","fields":{},"name":"falcon_bridge:integer_folds","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:integer_folds"],"span_id":40532396646334467}
+{"ancestor_ids":[9007199254740993,33776997205278722,42784196460019715],"elapsed_ms":0.117983,"event":"stage","fields":{},"name":"falcon_bridge:column_packing","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:column_packing"],"span_id":42784196460019715}
+{"ancestor_ids":[9007199254740993,33776997205278722,45035996273704963],"elapsed_ms":0.06323000000000001,"event":"stage","fields":{},"name":"falcon_bridge:power_tables","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:power_tables"],"span_id":45035996273704963}
+bitz:     nibble rows             66.1µs   121.7 MB faulted
+bitz:     L3 value tables        284.2µs    31.7 MB faulted
+bitz:     levels 5..13 build       1.1ms   128.0 MB faulted
+bitz:   levels ≥4                  1.5ms     0.0 MB faulted
+bitz:   level 12                 207.2µs     0.0 MB faulted
+bitz:   level 11                 134.5µs     0.0 MB faulted
+bitz:   level 10                 149.8µs     0.0 MB faulted
+bitz:   level 9                  191.0µs     0.0 MB faulted
+bitz:   level 8                  233.7µs     0.0 MB faulted
+bitz:   level 7                  273.2µs     0.0 MB faulted
+bitz:   level 6                  421.1µs     0.0 MB faulted
+bitz:   level 5                  420.0µs     0.0 MB faulted
+bitz:     L4 rebuild             277.4µs     0.2 MB faulted
+bitz:   level 4                  962.8µs     0.0 MB faulted
+bitz:     L3 tables                4.7µs     0.0 MB faulted
+bitz:     L3 jit round           294.3µs     0.0 MB faulted
+bitz:     L3 jit fold            308.8µs     0.0 MB faulted
+bitz:     L3 dense tail          524.5µs     0.0 MB faulted
+bitz:   level 3                    1.2ms     0.0 MB faulted
+bitz:     L2 bit round 1         458.1µs     0.0 MB faulted
+bitz:     L2 tables               81.6µs     0.0 MB faulted
+bitz:     L2 jit round           290.1µs     0.0 MB faulted
+bitz:     L2 jit fold            301.2µs     0.0 MB faulted
+bitz:     L2 dense tail          451.1µs     0.0 MB faulted
+bitz:   level 2                    1.7ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   460.4µs     0.1 MB faulted
+bitz:     L1 tables               79.4µs     0.0 MB faulted
+bitz:     L1 jit round           286.5µs     0.0 MB faulted
+bitz:     L1 jit fold            300.0µs     0.0 MB faulted
+bitz:     L1 dense tail          482.5µs     0.0 MB faulted
+bitz:   level 1                    1.7ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   405.0µs     0.0 MB faulted
+bitz:     L0 tables               91.2µs     0.0 MB faulted
+bitz:     L0 jit round           285.1µs     0.0 MB faulted
+bitz:     L0 jit fold            282.7µs     0.0 MB faulted
+bitz:     L0 dense tail          454.6µs     0.0 MB faulted
+bitz:   level 0                    1.6ms     0.0 MB faulted
+{"ancestor_ids":[9007199254740993,33776997205278722,47287796087390211],"elapsed_ms":11.447963999999999,"event":"stage","fields":{},"name":"falcon_bridge:wfbitz_forest","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:wfbitz_forest"],"span_id":47287796087390211}
+{"ancestor_ids":[9007199254740993,33776997205278722],"elapsed_ms":12.406756,"event":"stage","fields":{},"name":"falcon_algebraic:bitz","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:bitz"],"span_id":33776997205278722}
+{"ancestor_ids":[9007199254740993,36028797018963970,49539595901075459],"elapsed_ms":0.549438,"event":"stage","fields":{},"name":"op:ring_switch","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ring_switch"],"span_id":49539595901075459}
+{"ancestor_ids":[9007199254740993,36028797018963970,51791395714760707,18014398509481988],"elapsed_ms":0.271232,"event":"stage","fields":{},"name":"op:initial_messages","parent":"op:extra_bases","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases","op:initial_messages"],"span_id":18014398509481988}
+{"ancestor_ids":[9007199254740993,36028797018963970,51791395714760707],"elapsed_ms":0.314334,"event":"stage","fields":{},"name":"op:extra_bases","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases"],"span_id":51791395714760707}
+{"ancestor_ids":[9007199254740993,36028797018963970,54043195528445955,20266198323167236],"elapsed_ms":0.11722099999999999,"event":"stage","fields":{},"name":"op:deferred_first_fold","parent":"op:ligerito","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito","op:deferred_first_fold"],"span_id":20266198323167236}
+{"ancestor_ids":[9007199254740993,36028797018963970,54043195528445955],"elapsed_ms":2.149953,"event":"stage","fields":{},"name":"op:ligerito","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito"],"span_id":54043195528445955}
+{"ancestor_ids":[9007199254740993,36028797018963970],"elapsed_ms":3.068318,"event":"stage","fields":{},"name":"falcon_algebraic:pcs","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:pcs"],"span_id":36028797018963970}
+{"ancestor_ids":[9007199254740993],"elapsed_ms":27.391695000000002,"event":"stage","fields":{},"name":"falcon_algebraic:prove","parent":null,"path":["falcon_algebraic:prove"],"span_id":9007199254740993}
+{"ancestor_ids":[11258999068426241,38280596832649218,56294995342131203],"elapsed_ms":0.530122,"event":"stage","fields":{"basis_powers_wall_ns":33773,"buffer_allocation_wall_ns":6182,"carry_worker_ns":0,"public_eval_worker_ns":933514,"recurrence_worker_ns":4180212},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":56294995342131203}
+{"ancestor_ids":[11258999068426241,38280596832649218],"elapsed_ms":0.557353,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates"],"span_id":38280596832649218}
+{"ancestor_ids":[11258999068426241,40532396646334466],"elapsed_ms":1.7562389999999999,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:collapse"],"span_id":40532396646334466}
+{"ancestor_ids":[11258999068426241,42784196460019714],"elapsed_ms":1.066125,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic:binding_construction"],"span_id":42784196460019714}
+{"ancestor_ids":[11258999068426241],"elapsed_ms":9.160110000000001,"event":"stage","fields":{},"name":"falcon_algebraic:verify","parent":null,"path":["falcon_algebraic:verify"],"span_id":11258999068426241}
+{"ancestor_ids":[13510798882111489,45035996273704962],"elapsed_ms":0.991764,"event":"stage","fields":{},"name":"falcon_algebraic:witness","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","falcon_algebraic:witness"],"span_id":45035996273704962}
+{"ancestor_ids":[13510798882111489,47287796087390210],"elapsed_ms":0.602599,"event":"stage","fields":{},"name":"shared_source:encode","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:encode"],"span_id":47287796087390210}
+{"ancestor_ids":[13510798882111489,49539595901075458],"elapsed_ms":0.118103,"event":"stage","fields":{},"name":"shared_source:merkle","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:merkle"],"span_id":49539595901075458}
+{"ancestor_ids":[13510798882111489],"elapsed_ms":2.1923939999999997,"event":"stage","fields":{},"name":"falcon_algebraic:commit","parent":null,"path":["falcon_algebraic:commit"],"span_id":13510798882111489}
+{"ancestor_ids":[15762598695796737,51791395714760706,58546795155816451,22517998136852484],"elapsed_ms":0.631443,"event":"stage","fields":{"basis_powers_wall_ns":33644,"buffer_allocation_wall_ns":6393,"carry_worker_ns":0,"public_eval_worker_ns":920172,"recurrence_worker_ns":5516826},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":22517998136852484}
+{"ancestor_ids":[15762598695796737,51791395714760706,58546795155816451],"elapsed_ms":0.658764,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates"],"span_id":58546795155816451}
+{"ancestor_ids":[15762598695796737,51791395714760706,60798594969501699],"elapsed_ms":0.12519699999999997,"event":"stage","fields":{},"name":"falcon_algebraic_ring:carries","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:carries"],"span_id":60798594969501699}
+{"ancestor_ids":[15762598695796737,51791395714760706,63050394783186947],"elapsed_ms":1.753484,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:collapse"],"span_id":63050394783186947}
+{"ancestor_ids":[15762598695796737,51791395714760706],"elapsed_ms":3.014166,"event":"stage","fields":{},"name":"falcon_algebraic:ring","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:ring"],"span_id":51791395714760706}
+{"ancestor_ids":[15762598695796737,54043195528445954,65302194596872195],"elapsed_ms":2.156104,"event":"stage","fields":{},"name":"falcon_algebraic:integer_outer","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:integer_outer"],"span_id":65302194596872195}
+{"ancestor_ids":[15762598695796737,54043195528445954,67553994410557443,24769797950537732],"elapsed_ms":0.726173,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:binding_construction"],"span_id":24769797950537732}
+{"ancestor_ids":[15762598695796737,54043195528445954,67553994410557443,27021597764222980],"elapsed_ms":1.0087460000000001,"event":"stage","fields":{},"name":"falcon_algebraic:word_first_fold","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:word_first_fold"],"span_id":27021597764222980}
+{"ancestor_ids":[15762598695796737,54043195528445954,67553994410557443],"elapsed_ms":4.861728,"event":"stage","fields":{},"name":"falcon_algebraic:binding","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding"],"span_id":67553994410557443}
+{"ancestor_ids":[15762598695796737,54043195528445954],"elapsed_ms":7.054422000000001,"event":"stage","fields":{},"name":"falcon_algebraic:arithmetic","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic"],"span_id":54043195528445954}
+{"ancestor_ids":[15762598695796737,56294995342131202,69805794224242691],"elapsed_ms":0.41779000000000005,"event":"stage","fields":{},"name":"falcon_bridge:integer_folds","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:integer_folds"],"span_id":69805794224242691}
+{"ancestor_ids":[15762598695796737,56294995342131202,72057594037927939],"elapsed_ms":0.117161,"event":"stage","fields":{},"name":"falcon_bridge:column_packing","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:column_packing"],"span_id":72057594037927939}
+{"ancestor_ids":[15762598695796737,56294995342131202,74309393851613187],"elapsed_ms":0.062088000000000004,"event":"stage","fields":{},"name":"falcon_bridge:power_tables","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:power_tables"],"span_id":74309393851613187}
+bitz:     nibble rows            140.1µs   287.9 MB faulted
+bitz:     L3 value tables        268.8µs    32.3 MB faulted
+bitz:     levels 5..13 build       1.0ms   127.8 MB faulted
+bitz:   levels ≥4                  1.5ms     0.0 MB faulted
+bitz:   level 12                 206.2µs     0.0 MB faulted
+bitz:   level 11                 139.0µs     0.0 MB faulted
+bitz:   level 10                 150.7µs     0.0 MB faulted
+bitz:   level 9                  187.5µs     0.0 MB faulted
+bitz:   level 8                  233.3µs     0.0 MB faulted
+bitz:   level 7                  270.0µs     0.0 MB faulted
+bitz:   level 6                  434.9µs     0.0 MB faulted
+bitz:   level 5                  406.5µs     0.0 MB faulted
+bitz:     L4 rebuild             266.2µs     0.2 MB faulted
+bitz:   level 4                  926.6µs     0.0 MB faulted
+bitz:     L3 tables                4.6µs     0.0 MB faulted
+bitz:     L3 jit round           282.7µs     0.0 MB faulted
+bitz:     L3 jit fold            288.5µs     0.0 MB faulted
+bitz:     L3 dense tail          515.4µs     0.0 MB faulted
+bitz:   level 3                    1.1ms     0.0 MB faulted
+bitz:     L2 bit round 1         437.2µs     0.0 MB faulted
+bitz:     L2 tables               78.6µs     0.0 MB faulted
+bitz:     L2 jit round           284.7µs     0.0 MB faulted
+bitz:     L2 jit fold            282.2µs     0.0 MB faulted
+bitz:     L2 dense tail          440.2µs     0.0 MB faulted
+bitz:   level 2                    1.6ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   446.7µs     0.0 MB faulted
+bitz:     L1 tables               77.5µs     0.0 MB faulted
+bitz:     L1 jit round           278.1µs     0.0 MB faulted
+bitz:     L1 jit fold            282.8µs     0.0 MB faulted
+bitz:     L1 dense tail          475.6µs     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   402.2µs     0.0 MB faulted
+bitz:     L0 tables               87.0µs     0.0 MB faulted
+bitz:     L0 jit round           275.7µs     0.0 MB faulted
+bitz:     L0 jit fold            280.5µs     0.0 MB faulted
+bitz:     L0 dense tail          444.4µs     0.0 MB faulted
+bitz:   level 0                    1.6ms     0.0 MB faulted
+{"ancestor_ids":[15762598695796737,56294995342131202,76561193665298435],"elapsed_ms":11.221456,"event":"stage","fields":{},"name":"falcon_bridge:wfbitz_forest","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:wfbitz_forest"],"span_id":76561193665298435}
+{"ancestor_ids":[15762598695796737,56294995342131202],"elapsed_ms":12.1653,"event":"stage","fields":{},"name":"falcon_algebraic:bitz","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:bitz"],"span_id":56294995342131202}
+{"ancestor_ids":[15762598695796737,58546795155816450,78812993478983683],"elapsed_ms":0.452756,"event":"stage","fields":{},"name":"op:ring_switch","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ring_switch"],"span_id":78812993478983683}
+{"ancestor_ids":[15762598695796737,58546795155816450,81064793292668931,29273397577908228],"elapsed_ms":0.37299499999999997,"event":"stage","fields":{},"name":"op:initial_messages","parent":"op:extra_bases","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases","op:initial_messages"],"span_id":29273397577908228}
+{"ancestor_ids":[15762598695796737,58546795155816450,81064793292668931],"elapsed_ms":0.413551,"event":"stage","fields":{},"name":"op:extra_bases","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases"],"span_id":81064793292668931}
+{"ancestor_ids":[15762598695796737,58546795155816450,83316593106354179,31525197391593476],"elapsed_ms":0.114447,"event":"stage","fields":{},"name":"op:deferred_first_fold","parent":"op:ligerito","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito","op:deferred_first_fold"],"span_id":31525197391593476}
+{"ancestor_ids":[15762598695796737,58546795155816450,83316593106354179],"elapsed_ms":2.136017,"event":"stage","fields":{},"name":"op:ligerito","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito"],"span_id":83316593106354179}
+{"ancestor_ids":[15762598695796737,58546795155816450],"elapsed_ms":3.056526,"event":"stage","fields":{},"name":"falcon_algebraic:pcs","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:pcs"],"span_id":58546795155816450}
+{"ancestor_ids":[15762598695796737],"elapsed_ms":27.324708,"event":"stage","fields":{},"name":"falcon_algebraic:prove","parent":null,"path":["falcon_algebraic:prove"],"span_id":15762598695796737}
+{"ancestor_ids":[18014398509481985,60798594969501698,85568392920039427],"elapsed_ms":0.458086,"event":"stage","fields":{"basis_powers_wall_ns":36408,"buffer_allocation_wall_ns":5400,"carry_worker_ns":0,"public_eval_worker_ns":910231,"recurrence_worker_ns":3335156},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":85568392920039427}
+{"ancestor_ids":[18014398509481985,60798594969501698],"elapsed_ms":0.48159,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates"],"span_id":60798594969501698}
+{"ancestor_ids":[18014398509481985,63050394783186946],"elapsed_ms":1.773331,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:collapse"],"span_id":63050394783186946}
+{"ancestor_ids":[18014398509481985,65302194596872194],"elapsed_ms":1.056787,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic:binding_construction"],"span_id":65302194596872194}
+{"ancestor_ids":[18014398509481985],"elapsed_ms":9.149370000000001,"event":"stage","fields":{},"name":"falcon_algebraic:verify","parent":null,"path":["falcon_algebraic:verify"],"span_id":18014398509481985}
+{"ancestor_ids":[20266198323167233,67553994410557442],"elapsed_ms":0.9908020000000001,"event":"stage","fields":{},"name":"falcon_algebraic:witness","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","falcon_algebraic:witness"],"span_id":67553994410557442}
+{"ancestor_ids":[20266198323167233,69805794224242690],"elapsed_ms":0.619801,"event":"stage","fields":{},"name":"shared_source:encode","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:encode"],"span_id":69805794224242690}
+{"ancestor_ids":[20266198323167233,72057594037927938],"elapsed_ms":0.130377,"event":"stage","fields":{},"name":"shared_source:merkle","parent":"falcon_algebraic:commit","path":["falcon_algebraic:commit","shared_source:merkle"],"span_id":72057594037927938}
+{"ancestor_ids":[20266198323167233],"elapsed_ms":2.184939,"event":"stage","fields":{},"name":"falcon_algebraic:commit","parent":null,"path":["falcon_algebraic:commit"],"span_id":20266198323167233}
+{"ancestor_ids":[22517998136852481,74309393851613186,87820192733724675,33776997205278724],"elapsed_ms":0.6298,"event":"stage","fields":{"basis_powers_wall_ns":33934,"buffer_allocation_wall_ns":6292,"carry_worker_ns":0,"public_eval_worker_ns":900961,"recurrence_worker_ns":5430316},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":33776997205278724}
+{"ancestor_ids":[22517998136852481,74309393851613186,87820192733724675],"elapsed_ms":0.654477,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:coordinates"],"span_id":87820192733724675}
+{"ancestor_ids":[22517998136852481,74309393851613186,90071992547409923],"elapsed_ms":0.13058699999999998,"event":"stage","fields":{},"name":"falcon_algebraic_ring:carries","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:carries"],"span_id":90071992547409923}
+{"ancestor_ids":[22517998136852481,74309393851613186,92323792361095171],"elapsed_ms":1.775034,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:ring","path":["falcon_algebraic:prove","falcon_algebraic:ring","falcon_algebraic_ring:collapse"],"span_id":92323792361095171}
+{"ancestor_ids":[22517998136852481,74309393851613186],"elapsed_ms":3.049252,"event":"stage","fields":{},"name":"falcon_algebraic:ring","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:ring"],"span_id":74309393851613186}
+{"ancestor_ids":[22517998136852481,76561193665298434,94575592174780419],"elapsed_ms":2.215326,"event":"stage","fields":{},"name":"falcon_algebraic:integer_outer","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:integer_outer"],"span_id":94575592174780419}
+{"ancestor_ids":[22517998136852481,76561193665298434,96827391988465667,36028797018963972],"elapsed_ms":0.731112,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:binding_construction"],"span_id":36028797018963972}
+{"ancestor_ids":[22517998136852481,76561193665298434,96827391988465667,38280596832649220],"elapsed_ms":1.032111,"event":"stage","fields":{},"name":"falcon_algebraic:word_first_fold","parent":"falcon_algebraic:binding","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding","falcon_algebraic:word_first_fold"],"span_id":38280596832649220}
+{"ancestor_ids":[22517998136852481,76561193665298434,96827391988465667],"elapsed_ms":4.936349,"event":"stage","fields":{},"name":"falcon_algebraic:binding","parent":"falcon_algebraic:arithmetic","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic","falcon_algebraic:binding"],"span_id":96827391988465667}
+{"ancestor_ids":[22517998136852481,76561193665298434],"elapsed_ms":7.188325,"event":"stage","fields":{},"name":"falcon_algebraic:arithmetic","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:arithmetic"],"span_id":76561193665298434}
+{"ancestor_ids":[22517998136852481,78812993478983682,99079191802150915],"elapsed_ms":0.419263,"event":"stage","fields":{},"name":"falcon_bridge:integer_folds","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:integer_folds"],"span_id":99079191802150915}
+{"ancestor_ids":[22517998136852481,78812993478983682,101330991615836163],"elapsed_ms":0.119015,"event":"stage","fields":{},"name":"falcon_bridge:column_packing","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:column_packing"],"span_id":101330991615836163}
+{"ancestor_ids":[22517998136852481,78812993478983682,103582791429521411],"elapsed_ms":0.064662,"event":"stage","fields":{},"name":"falcon_bridge:power_tables","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:power_tables"],"span_id":103582791429521411}
+bitz:     nibble rows            149.3µs   272.1 MB faulted
+bitz:     L3 value tables        272.4µs    32.2 MB faulted
+bitz:     levels 5..13 build       1.1ms   128.1 MB faulted
+bitz:   levels ≥4                  1.5ms     0.0 MB faulted
+bitz:   level 12                 206.5µs     0.0 MB faulted
+bitz:   level 11                 136.4µs     0.0 MB faulted
+bitz:   level 10                 152.4µs     0.0 MB faulted
+bitz:   level 9                  191.9µs     0.0 MB faulted
+bitz:   level 8                  224.3µs     0.0 MB faulted
+bitz:   level 7                  269.5µs     0.0 MB faulted
+bitz:   level 6                  430.7µs     0.0 MB faulted
+bitz:   level 5                  396.8µs     0.0 MB faulted
+bitz:     L4 rebuild             276.6µs     0.2 MB faulted
+bitz:   level 4                  955.5µs     0.0 MB faulted
+bitz:     L3 tables                4.6µs     0.0 MB faulted
+bitz:     L3 jit round           279.5µs     0.0 MB faulted
+bitz:     L3 jit fold            293.0µs     0.0 MB faulted
+bitz:     L3 dense tail          506.6µs     0.0 MB faulted
+bitz:   level 3                    1.1ms     0.0 MB faulted
+bitz:     L2 bit round 1         436.4µs     0.0 MB faulted
+bitz:     L2 tables               78.4µs     0.0 MB faulted
+bitz:     L2 jit round           275.2µs     0.0 MB faulted
+bitz:     L2 jit fold            279.8µs     0.0 MB faulted
+bitz:     L2 dense tail          442.4µs     0.0 MB faulted
+bitz:   level 2                    1.6ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   439.9µs     0.0 MB faulted
+bitz:     L1 tables               76.8µs     0.0 MB faulted
+bitz:     L1 jit round           274.5µs     0.0 MB faulted
+bitz:     L1 jit fold            274.9µs     0.0 MB faulted
+bitz:     L1 dense tail          473.6µs     0.0 MB faulted
+bitz:   level 1                    1.6ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   398.9µs     0.2 MB faulted
+bitz:     L0 tables               87.3µs     0.0 MB faulted
+bitz:     L0 jit round           274.6µs     0.0 MB faulted
+bitz:     L0 jit fold            275.7µs     0.0 MB faulted
+bitz:     L0 dense tail          445.7µs     0.0 MB faulted
+bitz:   level 0                    1.6ms     0.0 MB faulted
+{"ancestor_ids":[22517998136852481,78812993478983682,105834591243206659],"elapsed_ms":11.167294,"event":"stage","fields":{},"name":"falcon_bridge:wfbitz_forest","parent":"falcon_algebraic:bitz","path":["falcon_algebraic:prove","falcon_algebraic:bitz","falcon_bridge:wfbitz_forest"],"span_id":105834591243206659}
+{"ancestor_ids":[22517998136852481,78812993478983682],"elapsed_ms":12.121557,"event":"stage","fields":{},"name":"falcon_algebraic:bitz","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:bitz"],"span_id":78812993478983682}
+{"ancestor_ids":[22517998136852481,81064793292668930,108086391056891907],"elapsed_ms":0.5519229999999999,"event":"stage","fields":{},"name":"op:ring_switch","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ring_switch"],"span_id":108086391056891907}
+{"ancestor_ids":[22517998136852481,81064793292668930,110338190870577155,40532396646334468],"elapsed_ms":0.376342,"event":"stage","fields":{},"name":"op:initial_messages","parent":"op:extra_bases","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases","op:initial_messages"],"span_id":40532396646334468}
+{"ancestor_ids":[22517998136852481,81064793292668930,110338190870577155],"elapsed_ms":0.417569,"event":"stage","fields":{},"name":"op:extra_bases","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:extra_bases"],"span_id":110338190870577155}
+{"ancestor_ids":[22517998136852481,81064793292668930,112589990684262403,42784196460019716],"elapsed_ms":0.115539,"event":"stage","fields":{},"name":"op:deferred_first_fold","parent":"op:ligerito","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito","op:deferred_first_fold"],"span_id":42784196460019716}
+{"ancestor_ids":[22517998136852481,81064793292668930,112589990684262403],"elapsed_ms":2.14811,"event":"stage","fields":{},"name":"op:ligerito","parent":"falcon_algebraic:pcs","path":["falcon_algebraic:prove","falcon_algebraic:pcs","op:ligerito"],"span_id":112589990684262403}
+{"ancestor_ids":[22517998136852481,81064793292668930],"elapsed_ms":3.169089,"event":"stage","fields":{},"name":"falcon_algebraic:pcs","parent":"falcon_algebraic:prove","path":["falcon_algebraic:prove","falcon_algebraic:pcs"],"span_id":81064793292668930}
+{"ancestor_ids":[22517998136852481],"elapsed_ms":27.582455,"event":"stage","fields":{},"name":"falcon_algebraic:prove","parent":null,"path":["falcon_algebraic:prove"],"span_id":22517998136852481}
+{"ancestor_ids":[24769797950537729,83316593106354178,114841790497947651],"elapsed_ms":0.458597,"event":"stage","fields":{"basis_powers_wall_ns":34154,"buffer_allocation_wall_ns":6041,"carry_worker_ns":0,"public_eval_worker_ns":911358,"recurrence_worker_ns":3347200},"name":"falcon_algebraic_ring:coordinate_work","parent":"falcon_algebraic_ring:coordinates","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates","falcon_algebraic_ring:coordinate_work"],"span_id":114841790497947651}
+{"ancestor_ids":[24769797950537729,83316593106354178],"elapsed_ms":0.487181,"event":"stage","fields":{},"name":"falcon_algebraic_ring:coordinates","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:coordinates"],"span_id":83316593106354178}
+{"ancestor_ids":[24769797950537729,85568392920039426],"elapsed_ms":1.7810059999999999,"event":"stage","fields":{},"name":"falcon_algebraic_ring:collapse","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic_ring:collapse"],"span_id":85568392920039426}
+{"ancestor_ids":[24769797950537729,87820192733724674],"elapsed_ms":1.0432009999999998,"event":"stage","fields":{},"name":"falcon_algebraic:binding_construction","parent":"falcon_algebraic:verify","path":["falcon_algebraic:verify","falcon_algebraic:binding_construction"],"span_id":87820192733724674}
+{"ancestor_ids":[24769797950537729],"elapsed_ms":9.216858,"event":"stage","fields":{},"name":"falcon_algebraic:verify","parent":null,"path":["falcon_algebraic:verify"],"span_id":24769797950537729}

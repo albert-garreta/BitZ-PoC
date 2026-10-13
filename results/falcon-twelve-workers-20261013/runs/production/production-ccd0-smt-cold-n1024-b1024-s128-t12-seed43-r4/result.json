@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-worker-optimization/v1",
+  "job": {
+    "id": "production-ccd0-smt-cold-n1024-b1024-s128-t12-seed43-r4",
+    "variant": "arithmetic",
+    "config": "production-ccd0-smt",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 43,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      22,
+      23,
+      20,
+      21
+    ],
+    "main_cpu": 6,
+    "repetition": 4,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "1a2cb6ffe1f883e944688347b6c422248d98d1734267258d8dec24eacb886622",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 56.882495999999996,
+      "prove_ms": 51.6831,
+      "witness_commit_ms": 5.199316,
+      "verify_ms": 15.420281,
+      "process_peak_rss_kib": 140516,
+      "proof_payload_bytes": 321304,
+      "iteration": 0,
+      "prepare_ms": 0.144764,
+      "external_input_ms": 1792.7664860000002,
+      "prover_minor_faults": 57655,
+      "process_rss_before_prover_kib": 22848,
+      "process_rss_after_prover_kib": 78420,
+      "process_retained_rss_kib": 78604,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "b86fcd1a5bde7da659dc2b53a2d5792312798e965cbc725616ecc4336bda7624",
+  "stdout_sha256": "db071e9309815003bb28d888c835c3ffd7a7c914e5b28316fdbef99c11435c8c",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "86cff267855e4f07a2bd924ddb68a0a07a6c09dd18bb639fdd45a77545bedc15"
+}

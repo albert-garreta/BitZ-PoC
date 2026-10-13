@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-twelve-workers-20261013/candidate-production",
+    "--degree",
+    "512",
+    "--batch",
+    "3",
+    "--security",
+    "128",
+    "--threads",
+    "12",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "12",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

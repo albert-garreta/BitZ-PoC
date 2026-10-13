@@ -1,0 +1,6 @@
+{
+  "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-forest-pcs-binding-20261013/candidate-v2",
+  "sha256": "8db97affb3ba0423ad0fe1301cbfcf411fb8b7639f675fa87f8b641837a5721f",
+  "source": "../falcon-forest-pcs-binding-20261013/candidate-v2-source.json",
+  "note": "Existing bench-internals binary, prior to PCS4 promotion. Every causal candidate configuration explicitly selects PCS4 to match current production. Not the new production binary."
+}

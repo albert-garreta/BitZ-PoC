@@ -1,0 +1,88 @@
+Production worker/binder confirmation review — 2026-10-13
+Reviewer: /root/non_gkr_targets
+
+Scope: completed production phase only. The regression phase was still active;
+no all-phase validator was called. No builds, tests, benchmarks or prover
+processes were launched, and no source/runner files were modified.
+
+Provenance and raw evidence
+- Production source snapshot is based on
+  bfd6eaf98901bec2bac4504f649d48028cc87f2c. All four recorded source/script
+  hashes still match current files, and the saved patch hash matches its
+  snapshot. The production manifest runner/helper hashes also match.
+- Cargo structured events show fresh=false for both bitz and the
+  falcon_algebraic benchmark: they were rebuilt for this candidate. Recorded
+  features include falcon-hybrid and exclude bench-internals. The recorded
+  native target-cpu build command agrees with the production build audit.
+- Both manifest executables independently match their frozen hashes. New
+  production SHA256:
+  bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511
+- All144 production result files pass command/stdout/stderr/process/manifest
+  hashes and strict raw re-normalization, verification, security and exact
+  worker/main/auxiliary affinity checks. No production result is missing or
+  extra. All configurations use env{} and tracing is disabled.
+- All288 proofs verify,144 per degree:252 timed samples plus36 warmups.
+  The six matching degree/batch/security/seed cases have identical input and
+  source commitments, complete proof Debug digests and payload sizes across
+  baseline, new production and optional SMT placement.
+- Independently recomputed all metric and per-seed medians in the12 production
+  summary rows; every value matches summary.json.
+
+Method
+Both degrees, batch1024/security128,12 workers, seeds42/43/44. Every variant
+has21 cold and21 repeated samples per degree. Cold is seven fresh processes
+per seed; repeated shares Prepared for two warmups plus seven measured proofs.
+Old and new production binaries use their defaults without experiment flags.
+Latency comparisons below use commit+prove, excluding verification and setup.
+
+Final production on the matched physical12 placement
+Degree Mode      Baseline ms  Production ms Reduction Seed42/43/44 reductions
+512    cold      45.603411    34.047573       25.340%   24.989/24.855/26.058%
+512    repeated  42.447598    31.820414       25.036%   24.101/26.038/25.085%
+1024   cold      83.936372    59.281139       29.374%   29.651/29.067/29.374%
+1024   repeated  78.493085    56.406757       28.138%   29.001/27.280/27.372%
+
+Every seed median improves in every case, independently confirming the
+direction and scale of the earlier same-binary selector experiment.
+Verification medians also improve: N512 cold21.836->8.003ms and repeated
+22.102->9.077ms; N1024 cold41.440->14.704ms and repeated42.439->15.977ms.
+
+Optional topology, compared against the NEW physical12 production
+Degree Mode      Physical12 ms CCD0-SMT12 ms Reduction Seed42/43/44 reductions
+512    cold      34.047573     31.832506        6.506%   6.956/7.717/5.481%
+512    repeated  31.820414     28.813812        9.449%   8.565/9.087/9.449%
+1024   cold      59.281139     57.181080        3.543%   2.881/3.080/3.880%
+1024   repeated  56.406757     51.878309        8.028%   7.007/7.794/9.660%
+
+Again every seed median improves. The optional topology uses12 logical workers
+on8 physical cores in one cache group, with4 SMT siblings, not12 physical
+cores. It changes CPU placement, not source/defaults. Verification is slightly
+slower: N512 cold8.003->8.049ms/repeated9.077->9.110ms; N1024 cold14.704->
+15.256ms/repeated15.977->16.408ms. Do not present it as an across-the-board gain.
+
+Memory and proof tradeoffs
+Matched physical12 process peak-RSS medians decline (MiB):
+  N512 cold87.984->80.180; repeated95.918->85.680.
+  N1024 cold166.680->137.586; repeated184.512->172.359.
+However, N512 cold RETAINED process RSS rises from43.012 to72.918MiB, about
+29.906MiB, while its repeated retained RSS stays near44MiB (43.871->43.996).
+N1024 retained RSS stays near77MiB cold and78MiB repeated. Retained process
+RSS includes inputs, Prepared and allocator state; this review does not infer
+a particular allocation or cache mechanism from that process metric. Peak RSS
+and post-proof RSS are different measurements. Do not claim every memory
+metric improves. Production lacks the feature-gated cached-vector metrics.
+
+Payloads are unchanged against each matching seed. Seeds42/43/44 respectively:
+  Falcon512: 256368 /256112 /256848 bytes.
+  Falcon1024:321272 /321304 /321432 bytes.
+These are Debug-representation proof fingerprints plus exact payload sizes;
+no independent serialized-proof byte comparison is claimed.
+
+Conclusion and limits
+The completed production phase confirms a consistent12-worker proving and
+verification improvement for both measured degrees on the matched placement.
+The optional SMT placement further improves proving with the verification
+tradeoff above. Neither N512 placement reaches22ms repeated proving.
+Regression qualification at other workers/batches/security settings is outside
+this review and was incomplete at review time. Per-seed agreement does not
+establish statistical significance or absence of regressions on all workloads.

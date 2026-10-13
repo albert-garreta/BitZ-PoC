@@ -1,0 +1,76 @@
+Causal worker/binder experiment review — 2026-10-13
+Reviewer: /root/non_gkr_targets
+
+Completed evidence only. No builds, tests, benchmarks or prover processes were
+launched by this reviewer. No source or runner files were modified.
+
+Audit
+- All 192 causal result records pass command/raw/process/manifest hashes,
+  strict raw-trial re-normalization, requested security and exact per-job
+  worker/main/auxiliary affinity checks. No result is missing or extra.
+- Frozen runner/helper and both executable hashes match the phase manifest.
+- Independently recomputed every summary metric and per-seed metric median
+  for all 16 causal rows. They match summary.json.
+- All 384 proofs verify: 192 per degree, comprising 336 timed samples and
+  48 warmups. Six matching degree/batch/security/seed baseline cases cover
+  every candidate input. Input/source commitments, complete proof Debug
+  digests and payload sizes match across strategy and topology variants.
+
+Method and comparison boundaries
+Batch1024/security128, degrees512/1024, 12 workers, seeds42/43/44. Each variant
+has 21 cold and 21 repeated measured proofs per degree. Cold uses seven fresh
+processes per seed; repeated uses two warmups then seven timed proofs per seed.
+Variants run in randomized matched blocks; repeated samples share Prepared.
+
+Both legacy-pcs4 and optimized-pcs4 use the SAME old experiment executable:
+candidate-v2 SHA256
+8db97affb3ba0423ad0fe1301cbfcf411fb8b7639f675fa87f8b641837a5721f.
+Both explicitly set BITZ_PCS_INITIAL_TILES_PER_TASK=4 because that executable
+predates the promoted production PCS default. Their only configuration
+difference is BITZ_ARITHMETIC_BINDING_STRATEGY=legacy versus optimized.
+The physical-worker placement and main CPU are identical.
+
+Same-binary strategy result: median total commit+prove milliseconds
+Degree  Mode      Legacy       Optimized    Reduction  Seed42/43/44 reductions
+512     cold      45.622519    34.148946      25.149%   25.552/25.710/25.578%
+512     repeated  42.387666    31.750904      25.094%   25.358/25.275/24.197%
+1024    cold      84.136290    59.665335      29.085%   29.387/29.107/29.242%
+1024    repeated  77.892481    56.407861      27.582%   28.261/27.813/26.921%
+
+Every seed median improves in every strategy case. Verification medians also
+fall: N512 cold21.984->7.973ms/repeated22.335->9.261ms; N1024 cold41.818->
+14.344ms/repeated42.784->15.342ms. Median process peak RSS declines roughly
+7.85/10.52MiB for N512 cold/repeated and29.15/12.22MiB for N1024. These are
+process-lifetime RSS medians, not a measurement of one isolated allocation.
+
+Separate topology experiment
+optimized-ccd0-smt uses the identical optimized+PCS4 selector pair and old
+candidate-v2 executable, changing worker placement to
+[6,7,4,5,2,3,0,1,22,23,20,21], with main CPU6 unchanged. This is12 logical
+workers on8 physical cores in one cache group, including4 SMT siblings.
+The physical12 comparison uses[6,7,4,5,2,3,0,1,14,15,12,13]. This comparison
+measures placement/SMT together, not a source-only improvement or a12-physical-
+core result. It does not establish that this placement is globally optimal.
+
+Degree  Mode      Physical12   CCD0-SMT12   Reduction  Seed42/43/44 reductions
+512     cold      34.148946    31.860860       6.700%    6.668/5.999/7.188%
+512     repeated  31.750904    28.811920       9.256%    9.047/9.699/9.545%
+1024    cold      59.665335    57.211127       4.113%    3.801/3.822/3.844%
+1024    repeated  56.407861    51.654647       8.427%    7.713/7.718/9.501%
+
+Every seed median improves in every topology proving case. However, N1024
+verification medians rise from14.344 to15.279ms cold and15.342 to16.319ms
+repeated. N512 verification is approximately neutral cold and slightly faster
+repeated. Topology benefits must therefore specify which operation is timed.
+
+Conclusion and limits
+The completed evidence strongly supports removing the12-worker legacy binder
+choice for this host and measured geometry. Same-binary results separate that
+effect from build differences and explicitly hold PCS scheduling fixed. The
+optional SMT placement provides a further consistent proving gain with the
+verification caveat above; it must remain separately labelled.
+
+This phase does not qualify the newly built production executable/defaults,
+prove absence of regressions at1/8/16 workers or other batch/security settings,
+or establish statistical significance. Final production confirmation remains
+required. N512 repeated time is still above22ms in both tested placements.

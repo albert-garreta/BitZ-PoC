@@ -1,0 +1,127 @@
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t16-seed42-r0
+OK production-repeated-n512-b1024-s128-t16-seed42-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t16-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed42-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t16-seed44-r0
+OK production-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t16-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t8-seed44-r0
+OK production-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t16-seed43-r0
+OK production-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t16-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t8-seed43-r0
+OK production-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed42-r0
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t8-seed42-r0
+OK production-repeated-n512-b1024-s128-t8-seed42-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t8-seed42-r0
+OK production-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN regression-confirmation/baseline-repeated-n1024-b1024-s128-t16-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN regression-confirmation/production-repeated-n1024-b1024-s128-t16-seed42-r0
+OK production-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed43-r0
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t8-seed43-r0
+OK production-repeated-n512-b1024-s128-t8-seed43-r0
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t16-seed44-r0
+OK production-repeated-n512-b1024-s128-t16-seed44-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t16-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed44-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed44-r0
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t8-seed44-r0
+OK production-repeated-n512-b1024-s128-t8-seed44-r0
+RUN regression-confirmation/production-repeated-n512-b1024-s128-t16-seed43-r0
+OK production-repeated-n512-b1024-s128-t16-seed43-r0
+RUN regression-confirmation/baseline-repeated-n512-b1024-s128-t16-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed43-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 14, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 698, "bitz/falcon512-algebraic/non-zk/v9": 698}, "schema": "bitz/falcon-worker-optimization/v1", "verified_proofs": 1396}
+causal       baseline           N=512 t=12 cold     n=21 total=45.546 verify=21.864 traced=False
+causal       baseline           N=512 t=12 repeated n=21 total=42.432 verify=22.067 traced=False
+causal       baseline           N=1024 t=12 cold     n=21 total=84.026 verify=41.378 traced=False
+causal       baseline           N=1024 t=12 repeated n=21 total=77.836 verify=42.246 traced=False
+causal       legacy-pcs4        N=512 t=12 cold     n=21 total=45.623 verify=21.984 traced=False
+causal       legacy-pcs4        N=512 t=12 repeated n=21 total=42.388 verify=22.335 traced=False
+causal       legacy-pcs4        N=1024 t=12 cold     n=21 total=84.136 verify=41.818 traced=False
+causal       legacy-pcs4        N=1024 t=12 repeated n=21 total=77.892 verify=42.784 traced=False
+causal       optimized-ccd0-smt N=512 t=12 cold     n=21 total=31.861 verify=7.995 traced=False
+causal       optimized-ccd0-smt N=512 t=12 repeated n=21 total=28.812 verify=9.068 traced=False
+causal       optimized-ccd0-smt N=1024 t=12 cold     n=21 total=57.211 verify=15.279 traced=False
+causal       optimized-ccd0-smt N=1024 t=12 repeated n=21 total=51.655 verify=16.319 traced=False
+causal       optimized-pcs4     N=512 t=12 cold     n=21 total=34.149 verify=7.973 traced=False
+causal       optimized-pcs4     N=512 t=12 repeated n=21 total=31.751 verify=9.261 traced=False
+causal       optimized-pcs4     N=1024 t=12 cold     n=21 total=59.665 verify=14.344 traced=False
+causal       optimized-pcs4     N=1024 t=12 repeated n=21 total=56.408 verify=15.342 traced=False
+correctness-b129-s100 baseline           N=512 t=12 cold     n=1 total=13.859 verify=5.306 traced=False
+correctness-b129-s100 baseline           N=1024 t=12 cold     n=1 total=22.559 verify=8.481 traced=False
+correctness-b129-s100 production         N=512 t=12 cold     n=1 total=11.407 verify=3.040 traced=False
+correctness-b129-s100 production         N=1024 t=12 cold     n=1 total=17.720 verify=3.920 traced=False
+correctness-b129-s128 baseline           N=512 t=12 cold     n=1 total=16.339 verify=5.769 traced=False
+correctness-b129-s128 baseline           N=1024 t=12 cold     n=1 total=25.013 verify=9.099 traced=False
+correctness-b129-s128 production         N=512 t=12 cold     n=1 total=14.258 verify=3.477 traced=False
+correctness-b129-s128 production         N=1024 t=12 cold     n=1 total=20.781 verify=4.549 traced=False
+correctness-b3-s100 baseline           N=512 t=12 cold     n=1 total=4.641 verify=2.060 traced=False
+correctness-b3-s100 baseline           N=1024 t=12 cold     n=1 total=5.089 verify=2.197 traced=False
+correctness-b3-s100 production         N=512 t=12 cold     n=1 total=4.595 verify=2.053 traced=False
+correctness-b3-s100 production         N=1024 t=12 cold     n=1 total=5.132 verify=2.189 traced=False
+correctness-b3-s128 baseline           N=512 t=12 cold     n=1 total=6.332 verify=2.514 traced=False
+correctness-b3-s128 baseline           N=1024 t=12 cold     n=1 total=6.663 verify=2.684 traced=False
+correctness-b3-s128 production         N=512 t=12 cold     n=1 total=6.300 verify=2.532 traced=False
+correctness-b3-s128 production         N=1024 t=12 cold     n=1 total=6.585 verify=2.658 traced=False
+production   baseline           N=512 t=12 cold     n=21 total=45.603 verify=21.836 traced=False
+production   baseline           N=512 t=12 repeated n=21 total=42.448 verify=22.102 traced=False
+production   baseline           N=1024 t=12 cold     n=21 total=83.936 verify=41.440 traced=False
+production   baseline           N=1024 t=12 repeated n=21 total=78.493 verify=42.439 traced=False
+production   production         N=512 t=12 cold     n=21 total=34.048 verify=8.003 traced=False
+production   production         N=512 t=12 repeated n=21 total=31.820 verify=9.077 traced=False
+production   production         N=1024 t=12 cold     n=21 total=59.281 verify=14.704 traced=False
+production   production         N=1024 t=12 repeated n=21 total=56.407 verify=15.977 traced=False
+production   production-ccd0-smt N=512 t=12 cold     n=21 total=31.833 verify=8.049 traced=False
+production   production-ccd0-smt N=512 t=12 repeated n=21 total=28.814 verify=9.110 traced=False
+production   production-ccd0-smt N=1024 t=12 cold     n=21 total=57.181 verify=15.256 traced=False
+production   production-ccd0-smt N=1024 t=12 repeated n=21 total=51.878 verify=16.408 traced=False
+profiles     baseline           N=512 t=8 repeated n=9 total=28.762 verify=9.269 traced=True
+profiles     baseline           N=512 t=12 repeated n=9 total=43.299 verify=22.442 traced=True
+profiles     baseline           N=512 t=16 repeated n=9 total=29.120 verify=9.359 traced=True
+profiles     baseline           N=1024 t=8 repeated n=9 total=51.923 verify=16.472 traced=True
+profiles     baseline           N=1024 t=12 repeated n=9 total=78.513 verify=42.599 traced=True
+profiles     baseline           N=1024 t=16 repeated n=9 total=48.702 verify=15.772 traced=True
+profiles     production         N=512 t=8 repeated n=9 total=28.834 verify=9.297 traced=True
+profiles     production         N=512 t=12 repeated n=9 total=32.508 verify=9.396 traced=True
+profiles     production         N=512 t=16 repeated n=9 total=29.142 verify=9.465 traced=True
+profiles     production         N=1024 t=8 repeated n=9 total=51.918 verify=16.601 traced=True
+profiles     production         N=1024 t=12 repeated n=9 total=57.177 verify=15.851 traced=True
+profiles     production         N=1024 t=16 repeated n=9 total=49.092 verify=15.957 traced=True
+profiles     production-ccd0-smt N=512 t=12 repeated n=9 total=29.542 verify=9.174 traced=True
+profiles     production-ccd0-smt N=1024 t=12 repeated n=9 total=52.489 verify=16.194 traced=True
+regression   baseline           N=512 t=1 repeated n=21 total=138.896 verify=30.263 traced=False
+regression   baseline           N=512 t=8 repeated n=21 total=28.330 verify=9.200 traced=False
+regression   baseline           N=512 t=16 repeated n=21 total=28.468 verify=9.535 traced=False
+regression   baseline           N=1024 t=1 repeated n=21 total=269.794 verify=59.282 traced=False
+regression   baseline           N=1024 t=8 repeated n=21 total=51.191 verify=16.468 traced=False
+regression   baseline           N=1024 t=16 repeated n=21 total=49.264 verify=15.099 traced=False
+regression   production         N=512 t=1 repeated n=21 total=139.059 verify=30.375 traced=False
+regression   production         N=512 t=8 repeated n=21 total=28.459 verify=9.295 traced=False
+regression   production         N=512 t=16 repeated n=21 total=28.665 verify=9.558 traced=False
+regression   production         N=1024 t=1 repeated n=21 total=268.972 verify=59.631 traced=False
+regression   production         N=1024 t=8 repeated n=21 total=51.349 verify=16.571 traced=False
+regression   production         N=1024 t=16 repeated n=21 total=49.007 verify=14.991 traced=False
+regression-confirmation baseline           N=512 t=8 repeated n=21 total=28.319 verify=9.244 traced=False
+regression-confirmation baseline           N=512 t=16 repeated n=21 total=28.178 verify=9.475 traced=False
+regression-confirmation baseline           N=1024 t=8 repeated n=21 total=51.154 verify=16.418 traced=False
+regression-confirmation baseline           N=1024 t=16 repeated n=21 total=48.454 verify=15.083 traced=False
+regression-confirmation production         N=512 t=8 repeated n=21 total=28.328 verify=9.227 traced=False
+regression-confirmation production         N=512 t=16 repeated n=21 total=28.362 verify=9.563 traced=False
+regression-confirmation production         N=1024 t=8 repeated n=21 total=51.042 verify=16.513 traced=False
+regression-confirmation production         N=1024 t=16 repeated n=21 total=48.642 verify=15.248 traced=False

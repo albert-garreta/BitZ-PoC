@@ -767,7 +767,7 @@ pub(super) fn optimized_binding(batch: usize) -> bool {
             panic!("BITZ_ARITHMETIC_BINDING_STRATEGY must be valid Unicode")
         }
     }
-    (matches!(binding_workers(), 1 | 8 | 16) && batch > SMALL_BATCH_MAX)
+    (matches!(binding_workers(), 1 | 8 | 12 | 16) && batch > SMALL_BATCH_MAX)
         || (N == 512 && batch == 1024 && matches!(binding_workers(), 2 | 4))
 }
 
@@ -1862,55 +1862,78 @@ mod tests {
     #[test]
     fn owned_ring_binding_preserves_proof_and_transcript() {
         let f = field();
-        for batch in [1, 3, 17] {
+        let pools = [3, 12].map(|workers| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+        });
+        for batch in [1, 3, SMALL_BATCH_MAX, SMALL_BATCH_MAX + 1] {
             let layout = Layout::new(batch).unwrap();
             let data = data(batch);
             let source = Source::new(layout, &data);
             let ring = ring(&data, &f);
-            let mut borrowed = Blake3Transcript::new();
-            let expected = prove_with_ring(
-                &mut borrowed,
-                &layout,
-                &data,
-                &source,
-                &f,
-                RingInput::Borrowed(&ring),
-                &schedule(),
-            )
-            .unwrap();
-            let mut owned = Blake3Transcript::new();
-            let actual = prove_with_ring(
-                &mut owned,
-                &layout,
-                &data,
-                &source,
-                &f,
-                RingInput::Owned(ring.clone()),
-                &schedule(),
-            )
-            .unwrap();
-            assert_eq!(actual, expected);
-            assert_eq!(owned.state_digest(), borrowed.state_digest());
-            let mut verifier = Blake3Transcript::new();
-            assert_eq!(
-                verify(&mut verifier, &layout, &f, &ring, &actual.0, &schedule()).unwrap(),
-                actual.1
-            );
-            assert_eq!(verifier.state_digest(), owned.state_digest());
-            let mut invalid = ring;
-            invalid.weights_s1[0] = crate::piop::spartan::noncanonical_test_value(&f);
-            assert!(
-                prove_with_ring(
-                    &mut Blake3Transcript::new(),
-                    &layout,
-                    &data,
-                    &source,
-                    &f,
-                    RingInput::Owned(invalid),
-                    &schedule()
-                )
-                .is_err()
-            );
+            let mut reference = None;
+            for (workers, pool) in [3, 12].into_iter().zip(&pools) {
+                let result = pool.install(|| {
+                    // Three workers retain the legacy constructor. Twelve
+                    // exercise the promoted path immediately above its cutoff.
+                    assert_eq!(
+                        optimized_binding(batch),
+                        workers == 12 && batch > SMALL_BATCH_MAX
+                    );
+                    let mut borrowed = Blake3Transcript::new();
+                    let expected = prove_with_ring(
+                        &mut borrowed,
+                        &layout,
+                        &data,
+                        &source,
+                        &f,
+                        RingInput::Borrowed(&ring),
+                        &schedule(),
+                    )
+                    .unwrap();
+                    let mut owned = Blake3Transcript::new();
+                    let actual = prove_with_ring(
+                        &mut owned,
+                        &layout,
+                        &data,
+                        &source,
+                        &f,
+                        RingInput::Owned(ring.clone()),
+                        &schedule(),
+                    )
+                    .unwrap();
+                    assert_eq!(actual, expected);
+                    assert_eq!(owned.state_digest(), borrowed.state_digest());
+                    let mut verifier = Blake3Transcript::new();
+                    assert_eq!(
+                        verify(&mut verifier, &layout, &f, &ring, &actual.0, &schedule()).unwrap(),
+                        actual.1
+                    );
+                    assert_eq!(verifier.state_digest(), owned.state_digest());
+                    let mut invalid = ring.clone();
+                    invalid.weights_s1[0] = crate::piop::spartan::noncanonical_test_value(&f);
+                    assert!(
+                        prove_with_ring(
+                            &mut Blake3Transcript::new(),
+                            &layout,
+                            &data,
+                            &source,
+                            &f,
+                            RingInput::Owned(invalid),
+                            &schedule()
+                        )
+                        .is_err()
+                    );
+                    (actual, owned.state_digest())
+                });
+                if let Some(expected) = &reference {
+                    assert_eq!(&result, expected, "batch={batch}, workers={workers}");
+                } else {
+                    reference = Some(result);
+                }
+            }
         }
     }
 
@@ -1979,7 +2002,7 @@ mod tests {
     #[test]
     fn factored_construction_and_batched_evaluation_match_legacy() {
         #[cfg(feature = "parallel")]
-        let pools: Vec<_> = [1, 8, 16]
+        let pools: Vec<_> = [1, 8, 12, 16]
             .into_iter()
             .map(|threads| {
                 rayon::ThreadPoolBuilder::new()

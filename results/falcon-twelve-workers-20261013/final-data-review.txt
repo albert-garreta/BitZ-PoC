@@ -1,0 +1,71 @@
+Final worker/binder campaign evidence review — 2026-10-13
+Reviewer: /root/non_gkr_targets
+
+Read-only audit of the completed campaign and final regenerated README.
+No builds, tests, benchmarks or prover processes were launched. No source,
+runner or README files were changed by this final review.
+
+Evidence audit passed
+- Re-normalized every raw trial in all454 result records with the frozen
+  strict normalizer. Checked command/stdout/stderr/process/manifest hashes,
+  exact commands, successful processes, verification/security and per-job
+  worker/main/auxiliary affinity. No result is missing or extra.
+- Every phase's runner/helper provenance matches current frozen files.
+  All three executable hashes match the manifests. Current production source
+  hashes and saved patch still match the build snapshot. The earlier production
+  audit checked fresh Cargo compilation of bitz/benchmark and confirmed that
+  bench-internals is absent; its executable remains unchanged.
+- Independently aggregated source/input identity and complete proof Debug-
+  digest/payload identity across configurations, workers, placements, modes
+  and phases. Every case has a matching frozen baseline;14 baseline cases.
+- Counts exactly match validation.json:1,396 verified proofs,698 per degree.
+  Phase totals: causal384, production288, regression324, regression-
+  confirmation216, profiles168, and16 correctness-only proofs. Warmups are
+  included in these proof counts; latency summaries exclude them.
+- Independently recomputed every metric median, per-seed metric median,
+  per-process peak-RSS maximum aggregation and topology in all78 summary rows.
+  All match summary.json.
+- Recomputed all14 profile-summary rows and their per-seed medians directly
+  from raw stderr after excluding warmups and non-prover spans. Each row has
+  nine measured proofs. Both README profile tables match this evidence.
+
+README assessment
+- Production proving/verifier tables, selector-isolation comparison, worker
+  medians, regression tables, optional topology table, memory table and payload
+  values agree with the recorded evidence at their displayed precision.
+- Physical12 production improves every per-seed proving median for both
+  degrees and modes. Optional cache-local SMT placement also improves every
+  proving seed, but has its own verifier tradeoff and is explicitly labelled
+  as12 logical workers on8 physical cores, not a source change.
+- Pooled unchanged-policy regression medians range from-0.5218% to+0.6920%.
+  They do not bound individual seeds. The confirmation's N512/16 seed42 is
+  +5.223%, with seeds43/44 at-0.917%/-0.306%; N1024/16 seed42 is+1.629%.
+  Root incorporated these mixed results into the final README rather than
+  claiming all measurements fall within0.7% or zero performance regression.
+- Memory caveat is accurate: N512 cold retained process RSS increases by
+  29.90625MiB while peak RSS decreases. Retained RSS is measured after
+  verification and proof drop, and is not a scratch-capacity measurement.
+  The final memory table correctly uses medians of per-process maximum
+  high-water readings. This differs from the pooled per-trial peak readings
+  quoted in the earlier production-review.txt; both aggregations were checked.
+  The final README now states its aggregation explicitly and correctly says
+  cached-vector counters are unavailable in production builds.
+- Trace diagnostics are separated from untraced latency qualification; nested
+  spans, worker CPU-time fields and the inaccurate legacy fault-MB formatter
+  have appropriate caveats. Cache/scheduling conclusions are described as an
+  explanation supported by evidence, not hardware-counter measurements.
+- Payload sizes vary by seed but match each baseline exactly. The README
+  correctly names complete Debug digests rather than serialized-proof byte
+  comparisons and does not claim a proof-format or security change.
+- The saved native log confirms361 tests passed, zero failed, three ignored.
+  README correctly says ignored tests were not rerun in this selector campaign.
+- The22ms target remains explicitly unmet. No universal performance-regression,
+  significance, topology-optimality or hardware-portability claim is made.
+
+Root also added explicit phase labels for the worker-scaling table, which
+combines1/8/16-worker medians from regression with12-worker medians from
+production. These are separate matched phases, not a simultaneous sweep.
+
+No remaining actionable numeric/provenance finding after root's report
+refinements. This is an evidence/reporting audit, not an independent formal
+protocol proof, sanitizer run or statistical significance test.

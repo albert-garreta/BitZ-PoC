@@ -1,0 +1,47 @@
+Independent worker-runner topology review
+Date: 2026-10-13
+Scope: scripts/falcon_worker_optimization.py and its test file, focusing on
+their diff from the previously reviewed falcon_prover_optimization runner.
+Method: source-only inspection; no Python tests, executable, prover, or build
+was run by this reviewer while the coordinated benchmark was active.
+
+No actionable findings in the new topology path.
+
+Configuration validation rejects empty, duplicate, boolean, negative, or
+oversized worker lists and invalid main CPUs (worker runner:93-100). Per-job
+expansion rejects insufficient worker lists and checks both worker and main
+CPUs against available process affinity (138-143). The ordered selected list
+and main CPU are frozen in each job (147).
+
+Both command construction (165-167) and strict raw normalization (180-182)
+use those job-specific CPUs, preventing the default manifest CPU list from
+silently accepting a differently placed run. The underlying normalizer checks
+ordered worker affinity, main affinity, and all auxiliary workers separately
+(scripts/binder_experiments.py:171-176). Summary groups include phase and
+configuration, each of which freezes one placement; summary rows report that
+placement (313-314), avoiding pooling different placements under worker count.
+
+Proof/source comparisons remain independent of placement, as required for
+an execution-policy experiment. Frozen baseline cases may come from another
+placement because their role is proof equivalence; latency comparisons must
+still use the explicitly labelled matched placement/configuration rows.
+
+Existing runner protections remain: runner/helper/binary/raw/command/process
+hashes, strict job matching, raw trial re-normalization, complete phases,
+extra-result rejection, frozen baseline coverage, exact source/proof/payload
+identity, and stripping inherited dependency runtime flags.
+
+The new synthetic tests inspected cover a12-worker list confined to the first
+cache group with4 SMT siblings, a changed main CPU, wrong observed worker/
+main/auxiliary affinity, and invalid/unavailable CPU lists. The author reports
+11 synthetic tests passing; that result was not independently rerun here.
+
+This runner records logical CPU IDs; whether a placement uses SMT or spans
+cache groups must be interpreted from the saved host topology, not inferred
+from worker count. A one-cache-group SMT result is not evidence about12
+distinct physical cores.
+
+Reviewed runner SHA256:
+  91ff631788c99b6701a54d566b632b858e7362cc843a00063405c79999376ff7
+Reviewed tests SHA256:
+  f952aad7e8e25e2bfade659c2fc171c01b28dc2b4f7cb4a6672b1cb81ca7ed96

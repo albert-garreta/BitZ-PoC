@@ -1,0 +1,68 @@
+Independent 12-worker selector review
+Date: 2026-10-13
+Baseline HEAD: bfd6eaf98901bec2bac4504f649d48028cc87f2c
+Scope: working-tree diff in
+  src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+  src/piop/spartan/falcon1024_algebraic/protocol.rs
+Classification: public-workload performance policy plus equivalence tests.
+Method: read-only diff/source inspection. No builds/tests/prover runs by reviewer.
+
+No actionable correctness or safety findings.
+
+Runtime change
+--------------
+arithmetic.rs:770 adds12 to the qualified worker set1/8/16, retaining the
+batch>SMALL_BATCH_MAX condition and the existing Falcon-512 batch1024 exception
+for2/4 workers. SMALL_BATCH_MAX at54 is16 for Falcon-512 and8 for Falcon-1024.
+Existing benchmark strategy overrides keep their previous precedence (756-768).
+Selection depends only on public batch size and the active worker pool.
+
+The selector reaches existing coefficient construction (830,851,874) and
+binding evaluation (1109-1110). It does not alter transcript/challenge domains,
+security/grinding parameters, proof formats, field arithmetic, coefficient
+validation, word-fold policy, or forest/PCS scheduling. In particular, the
+prefix/group-cap policies at806-817 and1704-1711 are unchanged.
+
+The optimized constructor partitions the two owned coefficient vectors into
+disjoint N-element signature chunks and indexes the matching norm factor by
+instance (1015-1062). Its correctness does not assume a power-of-two pool or
+that signatures divide evenly among workers. Each original ring projection
+chunk is validated before modification. The existing evaluation reductions
+operate on exact field values. Adding12 uses these established paths without
+adding aliasing, uninitialized storage, accumulator widening, or new unsafe
+code. Falcon-hybrid already requires parallel in Cargo.toml:334.
+
+Tests inspected
+---------------
+arithmetic.rs:1863 owned_ring_binding_preserves_proof_and_transcript now uses
+explicit3-worker legacy and12-worker pools. It checks batches1,3,cutoff,and
+cutoff+1, asserts the intended strategy, compares borrowed and owned forms,
+complete arithmetic proofs, bridge outputs and transcript states, verifies
+them, compares across pools, and rejects noncanonical ring coefficients.
+
+arithmetic.rs:2003 factored_construction_and_batched_evaluation_match_legacy
+adds12 workers to explicit optimized/legacy equivalence. Existing inputs cover
+both61-/127-bit fields, batches1/3/8/9/16/17, negative/modulus-adjacent values,
+eta0/1/nontrivial and Boolean/non-Boolean evaluation points.
+
+protocol.rs:2166 serial_and_parallel_binding_preserve_complete_proof_contents
+adds12 workers and batch17 alongside1024. Batch17 exceeds both degree cutoffs
+and exercises inactive instances. Both security100/128 and Bits/Words binding
+paths compare the source root and every Debug-derived proof field against the
+3-worker legacy reference across1/2/4/8/12/16 pools. Twelve- and16-worker proofs
+are also verified in3- and2-worker pools. Debug comparison is explicitly
+described as complete in-build contents, not a wire serialization test.
+
+Validation limit
+----------------
+This review establishes that the change is a narrow public-input selector and
+that its tests assert meaningful equivalence. Tests were inspected, not run by
+this reviewer; the root agent owns execution and performance qualification.
+No claim of measured speedup or universal absence of performance regressions
+is made here.
+
+Reviewed file SHA256:
+arithmetic.rs
+  538bc695d12f595cfa3685f359d48bc959aec559b67aaad003f2ac538fcdb8f4
+protocol.rs
+  d7d85e4345d8c47a6840b179da284b1c8461c857cd30bb72e4c212e0d12e57fc

@@ -1,0 +1,10 @@
+{
+  "base": "bfd6eaf98901bec2bac4504f649d48028cc87f2c",
+  "patch_sha256": "444ff6b189db25f03c0a7fa317de2006b046864e4f45f3c45e959c524fca6e13",
+  "files": {
+    "scripts/test_falcon_worker_optimization.py": "f952aad7e8e25e2bfade659c2fc171c01b28dc2b4f7cb4a6672b1cb81ca7ed96",
+    "scripts/falcon_worker_optimization.py": "91ff631788c99b6701a54d566b632b858e7362cc843a00063405c79999376ff7",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "538bc695d12f595cfa3685f359d48bc959aec559b67aaad003f2ac538fcdb8f4",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "d7d85e4345d8c47a6840b179da284b1c8461c857cd30bb72e4c212e0d12e57fc"
+  }
+}

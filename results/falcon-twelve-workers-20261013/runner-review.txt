@@ -1,0 +1,46 @@
+Worker experiment harness review — 2026-10-13
+Author/reviewer: /root/non_gkr_targets
+
+Scope: new scripts/falcon_worker_optimization.py and its synthetic tests;
+read-only provenance review of this campaign's build-candidate.py. No builds,
+provers or benchmarks were launched by this reviewer. Campaign timings were
+not reviewed while the causal phase was incomplete.
+
+The new runner preserves the previous strict raw metadata, command/file hash,
+frozen manifest, binary/parser provenance, source commitment and complete
+proof Debug-digest/payload equality checks. Old runner/helper hashes were
+independently checked against the previous production phase and are unchanged.
+Frozen new runner SHA-256:
+91ff631788c99b6701a54d566b632b858e7362cc843a00063405c79999376ff7
+
+New behavior
+- Production configurations inherit no experiment selectors. Explicit legacy
+  and optimized binder strategies are allowed; custom configurations can also
+  set PCS tiles per task. The causal use of the prior candidate-v2 binary must
+  explicitly set PCS=4 for both strategies, since that binary predates the
+  promoted PCS default.
+- Optional ordered worker_cpus and main_cpu are validated and frozen per job.
+  Commands and strict raw affinity normalization both use this job topology;
+  observed worker, main and auxiliary CPU placement must match. Summary rows
+  preserve topology. Topology experiments are separate named configurations,
+  not evidence for a source-only optimization.
+- Existing three-seed methods remain: seven fresh processes per seed for cold
+  proofs, and two warmups plus seven measured proofs per seed for repeated
+  proofs. Inherited kernel/timing flags are stripped before explicit overrides.
+
+All 11 synthetic tests passed, along with py_compile and CLI help. Tests launch
+no compiler or executable. Coverage includes deterministic filtered 21/21 trial
+plans; defaults/explicit strategy/trace isolation; polluted parent environment;
+changed parser/helper/binary rejection; raw metadata and optional metrics;
+cross-phase proof equality; required baseline and stale-result rejection;
+trace warmup/verifier exclusion; and custom 12-worker SMT affinity, including
+rejection of incorrect worker/main/auxiliary observations and invalid CPU lists.
+
+Build-helper review identified three issues, corrected by root and rechecked:
+1. Hash the same HEAD-relative changed-file set as the saved patch, including
+   staged changes, and compare the entire patch again after compilation.
+2. Clear CARGO_ENCODED_RUSTFLAGS so it cannot override recorded native RUSTFLAGS.
+3. Verify source stability before copying to the immutable binary destination.
+
+This is harness/source-level validation and synthetic evidence checking, not
+a claim about measured performance, final build freshness, or protocol safety.

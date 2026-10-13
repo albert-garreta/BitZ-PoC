@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-worker-optimization/v1",
+  "job": {
+    "id": "production-ccd0-smt-cold-n512-b1024-s128-t12-seed42-r0",
+    "variant": "arithmetic",
+    "config": "production-ccd0-smt",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 512,
+    "threads": 12,
+    "seed": 42,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      22,
+      23,
+      20,
+      21
+    ],
+    "main_cpu": 6,
+    "repetition": 0,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "1a2cb6ffe1f883e944688347b6c422248d98d1734267258d8dec24eacb886622",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v9",
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "source_root": "45afd5fc5262b2c7314d9a2ed5fd263130dd515a84822b085da138d4bbfe7e50",
+      "proof_debug_digest": "3e447f0b3673d296c236db0386b79a5b2bbfa8f2c1d4f8cb1c4fd62e243ee7aa",
+      "total_prover_ms": 31.712450000000004,
+      "prove_ms": 28.626848,
+      "witness_commit_ms": 3.0855420000000002,
+      "verify_ms": 8.077345,
+      "process_peak_rss_kib": 81284,
+      "proof_payload_bytes": 256368,
+      "iteration": 0,
+      "prepare_ms": 0.151427,
+      "external_input_ms": 957.0559159999999,
+      "prover_minor_faults": 31141,
+      "process_rss_before_prover_kib": 14552,
+      "process_rss_after_prover_kib": 51956,
+      "process_retained_rss_kib": 74548,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "8520ff4e39a44ec0770dd4025e9057bc6930c6e9921feb246ec4cdafcc4b97a7",
+  "stdout_sha256": "690cd0e2c707bdb78ea14f26a78afd074fede2c0269f199ff9ff1a6d1275a210",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "d0e13dd8161e27ed079215cb4b613b36ee3536c01a8bf385f20bc1ac75732072"
+}

@@ -1,0 +1,23 @@
+{
+  "objective": "Qualify optimized arithmetic Falcon binding at 12 workers; separate selector and CPU placement effects.",
+  "baseline_revision": "bfd6eaf98",
+  "degree": [
+    512,
+    1024
+  ],
+  "batch": 1024,
+  "security": 128,
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "cold": "7 fresh processes per seed, first proof each",
+  "repeated": "2 warmups then 7 samples per seed",
+  "strategy_screen": "Existing frozen bench-internals candidate-v2 with explicit PCS4 for both legacy and optimized.",
+  "production_confirmation": "21 cold and 21 repeated samples per degree/config at12, including distinct optional CCD0-SMT placement; unchanged1/8/16 policies get21 repeated samples perdegree/config against previous production.",
+  "topology": "Established physical-core order versus experimental 12 logical workers confined to first 8 physical cores plus 4 SMT siblings.",
+  "profiles": "Separate traced runs; never included in timing qualification.",
+  "correctness": "Strict proof Debug digests, source roots, input digests, payloads, requested security, verification and CPU affinity readback; cross worker and phase equality.",
+  "benchmark_concurrency": "Serial benchmark jobs; no overlapping builds or tests."
+}

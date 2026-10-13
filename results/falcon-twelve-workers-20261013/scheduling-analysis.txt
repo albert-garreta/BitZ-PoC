@@ -1,0 +1,86 @@
+Falcon 12-worker scheduling analysis (read-only)
+Date: 2026-10-13
+Scope: existing forest dispatch, pinned CPU topology, and saved profiles.
+No source changes, builds, tests, or benchmark executions in this analysis.
+
+Recommendation
+--------------
+Keep forest scheduling unchanged for this turn. Qualify the independent
+12-worker optimized-binding selector and CPU-placement experiments first.
+Those changes can be assessed without modifying forest row ownership.
+
+Observed regression, separate from binding
+-----------------------------------------
+Saved Falcon-512/batch1024/security128 control profiles contain nine measured
+proofs per worker count (three seeds, one excluded warmup and three samples).
+Source: results/falcon-forest-pcs-binding-20261013/forest-summary.json and
+profile-summary.json, phase=profiles, config/variant=control.
+
+                                        8 workers    12 workers
+Whole forest                             10.864 ms     14.309 ms
+Sum of JIT fold timers                     1.125 ms      2.433 ms
+Sum of JIT dense-tail timers               1.719 ms      2.652 ms
+L4 rebuild                                0.278 ms      0.528 ms
+Sum of bit-round timers                    1.376 ms      1.004 ms
+Sum of JIT round-sum timers                 1.090 ms      0.876 ms
+Binding construction                      0.754 ms     11.033 ms
+
+Forest per-seed medians (seeds 42/43/44):
+  8 workers:  10.752 / 10.864 / 10.998 ms
+ 12 workers:  14.246 / 14.304 / 14.488 ms
+The earlier production-baseline profiles independently show approximately
+10.760/14.264 ms forest time at 8/12 workers (previous campaign README:86).
+These traced measurements diagnose stage costs; they are not untraced latency
+qualification. Nested wall spans overlap and must not be added together.
+
+Topology and dispatch
+---------------------
+Read-only lscpu and Linux sysfs inspection identified a Ryzen 9 9950X3D:
+- Physical cores/CPU IDs 0..7 share 96 MiB L3, cache index3 id=0;
+  shared_cpu_list=0-7,16-23.
+- Physical cores/CPU IDs 8..15 share 32 MiB L3, cache index3 id=1;
+  shared_cpu_list=8-15,24-31.
+- CPU IDs 16..31 are SMT siblings; current 1..16-worker tests use distinct
+  physical cores, not SMT pairs.
+Commands: lscpu; lscpu -e=CPU,CORE,SOCKET,NODE,CACHE,MAXMHZ; read
+/sys/devices/system/cpu/cpu{0,8}/cache/index3/{size,shared_cpu_list,id}.
+
+scripts/falcon_arithmetic_optimization.py:19 defines the pinned order
+[6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9]. Thus 8 workers use one cache group;
+12 use 8+4 cores across groups; 16 use 8+8. The main/auxiliary pool is CPU6.
+
+src/bitz/row_dispatch.rs:7-23 documents and enforces the CyclicRows invariant:
+owner(y)=y%workers remains stable across high-bit folds when row offsets are
+multiples of workers. Dispatch requires workers>8, a power of two, enough rows,
+divisible rows, and at least 4 MiB of matrix data. Sixteen-worker large passes
+can use it; 12-worker passes use Rayon work stealing. Power-of-two row counts
+are never divisible by12, so simply removing the power-of-two guard does not
+provide this locality property. The existing ownership proof should remain.
+
+Relevant dispatch/fallback sites:
+- src/bitz/forest.rs:962-970: L4 rebuild, disjoint output rows.
+- src/bitz/forest.rs:1088-1097: fused upper construction, whole subtrees.
+- src/bitz/forest.rs:1294-1314: JIT fold, four zipped disjoint row slices.
+- src/bitz/kernels.rs:183-190: dense round sums.
+- src/bitz/kernels.rs:266-294: fused dense fold, zipped source/output slices.
+- src/bitz/forest.rs:1815-1844: higher-level product construction.
+
+The cache boundary plus write-heavy stage regressions makes cache migration
+and memory traffic a plausible hypothesis. It is not a measured causal result:
+these data contain no cache-miss/coherence counters or per-worker execution
+trace, and the 16-worker scheduling policy is an additional confounder.
+
+Bounded followup experiment, if needed after binder data
+-------------------------------------------------------
+Compare the existing Rayon grain with requested row grains4/8 only in the
+12-worker, >=4MiB fallback JIT/dense folds. Bound effective minimum grain by
+max(1,rows/(4*workers)) to retain enough runnable work. Apply with_min_len to
+the existing disjoint row iterators; retain arithmetic, logical row indices,
+and CyclicRows exactly. No new raw-pointer ownership assumptions are needed.
+src/utils/parallel.rs:65-68 already supports a minimum grain for cfg_into_iter;
+src/bitz/kernels.rs:190 fixes it to1, while the zipped chunks fallbacks have no
+explicit minimum grain. This would test whether fewer steals/larger contiguous
+work units help; it would not establish stable ownership across later folds.
+Keep it experimental until proof equality, row tails, worker counts1/8/12/16,
+and cold/repeated end-to-end timing qualify it. Prioritize writing/folding
+passes over bit rounds, which already improve at12 workers.

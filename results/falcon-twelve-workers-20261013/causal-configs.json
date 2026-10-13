@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "binary": "baseline",
+    "env": {}
+  },
+  "legacy-pcs4": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy",
+      "BITZ_PCS_INITIAL_TILES_PER_TASK": "4"
+    }
+  },
+  "optimized-pcs4": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+      "BITZ_PCS_INITIAL_TILES_PER_TASK": "4"
+    }
+  },
+  "optimized-ccd0-smt": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+      "BITZ_PCS_INITIAL_TILES_PER_TASK": "4"
+    },
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      22,
+      23,
+      20,
+      21
+    ],
+    "main_cpu": 6
+  }
+}

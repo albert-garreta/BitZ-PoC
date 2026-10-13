@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-worker-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b1024-s128-t12-seed43-r5",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 43,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 5,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "1a2cb6ffe1f883e944688347b6c422248d98d1734267258d8dec24eacb886622",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 59.067996,
+      "prove_ms": 54.096892000000004,
+      "witness_commit_ms": 4.971004000000001,
+      "verify_ms": 15.022008,
+      "process_peak_rss_kib": 140784,
+      "proof_payload_bytes": 321304,
+      "iteration": 0,
+      "prepare_ms": 0.14404199999999998,
+      "external_input_ms": 1794.56749,
+      "prover_minor_faults": 57683,
+      "process_rss_before_prover_kib": 22848,
+      "process_rss_after_prover_kib": 78484,
+      "process_retained_rss_kib": 78668,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "228014d723c06865df584f43e7f31cce9fa35e2363d4db30c13c3cffdac2c758",
+  "stdout_sha256": "30b6f1d5613829608c775f61c92886794249b454e3e529d97903df779c1ec276",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "3c04e4a167dbda1610a839adb1b3641621d15eb8d2946f79af03dc74f142bede"
+}
