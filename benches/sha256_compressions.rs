@@ -107,11 +107,19 @@ use bitz::piop::spartan::{
 
 /// `BITZ_OPENER=wfbitz`: discharge the claim through the worldfnd/BitZ
 /// scheme on the block-layout commitment (needs `--features bitz-parity`);
-/// `forest` (default): the crate's own opener. Set once in [`run`].
-static WFBITZ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+/// `wfbitz-log`: the same with the column folds committed instead of sent
+/// (`bitz::wfbitz::logarithmic`); `forest`: the crate's own opener. Set
+/// once in [`run`].
+static WFBITZ: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
 
+/// Either BitZ opener on the block-layout commitment.
 fn wfbitz() -> bool {
-    WFBITZ.get().copied().unwrap_or(false)
+    WFBITZ.get().is_some_and(|&(wfbitz, _)| wfbitz)
+}
+
+/// The logarithmic BitZ opener.
+fn wfbitz_log() -> bool {
+    WFBITZ.get().is_some_and(|&(_, log)| log)
 }
 
 /// `BITZ_SHA_WFBITZ_T=<t>`: open at row split `t` instead of the opener's
@@ -1106,7 +1114,48 @@ fn run_once(
         if wfbitz() {
             #[cfg(feature = "bitz-parity")]
             {
-                BenchProof::Wfbitz(
+                bitz::wfbitz::record_phases(true);
+                let proof = if wfbitz_log() {
+                    let log = bitz::piop::spartan::sha256_wfbitz_log_opener(prepared)
+                        .expect("SHA log opener resolves");
+                    // The fold bits' ladder and, in one run, where they join
+                    // `h`'s chain (printed once per sample, like the config).
+                    let mu = log.mu_security();
+                    match log.merge_plan() {
+                        Some(plan) => {
+                            let b = plan.branch;
+                            println!(
+                                "  LOGPLAN mu_ladder={} mu_packed_vars={} branch_rate=1/{} branch_k0={} branch_queries={} branch_grinding={}+{} merge_iter={} chain_queries={:?} chain_grinding={:?} final_log_n={}",
+                                log.mu_ladder().name(),
+                                mu.log_n,
+                                1usize << b.log_inv_rate,
+                                b.initial_k,
+                                b.queries,
+                                b.grinding_bits,
+                                b.fold_grinding_bits,
+                                plan.merge_iter,
+                                plan.verifier_config.queries,
+                                plan.verifier_config.grinding_bits,
+                                plan.final_log_n
+                            );
+                        }
+                        None => println!(
+                            "  LOGPLAN mu_ladder={} mu_packed_vars={} two_runs levels={}",
+                            log.mu_ladder().name(),
+                            mu.log_n,
+                            mu.levels.len()
+                        ),
+                    }
+                    bitz::piop::spartan::prove_sha256_compressions_wfbitz_log(
+                        &mut prover_transcript,
+                        prepared,
+                        &statements,
+                        &witness,
+                        &hint,
+                        &log,
+                    )
+                    .expect("SHA log proof succeeds")
+                } else {
                     bitz::piop::spartan::prove_sha256_compressions_wfbitz(
                         &mut prover_transcript,
                         prepared,
@@ -1114,8 +1163,36 @@ fn run_once(
                         &witness,
                         &hint,
                     )
-                    .expect("SHA proof succeeds"),
-                )
+                    .expect("SHA proof succeeds")
+                };
+                // The BitZ prover's own phases, and the log opener's proof
+                // anatomy (bytes per part, narg+hints for the openings).
+                let phases = bitz::wfbitz::take_phases();
+                bitz::wfbitz::record_phases(false);
+                let line: Vec<String> = phases
+                    .iter()
+                    .filter(|(label, _)| !label.starts_with("v:"))
+                    .map(|(label, d)| format!("{}={:.3}", label.replace(' ', "_"), d.as_secs_f64() * 1e3))
+                    .collect();
+                println!("  PPHASES {}", line.join(" "));
+                if let Some(sizes) = bitz::wfbitz::logarithmic::take_last_sizes() {
+                    println!(
+                        "  LOGSIZES head={} gkr_f={} gkr_mu={} rec_folds={} rec_gkr={} open_f={}+{} open_mu={}+{} open_chain={}+{} total={}",
+                        sizes.head,
+                        sizes.gkr_f,
+                        sizes.gkr_mu,
+                        sizes.rec_folds,
+                        sizes.rec_gkr,
+                        sizes.open_f.0,
+                        sizes.open_f.1,
+                        sizes.open_mu.0,
+                        sizes.open_mu.1,
+                        sizes.open_chain.0,
+                        sizes.open_chain.1,
+                        sizes.total()
+                    );
+                }
+                BenchProof::Wfbitz(proof)
             }
             #[cfg(not(feature = "bitz-parity"))]
             unreachable!("prepare_wfbitz panics first")
@@ -1157,13 +1234,46 @@ fn run_once(
                 vc,
             ),
             #[cfg(feature = "bitz-parity")]
-            BenchProof::Wfbitz(proof) => bitz::piop::spartan::verify_sha256_compressions_wfbitz(
-                &mut verifier_transcript,
-                prepared,
-                &statements,
-                &hint.commitment,
-                proof,
-            ),
+            BenchProof::Wfbitz(proof) => {
+                bitz::wfbitz::record_phases(true);
+                let mut opener_setup_ms = 0.0;
+                let result = if wfbitz_log() {
+                    let setup = std::time::Instant::now();
+                    let log = bitz::piop::spartan::sha256_wfbitz_log_opener(prepared)
+                        .expect("SHA log opener resolves");
+                    opener_setup_ms = setup.elapsed().as_secs_f64() * 1e3;
+                    bitz::piop::spartan::verify_sha256_compressions_wfbitz_log(
+                        &mut verifier_transcript,
+                        prepared,
+                        &statements,
+                        &hint.commitment,
+                        proof,
+                        &log,
+                    )
+                } else {
+                    bitz::piop::spartan::verify_sha256_compressions_wfbitz(
+                        &mut verifier_transcript,
+                        prepared,
+                        &statements,
+                        &hint.commitment,
+                        proof,
+                    )
+                };
+                // The BitZ verifier's own phases (`v: (*) row images` is the
+                // note's (⋆) term in the log opener).
+                let phases = bitz::wfbitz::take_phases();
+                bitz::wfbitz::record_phases(false);
+                let mut line: Vec<String> = phases
+                    .iter()
+                    .filter(|(label, _)| label.starts_with("v:"))
+                    .map(|(label, d)| format!("{}={:.3}", label.trim_start_matches("v: ").replace(' ', "_"), d.as_secs_f64() * 1e3))
+                    .collect();
+                if wfbitz_log() {
+                    line.push(format!("log_opener_setup={opener_setup_ms:.3}"));
+                }
+                println!("  VPHASES {}", line.join(" "));
+                result
+            }
         }
         .expect("SHA proof verifies");
     }
@@ -1541,17 +1651,19 @@ pub(crate) fn run(env: Env) {
         Some(choice) => common::cli::value(
             "BITZ_OPENER",
             choice,
-            clap::builder::PossibleValuesParser::new(["forest", "wfbitz"]),
+            clap::builder::PossibleValuesParser::new(["forest", "wfbitz", "wfbitz-log"]),
         ),
         None if forest_only => "forest".to_owned(),
         None => "wfbitz".to_owned(),
     };
     assert!(
-        !(forest_only && opener == "wfbitz"),
-        "BITZ_OPENER=wfbitz runs compression-count shapes at its own split; \
+        !(forest_only && opener != "forest"),
+        "BITZ_OPENER=wfbitz[-log] runs compression-count shapes at its own split; \
          explicit opening splits and assignment-row sizes are forest-only"
     );
-    WFBITZ.set(opener == "wfbitz").expect("the opener is chosen once");
+    WFBITZ
+        .set((opener != "forest", opener == "wfbitz-log"))
+        .expect("the opener is chosen once");
     let reps = env.reps;
     let root_seed = env.root_seed;
     let inner_prefix_vars = env.inner_prefix_vars;
