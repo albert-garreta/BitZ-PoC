@@ -640,6 +640,26 @@ fn try_custom_johnson_config_bits(
     k0: usize,
     target_bits: Option<usize>,
 ) -> Result<LigeritoSecurityConfig, String> {
+    try_custom_johnson_ladder_bits(m, r0, k0, 3, 5, target_bits)
+}
+
+/// [`custom_johnson_config_bits`] with the ladder rule's two constants
+/// exposed: recursive levels fold `k_rec` variables until at most
+/// `final_log` remain (the crate's ladder is `k_rec = 3`, `final_log = 5`).
+/// Small commitments (the logarithmic scheme's fold bits) trade a level's
+/// Merkle openings against a larger final message. Every config is still
+/// gated by flock's `validate()`.
+pub(crate) fn try_custom_johnson_ladder_bits(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    k_rec: usize,
+    final_log: usize,
+    target_bits: Option<usize>,
+) -> Result<LigeritoSecurityConfig, String> {
+    if k_rec == 0 {
+        return Err("custom recursive fold width must be positive".into());
+    }
     // Embedded production tables start at m=22. Only scalar/default fields
     // are borrowed from the template (header strings, `eta`, grinding
     // convention, target); `m`, `log_n`, every level shape, and the final
@@ -667,8 +687,8 @@ fn try_custom_johnson_config_bits(
     let mut shapes = vec![(log_n - k0, k0, k0, r0)];
     let mut n_run = log_n - k0;
     let mut rate = r0;
-    while n_run > 5 {
-        let kr = 3.min(n_run);
+    while n_run > final_log {
+        let kr = k_rec.min(n_run);
         rate += 1;
         shapes.push((n_run - kr, kr, kr, rate));
         n_run -= kr;
@@ -678,68 +698,83 @@ fn try_custom_johnson_config_bits(
     cfg.levels = shapes
         .iter()
         .enumerate()
-        .map(|(i, &(mc, il, kr, r))| -> Result<_, String> {
-            let mut lv = tmpl.clone();
-            if let Some(bits) = target_bits {
-                lv.target_security_bits = bits;
-            }
-            lv.log_inv_rate = r;
-            lv.log_msg_cols = mc;
-            lv.log_num_interleaved = il;
-            lv.k_recursive = kr;
-            lv.ood_samples = if i == 0 { 0 } else { 1 };
-            // Queries: smallest Q whose predicted query-phase bits cover
-            // target − query-grinding (validate()'s own gate).
-            let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
-            lv.queries = (1..=10_000)
-                .find(|&q| {
-                    lv.queries = q;
-                    lv.paper_predicted_bits().1 + 1e-3 >= need_q
-                })
-                .ok_or("Johnson query search did not converge")?;
-            // Every query is a distinct codeword position, so a level must be
-            // at least as wide as its query count (flock's prover asserts this
-            // at proving time; fail here, at configuration time, instead).
-            let positions = 1usize << (mc + r);
-            if lv.queries > positions {
-                return Err(format!(
-                    "custom Johnson level {i} is too thin: {} queries over {positions} positions \
-                     (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
-                    lv.queries
-                ));
-            }
-            let (pg, qb) = lv.paper_predicted_bits();
-            lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
-            lv.expected_eps_pg_bits = pg;
-            lv.expected_eps_query_bits = qb;
-            // OOD must clear the target on its own. Deeper levels escalate
-            // samples; L0 CANNOT (its s = 0 implicit post-commit binding is
-            // fixed at `128 − log₂(list) − log₂(μ)` bits — the hard,
-            // field-limited ceiling on the round-by-round target). Record
-            // L0's bits as-is and let `validate()` report honestly when a
-            // requested target exceeds them.
-            if i == 0 {
-                lv.expected_eps_ood_bits = Some(
-                    lv.paper_predicted_ood_bits()
-                        .expect("johnson_ood prediction"),
-                );
-            } else {
-                loop {
-                    let ood = lv
-                        .paper_predicted_ood_bits()
-                        .expect("johnson_ood prediction");
-                    if ood + 1e-3 >= lv.target_security_bits as f64 {
-                        lv.expected_eps_ood_bits = Some(ood);
-                        break;
-                    }
-                    lv.ood_samples += 1;
-                }
-            }
-            Ok(lv)
-        })
+        .map(|(i, &shape)| solve_custom_johnson_level(&tmpl, i, shape, target_bits))
         .collect::<Result<_, _>>()?;
     cfg.validate()?;
     Ok(cfg)
+}
+
+/// One level of [`try_custom_johnson_ladder_bits`]'s ladder: level `i` of
+/// shape `(log_msg_cols, log_num_interleaved, k_recursive, log_inv_rate)`,
+/// its queries, fold grinding and OOD samples solved against the paper's
+/// predictions from the template's scalar fields (`eta`, grinding, target).
+/// Exposed so a composed opening (the logarithmic scheme's merged ladder,
+/// whose levels after the merge carry one more variable) can size a level of
+/// a shape no single ladder produces; such ladders bypass `validate()`'s
+/// whole-chain shape check and must check their own chain.
+pub(crate) fn solve_custom_johnson_level(
+    tmpl: &ligerito::LigeritoLevelConfig,
+    i: usize,
+    (mc, il, kr, r): (usize, usize, usize, usize),
+    target_bits: Option<usize>,
+) -> Result<ligerito::LigeritoLevelConfig, String> {
+    let mut lv = tmpl.clone();
+    if let Some(bits) = target_bits {
+        lv.target_security_bits = bits;
+    }
+    lv.log_inv_rate = r;
+    lv.log_msg_cols = mc;
+    lv.log_num_interleaved = il;
+    lv.k_recursive = kr;
+    lv.ood_samples = if i == 0 { 0 } else { 1 };
+    // Queries: smallest Q whose predicted query-phase bits cover
+    // target − query-grinding (validate()'s own gate).
+    let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
+    lv.queries = (1..=10_000)
+        .find(|&q| {
+            lv.queries = q;
+            lv.paper_predicted_bits().1 + 1e-3 >= need_q
+        })
+        .ok_or("Johnson query search did not converge")?;
+    // Every query is a distinct codeword position, so a level must be
+    // at least as wide as its query count (flock's prover asserts this
+    // at proving time; fail here, at configuration time, instead).
+    let positions = 1usize << (mc + r);
+    if lv.queries > positions {
+        return Err(format!(
+            "custom Johnson level {i} is too thin: {} queries over {positions} positions \
+             (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
+            lv.queries
+        ));
+    }
+    let (pg, qb) = lv.paper_predicted_bits();
+    lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+    lv.expected_eps_pg_bits = pg;
+    lv.expected_eps_query_bits = qb;
+    // OOD must clear the target on its own. Deeper levels escalate
+    // samples; L0 CANNOT (its s = 0 implicit post-commit binding is
+    // fixed at `128 − log₂(list) − log₂(μ)` bits — the hard,
+    // field-limited ceiling on the round-by-round target). Record
+    // L0's bits as-is and let `validate()` report honestly when a
+    // requested target exceeds them.
+    if i == 0 {
+        lv.expected_eps_ood_bits = Some(
+            lv.paper_predicted_ood_bits()
+                .expect("johnson_ood prediction"),
+        );
+    } else {
+        loop {
+            let ood = lv
+                .paper_predicted_ood_bits()
+                .expect("johnson_ood prediction");
+            if ood + 1e-3 >= lv.target_security_bits as f64 {
+                lv.expected_eps_ood_bits = Some(ood);
+                break;
+            }
+            lv.ood_samples += 1;
+        }
+    }
+    Ok(lv)
 }
 
 /// Queries-only security: a **UDR-regime** config at the
@@ -2377,6 +2412,28 @@ fn fill_phi_basis_round0(
 // the tail's eq table).
 // ---------------------------------------------------------------------
 
+/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}`; each coordinate is appended
+/// as the new lowest index bit, so `r[k]` ↔ index bit `r.len() − 1 − k`
+/// (both roles build the same table, so only consistency matters).
+pub fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
+    let q = arith.modulus_u128();
+    let mut table = vec![1u128 % q];
+    for &coord in r {
+        // One prepared factor per coordinate: the entries stay canonical, so
+        // each costs a single modular multiplication.
+        let factor = arith.prepare_multiplier_u128(coord);
+        let mut next = Vec::with_capacity(table.len() * 2);
+        for &v in &table {
+            let v1 = arith.mul_canonical_u128(v, &factor);
+            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
+            next.push(v0);
+            next.push(v1);
+        }
+        table = next;
+    }
+    table
+}
+
 /// Round-0 (OOD sample) parameters: `Some` executes the round with
 /// `grinding_bits` of proof-of-work before the `ζ` draw; `None` skips it.
 /// Callers derive it from the opener's security config through
@@ -2458,7 +2515,7 @@ fn packed_message_vars(p_msg: &[Gf128]) -> usize {
 /// The Round-0 evaluation point `ζ⃗ = (ζ^{2^0}, ζ^{2^1}, …)`: distinct
 /// multilinear monomials become distinct powers of `ζ`.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
+pub(crate) fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
     let mut point = Vec::with_capacity(vars);
     let mut cur = zeta;
     for _ in 0..vars {

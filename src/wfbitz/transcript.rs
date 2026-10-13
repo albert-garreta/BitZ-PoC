@@ -162,6 +162,12 @@ impl ProverState {
         self.hints.extend_from_slice(bytes);
     }
 
+    /// Bytes written so far: the narg string and the hint stream (proof-size
+    /// accounting of a composed protocol's parts).
+    pub fn written(&self) -> (usize, usize) {
+        (self.inner.narg_string().len(), self.hints.len())
+    }
+
     pub fn finish(self) -> Proof {
         Proof {
             narg_string: self.inner.narg_string().to_vec(),
