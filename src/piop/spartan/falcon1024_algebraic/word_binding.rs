@@ -544,6 +544,85 @@ impl FactoredNorm {
     }
 }
 
+/// The dense term's first polynomial and Boolean sum, computed before its
+/// challenge. Sparse spare lanes and inactive-source validation remain in prove.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct InitialClaim {
+    round: [F; 2],
+    sum: F,
+}
+
+/// Construct adjacent coefficients and consume them while still in registers.
+/// A task contains at most 1024 word pairs, matching the reference first-round
+/// accumulator bound (two degree-512 instances or one degree-1024 instance).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn construct_and_initial(
+    coefficients: &mut [Vec<F>; 2],
+    source: &Source,
+    coefficient_weights: &[F],
+    norm_instances: &[F],
+    eta: F,
+    side_weights: [F; 2],
+    f: &Cfg,
+    parallel: bool,
+    reuse_product: bool,
+) -> Result<InitialClaim, FalconError> {
+    const INSTANCES_PER_CHUNK: usize = 1024 / N;
+    let fill = |(chunk, (s1, s2)): (usize, (&mut [F], &mut [F]))| {
+        let mut sums = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
+        for (local, (s1, s2)) in s1.chunks_mut(N).zip(s2.chunks_mut(N)).enumerate() {
+            // Validate original projections before performing field arithmetic,
+            // as the baseline optimized constructor does for each instance.
+            validate_field_elements(s1, f).map_err(failure)?;
+            validate_field_elements(s2, f).map_err(failure)?;
+            let instance = chunk * INSTANCES_PER_CHUNK + local;
+            for (side, values) in [s1, s2].into_iter().enumerate() {
+                let scale = f.mul(&f.mul(&eta, &side_weights[side]), &norm_instances[instance]);
+                for (j, pair) in values.chunks_exact_mut(2).enumerate() {
+                    let w0 = f.add(&pair[0], &f.mul(&scale, &coefficient_weights[2 * j]));
+                    let w1 = f.add(&pair[1], &f.mul(&scale, &coefficient_weights[2 * j + 1]));
+                    pair[0] = w0;
+                    pair[1] = w1;
+                    let i = instance * 2 * N + side * N + 2 * j;
+                    let a = decode(word(source, i));
+                    let b = decode(word(source, i + 1));
+                    signed_acc(&mut sums[0], &w0, a, f);
+                    signed_acc(&mut sums[1], &f.sub(&w1, &w0), b - a, f);
+                    if !reuse_product {
+                        signed_acc(&mut sums[2], &w0, a, f);
+                    }
+                    signed_acc(&mut sums[2], &w1, b, f);
+                }
+            }
+        }
+        Ok::<_, FalconError>(sums.map(|s| reduce_signed(s, f)))
+    };
+    let [s1, s2] = coefficients;
+    let parts: Vec<[F; 3]> = if parallel {
+        s1.par_chunks_mut(INSTANCES_PER_CHUNK * N)
+            .zip(s2.par_chunks_mut(INSTANCES_PER_CHUNK * N))
+            .enumerate()
+            .map(fill)
+            .collect::<Result<_, _>>()?
+    } else {
+        s1.chunks_mut(INSTANCES_PER_CHUNK * N)
+            .zip(s2.chunks_mut(INSTANCES_PER_CHUNK * N))
+            .enumerate()
+            .map(fill)
+            .collect::<Result<_, _>>()?
+    };
+    let mut sums = parts.into_iter().fold([f.zero(); 3], |a, b| {
+        std::array::from_fn(|i| f.add(&a[i], &b[i]))
+    });
+    if reuse_product {
+        sums[2] = f.add(&sums[2], &sums[0]);
+    }
+    Ok(InitialClaim {
+        round: [sums[0], sums[1]],
+        sum: sums[2],
+    })
+}
+
 fn first_round_with_factors(
     form: &BindingForm<'_>,
     source: &Source,
@@ -1067,7 +1146,37 @@ pub(super) fn prove_with_workspace(
     f: &Cfg,
     workspace: &mut WordWorkspace,
 ) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
-    prove_with_options(
+    prove_with_initial(
+        t,
+        layout,
+        source,
+        form,
+        factors,
+        target,
+        norm,
+        merge_nonce,
+        schedule,
+        f,
+        workspace,
+        None,
+    )
+}
+
+pub(super) fn prove_with_initial(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    source: &Source,
+    form: BindingForm<'_>,
+    factors: WordFactors,
+    target: F,
+    norm: NormProof,
+    merge_nonce: Option<u64>,
+    schedule: &Schedule,
+    f: &Cfg,
+    workspace: &mut WordWorkspace,
+    initial: Option<InitialClaim>,
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+    prove_with_options_and_initial(
         t,
         layout,
         source,
@@ -1080,9 +1189,11 @@ pub(super) fn prove_with_workspace(
         f,
         workspace,
         WordOptions::configured(),
+        initial,
     )
 }
 
+#[cfg(test)]
 fn prove_with_options(
     t: &mut impl Transcript,
     layout: &Layout,
@@ -1097,11 +1208,50 @@ fn prove_with_options(
     workspace: &mut WordWorkspace,
     options: WordOptions,
 ) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+    prove_with_options_and_initial(
+        t,
+        layout,
+        source,
+        form,
+        factors,
+        target,
+        norm,
+        merge_nonce,
+        schedule,
+        f,
+        workspace,
+        options,
+        None,
+    )
+}
+
+fn prove_with_options_and_initial(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    source: &Source,
+    form: BindingForm<'_>,
+    factors: WordFactors,
+    target: F,
+    norm: NormProof,
+    merge_nonce: Option<u64>,
+    schedule: &Schedule,
+    f: &Cfg,
+    workspace: &mut WordWorkspace,
+    options: WordOptions,
+    initial: Option<InitialClaim>,
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
     t.absorb_slice(DOMAIN);
     let mut weights = PublicWeights::new(&form);
     let mut spare = Sparse::from_source(source, layout, f)?;
     let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
-    let (mut next, initial) = if options.factored_initial_fused {
+    let (mut next, initial) = if let Some(initial) = initial {
+        if factors.s1.is_some() || factors.norm.is_some() {
+            return Err(failure(
+                "precomputed initial claim requires dense coefficients",
+            ));
+        }
+        (initial.round, initial.sum)
+    } else if options.factored_initial_fused {
         if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
             first_round_factored_fused(&form, source, s1, norm, f, options.reuse_initial)
         } else {

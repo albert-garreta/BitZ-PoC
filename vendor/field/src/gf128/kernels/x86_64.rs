@@ -285,6 +285,47 @@ pub unsafe fn ghash_mul_x4(x: __m512i, y: __m512i) -> __m512i {
     }
 }
 
+/// Four unreduced products as their low and high 128-bit polynomial halves.
+/// Each lane of the returned pair describes one exact 256-bit product.
+///
+/// # Safety
+/// Requires AVX512F, AVX512BW and VPCLMULQDQ.
+#[cfg(all(
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+))]
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq")]
+pub unsafe fn ghash_mul_wide_x4(x: __m512i, y: __m512i) -> (__m512i, __m512i) {
+    // SAFETY: this function carries every feature the helpers require.
+    unsafe {
+        let (lo, cross, hi) = karatsuba_parts_x4(x, y);
+        (
+            _mm512_xor_si512(lo, _mm512_bslli_epi128::<8>(cross)),
+            _mm512_xor_si512(hi, _mm512_bsrli_epi128::<8>(cross)),
+        )
+    }
+}
+
+/// Reduce four exact polynomials supplied as low/high 128-bit halves.
+///
+/// # Safety
+/// Requires AVX512F, AVX512BW and VPCLMULQDQ.
+#[cfg(all(
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+))]
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq")]
+pub unsafe fn ghash_reduce_wide_x4(lo: __m512i, hi: __m512i) -> __m512i {
+    // Each helper multiplies its second argument by X^64 modulo the
+    // field polynomial, so these two stages add X^128 * hi to lo.
+    // SAFETY: this function carries every feature the helpers require.
+    unsafe { gf2_128_reduce_x4(lo, gf2_128_reduce_x4(_mm512_setzero_si512(), hi)) }
+}
+
 // -----------------------------------------------------------------------
 // Deferred-reduction 4-lane accumulator (port of binius `WideGhashProduct`,
 // 4 lanes wide). Widen each product with 3 CLMULs but DON'T reduce; XOR many
@@ -495,6 +536,52 @@ mod tests {
             *state
         };
         Gf128::new(next(), next())
+    }
+
+    #[test]
+    fn four_lane_wide_products_and_reduction_match_software() {
+        let mut state = 0x18D4_AA91_F051_278B;
+        let mut accumulated = [[0u64; 4]; 4];
+        // SAFETY: this test module requires the complete vector ISA.
+        let (mut sum_lo, mut sum_hi) = unsafe { (_mm512_setzero_si512(), _mm512_setzero_si512()) };
+        for trial in 0..160 {
+            let x: [Gf128; 4] = std::array::from_fn(|i| {
+                if trial < 32 {
+                    monomial(4 * trial + i)
+                } else {
+                    random(&mut state)
+                }
+            });
+            let y: [Gf128; 4] = std::array::from_fn(|i| {
+                if trial < 32 {
+                    monomial(127 - 4 * trial - i)
+                } else {
+                    random(&mut state)
+                }
+            });
+            // SAFETY: both packed arrays contain four complete lanes.
+            let (lo, hi) = unsafe { ghash_mul_wide_x4(packed(&x), packed(&y)) };
+            let (low, high) = (lanes(lo), lanes(hi));
+            for lane in 0..4 {
+                let expected =
+                    software::ghash_mul_unreduced(x[lane], y[lane]).to_polynomial_words();
+                let actual = [low[lane].lo, low[lane].hi, high[lane].lo, high[lane].hi];
+                assert_eq!(actual, expected, "trial {trial}, lane {lane}");
+                for word in 0..4 {
+                    accumulated[lane][word] ^= expected[word];
+                }
+            }
+            // SAFETY: all vectors use the exact low/high polynomial format.
+            let reduced = unsafe {
+                sum_lo = _mm512_xor_si512(sum_lo, lo);
+                sum_hi = _mm512_xor_si512(sum_hi, hi);
+                lanes(ghash_reduce_wide_x4(sum_lo, sum_hi))
+            };
+            for lane in 0..4 {
+                let expected = super::super::reduce_256_to_128(accumulated[lane]);
+                assert_eq!([reduced[lane].lo, reduced[lane].hi], expected);
+            }
+        }
     }
 
     #[test]

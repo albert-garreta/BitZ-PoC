@@ -69,6 +69,22 @@ const PARALLEL_MIN_LANES: usize = 1 << 12;
 /// count.
 const NIBBLE_FROM: usize = 23;
 
+#[cfg(feature = "bench-internals")]
+fn retain_l4_selected() -> bool {
+    static RETAIN: OnceLock<bool> = OnceLock::new();
+    *RETAIN.get_or_init(|| match std::env::var("BITZ_FOREST_L4") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "rebuild" => false,
+            "retain" => true,
+            _ => panic!("BITZ_FOREST_L4 must be rebuild or retain"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FOREST_L4 must be valid Unicode")
+        }
+    })
+}
+
 /// The per-position value tables of one level after some folds, flat:
 /// position `q` owns `data[q·len..(q+1)·len]`.
 pub(crate) struct Tables {
@@ -147,6 +163,8 @@ pub(crate) struct Forest<'a> {
     /// The packed columns regrouped for the table-driven levels, built on
     /// first use when `mode.nibble`.
     nibble_rows: OnceLock<NibbleRows>,
+    #[cfg(any(test, feature = "bench-internals"))]
+    retain_l4: bool,
 }
 
 impl<'a> Forest<'a> {
@@ -167,7 +185,18 @@ impl<'a> Forest<'a> {
             one_pass: true,
             weighing: Weighing::On,
             nibble_rows: OnceLock::new(),
+            #[cfg(feature = "bench-internals")]
+            retain_l4: retain_l4_selected(),
+            #[cfg(all(test, not(feature = "bench-internals")))]
+            retain_l4: false,
         }
+    }
+
+    fn retains_l4(&self) -> bool {
+        #[cfg(any(test, feature = "bench-internals"))]
+        return self.retain_l4;
+        #[cfg(not(any(test, feature = "bench-internals")))]
+        false
     }
 
     /// The same forest with its indices read the way `mode` says.
@@ -282,6 +311,7 @@ impl<'a> Forest<'a> {
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
         // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
+        let mut retained_l4: Vec<Gf> = Vec::new();
         let prebuilt = self.nibble_rows.get().is_some();
         if self.nibbles().is_some() && !prebuilt {
             super::trace("    nibble rows", started);
@@ -293,7 +323,15 @@ impl<'a> Forest<'a> {
             let started = std::time::Instant::now();
             arena = Vec::with_capacity(1usize << (t - MATERIALISED_LEVEL - 1 + self.s));
             let fused = (t - MATERIALISED_LEVEL - 2).min(FUSED_UPPER_LEVELS);
-            self.upper_levels_into(&tables, &mut arena, fused);
+            if self.retains_l4() && depth > MATERIALISED_LEVEL + 1 {
+                // Falcon-512 batch1024 has t=14 (including the limb bit),
+                // s=11: retaining this level adds 32 MiB at peak. Reuse it
+                // as the folding arena after the upper levels are proved.
+                retained_l4 = Vec::with_capacity(arena.capacity());
+                self.upper_levels_into::<true>(&tables, &mut arena, fused, &mut retained_l4);
+            } else {
+                self.upper_levels_into::<false>(&tables, &mut arena, fused, &mut retained_l4);
+            }
             super::trace(
                 &format!("    levels {}..{} build", MATERIALISED_LEVEL + 2, t - 1),
                 started,
@@ -353,9 +391,16 @@ impl<'a> Forest<'a> {
                 // the rebuild is compute-bound, so the round's slots no
                 // longer hide behind a memory stream.)
                 let rebuilt = std::time::Instant::now();
-                arena.clear();
-                self.product_level_into(tables3.as_ref().expect("jit"), &mut arena);
-                super::trace("    L4 rebuild", rebuilt);
+                if retained_l4.is_empty() {
+                    arena.clear();
+                    self.product_level_into(tables3.as_ref().expect("jit"), &mut arena);
+                    super::trace("    L4 rebuild", rebuilt);
+                } else {
+                    // All tasks finished initializing the retained level.
+                    // The upper arena is dead, so release it before folding.
+                    arena = std::mem::take(&mut retained_l4);
+                    super::trace("    L4 retained", rebuilt);
+                }
                 let mid = arena.len() / 2;
                 let (l, r) = arena.split_at_mut(mid);
                 prove_layer_tensor(
@@ -933,15 +978,31 @@ impl<'a> Forest<'a> {
     /// stored — a task owns level 4's rows `y0 + b·2^{t−4−fused}` for every
     /// `b`, the whole subtree above row `y0` of level `4 + fused`, so every
     /// product it emits reads rows it computed itself — and the levels
-    /// above those as products of the level below. Level 4 itself is
-    /// rebuilt into the arena when its turn comes
-    /// ([`Forest::product_level_into`]).
-    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize) {
+    /// above those as products of the level below. Normally level 4 is
+    /// rebuilt when its turn comes ([`Forest::product_level_into`]); the
+    /// retention experiment additionally writes its tiles into a second
+    /// buffer and later uses that buffer as the arena.
+    fn upper_levels_into<const RETAIN_L4: bool>(
+        &self,
+        tables: &Tables,
+        arena: &mut Vec<Gf>,
+        fused: usize,
+        retained_l4: &mut Vec<Gf>,
+    ) {
         let t = self.t;
         let ell = MATERIALISED_LEVEL;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
         let rows = 1usize << (t - ell - 1);
+        let retained = if RETAIN_L4 {
+            assert!(retained_l4.is_empty() && retained_l4.capacity() >= rows * cols);
+            Some(RowsPtr::new(
+                &mut retained_l4.spare_capacity_mut()[..rows * cols],
+                cols,
+            ))
+        } else {
+            None
+        };
         let total = self.upper_region(t - 1).end;
         assert!(arena.is_empty() && arena.capacity() >= total);
         assert!(
@@ -980,6 +1041,16 @@ impl<'a> Forest<'a> {
                             // This task owns rows `y0 + b·sub`.
                             let pats = self.jit_patterns(ell, y, g, nib);
                             kernels::jit_product_group(tab, &pats, &mut row[..width]);
+                            if let Some(retained) = &retained {
+                                // SAFETY: this task alone owns row y=y0+b*sub;
+                                // disjoint groups cover its column range. The
+                                // product kernel initialized row[..width].
+                                unsafe {
+                                    retained
+                                        .row(y, range.clone())
+                                        .copy_from_slice(&row[..width]);
+                                }
+                            }
                         }
                         for i in 1..=fused {
                             let half = 1usize << (fused - i);
@@ -1038,6 +1109,11 @@ impl<'a> Forest<'a> {
         // SAFETY: the tasks partition the rows of levels 5..4+fused and the
         // loop above writes every level after them in full.
         unsafe { arena.set_len(total) };
+        if RETAIN_L4 {
+            // SAFETY: all row/group tasks joined successfully and wrote each
+            // retained slot exactly once. Until this point its length was zero.
+            unsafe { retained_l4.set_len(rows * cols) };
+        }
     }
 
     /// Weighted round sums through the JIT value tables.
@@ -2344,6 +2420,74 @@ mod tests {
                     one_pass.2 == per_round.2,
                     "transcript t={t} s={s} nibble={nibble}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn retained_level_four_proves_identically() {
+        use crate::bitz::transcript::build_kernel_prover;
+        // Include the tiny fallback, partial column groups, full and partial
+        // depths, prescaled tables, and depths which never visit level four.
+        for (t, s, depth) in [(4, 3, 4), (6, 0, 6), (6, 3, 4), (7, 7, 6), (9, 10, 8)] {
+            let (packed, images) = random_grid(t, s, (t * 7919 + s) as u64);
+            let mut state = 0x5417_6A81_D243_91B3;
+            let mut zeta: Vec<Gf> = (0..s + t - depth).map(|_| random_gf(&mut state)).collect();
+            for special in [None, Some(Gf::zero()), Some(Gf::one())] {
+                if let (Some(value), Some(first)) = (special, zeta.first_mut()) {
+                    *first = value;
+                }
+                for nibble in [false, true] {
+                    let prove = |retain| {
+                        let mut forest =
+                            Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
+                                nibble,
+                                nibble_from: 0,
+                            });
+                        forest.retain_l4 = retain;
+                        let mut ps = build_kernel_prover(b"forest-retained-l4/v1", b"instance");
+                        let terminal = forest.prove_depth(&mut ps, &zeta, depth);
+                        (terminal, ps.finish().narg_string)
+                    };
+                    assert_eq!(
+                        prove(false),
+                        prove(true),
+                        "t={t}, s={s}, depth={depth}, nibble={nibble}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retained_level_four_matches_leaf_products() {
+        for (t, s) in [(6, 0), (6, 3), (8, 7)] {
+            let (packed, images) = random_grid(t, s, (t * 997 + s) as u64);
+            let forest = Forest::new(t, s, &packed, &images);
+            let tables = forest.fold_table(MATERIALISED_LEVEL, 0, &[]);
+            let rows = 1usize << (t - 4);
+            let cols = 1usize << s;
+            let mut arena = Vec::with_capacity(rows * cols);
+            let mut retained = Vec::with_capacity(rows * cols);
+            forest.upper_levels_into::<true>(
+                &tables,
+                &mut arena,
+                (t - 5).min(FUSED_UPPER_LEVELS),
+                &mut retained,
+            );
+            assert_eq!(retained.len(), rows * cols);
+            for y in 0..rows {
+                for c in 0..cols {
+                    let expected = (0..16).fold(Gf::one(), |value, leaf| {
+                        let row = y + leaf * rows;
+                        if packed[c / 64][row] >> (c % 64) & 1 != 0 {
+                            value * images[row]
+                        } else {
+                            value
+                        }
+                    });
+                    assert_eq!(retained[y * cols + c], expected, "t={t} s={s} y={y} c={c}");
+                }
             }
         }
     }

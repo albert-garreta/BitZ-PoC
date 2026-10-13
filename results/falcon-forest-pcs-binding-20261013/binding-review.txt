@@ -1,0 +1,85 @@
+Independent binding-construction fusion review
+Date: 2026-10-13
+Baseline HEAD: a4585dffa441a00477f5577c20eea9d386a32b35
+Scope: working-tree changes in arithmetic.rs, word_binding.rs, and
+word_binding_tests.rs under src/piop/spartan/falcon1024_algebraic/.
+Method: read-only diff/source review; no Cargo commands, tests, or prover runs.
+
+No actionable correctness or safety findings.
+
+Transcript boundary
+-------------------
+arithmetic.rs:316-324 validates source layout and field, proves the norm, binds
+the merge domain, grinds, then samples eta. The fused constructor has no
+transcript parameter and computes exactly the dense first polynomial from the
+now-fixed merged coefficients. Fusion is restricted to owned dense word binding
+with norm correction materialized (342-354); factored paths receive no cached
+initial claim.
+
+word_binding.rs:1243-1265 still absorbs the word-binding domain, scans spare lanes
+and inactive source entries, and checks dense plus sparse Boolean sums against
+the target. A precomputed initial claim with factored coefficients is rejected.
+The round still absorbs c0/c1/c2, invokes the grinding boundary, samples r, then
+performs the fold in the same order (1297-1308). Moving arithmetic earlier adds
+no challenge draw or observation and does not move any transcript boundary.
+
+Validation and exact equivalence
+--------------------------------
+arithmetic.rs:986-997 checks source layout, projection dimensions, norm-point
+dimensions, and the ring target before fusion. word_binding.rs:574-577 validates
+both original projection slices before field arithmetic for each instance,
+preserving the baseline optimized constructor's validation rule.
+New merged coefficients use the same factored equality weights and arithmetic
+as baseline (arithmetic.rs:1015-1047; word_binding.rs:580-585).
+
+The fused source index instance*2*N + side*N + 2*j matches the reference
+first-round traversal. Inactive instances contribute zero dense coefficients in
+the baseline; the fused traversal omits them while Sparse::from_source retains
+the full inactive-word rejection. Decoding any u16 preserves the signed15 range,
+even before spare-lane validation; invalid source padding cannot escape the
+unchanged validation before the first round. Sparse/claim failure transcript
+states are explicitly compared by the new tests.
+
+Accumulator bounds
+------------------
+word_binding.rs:570 limits each task to 1024/N instances, hence at most 1024
+coefficient pairs across both sides. Decoded values are in [-16384,16383], and
+their difference is in [-32767,32767]. Each sign accumulator is bounded by:
+  c0:       1024 * (p-1) * 16384
+  c2:       1024 * (p-1) * 32767
+  full sum: 2048 * (p-1) * 16384
+All are below 2^153 for p < 2^128. FpLinearAcc<2,1> wraps
+UintAccumulator<2,1>, with two low limbs, one high limb, and one carry limb
+(vendor/field/src/integer/product.rs:81). No machine-integer wrap is possible
+under this task bound. Positive/negative totals are reduced before the final
+field sum. The duplicate-product option adds the separately reduced even sum
+and preserves the same initial claim.
+
+12-worker fallback and experiment qualification
+----------------------------------------------
+arithmetic.rs:770-771 continues to select Legacy at 12 workers by default.
+Legacy construction returns initial=None (1066-1101), so enabling construction
+fusion alone at 12 workers deliberately falls back to the existing first-round
+pass. An experiment intended to exercise fusion at 12 must also force optimized
+construction, e.g. BITZ_BENCH_BINDER_CONSTRUCTION=on (or the broader binding
+strategy override). Comparing fused and unfused at the same forced construction
+strategy avoids attributing the strategy change to fusion.
+
+Tests inspected, not executed in this review
+--------------------------------------------
+word_binding_tests.rs:1099:
+  fused_construction_initial_matches_independent_dense_reference
+  Covers 61-/127-bit fields, signed15 extremes, batches 1/3/17, serial/parallel
+  dispatch, eta/point degeneracies, independent bit-derived dense coefficients
+  and first polynomial, and duplicate-product composition.
+word_binding_tests.rs:1202:
+  fused_construction_preserves_proof_and_grinding_boundaries
+  Compares whole word proofs, final transcript state, verifier output/state,
+  zero/nonzero grinding, optimized/legacy paths, and wrong-target rejection.
+word_binding_tests.rs:1352:
+  fused_construction_preserves_source_and_projection_rejections
+  Compares invalid spare/inactive source rejection and transcript state, rejects
+  noncanonical projections on either side, and confirms legacy fallback.
+
+This review covers the new fusion, not an independent audit of the entire
+Falcon protocol, field backend, or existing witness-dependent timing behavior.

@@ -1,0 +1,15 @@
+{
+  "all-experiments": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_JIT_BUCKETS": "wide",
+      "BITZ_FOREST_L4": "retain",
+      "BITZ_PCS_INITIAL_TILES_PER_TASK": "4",
+      "BITZ_ARITHMETIC_BINDING_CONSTRUCTION_FUSION": "on"
+    }
+  },
+  "production": {
+    "binary": "candidate",
+    "env": {}
+  }
+}

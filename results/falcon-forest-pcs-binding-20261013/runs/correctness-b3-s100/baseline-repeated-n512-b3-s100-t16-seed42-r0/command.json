@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/candidate-production",
+    "--degree",
+    "512",
+    "--batch",
+    "3",
+    "--security",
+    "100",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "16",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "321f791c5d7b5c09de5cb3b92ff69327cd0e23272117cc5a69da0d76bb9d235d",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

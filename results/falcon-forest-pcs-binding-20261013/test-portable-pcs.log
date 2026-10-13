@@ -1,0 +1,34 @@
+   Compiling either v1.18.0
+   Compiling digest v0.11.3
+   Compiling binius-utils v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling tracing-core v0.1.36
+   Compiling array-util v1.0.2
+   Compiling bytemuck_derive v1.12.1
+   Compiling trait-set v0.5.0
+   Compiling bytes v1.12.1
+   Compiling seq-macro v0.3.6
+   Compiling blake3 v1.8.7
+   Compiling rayon v1.12.0
+   Compiling itertools v0.15.0
+   Compiling foldhash v0.2.0
+   Compiling tracing v0.1.44
+   Compiling hashbrown v0.17.1
+   Compiling auto_impl v1.3.0
+   Compiling bytemuck v1.25.2
+   Compiling getset v0.1.7
+   Compiling sha2 v0.11.0
+   Compiling smallvec v1.16.1
+   Compiling libm v0.2.16
+   Compiling indexmap v2.14.2
+   Compiling wasmtime-internal-core v48.0.2
+   Compiling sha3 v0.11.0
+error: failed to run custom build command for `libm v0.2.16`
+
+Caused by:
+  process didn't exit successfully: `/home/john-wu/code/BitZ-pcs/.tmp/falcon-ring-portable-target/debug/build/libm-4f7f7ad8206383c7/build-script-build` (exit status: 101)
+  --- stderr
+
+  thread 'main' (4074) panicked at /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/std/src/env.rs:168:83:
+  called `Result::unwrap()` on an `Err` value: "\n  --height=60%\n  --layout=reverse\n  --border=rounded\n  --prompt=\"🔍 \"\n  --pointer=\"▶\"\n  --marker=\"\xE2\x9CM-\u{13}\"\n  --preview-window=right:50%:wrap\n"
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...

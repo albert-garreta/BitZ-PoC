@@ -1,0 +1,15 @@
+{
+  "base": "a4585dffa441a00477f5577c20eea9d386a32b35",
+  "patch_sha256": "27ee70d5c9a315e13be319cc741641788fd74420b739f2039a9fe9302487f091",
+  "files": {
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "8e157f0fc1b878daad7ef455738099b6b8a3a656ea95b3087ba1b9bdc05a5320",
+    "src/bitz/kernels/x86.rs": "66a3151278332e7395e94b8d673dd066a575627eb710ce3b79ad2192ba342207",
+    "src/bitz/forest.rs": "47ed7a9acbd3f1015650634e466346f91501a74cf1a51589d81b318ccc746a16",
+    "src/hybrid/opening/streamed.rs": "6fb64378be6242dd18c78db0941653bff51da3232bef06e13a62ab99cc76d667",
+    "scripts/falcon_prover_optimization.py": "80c240e7e3285141eb72f0edb8fcb19a86f524e3afedcacc18fc469583312bcf",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "d8b492af37c14d9a364d5f340973ebc9bb85dd0d708b02298cb50e11e187d946",
+    "scripts/test_falcon_prover_optimization.py": "1330b0d78cae1530d2c96877beef851aae5e6f54a98aed30dba162734e2d178b",
+    "vendor/field/src/gf128/kernels/x86_64.rs": "816430dfdcb41aff09f3228dfc62938208eff39f0a614b85d82b779c5943016b",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "03526024446b6d699673446c32afdc124638f3a5aafba949d7fee4e0fde07fbf"
+  }
+}

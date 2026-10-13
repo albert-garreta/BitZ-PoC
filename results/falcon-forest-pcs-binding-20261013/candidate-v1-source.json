@@ -1,0 +1,13 @@
+{
+  "base": "a4585dffa441a00477f5577c20eea9d386a32b35",
+  "patch_sha256": "f28af213da7324310ca669cbc17d5ddef3476839788dfe0bd6254292b81d9b4b",
+  "files": {
+    "src/bitz/forest.rs": "8269e61704a297d6412c404114e5a31faeb94ff2adfed9e11eae27c09ea79fbb",
+    "src/bitz/kernels/x86.rs": "f7fdef5f42426103c0a9844ac9e94e8724470232bd6e21956f7261651845a85f",
+    "src/hybrid/opening/streamed.rs": "3ff20ad09eebcfe7c580a67c401316cc84a610231272a31e11e8ea2516bd6d2a",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "8e157f0fc1b878daad7ef455738099b6b8a3a656ea95b3087ba1b9bdc05a5320",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "d8b492af37c14d9a364d5f340973ebc9bb85dd0d708b02298cb50e11e187d946",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "03526024446b6d699673446c32afdc124638f3a5aafba949d7fee4e0fde07fbf",
+    "vendor/field/src/gf128/kernels/x86_64.rs": "fe95f93a3e17d00c8b422d46b091a2378ae613411d5f68da3c885c1cad445a59"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "source_hashes_match_after_build": true,
+  "features": [
+    "binius64-bench",
+    "default",
+    "falcon",
+    "falcon-hybrid",
+    "hybrid",
+    "parallel",
+    "span-metrics"
+  ],
+  "experimental_feature_disabled": true,
+  "binary": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-forest-pcs-binding-20261013/candidate-production",
+    "sha256": "b4eb01b1fa8f40b0c0b0c61d82372fe94070106b2d5023a2b47f7e1488150415",
+    "cargo_artifact": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-production-target/release/deps/falcon_algebraic-0dec3867da2b78f6"
+  }
+}

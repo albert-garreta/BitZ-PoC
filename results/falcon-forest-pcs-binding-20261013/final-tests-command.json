@@ -1,0 +1,53 @@
+{
+  "commands": [
+    [
+      "final-falcon",
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "falcon-hybrid,bench-internals",
+        "--lib",
+        "falcon",
+        "--",
+        "--test-threads=1"
+      ]
+    ],
+    [
+      "final-streamed",
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "falcon-hybrid,bench-internals",
+        "--lib",
+        "hybrid::opening::streamed",
+        "--",
+        "--test-threads=1"
+      ]
+    ],
+    [
+      "nonparallel",
+      [
+        "cargo",
+        "check",
+        "--locked",
+        "--no-default-features",
+        "--features",
+        "hybrid",
+        "--lib"
+      ]
+    ]
+  ],
+  "overrides": {
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-push-target",
+    "CARGO_PROFILE_TEST_OPT_LEVEL": "2",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "8",
+    "CARGO_BUILD_JOBS": "16",
+    "TMPDIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-forest-pcs-binding-20261013/build-tmp"
+  },
+  "source_snapshot": "candidate-production-source.json"
+}

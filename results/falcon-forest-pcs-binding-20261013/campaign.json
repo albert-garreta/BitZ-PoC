@@ -1,0 +1,97 @@
+{
+  "baseline_commit": "a4585dffa441a00477f5577c20eea9d386a32b35",
+  "branch": "falcon-poc",
+  "baseline_binary": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/candidate-production",
+  "baseline_binary_sha256": "321f791c5d7b5c09de5cb3b92ff69327cd0e23272117cc5a69da0d76bb9d235d",
+  "primary": {
+    "degree": 512,
+    "batch": 1024,
+    "security_bits": 128,
+    "threads": [
+      8,
+      12
+    ]
+  },
+  "regression": {
+    "degrees": [
+      512,
+      1024
+    ],
+    "security_bits": [
+      100,
+      128
+    ],
+    "threads": [
+      1,
+      8,
+      12,
+      16
+    ],
+    "batches": [
+      3,
+      129,
+      1024
+    ]
+  },
+  "baseline_source_hashes": {
+    "src/bitz/forest.rs": "31860334aa1957270d72c77052d89f7321fee1d820258ca3bb9583e8bd72c288",
+    "src/bitz/kernels.rs": "a5f7b19bc50837847d3de1c2a135c149593c8085c86d95ce2490cdd751c86617",
+    "src/bitz/kernels/x86.rs": "e1cbf282af6796684d1ef48e4d5e13bd727a4ba40682fe76585271cdfa2690c4",
+    "src/hybrid/opening/streamed.rs": "39018b10abf2c4901876a9fbd08e985d029ed542c1f7c155ff148fd37ef7a3dd",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "620bdb98d66cc9890f73f037704fd63a38a5c0cdb1be6079f9f424456356ed47",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "4f04b1962a4e50de84775faf2e69c0c359be493cd786e1b893705fb527cec897",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "8dd75e0a94f59272c8f3ac4fadecad0dc8d1361a48dbaa2af468a01e07c44c44"
+  },
+  "scope": [
+    "x86 JIT bucket deferred reduction",
+    "retain L4 through forest construction/proving",
+    "PCS initial-message task sizing",
+    "owned binding construction fused with initial sums"
+  ],
+  "defaults": "Only independently measured improvements qualify for production; inconclusive or regressing choices stay experimental.",
+  "protocol": "No new protocol/version/security changes; complete proof equality required.",
+  "timing": "Three seeds and 21 untraced samples per configuration for both cold and repeated proofs; separate diagnostic profiles; no concurrent build or test work during measured runs.",
+  "memory_note": "Retained L4 costs 32 MiB for Falcon-512 and 64 MiB for Falcon-1024 at batch 1024 because TwoLimbs adds one row bit.",
+  "trace_note": "Ignore the legacy BITZ_TRACE MB-faulted field: it assumes 16 KiB pages, but actual host pages are 4 KiB. Use benchmark getrusage counts and RSS.",
+  "unused_build_note": "candidate-v1 compiled before private bucket storage hardening; it is not used for measurements. candidate-v2 contains the reviewed final experiment source.",
+  "decision": {
+    "pcs_default": {
+      "tiles_per_task": 4,
+      "tile_counts": [
+        32,
+        64
+      ],
+      "workers": [
+        8,
+        12,
+        16
+      ],
+      "other_cases_tiles_per_task": 16
+    },
+    "forest_jit_buckets": "reduced",
+    "forest_l4": "rebuild",
+    "binding_construction_fusion": "off",
+    "reason": "Only PCS task sizing showed a consistent independent benefit. Forest-wide and retained-L4 regressed; binding fusion was inconclusive and inactive at the legacy 12-worker selector."
+  },
+  "completed_validation": {
+    "schema": "bitz/falcon-prover-optimization/v1",
+    "verified_proofs": 2559,
+    "proofs_by_protocol": {
+      "bitz/falcon1024-algebraic/non-zk/v9": 856,
+      "bitz/falcon512-algebraic/non-zk/v9": 1703
+    },
+    "frozen_baseline_cases": 14,
+    "input_source_equality": true,
+    "complete_proof_and_payload_equality": true,
+    "command_and_raw_hashes_verified": true,
+    "frozen_binary_hashes_verified": true,
+    "parser_hashes_verified": true,
+    "phases_complete": true
+  },
+  "measurement_phases": [
+    "screen",
+    "qualify-pcs",
+    "production"
+  ],
+  "nonqualification_phases": "profiles and standalone baseline-profiles are diagnostic; smoke and correctness phases only validate correctness."
+}

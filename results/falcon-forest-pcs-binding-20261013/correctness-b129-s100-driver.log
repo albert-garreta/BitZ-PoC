@@ -1,0 +1,178 @@
+RUN correctness-b129-s100/all-experiments-repeated-n512-b129-s100-t1-seed42-r0
+OK all-experiments-repeated-n512-b129-s100-t1-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n512-b129-s100-t1-seed42-r0
+OK baseline-repeated-n512-b129-s100-t1-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n512-b129-s100-t12-seed42-r0
+OK baseline-repeated-n512-b129-s100-t12-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n512-b129-s100-t12-seed42-r0
+OK all-experiments-repeated-n512-b129-s100-t12-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n1024-b129-s100-t1-seed42-r0
+OK all-experiments-repeated-n1024-b129-s100-t1-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n1024-b129-s100-t1-seed42-r0
+OK baseline-repeated-n1024-b129-s100-t1-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n1024-b129-s100-t8-seed42-r0
+OK baseline-repeated-n1024-b129-s100-t8-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n1024-b129-s100-t8-seed42-r0
+OK all-experiments-repeated-n1024-b129-s100-t8-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n1024-b129-s100-t12-seed42-r0
+OK all-experiments-repeated-n1024-b129-s100-t12-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n1024-b129-s100-t12-seed42-r0
+OK baseline-repeated-n1024-b129-s100-t12-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n1024-b129-s100-t16-seed42-r0
+OK baseline-repeated-n1024-b129-s100-t16-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n1024-b129-s100-t16-seed42-r0
+OK all-experiments-repeated-n1024-b129-s100-t16-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n512-b129-s100-t16-seed42-r0
+OK all-experiments-repeated-n512-b129-s100-t16-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n512-b129-s100-t16-seed42-r0
+OK baseline-repeated-n512-b129-s100-t16-seed42-r0
+RUN correctness-b129-s100/baseline-repeated-n512-b129-s100-t8-seed42-r0
+OK baseline-repeated-n512-b129-s100-t8-seed42-r0
+RUN correctness-b129-s100/all-experiments-repeated-n512-b129-s100-t8-seed42-r0
+OK all-experiments-repeated-n512-b129-s100-t8-seed42-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 12, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 464, "bitz/falcon512-algebraic/non-zk/v9": 1311}, "schema": "bitz/falcon-prover-optimization/v1", "verified_proofs": 1775}
+correctness-b1024-s128 all-experiments    N=512 t=1 repeated n=1 total=150.735 verify=30.941 traced=False
+correctness-b1024-s128 all-experiments    N=512 t=8 repeated n=1 total=33.290 verify=8.167 traced=False
+correctness-b1024-s128 all-experiments    N=512 t=12 repeated n=1 total=49.029 verify=22.012 traced=False
+correctness-b1024-s128 all-experiments    N=512 t=16 repeated n=1 total=34.775 verify=7.840 traced=False
+correctness-b1024-s128 all-experiments    N=1024 t=1 repeated n=1 total=288.329 verify=60.525 traced=False
+correctness-b1024-s128 all-experiments    N=1024 t=8 repeated n=1 total=64.327 verify=15.747 traced=False
+correctness-b1024-s128 all-experiments    N=1024 t=12 repeated n=1 total=91.279 verify=42.069 traced=False
+correctness-b1024-s128 all-experiments    N=1024 t=16 repeated n=1 total=61.977 verify=14.674 traced=False
+correctness-b1024-s128 baseline           N=512 t=1 repeated n=1 total=145.225 verify=30.505 traced=False
+correctness-b1024-s128 baseline           N=512 t=8 repeated n=1 total=31.447 verify=8.212 traced=False
+correctness-b1024-s128 baseline           N=512 t=12 repeated n=1 total=46.280 verify=21.909 traced=False
+correctness-b1024-s128 baseline           N=512 t=16 repeated n=1 total=32.284 verify=8.022 traced=False
+correctness-b1024-s128 baseline           N=1024 t=1 repeated n=1 total=276.744 verify=60.171 traced=False
+correctness-b1024-s128 baseline           N=1024 t=8 repeated n=1 total=56.761 verify=15.397 traced=False
+correctness-b1024-s128 baseline           N=1024 t=12 repeated n=1 total=84.168 verify=41.310 traced=False
+correctness-b1024-s128 baseline           N=1024 t=16 repeated n=1 total=55.155 verify=16.464 traced=False
+correctness-b129-s100 all-experiments    N=512 t=1 repeated n=1 total=41.317 verify=5.745 traced=False
+correctness-b129-s100 all-experiments    N=512 t=8 repeated n=1 total=9.411 verify=2.874 traced=False
+correctness-b129-s100 all-experiments    N=512 t=12 repeated n=1 total=14.104 verify=5.341 traced=False
+correctness-b129-s100 all-experiments    N=512 t=16 repeated n=1 total=11.448 verify=3.108 traced=False
+correctness-b129-s100 all-experiments    N=1024 t=1 repeated n=1 total=69.014 verify=8.913 traced=False
+correctness-b129-s100 all-experiments    N=1024 t=8 repeated n=1 total=15.348 verify=3.776 traced=False
+correctness-b129-s100 all-experiments    N=1024 t=12 repeated n=1 total=22.509 verify=8.575 traced=False
+correctness-b129-s100 all-experiments    N=1024 t=16 repeated n=1 total=17.123 verify=3.998 traced=False
+correctness-b129-s100 baseline           N=512 t=1 repeated n=1 total=38.499 verify=5.749 traced=False
+correctness-b129-s100 baseline           N=512 t=8 repeated n=1 total=9.536 verify=2.905 traced=False
+correctness-b129-s100 baseline           N=512 t=12 repeated n=1 total=14.160 verify=5.309 traced=False
+correctness-b129-s100 baseline           N=512 t=16 repeated n=1 total=11.378 verify=3.119 traced=False
+correctness-b129-s100 baseline           N=1024 t=1 repeated n=1 total=65.530 verify=8.858 traced=False
+correctness-b129-s100 baseline           N=1024 t=8 repeated n=1 total=14.945 verify=3.797 traced=False
+correctness-b129-s100 baseline           N=1024 t=12 repeated n=1 total=23.221 verify=8.589 traced=False
+correctness-b129-s100 baseline           N=1024 t=16 repeated n=1 total=16.928 verify=3.984 traced=False
+correctness-b3-s100 all-experiments    N=512 t=1 repeated n=1 total=11.788 verify=2.308 traced=False
+correctness-b3-s100 all-experiments    N=512 t=8 repeated n=1 total=4.001 verify=1.986 traced=False
+correctness-b3-s100 all-experiments    N=512 t=12 repeated n=1 total=4.762 verify=2.065 traced=False
+correctness-b3-s100 all-experiments    N=512 t=16 repeated n=1 total=4.983 verify=2.108 traced=False
+correctness-b3-s100 all-experiments    N=1024 t=1 repeated n=1 total=12.215 verify=2.475 traced=False
+correctness-b3-s100 all-experiments    N=1024 t=8 repeated n=1 total=4.132 verify=2.133 traced=False
+correctness-b3-s100 all-experiments    N=1024 t=12 repeated n=1 total=4.826 verify=2.229 traced=False
+correctness-b3-s100 all-experiments    N=1024 t=16 repeated n=1 total=5.356 verify=2.238 traced=False
+correctness-b3-s100 baseline           N=512 t=1 repeated n=1 total=11.227 verify=2.311 traced=False
+correctness-b3-s100 baseline           N=512 t=8 repeated n=1 total=3.876 verify=1.990 traced=False
+correctness-b3-s100 baseline           N=512 t=12 repeated n=1 total=4.591 verify=2.052 traced=False
+correctness-b3-s100 baseline           N=512 t=16 repeated n=1 total=5.091 verify=2.094 traced=False
+correctness-b3-s100 baseline           N=1024 t=1 repeated n=1 total=11.888 verify=2.502 traced=False
+correctness-b3-s100 baseline           N=1024 t=8 repeated n=1 total=4.002 verify=2.121 traced=False
+correctness-b3-s100 baseline           N=1024 t=12 repeated n=1 total=4.875 verify=2.182 traced=False
+correctness-b3-s100 baseline           N=1024 t=16 repeated n=1 total=5.279 verify=2.225 traced=False
+correctness-b3-s128 all-experiments    N=512 t=1 repeated n=1 total=14.417 verify=2.794 traced=False
+correctness-b3-s128 all-experiments    N=512 t=8 repeated n=1 total=5.556 verify=2.441 traced=False
+correctness-b3-s128 all-experiments    N=512 t=12 repeated n=1 total=6.283 verify=2.539 traced=False
+correctness-b3-s128 all-experiments    N=512 t=16 repeated n=1 total=6.831 verify=2.832 traced=False
+correctness-b3-s128 all-experiments    N=1024 t=1 repeated n=1 total=15.319 verify=2.954 traced=False
+correctness-b3-s128 all-experiments    N=1024 t=8 repeated n=1 total=5.588 verify=2.595 traced=False
+correctness-b3-s128 all-experiments    N=1024 t=12 repeated n=1 total=6.466 verify=2.663 traced=False
+correctness-b3-s128 all-experiments    N=1024 t=16 repeated n=1 total=7.098 verify=2.691 traced=False
+correctness-b3-s128 baseline           N=512 t=1 repeated n=1 total=13.545 verify=2.770 traced=False
+correctness-b3-s128 baseline           N=512 t=8 repeated n=1 total=5.653 verify=2.454 traced=False
+correctness-b3-s128 baseline           N=512 t=12 repeated n=1 total=6.290 verify=2.524 traced=False
+correctness-b3-s128 baseline           N=512 t=16 repeated n=1 total=6.970 verify=2.557 traced=False
+correctness-b3-s128 baseline           N=1024 t=1 repeated n=1 total=14.222 verify=2.954 traced=False
+correctness-b3-s128 baseline           N=1024 t=8 repeated n=1 total=5.540 verify=2.601 traced=False
+correctness-b3-s128 baseline           N=1024 t=12 repeated n=1 total=6.456 verify=2.908 traced=False
+correctness-b3-s128 baseline           N=1024 t=16 repeated n=1 total=7.116 verify=2.726 traced=False
+profiles     baseline           N=512 t=8 repeated n=9 total=29.419 verify=9.353 traced=True
+profiles     baseline           N=512 t=12 repeated n=9 total=43.910 verify=22.593 traced=True
+profiles     binding-fused      N=512 t=8 repeated n=9 total=29.404 verify=9.274 traced=True
+profiles     binding-fused      N=512 t=12 repeated n=9 total=43.662 verify=22.443 traced=True
+profiles     control            N=512 t=8 repeated n=9 total=29.452 verify=9.277 traced=True
+profiles     control            N=512 t=12 repeated n=9 total=43.794 verify=22.712 traced=True
+profiles     forest-retain      N=512 t=8 repeated n=9 total=31.397 verify=9.414 traced=True
+profiles     forest-retain      N=512 t=12 repeated n=9 total=46.838 verify=22.698 traced=True
+profiles     forest-wide        N=512 t=8 repeated n=9 total=29.557 verify=9.257 traced=True
+profiles     forest-wide        N=512 t=12 repeated n=9 total=44.052 verify=22.736 traced=True
+profiles     pcs2               N=512 t=8 repeated n=9 total=28.643 verify=9.265 traced=True
+profiles     pcs2               N=512 t=12 repeated n=9 total=43.362 verify=22.549 traced=True
+profiles     pcs4               N=512 t=8 repeated n=9 total=28.647 verify=9.276 traced=True
+profiles     pcs4               N=512 t=12 repeated n=9 total=43.057 verify=22.553 traced=True
+qualify-pcs  baseline           N=512 t=1 repeated n=21 total=138.312 verify=30.396 traced=False
+qualify-pcs  baseline           N=512 t=8 repeated n=21 total=28.913 verify=9.233 traced=False
+qualify-pcs  baseline           N=512 t=12 repeated n=21 total=43.071 verify=22.529 traced=False
+qualify-pcs  baseline           N=512 t=16 repeated n=21 total=29.498 verify=9.564 traced=False
+qualify-pcs  baseline           N=1024 t=1 repeated n=21 total=270.120 verify=59.713 traced=False
+qualify-pcs  baseline           N=1024 t=8 repeated n=21 total=51.562 verify=16.402 traced=False
+qualify-pcs  baseline           N=1024 t=12 repeated n=21 total=78.375 verify=42.950 traced=False
+qualify-pcs  baseline           N=1024 t=16 repeated n=21 total=49.370 verify=14.918 traced=False
+qualify-pcs  control            N=512 t=1 repeated n=21 total=139.098 verify=30.371 traced=False
+qualify-pcs  control            N=512 t=8 repeated n=21 total=28.948 verify=9.164 traced=False
+qualify-pcs  control            N=512 t=12 repeated n=21 total=43.186 verify=22.748 traced=False
+qualify-pcs  control            N=512 t=16 repeated n=21 total=28.826 verify=9.436 traced=False
+qualify-pcs  control            N=1024 t=1 repeated n=21 total=270.324 verify=59.852 traced=False
+qualify-pcs  control            N=1024 t=8 repeated n=21 total=51.633 verify=16.500 traced=False
+qualify-pcs  control            N=1024 t=12 repeated n=21 total=78.934 verify=43.042 traced=False
+qualify-pcs  control            N=1024 t=16 repeated n=21 total=49.620 verify=15.086 traced=False
+qualify-pcs  pcs2               N=512 t=1 repeated n=21 total=139.261 verify=30.354 traced=False
+qualify-pcs  pcs2               N=512 t=8 repeated n=21 total=28.204 verify=9.212 traced=False
+qualify-pcs  pcs2               N=512 t=12 repeated n=21 total=42.659 verify=22.494 traced=False
+qualify-pcs  pcs2               N=512 t=16 repeated n=21 total=28.137 verify=9.476 traced=False
+qualify-pcs  pcs2               N=1024 t=1 repeated n=21 total=270.462 verify=59.729 traced=False
+qualify-pcs  pcs2               N=1024 t=8 repeated n=21 total=51.134 verify=16.368 traced=False
+qualify-pcs  pcs2               N=1024 t=12 repeated n=21 total=78.161 verify=42.950 traced=False
+qualify-pcs  pcs2               N=1024 t=16 repeated n=21 total=48.873 verify=15.155 traced=False
+qualify-pcs  pcs4               N=512 t=1 repeated n=21 total=139.397 verify=30.387 traced=False
+qualify-pcs  pcs4               N=512 t=8 repeated n=21 total=28.109 verify=9.147 traced=False
+qualify-pcs  pcs4               N=512 t=12 repeated n=21 total=42.764 verify=22.756 traced=False
+qualify-pcs  pcs4               N=512 t=16 repeated n=21 total=28.208 verify=9.483 traced=False
+qualify-pcs  pcs4               N=1024 t=1 repeated n=21 total=270.307 verify=59.760 traced=False
+qualify-pcs  pcs4               N=1024 t=8 repeated n=21 total=51.309 verify=16.541 traced=False
+qualify-pcs  pcs4               N=1024 t=12 repeated n=21 total=78.265 verify=42.726 traced=False
+qualify-pcs  pcs4               N=1024 t=16 repeated n=21 total=49.125 verify=15.124 traced=False
+screen       baseline           N=512 t=8 cold     n=21 total=31.120 verify=8.204 traced=False
+screen       baseline           N=512 t=8 repeated n=21 total=28.988 verify=9.264 traced=False
+screen       baseline           N=512 t=12 cold     n=21 total=46.475 verify=21.803 traced=False
+screen       baseline           N=512 t=12 repeated n=21 total=43.119 verify=22.631 traced=False
+screen       binding-fused      N=512 t=8 cold     n=21 total=31.021 verify=8.124 traced=False
+screen       binding-fused      N=512 t=8 repeated n=21 total=28.849 verify=9.154 traced=False
+screen       binding-fused      N=512 t=12 cold     n=21 total=46.604 verify=21.969 traced=False
+screen       binding-fused      N=512 t=12 repeated n=21 total=43.074 verify=22.344 traced=False
+screen       control            N=512 t=8 cold     n=21 total=31.134 verify=8.119 traced=False
+screen       control            N=512 t=8 repeated n=21 total=28.738 verify=9.104 traced=False
+screen       control            N=512 t=12 cold     n=21 total=46.423 verify=21.943 traced=False
+screen       control            N=512 t=12 repeated n=21 total=43.121 verify=22.407 traced=False
+screen       forest-retain      N=512 t=8 cold     n=21 total=33.388 verify=8.165 traced=False
+screen       forest-retain      N=512 t=8 repeated n=21 total=31.183 verify=9.442 traced=False
+screen       forest-retain      N=512 t=12 cold     n=21 total=49.031 verify=21.944 traced=False
+screen       forest-retain      N=512 t=12 repeated n=21 total=46.137 verify=22.964 traced=False
+screen       forest-wide        N=512 t=8 cold     n=21 total=31.356 verify=8.137 traced=False
+screen       forest-wide        N=512 t=8 repeated n=21 total=29.050 verify=9.213 traced=False
+screen       forest-wide        N=512 t=12 cold     n=21 total=46.546 verify=21.994 traced=False
+screen       forest-wide        N=512 t=12 repeated n=21 total=43.268 verify=22.780 traced=False
+screen       pcs2               N=512 t=8 cold     n=21 total=30.322 verify=8.144 traced=False
+screen       pcs2               N=512 t=8 repeated n=21 total=28.107 verify=9.112 traced=False
+screen       pcs2               N=512 t=12 cold     n=21 total=45.685 verify=21.927 traced=False
+screen       pcs2               N=512 t=12 repeated n=21 total=42.740 verify=22.513 traced=False
+screen       pcs4               N=512 t=8 cold     n=21 total=30.459 verify=8.145 traced=False
+screen       pcs4               N=512 t=8 repeated n=21 total=28.317 verify=9.267 traced=False
+screen       pcs4               N=512 t=12 cold     n=21 total=45.813 verify=21.917 traced=False
+screen       pcs4               N=512 t=12 repeated n=21 total=42.302 verify=22.740 traced=False
+smoke        baseline           N=512 t=8 repeated n=1 total=31.521 verify=8.195 traced=False
+smoke        binding-fused      N=512 t=8 repeated n=1 total=31.127 verify=8.136 traced=False
+smoke        control            N=512 t=8 repeated n=1 total=31.438 verify=8.183 traced=False
+smoke        forest-retain      N=512 t=8 repeated n=1 total=33.286 verify=8.204 traced=False
+smoke        forest-wide        N=512 t=8 repeated n=1 total=31.674 verify=8.133 traced=False
+smoke        pcs2               N=512 t=8 repeated n=1 total=31.239 verify=8.231 traced=False
+smoke        pcs4               N=512 t=8 repeated n=1 total=30.885 verify=8.109 traced=False

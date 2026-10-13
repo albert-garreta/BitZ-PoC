@@ -1,0 +1,59 @@
+Final campaign evidence review — 2026-10-13
+Reviewer: /root/non_gkr_targets
+
+Reviewed the completed README, validation.json, summary.json, every phase
+manifest and result/raw file, frozen executable hashes, and production build
+audit. No builds, tests, benchmarks or prover processes were launched. The
+only report edit made by this reviewer clarified that proof fingerprints hash
+the complete Debug representation; they are not serialized-proof byte hashes.
+
+Evidence reconciliation passed
+- Re-normalized all 945 result files using the existing strict normalizer and
+  checked their command, stdout, stderr, process and manifest hashes. Exact
+  command records match frozen configurations; no expected result is missing
+  and no extra result exists outside the manifest job lists.
+- Verified current runner/helper hashes against every phase manifest and all
+  three frozen executable hashes against the corresponding manifests.
+- Independently aggregated source identity and complete proof-digest/payload
+  identity across configurations, workers, modes and phases, requiring a frozen
+  baseline for every case. All 14 baseline cases match.
+- Counts reconcile exactly: 2,559 verified proofs including warmups, comprising
+  1,703 Falcon-512 and 856 Falcon-1024. Phase totals are screen 672, qualify-pcs
+  864, profiles 168, correctness sweeps 80, smoke 7, and production 768.
+  Production has 384 processes. Earlier standalone baseline profiles are
+  correctly excluded from the runner's 2,559 count.
+- Independently recomputed all metric medians and per-seed metric medians in
+  all 193 summary rows from re-normalized raw trials. They match summary.json.
+- The production manifest uses canonical v9, batch 1024, security 128, no
+  experiment overrides and no tracing. The saved production build audit
+  reports bench-internals absent. Its executable hash independently matches:
+  b4eb01b1fa8f40b0c0b0c61d82372fe94070106b2d5023a2b47f7e1488150415.
+
+README interpretation checked
+- Production cold/repeated prover medians, repeated verifier medians and peak
+  RSS tables agree with the evidence. Qualification uses explicit v2 selectors
+  and candidate control; production uses final defaults and frozen production
+  baseline. The report preserves this distinction.
+- Falcon-512 improves in every seed at 8/12/16 workers, both cold and repeated.
+  Falcon-1024 8/12 gains are smaller and mixed across seeds. Its 16-worker gain
+  is consistent. Serial is appropriately described as neutral: N1024 repeated
+  pooled time increases 0.074%; N512's pooled -0.049% coexists with slightly
+  slower medians for every individual seed (+0.026% to +0.295%). This illustrates
+  why a small pooled-median change is not a general speedup claim.
+- Maximum absolute repeated median peak-RSS difference is 0.58203125 MiB
+  (N1024, 12 workers), so the README's at-most-0.6-MiB statement is supported.
+- Corrected a payload-description issue with root: payload sizes vary by seed.
+  Seeds 42/43/44 respectively use N512 256368/256112/256848 bytes and N1024
+  321272/321304/321432 bytes. The final README now gives correct ranges and
+  pooled medians 256368/321304, and states equality against matching seeds.
+- Complete proof Debug digests and payload sizes match, as do source digests;
+  this audit does not claim a separate serialized-proof byte comparison.
+- The guarded PCS policy, inactive 12-worker legacy-binder fusion selector,
+  experimental defaults, 32/64-MiB retained-L4 capacity, trace timing caveats,
+  fault-count/RSS distinction, and sample correlation limitations are stated.
+- The report explicitly does not claim zero performance regressions for all
+  workloads or attainment of the 22-ms Falcon-512 target.
+
+No remaining actionable evidence/reporting finding after the payload and
+Debug-fingerprint wording corrections. This audit checks saved measurements
+and their provenance; it is not a fresh protocol audit or a significance test.

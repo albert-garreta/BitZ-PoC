@@ -1,0 +1,94 @@
+Independent review: PCS task sizing and forest/field experiments
+Reviewer: /root/arithmetic_binding_plan
+Date: 2026-10-13
+
+Scope and conclusion
+Reviewed the working-tree changes to src/hybrid/opening/streamed.rs,
+src/bitz/forest.rs, src/bitz/kernels/x86.rs, and
+vendor/field/src/gf128/kernels/x86_64.rs against their existing implementations.
+No actionable correctness or safety findings were identified.
+The final PCS default promotion was reviewed again after the initial review;
+no additional correctness or safety findings were identified.
+
+PCS task sizing
+- streamed.rs:80-125 partitions tile indexes into consecutive, disjoint ranges
+  [task*T, min((task+1)*T, tile_count)). The final partial task is covered, and
+  T > 0 is checked before division. Each tile still uses the same source and
+  basis construction and lookahead accumulator. Only scheduling and the
+  grouping of exact XOR reductions change.
+- The first message and lookahead are computed before the existing fold
+  challenges. Folded-table construction and transcript boundaries are unchanged.
+- Tests compare every selectable grouping (16, 4, 2) and a partial-tail grouping
+  (3) against dense first messages and subsequent rounds. They include Boolean
+  and non-Boolean challenges, full folded tables, OOD terms, nonzero physical
+  padding, unequal allocations, and pools with one and four workers.
+- Final production policy (streamed.rs:32-100): use four tiles per task only
+  when tile_count is 32 or 64 and the active Rayon pool has 8, 12, or 16 workers.
+  All other tile/worker combinations retain 16. The guard uses tile count, not
+  a Falcon-specific identifier. Without the parallel feature, workers is set
+  to one and the default is therefore 16.
+- Benchmark overrides remain feature-gated. A missing override returns None
+  and reaches the same default policy as production; explicit 16, 4, and 2
+  values take precedence. Invalid overrides are rejected. InitialBasisTiles
+  is constructed exactly once, before reading its tile count for selection;
+  selecting a default adds no duplicate basis construction. The override path
+  does not need the worker-count query.
+- The default-policy test covers both selected tile counts, all three selected
+  worker counts, and excluded counts around the boundaries. The existing dense
+  equivalence tests still exercise every explicit grouping. Tests and benchmark
+  execution for the final promotion are handled centrally, not by this reviewer.
+- For the Falcon-512 batch-1024 geometry, 32 tiles become 2, 8, or 16 tasks.
+  Each task allocates two buffers of at most 64 KiB each. Smaller groups therefore
+  increase allocation traffic and potentially concurrent scratch occupancy;
+  improved scheduling must be established by measurement, not inferred here.
+
+Forest retained L4
+- forest.rs:985-1117 writes retained L4 only through MaybeUninit slots. Task y0
+  owns rows y0+b*sub; these rows partition the full level across tasks. Groups
+  partition each row's columns, including widths below 64. The product kernel
+  initializes the copied prefix before use. Retention does not create an
+  initialized Gf slice over unwritten storage.
+- Capacity and empty-length checks precede spare-capacity access. The retained
+  Vec length is set only after all tasks and subsequent level construction
+  complete successfully. Unwinding before that point leaves length zero; Gf
+  requires no element destructor. The existing arena uses the same join-before-
+  initialization discipline.
+- Retention is selected only when depth includes level 4. The retained level is
+  untouched while upper levels are proved, then replaces the dead upper arena
+  at exactly the original L4 rebuild boundary. Proof order and table meaning are
+  unchanged. Production retains the rebuild strategy.
+- New tests inspect retained entries against independent products of raw leaves
+  and compare terminal claims and proof bytes with rebuilds, including partial
+  column groups, partial depths, nibble/gather modes, and Boolean point values.
+- Retention adds one full L4 allocation at peak (32 MiB for the documented
+  Falcon-512 batch-1024 geometry). This is an explicit space/time experiment.
+
+Wide x86 buckets and field representation
+- x86.rs:148-236 stores each unreduced product as four u64 polynomial words:
+  low 128 bits followed by high 128 bits. Scatter performs both half updates
+  for one lane before moving to the next, preserving XOR contributions when
+  multiple lanes target the same bucket. Byte indexes remain within the checked
+  256-entry bucket slices. All vector memory operations permit unaligned input.
+- The finish-pass permutations select low words [0,1,4,5,8,9,12,13] and high
+  words [2,3,6,7,10,11,14,15], reconstructing four independent products from
+  two 512-bit loads. The final iteration remains within each 256-entry slice.
+- Field x86_64.rs:300-326 assembles exact polynomial halves from the Karatsuba
+  components. Each reduction helper computes t0 + X^64*t1 modulo the field
+  polynomial; nesting it computes lo + X^128*hi as required. XOR accumulation
+  and reduction are linear, so moving reduction after bucket accumulation
+  preserves the scalar field result.
+- Module and function gates provide the required AVX512F, AVX512BW,
+  VPCLMULQDQ, and relevant scalar x86 features. Tests compare exact wide words
+  and accumulated reductions against software, plus bucket results against
+  scalar/reduced references, collisions, boundary indexes, guard entries,
+  unaligned slices, partial groups, and cleared/reused buffers.
+- Production still uses reduced buckets. Wide buckets are test/bench-internals
+  only and increase bucket scratch from 12 KiB to 24 KiB per bucket set.
+
+Limitations
+This was an independent source review only. The reviewer ran no builds, tests,
+provers, benchmarks, sanitizers, or Miri, and did not modify the reviewed source.
+Test coverage above describes inspected test code, not reviewer-observed test
+results. Separate build/test/campaign artifacts must establish execution and
+performance outcomes. This review is not a formal proof of all unsafe code or
+a hardware portability assessment beyond the source feature gates.

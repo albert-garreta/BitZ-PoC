@@ -1,0 +1,38 @@
+{
+  "commands": [
+    [
+      "portable-forest",
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib",
+        "retained_level_four",
+        "--",
+        "--test-threads=1"
+      ]
+    ],
+    [
+      "portable-pcs",
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "hybrid",
+        "--lib",
+        "hybrid::opening::streamed",
+        "--",
+        "--test-threads=1"
+      ]
+    ]
+  ],
+  "overrides": {
+    "RUSTFLAGS": "-C target-cpu=x86-64",
+    "CARGO_PROFILE_TEST_OPT_LEVEL": "2",
+    "CARGO_BUILD_JOBS": "8",
+    "RAYON_NUM_THREADS": "4",
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-ring-portable-target",
+    "TMPDIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-forest-pcs-binding-20261013/build-tmp"
+  }
+}

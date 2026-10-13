@@ -1,0 +1,260 @@
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t12-seed44-r0
+OK pcs4-repeated-n512-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t12-seed44-r0
+OK control-repeated-n512-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t12-seed44-r0
+OK pcs2-repeated-n512-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t1-seed43-r0
+OK pcs4-repeated-n1024-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t1-seed43-r0
+OK control-repeated-n1024-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t1-seed43-r0
+OK pcs2-repeated-n1024-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t1-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t12-seed43-r0
+OK control-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t12-seed43-r0
+OK pcs2-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t12-seed43-r0
+OK pcs4-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t12-seed43-r0
+OK pcs4-repeated-n512-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t12-seed43-r0
+OK pcs2-repeated-n512-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t12-seed43-r0
+OK control-repeated-n512-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t1-seed44-r0
+OK pcs2-repeated-n512-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t1-seed44-r0
+OK pcs4-repeated-n512-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t1-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t1-seed44-r0
+OK control-repeated-n512-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t12-seed42-r0
+OK pcs4-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t12-seed42-r0
+OK control-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t12-seed42-r0
+OK pcs2-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t1-seed43-r0
+OK pcs2-repeated-n512-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t1-seed43-r0
+OK control-repeated-n512-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t1-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t1-seed43-r0
+OK pcs4-repeated-n512-b1024-s128-t1-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t12-seed44-r0
+OK pcs2-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t12-seed44-r0
+OK control-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t12-seed44-r0
+OK pcs4-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t16-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t16-seed42-r0
+OK pcs4-repeated-n512-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t16-seed42-r0
+OK control-repeated-n512-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t16-seed42-r0
+OK pcs2-repeated-n512-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t12-seed42-r0
+OK pcs4-repeated-n512-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t12-seed42-r0
+OK control-repeated-n512-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t12-seed42-r0
+OK pcs2-repeated-n512-b1024-s128-t12-seed42-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t1-seed42-r0
+OK control-repeated-n1024-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t1-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t1-seed42-r0
+OK pcs2-repeated-n1024-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t1-seed42-r0
+OK pcs4-repeated-n1024-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t16-seed44-r0
+OK pcs4-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t16-seed44-r0
+OK control-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t16-seed44-r0
+OK pcs2-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t16-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t16-seed42-r0
+OK pcs2-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t16-seed42-r0
+OK control-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t16-seed42-r0
+OK pcs4-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t16-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t1-seed44-r0
+OK pcs2-repeated-n1024-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t1-seed44-r0
+OK pcs4-repeated-n1024-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t1-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t1-seed44-r0
+OK control-repeated-n1024-b1024-s128-t1-seed44-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t8-seed42-r0
+OK control-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t8-seed42-r0
+OK pcs4-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t8-seed42-r0
+OK pcs2-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t8-seed43-r0
+OK pcs2-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t8-seed43-r0
+OK control-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t8-seed43-r0
+OK pcs4-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t8-seed44-r0
+OK pcs2-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t8-seed44-r0
+OK pcs4-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t8-seed44-r0
+OK control-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t8-seed42-r0
+OK pcs4-repeated-n512-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t8-seed42-r0
+OK pcs2-repeated-n512-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t8-seed42-r0
+OK control-repeated-n512-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t8-seed43-r0
+OK pcs4-repeated-n512-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t8-seed43-r0
+OK control-repeated-n512-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t8-seed43-r0
+OK pcs2-repeated-n512-b1024-s128-t8-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n1024-b1024-s128-t16-seed43-r0
+OK pcs2-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n1024-b1024-s128-t16-seed43-r0
+OK pcs4-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/control-repeated-n1024-b1024-s128-t16-seed43-r0
+OK control-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/baseline-repeated-n1024-b1024-s128-t16-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t16-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t16-seed43-r0
+OK pcs4-repeated-n512-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t16-seed43-r0
+OK pcs2-repeated-n512-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t16-seed43-r0
+OK control-repeated-n512-b1024-s128-t16-seed43-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t8-seed44-r0
+OK pcs2-repeated-n512-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t8-seed44-r0
+OK control-repeated-n512-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t8-seed44-r0
+OK pcs4-repeated-n512-b1024-s128-t8-seed44-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t1-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t1-seed42-r0
+OK pcs2-repeated-n512-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t1-seed42-r0
+OK control-repeated-n512-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t1-seed42-r0
+OK pcs4-repeated-n512-b1024-s128-t1-seed42-r0
+RUN qualify-pcs/baseline-repeated-n512-b1024-s128-t16-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/pcs4-repeated-n512-b1024-s128-t16-seed44-r0
+OK pcs4-repeated-n512-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/pcs2-repeated-n512-b1024-s128-t16-seed44-r0
+OK pcs2-repeated-n512-b1024-s128-t16-seed44-r0
+RUN qualify-pcs/control-repeated-n512-b1024-s128-t16-seed44-r0
+OK control-repeated-n512-b1024-s128-t16-seed44-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 6, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 432, "bitz/falcon512-algebraic/non-zk/v9": 1111}, "schema": "bitz/falcon-prover-optimization/v1", "verified_proofs": 1543}
+qualify-pcs  baseline           N=512 t=1 repeated n=21 total=138.312 verify=30.396 traced=False
+qualify-pcs  baseline           N=512 t=8 repeated n=21 total=28.913 verify=9.233 traced=False
+qualify-pcs  baseline           N=512 t=12 repeated n=21 total=43.071 verify=22.529 traced=False
+qualify-pcs  baseline           N=512 t=16 repeated n=21 total=29.498 verify=9.564 traced=False
+qualify-pcs  baseline           N=1024 t=1 repeated n=21 total=270.120 verify=59.713 traced=False
+qualify-pcs  baseline           N=1024 t=8 repeated n=21 total=51.562 verify=16.402 traced=False
+qualify-pcs  baseline           N=1024 t=12 repeated n=21 total=78.375 verify=42.950 traced=False
+qualify-pcs  baseline           N=1024 t=16 repeated n=21 total=49.370 verify=14.918 traced=False
+qualify-pcs  control            N=512 t=1 repeated n=21 total=139.098 verify=30.371 traced=False
+qualify-pcs  control            N=512 t=8 repeated n=21 total=28.948 verify=9.164 traced=False
+qualify-pcs  control            N=512 t=12 repeated n=21 total=43.186 verify=22.748 traced=False
+qualify-pcs  control            N=512 t=16 repeated n=21 total=28.826 verify=9.436 traced=False
+qualify-pcs  control            N=1024 t=1 repeated n=21 total=270.324 verify=59.852 traced=False
+qualify-pcs  control            N=1024 t=8 repeated n=21 total=51.633 verify=16.500 traced=False
+qualify-pcs  control            N=1024 t=12 repeated n=21 total=78.934 verify=43.042 traced=False
+qualify-pcs  control            N=1024 t=16 repeated n=21 total=49.620 verify=15.086 traced=False
+qualify-pcs  pcs2               N=512 t=1 repeated n=21 total=139.261 verify=30.354 traced=False
+qualify-pcs  pcs2               N=512 t=8 repeated n=21 total=28.204 verify=9.212 traced=False
+qualify-pcs  pcs2               N=512 t=12 repeated n=21 total=42.659 verify=22.494 traced=False
+qualify-pcs  pcs2               N=512 t=16 repeated n=21 total=28.137 verify=9.476 traced=False
+qualify-pcs  pcs2               N=1024 t=1 repeated n=21 total=270.462 verify=59.729 traced=False
+qualify-pcs  pcs2               N=1024 t=8 repeated n=21 total=51.134 verify=16.368 traced=False
+qualify-pcs  pcs2               N=1024 t=12 repeated n=21 total=78.161 verify=42.950 traced=False
+qualify-pcs  pcs2               N=1024 t=16 repeated n=21 total=48.873 verify=15.155 traced=False
+qualify-pcs  pcs4               N=512 t=1 repeated n=21 total=139.397 verify=30.387 traced=False
+qualify-pcs  pcs4               N=512 t=8 repeated n=21 total=28.109 verify=9.147 traced=False
+qualify-pcs  pcs4               N=512 t=12 repeated n=21 total=42.764 verify=22.756 traced=False
+qualify-pcs  pcs4               N=512 t=16 repeated n=21 total=28.208 verify=9.483 traced=False
+qualify-pcs  pcs4               N=1024 t=1 repeated n=21 total=270.307 verify=59.760 traced=False
+qualify-pcs  pcs4               N=1024 t=8 repeated n=21 total=51.309 verify=16.541 traced=False
+qualify-pcs  pcs4               N=1024 t=12 repeated n=21 total=78.265 verify=42.726 traced=False
+qualify-pcs  pcs4               N=1024 t=16 repeated n=21 total=49.125 verify=15.124 traced=False
+screen       baseline           N=512 t=8 cold     n=21 total=31.120 verify=8.204 traced=False
+screen       baseline           N=512 t=8 repeated n=21 total=28.988 verify=9.264 traced=False
+screen       baseline           N=512 t=12 cold     n=21 total=46.475 verify=21.803 traced=False
+screen       baseline           N=512 t=12 repeated n=21 total=43.119 verify=22.631 traced=False
+screen       binding-fused      N=512 t=8 cold     n=21 total=31.021 verify=8.124 traced=False
+screen       binding-fused      N=512 t=8 repeated n=21 total=28.849 verify=9.154 traced=False
+screen       binding-fused      N=512 t=12 cold     n=21 total=46.604 verify=21.969 traced=False
+screen       binding-fused      N=512 t=12 repeated n=21 total=43.074 verify=22.344 traced=False
+screen       control            N=512 t=8 cold     n=21 total=31.134 verify=8.119 traced=False
+screen       control            N=512 t=8 repeated n=21 total=28.738 verify=9.104 traced=False
+screen       control            N=512 t=12 cold     n=21 total=46.423 verify=21.943 traced=False
+screen       control            N=512 t=12 repeated n=21 total=43.121 verify=22.407 traced=False
+screen       forest-retain      N=512 t=8 cold     n=21 total=33.388 verify=8.165 traced=False
+screen       forest-retain      N=512 t=8 repeated n=21 total=31.183 verify=9.442 traced=False
+screen       forest-retain      N=512 t=12 cold     n=21 total=49.031 verify=21.944 traced=False
+screen       forest-retain      N=512 t=12 repeated n=21 total=46.137 verify=22.964 traced=False
+screen       forest-wide        N=512 t=8 cold     n=21 total=31.356 verify=8.137 traced=False
+screen       forest-wide        N=512 t=8 repeated n=21 total=29.050 verify=9.213 traced=False
+screen       forest-wide        N=512 t=12 cold     n=21 total=46.546 verify=21.994 traced=False
+screen       forest-wide        N=512 t=12 repeated n=21 total=43.268 verify=22.780 traced=False
+screen       pcs2               N=512 t=8 cold     n=21 total=30.322 verify=8.144 traced=False
+screen       pcs2               N=512 t=8 repeated n=21 total=28.107 verify=9.112 traced=False
+screen       pcs2               N=512 t=12 cold     n=21 total=45.685 verify=21.927 traced=False
+screen       pcs2               N=512 t=12 repeated n=21 total=42.740 verify=22.513 traced=False
+screen       pcs4               N=512 t=8 cold     n=21 total=30.459 verify=8.145 traced=False
+screen       pcs4               N=512 t=8 repeated n=21 total=28.317 verify=9.267 traced=False
+screen       pcs4               N=512 t=12 cold     n=21 total=45.813 verify=21.917 traced=False
+screen       pcs4               N=512 t=12 repeated n=21 total=42.302 verify=22.740 traced=False
+smoke        baseline           N=512 t=8 repeated n=1 total=31.521 verify=8.195 traced=False
+smoke        binding-fused      N=512 t=8 repeated n=1 total=31.127 verify=8.136 traced=False
+smoke        control            N=512 t=8 repeated n=1 total=31.438 verify=8.183 traced=False
+smoke        forest-retain      N=512 t=8 repeated n=1 total=33.286 verify=8.204 traced=False
+smoke        forest-wide        N=512 t=8 repeated n=1 total=31.674 verify=8.133 traced=False
+smoke        pcs2               N=512 t=8 repeated n=1 total=31.239 verify=8.231 traced=False
+smoke        pcs4               N=512 t=8 repeated n=1 total=30.885 verify=8.109 traced=False

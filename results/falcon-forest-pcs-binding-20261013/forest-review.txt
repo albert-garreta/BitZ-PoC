@@ -1,0 +1,78 @@
+Forest experiment review, 2026-10-13
+
+Scope: src/bitz/forest.rs, src/bitz/kernels/x86.rs, and the two exact-product
+helpers in vendor/field/src/gf128/kernels/x86_64.rs, relative to a4585dffa.
+Review and edits only; this agent did not run builds, tests or benchmarks.
+Root coordinates all runtime validation. Rustfmt and git diff --check passed.
+
+Baseline priority was recorded before implementation in
+baseline-profiles/forest-analysis.json and forest-analysis.txt. Current
+production N512/batch1024/security128 has forest geometry t14/s11/depth13:
+the bridge's reported row exponent13 excludes its interleaved limb bit.
+Nine measured proofs per worker count, excluding one warmup per seed:
+  8 workers: forest10.760ms, summed JIT rounds1.094ms, L4 rebuild0.272ms.
+  12 workers: forest14.264ms, summed JIT rounds0.872ms, L4 rebuild0.529ms.
+JIT folding/dense tails get slower at12 workers despite faster JIT rounds.
+These two experiments cannot alone supply the7.526ms reduction needed to
+reach22ms from the previous29.526ms untraced8-worker production median.
+Traces are rounded diagnostics; fault MB values are deliberately ignored
+because the pre-existing formatter assumes16KiB pages on a4KiB host.
+
+Independent bench-internals selectors, both default off:
+  BITZ_FOREST_JIT_BUCKETS=reduced|wide (native x86 AVX512/VPCLMUL backend).
+  BITZ_FOREST_L4=rebuild|retain.
+Unknown/non-Unicode values panic. Selectors are cached once per process;
+the runner must use separate processes for different configurations.
+
+Wide buckets:
+- Keep exact256-bit carryless products in3*256*32=24576 bytes, compared with
+ 12288 bytes for reduced buckets. This avoids retaining the three-component
+ Karatsuba representation, which would require36864 bytes.
+- The private BucketStorage enum is wrapped by SumBuckets with a private
+ field, preserving the constructor's768-entry invariant before unsafe code.
+- Low/high polynomial halves are assembled exactly from the existing
+ Karatsuba components. XOR accumulation cannot overflow or require a
+ count-dependent reduction bound. Final reduction precedes multiplication
+ by the E tables; the final dot-product reductions remain in both paths.
+- At2048 columns, intermediate product/bucket reductions change4096 to768
+ per row. This is not the total reduction count or a predicted speedup:
+ it excludes finish-dot reductions and other field operations. Scatter
+ read-modify-write width doubles and reduction traffic may hurt caches.
+- Four potentially colliding lanes finish their low AND high updates in
+ lane order. No gather/scatter of stale shared entries is used.
+- The finish loop loads exactly four32-byte products into two512-bit
+ registers, rearranges their low/high halves, reduces four lanes, and
+ accumulates the original contraction. All positions are in bounds.
+- Tests added for exact polynomial products versus portable arithmetic,
+ XOR accumulation/reduction, scalar and reduced-bucket agreement under
+ collisions/partial live groups/reuse, and canaries around wide scatter.
+
+Retained level4:
+- Existing upper construction computes16-leaf products into local tiles.
+ The experiment writes each initialized tile to a second buffer, preserving
+ the baseline computation of every upper level and its transcript order.
+- At t14/s11 this stores2097152 field elements:32MiB additional peak capacity.
+ It is not a persistent Prepared cache. Retained storage replaces the upper
+ arena only after all upper levels have been proved, then serves ordinary
+ level4 and subsequent JIT folding.
+- Parallel ownership is identical to the existing upper builder: task y0
+ owns rows y0+b*sub, and column groups partition each row. Retained and upper
+ buffers are separate allocations. The pointer wrapper sees no reallocation.
+- Retained length stays zero until all tasks join and every slot is written.
+ Panic paths therefore never expose an uninitialized Gf slice. Copying
+ MaybeUninit tiles occurs only after the product kernel initialized them.
+- Retention is skipped for tiny materialized fallback and depths that do
+ not visit level4. Tests cover those cases, partial columns, nibble/gather
+ modes, Boolean challenges, exact complete transcript equality, and an
+ independent direct16-leaf product oracle for every retained coordinate.
+- Previous comments document retention's larger-geometry memory tradeoff;
+ this is a new measurement for the current Falcon workload, not a claim
+ that level4 retention is a previously unexplored idea.
+
+Read-only cross-review of the binding construction/initial-polynomial fusion
+and PCS tile-size experiment found no actionable correctness issue. Fused
+construction preserves the1024-word-pair accumulator bound, original field
+validation, sparse/inactive-source rejection, and initial-target checking.
+PCS grouping partitions complete tiles with a bounded final task; lookahead
+and following-round tests compare against dense tables. Runtime validation
+remains pending at the time of this review.

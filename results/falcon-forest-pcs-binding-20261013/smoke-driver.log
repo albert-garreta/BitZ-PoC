@@ -1,0 +1,22 @@
+RUN smoke/pcs2-repeated-n512-b1024-s128-t8-seed42-r0
+OK pcs2-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/forest-wide-repeated-n512-b1024-s128-t8-seed42-r0
+OK forest-wide-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/control-repeated-n512-b1024-s128-t8-seed42-r0
+OK control-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/binding-fused-repeated-n512-b1024-s128-t8-seed42-r0
+OK binding-fused-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/baseline-repeated-n512-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/forest-retain-repeated-n512-b1024-s128-t8-seed42-r0
+OK forest-retain-repeated-n512-b1024-s128-t8-seed42-r0
+RUN smoke/pcs4-repeated-n512-b1024-s128-t8-seed42-r0
+OK pcs4-repeated-n512-b1024-s128-t8-seed42-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 1, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon512-algebraic/non-zk/v9": 7}, "schema": "bitz/falcon-prover-optimization/v1", "verified_proofs": 7}
+smoke        baseline           N=512 t=8 repeated n=1 total=31.521 verify=8.195 traced=False
+smoke        binding-fused      N=512 t=8 repeated n=1 total=31.127 verify=8.136 traced=False
+smoke        control            N=512 t=8 repeated n=1 total=31.438 verify=8.183 traced=False
+smoke        forest-retain      N=512 t=8 repeated n=1 total=33.286 verify=8.204 traced=False
+smoke        forest-wide        N=512 t=8 repeated n=1 total=31.674 verify=8.133 traced=False
+smoke        pcs2               N=512 t=8 repeated n=1 total=31.239 verify=8.231 traced=False
+smoke        pcs4               N=512 t=8 repeated n=1 total=30.885 verify=8.109 traced=False

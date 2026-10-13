@@ -1066,3 +1066,395 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
         }
     }
 }
+
+fn construction_inputs(layout: &Layout, f: &Cfg, first: F) -> (PreparedClaim, NormClaims) {
+    let [weights_s1, weights_s2] = form_fixture(layout, f).coefficients;
+    let instance_vars = layout.capacity().ilog2() as usize;
+    (
+        PreparedClaim {
+            weights_s1,
+            weights_s2,
+            target: value(-71, f),
+        },
+        NormClaims {
+            instance_point: (0..instance_vars)
+                .map(|i| value(7 * i as i64 - 19, f))
+                .collect(),
+            point: (0..rounds(layout))
+                .map(|i| {
+                    if i == 0 {
+                        first
+                    } else {
+                        value(13 * i as i64 - 37, f)
+                    }
+                })
+                .collect(),
+            terminal: value(31, f),
+            slack: value(19, f),
+        },
+    )
+}
+
+#[test]
+fn fused_construction_initial_matches_independent_dense_reference() {
+    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        for batch in [1, 3, 17] {
+            let layout = Layout::new(batch).unwrap();
+            let source = source_fixture(&layout);
+            for (eta, first) in [
+                (f.zero(), f.zero()),
+                (f.one(), f.one()),
+                (value(-29, &f), f.zero()),
+                (value(-29, &f), value(-37, &f)),
+            ] {
+                let (ring, norm) = construction_inputs(&layout, &f, first);
+                let full_weights = eq_table(&norm.point, &f).unwrap();
+                for parallel in [false, true] {
+                    let (form, target, initial) = BindingForm::new_owned_with_strategy_and_initial(
+                        &layout,
+                        ring.clone(),
+                        &norm,
+                        eta,
+                        &f,
+                        BindingStrategy::Optimized,
+                        parallel,
+                        false,
+                        false,
+                        Some(&source),
+                    )
+                    .unwrap();
+                    let initial = initial.unwrap();
+                    let (baseline, baseline_target) = BindingForm::new_owned_with_strategy(
+                        &layout,
+                        ring.clone(),
+                        &norm,
+                        eta,
+                        &f,
+                        BindingStrategy::Optimized,
+                        parallel,
+                        false,
+                        false,
+                    )
+                    .unwrap();
+                    assert_eq!(target, baseline_target);
+                    assert_eq!(form.coefficients, baseline.coefficients);
+                    assert_eq!(form.slacks, baseline.slacks);
+                    assert_eq!(form.padding, baseline.padding);
+                    for side in 0..2 {
+                        let ring_values = [&ring.weights_s1, &ring.weights_s2][side];
+                        for (i, &original) in ring_values.iter().enumerate() {
+                            let index = (i / N) * 2 * N + side * N + i % N;
+                            assert_eq!(
+                                form.coefficients[side][i],
+                                f.add(&original, &f.mul(&eta, &full_weights[index]))
+                            );
+                        }
+                    }
+                    let reference = Reference::new(&form, &source, &f);
+                    let mut expected = [f.zero(); 3];
+                    for (w, x) in reference.weights[0]
+                        .chunks_exact(2)
+                        .zip(reference.tables[0].chunks_exact(2))
+                    {
+                        let even = f.mul(&w[0], &x[0]);
+                        expected[0] = f.add(&expected[0], &even);
+                        expected[1] = f.add(
+                            &expected[1],
+                            &f.mul(&f.sub(&w[1], &w[0]), &f.sub(&x[1], &x[0])),
+                        );
+                        expected[2] = f.add(&expected[2], &f.add(&even, &f.mul(&w[1], &x[1])));
+                    }
+                    assert_eq!(
+                        initial,
+                        InitialClaim {
+                            round: [expected[0], expected[1]],
+                            sum: expected[2]
+                        }
+                    );
+                    // The independently selectable duplicate-product optimization
+                    // must agree when composed with construction fusion.
+                    let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
+                    let reused = construct_and_initial(
+                        &mut coefficients,
+                        &source,
+                        &eq_table(&norm.point[..COEFFICIENT_LOG], &f).unwrap(),
+                        &eq_table(&norm.point[COEFFICIENT_LOG + 1..], &f).unwrap(),
+                        eta,
+                        [
+                            f.sub(&f.one(), &norm.point[COEFFICIENT_LOG]),
+                            norm.point[COEFFICIENT_LOG],
+                        ],
+                        &f,
+                        parallel,
+                        true,
+                    )
+                    .unwrap();
+                    assert_eq!(reused, initial);
+                    assert_eq!(coefficients, form.coefficients);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fused_construction_preserves_proof_and_grinding_boundaries() {
+    let f = test_field();
+    for (batch, grinding) in [(1, 0), (3, 2), (17, 0)] {
+        let layout = Layout::new(batch).unwrap();
+        let source = source_fixture(&layout);
+        let schedule = test_schedule(grinding);
+        let eta = value(-29, &f);
+        let (ring, norm) = construction_inputs(&layout, &f, value(-37, &f));
+        let (baseline, _) = BindingForm::new_owned_with_strategy(
+            &layout,
+            ring.clone(),
+            &norm,
+            eta,
+            &f,
+            BindingStrategy::Optimized,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+        let target = Reference::new(&baseline, &source, &f).target(&f);
+        let mut baseline_transcript = Blake3Transcript::new();
+        baseline_transcript.absorb_slice(b"construction-fusion-prefix");
+        let expected = prove_with_options(
+            &mut baseline_transcript,
+            &layout,
+            &source,
+            baseline,
+            WordFactors::default(),
+            target,
+            dummy_norm(&f),
+            None,
+            &schedule,
+            &f,
+            &mut WordWorkspace::default(),
+            WordOptions::default(),
+        )
+        .unwrap();
+        for (strategy, parallel) in [
+            (BindingStrategy::Optimized, false),
+            (BindingStrategy::Optimized, true),
+            (BindingStrategy::Legacy, false),
+        ] {
+            let (form, _, initial) = BindingForm::new_owned_with_strategy_and_initial(
+                &layout,
+                ring.clone(),
+                &norm,
+                eta,
+                &f,
+                strategy,
+                parallel,
+                false,
+                false,
+                Some(&source),
+            )
+            .unwrap();
+            assert_eq!(
+                initial.is_some(),
+                matches!(strategy, BindingStrategy::Optimized)
+            );
+            let mut transcript = Blake3Transcript::new();
+            transcript.absorb_slice(b"construction-fusion-prefix");
+            let actual = prove_with_options_and_initial(
+                &mut transcript,
+                &layout,
+                &source,
+                form,
+                WordFactors::default(),
+                target,
+                dummy_norm(&f),
+                None,
+                &schedule,
+                &f,
+                &mut WordWorkspace::default(),
+                WordOptions {
+                    direct_init: true,
+                    ..WordOptions::default()
+                },
+                initial,
+            )
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                transcript.state_digest(),
+                baseline_transcript.state_digest()
+            );
+            let (form, _) = BindingForm::new_owned_with_strategy(
+                &layout,
+                ring.clone(),
+                &norm,
+                eta,
+                &f,
+                BindingStrategy::Optimized,
+                false,
+                false,
+                false,
+            )
+            .unwrap();
+            let mut verifier = Blake3Transcript::new();
+            verifier.absorb_slice(b"construction-fusion-prefix");
+            assert_eq!(
+                verify(
+                    &mut verifier,
+                    &layout,
+                    &form,
+                    target,
+                    &actual.0,
+                    &schedule,
+                    &f
+                )
+                .unwrap(),
+                actual.2
+            );
+            assert_eq!(verifier.state_digest(), transcript.state_digest());
+            let (form, _, initial) = BindingForm::new_owned_with_strategy_and_initial(
+                &layout,
+                ring.clone(),
+                &norm,
+                eta,
+                &f,
+                strategy,
+                parallel,
+                false,
+                false,
+                Some(&source),
+            )
+            .unwrap();
+            assert!(
+                prove_with_options_and_initial(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &source,
+                    form,
+                    WordFactors::default(),
+                    f.add(&target, &f.one()),
+                    dummy_norm(&f),
+                    None,
+                    &schedule,
+                    &f,
+                    &mut WordWorkspace::default(),
+                    WordOptions::default(),
+                    initial,
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn fused_construction_preserves_source_and_projection_rejections() {
+    let f = test_field();
+    let layout = Layout::new(3).unwrap();
+    let source = source_fixture(&layout);
+    let (ring, norm) = construction_inputs(&layout, &f, f.zero());
+    let eta = f.one();
+    for flip in [16 * N + 15, 16 * layout.batch() * 2 * N] {
+        let mut malformed = source.clone();
+        malformed.flip(flip);
+        let mut errors = Vec::new();
+        let mut digests = Vec::new();
+        for fused in [false, true] {
+            let (form, _, initial) = BindingForm::new_owned_with_strategy_and_initial(
+                &layout,
+                ring.clone(),
+                &norm,
+                eta,
+                &f,
+                BindingStrategy::Optimized,
+                true,
+                false,
+                false,
+                fused.then_some(&malformed),
+            )
+            .unwrap();
+            let target = Reference::new(&form, &malformed, &f).target(&f);
+            let mut transcript = Blake3Transcript::new();
+            let result = prove_with_options_and_initial(
+                &mut transcript,
+                &layout,
+                &malformed,
+                form,
+                WordFactors::default(),
+                target,
+                dummy_norm(&f),
+                None,
+                &test_schedule(2),
+                &f,
+                &mut WordWorkspace::default(),
+                WordOptions::default(),
+                initial,
+            );
+            errors.push(result.unwrap_err().to_string());
+            digests.push(transcript.state_digest());
+        }
+        assert_eq!(errors[0], errors[1]);
+        assert_eq!(digests[0], digests[1]);
+    }
+    for invalid_side in 0..2 {
+        let mut malformed = ring.clone();
+        [&mut malformed.weights_s1, &mut malformed.weights_s2][invalid_side][N + 1] =
+            crate::piop::spartan::noncanonical_test_value(&f);
+        let mut errors = Vec::new();
+        for fused in [false, true] {
+            errors.push(
+                BindingForm::new_owned_with_strategy_and_initial(
+                    &layout,
+                    malformed.clone(),
+                    &norm,
+                    eta,
+                    &f,
+                    BindingStrategy::Optimized,
+                    true,
+                    false,
+                    false,
+                    fused.then_some(&source),
+                )
+                .err()
+                .unwrap()
+                .to_string(),
+            );
+        }
+        assert_eq!(errors[0], errors[1]);
+    }
+    // Legacy construction does not claim a fused initial polynomial.
+    let (legacy, _, initial) = BindingForm::new_owned_with_strategy_and_initial(
+        &layout,
+        ring,
+        &norm,
+        eta,
+        &f,
+        BindingStrategy::Legacy,
+        false,
+        false,
+        false,
+        Some(&source),
+    )
+    .unwrap();
+    assert!(initial.is_none());
+    let target = Reference::new(&legacy, &source, &f).target(&f);
+    assert!(
+        prove_with_options_and_initial(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &source,
+            legacy,
+            WordFactors::default(),
+            f.add(&target, &f.one()),
+            dummy_norm(&f),
+            None,
+            &test_schedule(0),
+            &f,
+            &mut WordWorkspace::default(),
+            WordOptions::default(),
+            initial,
+        )
+        .is_err()
+    );
+}

@@ -1,0 +1,59 @@
+Independent experiment-runner review
+Date: 2026-10-13
+Scope: scripts/falcon_prover_optimization.py and its synthetic tests.
+Method: source review and synthetic Python tests only. No compiler, prover,
+benchmark executable, or production source mutation was performed by reviewer.
+
+Final result: no remaining actionable findings within the reviewed scope.
+
+Two findings were reported to the runner author and fixed before qualification:
+
+1. Inherited dependency selectors could contaminate frozen experiment settings.
+   The original child-environment filter stripped BITZ_/F2_/OBLONG_ but left
+   FLOCK_COMMIT_TIMING, NTT_DEEP_NOFUSE, LIG_LOOKAHEAD_DISABLE, and other runtime
+   flags. These affect actual commit timing/kernel/PCS behavior; examples are
+   src/hybrid/opening.rs:1517,
+   vendor/flock-mod/crates/flock-core/src/ntt/additive_ntt_f128.rs:446,
+   vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:3795.
+   Resuming with a differently configured shell could therefore mix timings
+   under the same manifest. The final subprocess_env helper (runner:39-55)
+   removes all current dependency selector/trace prefixes before applying
+   recorded overrides. A polluted-parent test exercises actual environment
+   construction for both baseline and candidate (tests:115).
+
+2. Summarize-only did not enforce the recorded runner/helper provenance.
+   A synthetic changed-current-runner hash was accepted by validate_all before
+   the fix, even though changed profile parsing could alter the summary under
+   frozen provenance. The final validate_all checks parser_provenance against
+   every manifest before reinterpreting evidence (runner:200-206). Tests now
+   reject both a changed runner hash and a changed normalization-helper hash
+   (tests:128). Old evidence requires its exact recorded parser revision.
+
+Other evidence checks reviewed:
+- Immutable phase settings bind configuration choices, jobs, executables,
+  parser/helper hashes, case shape, affinity, seed, sample counts, and trace mode.
+- Completed results bind raw stdout/stderr, commands, process status, and phase
+  hash; raw trial normalization must reproduce saved trials exactly.
+- Missing/extra results, missing baseline cases, wrong selected protocol,
+  insufficient reported security, metadata/affinity mismatch, and changed
+  proof/source/payload identities are rejected.
+- Proof/source identity is compared across workers and phases for the same
+  degree/batch/security/seed. Timing groups keep phase/mode/trace separate.
+- Profile samples exclude warmup roots and verifier roots. Summed worker-ns
+  fields are converted to ms and explicitly distinguished from elapsed wall
+  spans. Plaintext diagnostics are retained in raw stderr and skipped by parser.
+
+Validation executed after fixes:
+  python3 -m unittest discover -s scripts \
+    -p 'test_falcon_prover_optimization.py' -v
+  Result: 9 tests passed (0.011 seconds); all inputs were synthetic temporary
+  files and mocked metadata. No test launches a compiler/prover/executable.
+
+Reviewed runner SHA256:
+  80c240e7e3285141eb72f0edb8fcb19a86f524e3afedcacc18fc469583312bcf
+Reviewed test SHA256:
+  1330b0d78cae1530d2c96877beef851aae5e6f54a98aed30dba162734e2d178b
+
+Limit: these checks establish artifact consistency and reject stale or mixed
+evidence; they do not independently prove protocol security, prove absence of
+machine-load/frequency noise, or establish a statistically significant speedup.

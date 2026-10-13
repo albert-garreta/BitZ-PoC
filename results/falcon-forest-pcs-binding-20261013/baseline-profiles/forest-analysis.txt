@@ -1,0 +1,35 @@
+Current production forest diagnostics (a4585dffa), N512/batch1024/security128. Nine measured proofs per worker count, seeds42/43/44; one excluded warmup each.
+Times are diagnostic milliseconds, not untraced end-to-end qualification.
+
+Workers 8
+  jit_rounds_ms: 1.0941
+  jit_folds_ms: 1.1094
+  jit_dense_tails_ms: 1.7146
+  bit_rounds_ms: 1.3722
+  value_tables_ms: 0.5157
+  upper_levels_ms: 1.8667
+  l4_rebuild_ms: 0.2720
+  l4_remaining_ms: 0.5669
+  upper_build_ms: 1.1000
+  falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding: 5.0316
+  falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest: 10.7602
+  falcon_algebraic:prove/falcon_algebraic:pcs: 3.4115
+  falcon_algebraic:prove: 27.2246
+
+Workers 12
+  jit_rounds_ms: 0.8721
+  jit_folds_ms: 2.3864
+  jit_dense_tails_ms: 2.5722
+  bit_rounds_ms: 1.0004
+  value_tables_ms: 0.7140
+  upper_levels_ms: 2.4556
+  l4_rebuild_ms: 0.5289
+  l4_remaining_ms: 1.0652
+  upper_build_ms: 1.3000
+  falcon_algebraic:prove/falcon_algebraic:arithmetic/falcon_algebraic:binding: 15.1677
+  falcon_algebraic:prove/falcon_algebraic:bitz/falcon_bridge:wfbitz_forest: 14.2640
+  falcon_algebraic:prove/falcon_algebraic:pcs: 3.6942
+  falcon_algebraic:prove: 41.1855
+
+Decision: prototype wide x86 JIT buckets first; JIT-round totals bound its whole-proof benefit. Retained L4 is a bounded second experiment: its rebuild is small and extra peak capacity is32MiB. Neither can by itself supply the7.526ms target gap. Bit-round and dense-tail phases need further targeting if these experiments do not recover enough time.
+No additional builds or proofs were run for this analysis.

@@ -29,6 +29,34 @@ fn merge(mut a: [Gf128Product; 8], b: [Gf128Product; 8]) -> [Gf128Product; 8] {
     a
 }
 
+fn initial_tiles_per_task_override() -> Option<usize> {
+    #[cfg(feature = "bench-internals")]
+    return match std::env::var("BITZ_PCS_INITIAL_TILES_PER_TASK") {
+        Err(std::env::VarError::NotPresent) => None,
+        Ok(value) => match value.as_str() {
+            "16" => Some(16),
+            "4" => Some(4),
+            "2" => Some(2),
+            _ => panic!("BITZ_PCS_INITIAL_TILES_PER_TASK must be 16, 4, or 2"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_PCS_INITIAL_TILES_PER_TASK must be valid Unicode")
+        }
+    };
+    #[cfg(not(feature = "bench-internals"))]
+    None
+}
+
+fn default_initial_tiles_per_task(tile_count: usize, workers: usize) -> usize {
+    // Qualified for Falcon-512/1024 batch 1024 at these worker counts; retain
+    // the previous grouping for serial execution and unqualified workloads.
+    if matches!(tile_count, 32 | 64) && matches!(workers, 8 | 12 | 16) {
+        4
+    } else {
+        16
+    }
+}
+
 fn initial_messages<const N: usize>(
     geometry: &Geometry<N>,
     sources: [&[F]; N],
@@ -38,24 +66,57 @@ fn initial_messages<const N: usize>(
     ood: Option<(&[Gf], Gf)>,
 ) -> (ligerito::SumcheckMessage, ligerito::FoldLookahead) {
     let _scope = tracing::info_span!("op:initial_messages").entered();
+    initial_messages_with_tiles_per_task(
+        geometry,
+        sources,
+        point,
+        eq_r2,
+        padding,
+        ood,
+        initial_tiles_per_task_override(),
+    )
+}
+
+fn initial_messages_with_tiles_per_task<const N: usize>(
+    geometry: &Geometry<N>,
+    sources: [&[F]; N],
+    point: &[Gf],
+    eq_r2: &[Gf],
+    padding: (&[Gf], Gf),
+    ood: Option<(&[Gf], Gf)>,
+    tiles_per_task: Option<usize>,
+) -> (ligerito::SumcheckMessage, ligerito::FoldLookahead) {
     let tiles = InitialBasisTiles::new(geometry, point, eq_r2, padding, ood);
+    let tiles_per_task = tiles_per_task.unwrap_or_else(|| {
+        #[cfg(feature = "parallel")]
+        let workers = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let workers = 1;
+        default_initial_tiles_per_task(tiles.tile_count(), workers)
+    });
+    assert!(
+        tiles_per_task > 0,
+        "initial task must contain at least one tile"
+    );
     let block = tiles.block_len();
-    // Several tiles per task amortize allocation; each worker needs 128 KiB
-    // of reusable scratch rather than two full-domain vectors.
-    const TILES: usize = 16;
-    let partials: Vec<_> = crate::utils::cfg_into_iter!(0..tiles.tile_count().div_ceil(TILES))
-        .map(|task| {
-            let mut words = vec![F::ZERO; block];
-            let mut basis = vec![F::ZERO; block];
-            let mut acc = [Gf128Product::zero(); 8];
-            for hi in task * TILES..((task + 1) * TILES).min(tiles.tile_count()) {
-                geometry.write_words(sources, hi * block / geometry.lanes(), &mut words);
-                tiles.write(hi, &mut basis);
-                acc = merge(acc, ligerito::lookahead_accumulate(&words, &basis));
-            }
-            acc
-        })
-        .collect();
+    // Grouping changes scheduling only: each task keeps at most 128 KiB of
+    // scratch, visits complete tiles, and returns the same XOR accumulators.
+    let partials: Vec<_> =
+        crate::utils::cfg_into_iter!(0..tiles.tile_count().div_ceil(tiles_per_task))
+            .map(|task| {
+                let mut words = vec![F::ZERO; block];
+                let mut basis = vec![F::ZERO; block];
+                let mut acc = [Gf128Product::zero(); 8];
+                let first = task * tiles_per_task;
+                let end = first + tiles_per_task.min(tiles.tile_count() - first);
+                for hi in first..end {
+                    geometry.write_words(sources, hi * block / geometry.lanes(), &mut words);
+                    tiles.write(hi, &mut basis);
+                    acc = merge(acc, ligerito::lookahead_accumulate(&words, &basis));
+                }
+                acc
+            })
+            .collect();
     let acc = partials.into_iter().fold([Gf128Product::zero(); 8], merge);
     ligerito::lookahead_finish(acc)
 }
@@ -163,8 +224,7 @@ mod tests {
     use crate::ligerito::bind_low;
     use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-    fn check<const N: usize>(logs: [usize; N]) {
-        let geometry = Geometry::new(logs).unwrap();
+    fn check<const N: usize>(geometry: Geometry<N>) {
         let mut rng = StdRng::seed_from_u64(0x4445464552524544);
         let mut sample = || F {
             lo: rng.random(),
@@ -188,15 +248,40 @@ mod tests {
         for ood in [None, Some((ood_point.as_slice(), ood_scale))] {
             let dense =
                 geometry.initial_tables(sources, &point, &eq_r2, (&padding, padding_scale), ood);
-            let (first, _) = initial_messages(
-                &geometry,
-                sources,
-                &point,
-                &eq_r2,
-                (&padding, padding_scale),
-                ood,
-            );
-            assert_eq!(first, dense.first_message);
+            // Include a non-power-of-two grouping to exercise a partial final
+            // task after full tasks, as well as every benchmark strategy.
+            for tiles_per_task in [16, 4, 2, 3] {
+                let (first, lookahead) = initial_messages_with_tiles_per_task(
+                    &geometry,
+                    sources,
+                    &point,
+                    &eq_r2,
+                    (&padding, padding_scale),
+                    ood,
+                    Some(tiles_per_task),
+                );
+                assert_eq!(first, dense.first_message);
+                for r in [F::ZERO, F::ONE, F { lo: 7, hi: 11 }] {
+                    let (mut reference, reference_first) = ligerito::SumcheckProver::new(
+                        dense.packed.clone(),
+                        dense.basis.clone(),
+                        F::ZERO,
+                    );
+                    assert_eq!(first, reference_first);
+                    let (mut actual, _) = ligerito::SumcheckProver::new_with_first_msg(
+                        dense.packed.clone(),
+                        dense.basis.clone(),
+                        F::ZERO,
+                        first,
+                    );
+                    assert_eq!(actual.fold_skip(&lookahead, r), reference.fold(r));
+                    actual.drain_pending_fold();
+                    assert_eq!(actual.f(), reference.f());
+                    // A following ordinary round checks the folded basis too.
+                    let next = F { lo: 13, hi: 17 };
+                    assert_eq!(actual.fold(next), reference.fold(next));
+                }
+            }
             for folds in [
                 [F::ZERO, F::ZERO],
                 [F::ONE, F::ZERO],
@@ -241,10 +326,45 @@ mod tests {
     }
 
     #[test]
+    fn initial_task_default_is_limited_to_qualified_shapes_and_workers() {
+        for tiles in [32, 64] {
+            for workers in [8, 12, 16] {
+                assert_eq!(default_initial_tiles_per_task(tiles, workers), 4);
+            }
+            for workers in [1, 2, 4, 7, 9, 15, 17, 32] {
+                assert_eq!(default_initial_tiles_per_task(tiles, workers), 16);
+            }
+        }
+        for tiles in [1, 16, 31, 33, 63, 65, 128] {
+            for workers in [1, 8, 12, 16] {
+                assert_eq!(default_initial_tiles_per_task(tiles, workers), 16);
+            }
+        }
+    }
+
+    #[test]
     fn deferred_two_round_tables_match_dense_for_padding_ood_and_boolean_challenges() {
-        check([9, 9]);
-        check([9, 13]);
-        check([9, 11, 10]);
-        check([9, 14, 10]);
+        check(Geometry::new([9, 9]).unwrap());
+        check(Geometry::new([9, 13]).unwrap());
+        check(Geometry::new([9, 11, 10]).unwrap());
+        check(Geometry::new([9, 14, 10]).unwrap());
+    }
+
+    #[test]
+    fn initial_message_task_sizes_match_dense_across_worker_counts_and_allocations() {
+        for workers in [1, 4] {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+                .install(|| {
+                    // Falcon-512 batch 1024: 32 tiles, giving 2/8/16 tasks for
+                    // the three benchmark strategies and a tail for size 3.
+                    check(Geometry::new([16, 15, 13]).unwrap());
+                    // Logical supports are smaller than committed allocations;
+                    // preserve nonzero physical padding and inactive lanes.
+                    check(Geometry::with_allocation_logs([9, 9, 9], [14, 13, 12]).unwrap());
+                });
+        }
     }
 }

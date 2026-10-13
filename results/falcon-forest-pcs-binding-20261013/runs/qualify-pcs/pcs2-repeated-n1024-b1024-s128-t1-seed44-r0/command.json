@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-forest-pcs-binding-20261013/candidate-v2",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "1",
+    "--seed",
+    "44",
+    "--warmup",
+    "2",
+    "--iterations",
+    "7"
+  ],
+  "overrides": {
+    "BITZ_FOREST_JIT_BUCKETS": "reduced",
+    "BITZ_FOREST_L4": "rebuild",
+    "BITZ_PCS_INITIAL_TILES_PER_TASK": "2",
+    "BITZ_ARITHMETIC_BINDING_CONSTRUCTION_FUSION": "off",
+    "RAYON_NUM_THREADS": "1",
+    "BITZ_FALCON_WORKER_CPUS": "6",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "8db97affb3ba0423ad0fe1301cbfcf411fb8b7639f675fa87f8b641837a5721f",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

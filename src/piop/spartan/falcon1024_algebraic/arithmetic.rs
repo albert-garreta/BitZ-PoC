@@ -328,26 +328,41 @@ fn prove_with_ring_and_scratch(
     let factored_ring = false;
     let defer_norm = schedule.word_binding
         && (factored_ring || arithmetic_experiment("BITZ_ARITHMETIC_NORM_FACTORED", false));
-    let (mut form, target, s1) = match ring {
+    let (mut form, target, s1, word_initial) = match ring {
         RingInput::Borrowed(ring) if !defer_norm => {
             let (form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
-            (form, target, None)
+            (form, target, None, None)
         }
         RingInput::Borrowed(ring) => {
             let (form, target) =
                 BindingForm::new_owned(layout, ring.clone(), &norm_claims, eta, field, true)?;
-            (form, target, None)
+            (form, target, None, None)
         }
         RingInput::Owned(ring) => {
-            let (form, target) =
-                BindingForm::new_owned(layout, ring, &norm_claims, eta, field, defer_norm)?;
-            (form, target, None)
+            if schedule.word_binding
+                && !defer_norm
+                && arithmetic_experiment("BITZ_ARITHMETIC_BINDING_CONSTRUCTION_FUSION", false)
+            {
+                let (form, target, initial) = BindingForm::new_owned_with_initial(
+                    layout,
+                    ring,
+                    &norm_claims,
+                    eta,
+                    field,
+                    source,
+                )?;
+                (form, target, None, initial)
+            } else {
+                let (form, target) =
+                    BindingForm::new_owned(layout, ring, &norm_claims, eta, field, defer_norm)?;
+                (form, target, None, None)
+            }
         }
         #[cfg(any(test, feature = "bench-internals"))]
         RingInput::Factored(ring) => {
             let (form, target, factors) =
                 BindingForm::new_factored(layout, ring, &norm_claims, eta, field)?;
-            (form, target, Some(factors))
+            (form, target, Some(factors), None)
         }
     };
     if schedule.word_binding {
@@ -362,7 +377,7 @@ fn prove_with_ring_and_scratch(
             None
         };
         let prove = |workspace: &mut word_binding::WordWorkspace| {
-            word_binding::prove_with_workspace(
+            word_binding::prove_with_initial(
                 transcript,
                 layout,
                 source,
@@ -377,6 +392,7 @@ fn prove_with_ring_and_scratch(
                 schedule,
                 field,
                 workspace,
+                word_initial,
             )
         };
         let (proof, row_weights, claim) =
@@ -846,6 +862,30 @@ impl<'a> BindingForm<'a> {
         )
     }
 
+    fn new_owned_with_initial(
+        layout: &'a Layout,
+        ring: PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+        source: &Source,
+    ) -> Result<(Self, F, Option<word_binding::InitialClaim>), FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        let strategy = binding_strategy(layout.batch(), BindingKernel::Construction);
+        Self::new_owned_with_strategy_and_initial(
+            layout,
+            ring,
+            norm,
+            eta,
+            field,
+            strategy,
+            binding_parallel(strategy),
+            false,
+            false,
+            Some(source),
+        )
+    }
+
     fn new_with_strategy(
         layout: &'a Layout,
         ring: &PreparedClaim,
@@ -916,6 +956,36 @@ impl<'a> BindingForm<'a> {
         defer_norm: bool,
         factored_s1: bool,
     ) -> Result<(Self, F), FalconError> {
+        Self::new_owned_with_strategy_and_initial(
+            layout,
+            ring,
+            norm,
+            eta,
+            field,
+            strategy,
+            parallel,
+            defer_norm,
+            factored_s1,
+            None,
+        )
+        .map(|(form, target, _)| (form, target))
+    }
+
+    fn new_owned_with_strategy_and_initial(
+        layout: &'a Layout,
+        ring: PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+        strategy: BindingStrategy,
+        parallel: bool,
+        defer_norm: bool,
+        factored_s1: bool,
+        source: Option<&Source>,
+    ) -> Result<(Self, F, Option<word_binding::InitialClaim>), FalconError> {
+        if source.is_some_and(|source| source.layout() != layout) {
+            return Err(failure("algebraic source layout mismatch"));
+        }
         let len = layout.batch() * N;
         if ring.weights_s1.len() != if factored_s1 { 0 } else { len }
             || ring.weights_s2.len() != len
@@ -936,6 +1006,7 @@ impl<'a> BindingForm<'a> {
             norm.point[COEFFICIENT_LOG],
         ];
         let mut coefficients = [ring.weights_s1, ring.weights_s2];
+        let mut word_initial = None;
         if defer_norm {
             validate_field_elements(&coefficients[0], field).map_err(failure)?;
             validate_field_elements(&coefficients[1], field).map_err(failure)?;
@@ -946,9 +1017,22 @@ impl<'a> BindingForm<'a> {
                         eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
                     let norm_instances =
                         eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
-                    // eq(j, i; r) factors into coefficient and instance weights.
-                    // Combine the instance factors before touching either N-word slice.
-                    let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
+                    if let Some(source) = source {
+                        word_initial = Some(word_binding::construct_and_initial(
+                            &mut coefficients,
+                            source,
+                            &coefficient_weights,
+                            &norm_instances,
+                            scales[1],
+                            side_weights,
+                            field,
+                            parallel,
+                            arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
+                        )?);
+                    } else {
+                        // eq(j, i; r) factors into coefficient and instance weights.
+                        // Combine the instance factors before touching either N-word slice.
+                        let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
                  -> Result<(), FalconError> {
                     // Validate the original ring projections in the same
                     // partition pass, before adding the norm coefficients.
@@ -965,17 +1049,18 @@ impl<'a> BindingForm<'a> {
                     }
                     Ok(())
                 };
-                    let [s1, s2] = &mut coefficients;
-                    if parallel {
-                        s1.par_chunks_mut(N)
-                            .zip(s2.par_chunks_mut(N))
-                            .enumerate()
-                            .try_for_each(fill)?;
-                    } else {
-                        s1.chunks_mut(N)
-                            .zip(s2.chunks_mut(N))
-                            .enumerate()
-                            .try_for_each(fill)?;
+                        let [s1, s2] = &mut coefficients;
+                        if parallel {
+                            s1.par_chunks_mut(N)
+                                .zip(s2.par_chunks_mut(N))
+                                .enumerate()
+                                .try_for_each(fill)?;
+                        } else {
+                            s1.chunks_mut(N)
+                                .zip(s2.chunks_mut(N))
+                                .enumerate()
+                                .try_for_each(fill)?;
+                        }
                     }
                 }
                 BindingStrategy::Legacy => {
@@ -1013,6 +1098,7 @@ impl<'a> BindingForm<'a> {
                 folded_decoder: Default::default(),
             },
             target,
+            word_initial,
         ))
     }
 

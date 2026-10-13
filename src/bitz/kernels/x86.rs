@@ -7,6 +7,8 @@ use std::mem::MaybeUninit;
 
 use super::{Gf, col_of, generic};
 use field::gf128::kernels::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
+#[cfg(any(test, feature = "bench-internals"))]
+use field::gf128::kernels::x86_64::{ghash_mul_wide_x4, ghash_reduce_wide_x4};
 
 pub(crate) use generic::scatter_add;
 
@@ -14,18 +16,49 @@ pub(crate) use generic::scatter_add;
 /// product before its XOR scatter is identical to reducing the scalar
 /// buckets after accumulation: reduction is F₂-linear.
 pub(crate) struct SumBuckets {
-    data: Vec<Gf>,
+    data: BucketStorage,
+}
+
+enum BucketStorage {
+    Reduced(Vec<Gf>),
+    /// Exact polynomial products double scratch to 24 KiB. This is an
+    /// experiment: the extra scatter traffic may outweigh fewer reductions.
+    #[cfg(any(test, feature = "bench-internals"))]
+    Wide(Vec<[u64; 4]>),
 }
 
 impl SumBuckets {
     pub(crate) fn new() -> Self {
+        #[cfg(feature = "bench-internals")]
+        {
+            static WIDE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            if *WIDE.get_or_init(|| match std::env::var("BITZ_FOREST_JIT_BUCKETS") {
+                Err(std::env::VarError::NotPresent) => false,
+                Ok(value) => match value.as_str() {
+                    "reduced" => false,
+                    "wide" => true,
+                    _ => panic!("BITZ_FOREST_JIT_BUCKETS must be reduced or wide"),
+                },
+                Err(std::env::VarError::NotUnicode(_)) => {
+                    panic!("BITZ_FOREST_JIT_BUCKETS must be valid Unicode")
+                }
+            }) {
+                return Self {
+                    data: BucketStorage::Wide(vec![[0; 4]; 3 * 256]),
+                };
+            }
+        }
         Self {
-            data: vec![Gf::zero(); 3 * 256],
+            data: BucketStorage::Reduced(vec![Gf::zero(); 3 * 256]),
         }
     }
 
     pub(crate) fn clear(&mut self) {
-        self.data.fill(Gf::zero());
+        match &mut self.data {
+            BucketStorage::Reduced(data) => data.fill(Gf::zero()),
+            #[cfg(any(test, feature = "bench-internals"))]
+            BucketStorage::Wide(data) => data.fill([0; 4]),
+        }
     }
 }
 
@@ -63,7 +96,14 @@ pub(crate) fn jit_bucket_group(
 ) {
     assert_eq!(eq_t.len(), 64);
     assert!(tab_o.iter().all(|table| table.len() >= 256));
-    let (end, inf) = bk.data.split_at_mut(256);
+    let data = match &mut bk.data {
+        BucketStorage::Reduced(data) => data,
+        #[cfg(any(test, feature = "bench-internals"))]
+        BucketStorage::Wide(data) => {
+            return jit_wide_bucket_group(tab_o, pat, eq_t, send_one, data);
+        }
+    };
+    let (end, inf) = data.split_at_mut(256);
     let (inf_lo, inf_hi) = inf.split_at_mut(256);
     for first in (0..64).step_by(4) {
         // SAFETY: all weights and pattern positions are in bounds, every
@@ -89,10 +129,110 @@ pub(crate) fn jit_bucket_group(
 
 pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
     assert!(tab_e.iter().all(|table| table.len() >= 256));
+    let data = match &bk.data {
+        BucketStorage::Reduced(data) => data,
+        #[cfg(any(test, feature = "bench-internals"))]
+        BucketStorage::Wide(data) => return jit_wide_bucket_finish(tab_e, send_one, data),
+    };
     let t_end = if send_one { tab_e[1] } else { tab_e[0] };
     (
-        dot(&t_end[..256], &bk.data[..256]),
-        dot(&tab_e[0][..256], &bk.data[256..512]) + dot(&tab_e[1][..256], &bk.data[512..768]),
+        dot(&t_end[..256], &data[..256]),
+        dot(&tab_e[0][..256], &data[256..512]) + dot(&tab_e[1][..256], &data[512..768]),
+    )
+}
+
+/// The low/high halves are exact 256-bit products, not three Karatsuba
+/// components. Every lane completes both updates before a colliding lane.
+#[cfg(any(test, feature = "bench-internals"))]
+#[inline]
+unsafe fn wide_bucket_xor4(
+    bucket: &mut [[u64; 4]],
+    indices: &[u8; 64],
+    first: usize,
+    products: (__m512i, __m512i),
+) {
+    // SAFETY: callers provide 256 initialized buckets and first <= 60.
+    // Byte indexes stay in bounds; unaligned loads/stores need no alignment.
+    unsafe {
+        macro_rules! lane {
+            ($lane:literal) => {{
+                let p = bucket
+                    .as_mut_ptr()
+                    .add(indices[first + $lane] as usize)
+                    .cast::<u64>();
+                let lo = _mm512_extracti32x4_epi32::<$lane>(products.0);
+                let hi = _mm512_extracti32x4_epi32::<$lane>(products.1);
+                let pl = p.cast::<__m128i>();
+                let ph = p.add(2).cast::<__m128i>();
+                _mm_storeu_si128(pl, _mm_xor_si128(_mm_loadu_si128(pl), lo));
+                _mm_storeu_si128(ph, _mm_xor_si128(_mm_loadu_si128(ph), hi));
+            }};
+        }
+        lane!(0);
+        lane!(1);
+        lane!(2);
+        lane!(3);
+    }
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+fn jit_wide_bucket_group(
+    tab_o: [&[Gf]; 2],
+    pat: &[[u8; 64]; 4],
+    eq_t: &[Gf],
+    send_one: bool,
+    data: &mut [[u64; 4]],
+) {
+    assert_eq!(data.len(), 3 * 256);
+    let (end, inf) = data.split_at_mut(256);
+    let (inf_lo, inf_hi) = inf.split_at_mut(256);
+    for first in (0..64).step_by(4) {
+        // SAFETY: the caller checked the 64 weights and 256-entry tables;
+        // every lookup/scatter uses byte indexes and the complete module ISA.
+        unsafe {
+            let positions = [first, first + 1, first + 2, first + 3];
+            let o_lo = lookup(tab_o[0], &pat[2], positions);
+            let o_hi = lookup(tab_o[1], &pat[3], positions);
+            let w = load(eq_t, first);
+            let (a_end, o_end) = if send_one {
+                (&pat[1], o_hi)
+            } else {
+                (&pat[0], o_lo)
+            };
+            let endpoint = ghash_mul_wide_x4(w, o_end);
+            let delta = ghash_mul_wide_x4(w, _mm512_xor_si512(o_lo, o_hi));
+            wide_bucket_xor4(end, a_end, first, endpoint);
+            wide_bucket_xor4(inf_lo, &pat[0], first, delta);
+            wide_bucket_xor4(inf_hi, &pat[1], first, delta);
+        }
+    }
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+fn jit_wide_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, data: &[[u64; 4]]) -> (Gf, Gf) {
+    assert_eq!(data.len(), 3 * 256);
+    let contract = |t: &[Gf], buckets: &[[u64; 4]]| {
+        // SAFETY: each input has 256 entries, read four products at a time.
+        // The two loads cover exactly those four 32-byte products. Permutes
+        // gather their low/high halves into four independent 128-bit lanes.
+        unsafe {
+            let mut sum = WideGhashX4::zero();
+            for i in (0..256).step_by(4) {
+                let a = _mm512_loadu_si512(buckets.as_ptr().add(i).cast());
+                let b = _mm512_loadu_si512(buckets.as_ptr().add(i + 2).cast());
+                let lo =
+                    _mm512_permutex2var_epi64(a, _mm512_set_epi64(13, 12, 9, 8, 5, 4, 1, 0), b);
+                let hi =
+                    _mm512_permutex2var_epi64(a, _mm512_set_epi64(15, 14, 11, 10, 7, 6, 3, 2), b);
+                sum.mul_acc(load(t, i), ghash_reduce_wide_x4(lo, hi));
+            }
+            sum.fold().reduce()
+        }
+    };
+    let t_end = if send_one { tab_e[1] } else { tab_e[0] };
+    (
+        contract(t_end, &data[..256]),
+        contract(tab_e[0], &data[256..512]) + contract(tab_e[1], &data[512..768]),
     )
 }
 
@@ -901,6 +1041,102 @@ mod tests {
                         &pattern,
                         60,
                         f128x4_loadu(products.as_ptr()),
+                    );
+                }
+                assert_eq!(actual, expected, "indices {indices:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn wide_jit_buckets_match_reduced_and_scalar_with_reuse() {
+        let tables: [Vec<Gf>; 4] =
+            std::array::from_fn(|side| (0..258).map(|i| element(2000 + side * 258 + i)).collect());
+        let tab: [&[Gf]; 4] = std::array::from_fn(|i| &tables[i][1..257]);
+        let mut wide = SumBuckets {
+            data: BucketStorage::Wide(vec![[0; 4]; 3 * 256]),
+        };
+        let mut reduced = SumBuckets {
+            data: BucketStorage::Reduced(vec![Gf::zero(); 3 * 256]),
+        };
+        for send_one in [false, true] {
+            for live in [0, 1, 31, 63, 64] {
+                for mode in 0..4 {
+                    wide.clear();
+                    reduced.clear();
+                    let mut expected = (Gf::zero(), Gf::zero());
+                    for group in 0..5 {
+                        let patterns: [[u8; 64]; 4] = std::array::from_fn(|side| {
+                            std::array::from_fn(|i| match mode {
+                                0 => 0,
+                                1 => 255,
+                                2 => (85 * ((i / 4 + side) % 4)) as u8,
+                                _ => (i * 73 + group * 31 + side * 13) as u8,
+                            })
+                        });
+                        let mut weights: Vec<_> =
+                            (0..66).map(|i| element(5000 + group * 66 + i)).collect();
+                        weights[1 + live..65].fill(Gf::zero());
+                        let weights = &weights[1..65];
+                        for (m, &w) in weights.iter().enumerate() {
+                            let [l0, l1, r0, r1] =
+                                std::array::from_fn(|i| tab[i][patterns[i][m] as usize]);
+                            let (le, re) = if send_one { (l1, r1) } else { (l0, r0) };
+                            expected.0 += w * le * re;
+                            expected.1 += w * (l0 + l1) * (r0 + r1);
+                        }
+                        for buckets in [&mut wide, &mut reduced] {
+                            jit_bucket_group(
+                                [tab[2], tab[3]],
+                                &patterns,
+                                weights,
+                                send_one,
+                                buckets,
+                            );
+                            assert_eq!(
+                                jit_bucket_finish([tab[0], tab[1]], send_one, buckets),
+                                expected,
+                                "mode={mode} live={live} group={group} send_one={send_one}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wide_jit_scatter_preserves_collisions_and_guards() {
+        let a: [Gf; 4] = std::array::from_fn(|i| element(701 + i));
+        let b: [Gf; 4] = std::array::from_fn(|i| element(901 + i));
+        let products: [[u64; 4]; 4] = std::array::from_fn(|i| {
+            field::gf128::kernels::software::ghash_mul_unreduced(a[i], b[i]).to_polynomial_words()
+        });
+        for indices in [
+            [0, 0, 0, 0],
+            [255, 255, 255, 255],
+            [0, 255, 0, 255],
+            [0, 1, 2, 3],
+        ] {
+            let mut pattern = [0; 64];
+            pattern[60..].copy_from_slice(&indices);
+            let mut actual: Vec<[u64; 4]> =
+                (0..258).map(|i| [i as u64, !i as u64, 19, 47]).collect();
+            let mut expected = actual.clone();
+            for _ in 0..3 {
+                for (&index, product) in indices.iter().zip(products) {
+                    for word in 0..4 {
+                        expected[1 + index as usize][word] ^= product[word];
+                    }
+                }
+                // SAFETY: both inputs have four lanes; the bucket slice has
+                // 256 complete entries and the last pattern position is 63.
+                unsafe {
+                    wide_bucket_xor4(
+                        &mut actual[1..257],
+                        &pattern,
+                        60,
+                        ghash_mul_wide_x4(f128x4_loadu(a.as_ptr()), f128x4_loadu(b.as_ptr())),
                     );
                 }
                 assert_eq!(actual, expected, "indices {indices:?}");
