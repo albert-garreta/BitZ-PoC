@@ -1,0 +1,1212 @@
+diff --git a/benches/common/falcon_stage_timings.rs b/benches/common/falcon_stage_timings.rs
+index 61eb46565..0e7307397 100644
+--- a/benches/common/falcon_stage_timings.rs
++++ b/benches/common/falcon_stage_timings.rs
+@@ -48,6 +48,8 @@ where
+             return true;
+         }
+         metadata.name().starts_with("falcon_factored_ring:")
++            || metadata.name().starts_with("falcon_algebraic:word_")
++            || metadata.name().starts_with("falcon_integer:")
+             || matches!(
+                 metadata.name(),
+                 "falcon_algebraic:commit"
+@@ -77,6 +79,8 @@ where
+                     | "op:ring_switch"
+                     | "op:extra_bases"
+                     | "op:ligerito"
++                    | "lig:grind_pow"
++                    | "spartan:grinding"
+             )
+     }
+ 
+diff --git a/src/bitz/forest.rs b/src/bitz/forest.rs
+index 295d5ef4f..bc9bdcfe7 100644
+--- a/src/bitz/forest.rs
++++ b/src/bitz/forest.rs
+@@ -1304,13 +1304,17 @@ impl<'a> Forest<'a> {
+             });
+             return partials.into_iter().fold((Gf::zero(), Gf::zero()), add);
+         }
+-        let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
++        let jobs = cfg_chunks_mut!(e_lo, cols)
+             .zip(cfg_chunks_mut!(e_hi, cols))
+             .zip(cfg_chunks_mut!(o_lo, cols))
+             .zip(cfg_chunks_mut!(o_hi, cols))
+-            .enumerate()
+-            .map(sum_row!())
+-            .collect();
++            .enumerate();
++        #[cfg(feature = "parallel")]
++        let jobs = jobs.with_min_len(super::row_dispatch::fallback_grain(
++            rows,
++            2 * half * std::mem::size_of::<Gf>(),
++        ));
++        let partials: Vec<(Gf, Gf)> = jobs.map(sum_row!()).collect();
+         partials.into_iter().fold((Gf::zero(), Gf::zero()), add)
+     }
+ 
+@@ -2492,6 +2496,49 @@ mod tests {
+         }
+     }
+ 
++    #[cfg(feature = "parallel")]
++    #[test]
++    fn fallback_row_grains_preserve_complete_forest_proof() {
++        use crate::bitz::row_dispatch::with_grain;
++        use crate::bitz::transcript::build_kernel_prover;
++
++        let pools = [1, 8, 12, 16].map(|workers| {
++            rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap()
++        });
++        // Tiny gathered rows include partial column groups. The larger nibble
++        // shape has 128 JIT rows and exactly 4 MiB of JIT output, so its 8/12
++        // worker fallback exercises coarse grains rather than the size guard.
++        for (t, s, nibble) in [(7, 3, false), (13, 9, true)] {
++            let (packed, images) = random_grid(t, s, (t * 877 + s) as u64);
++            let mut state = 0x524F_575F_4752_4149;
++            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
++            let prove = |grain| {
++                with_grain(grain, || {
++                    let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
++                        nibble,
++                        nibble_from: 0,
++                    });
++                    let mut ps = build_kernel_prover(b"forest-row-grain/v1", b"instance");
++                    let terminal = forest.prove(&mut ps, &zeta);
++                    (terminal, ps.finish().narg_string)
++                })
++            };
++            let expected = pools[0].install(|| prove(1));
++            for (workers, pool) in [8, 12, 16].into_iter().zip(&pools[1..]) {
++                for grain in [1, 2, 4, 8, 16] {
++                    assert_eq!(
++                        pool.install(|| prove(grain)),
++                        expected,
++                        "t={t}, s={s}, workers={workers}, grain={grain}"
++                    );
++                }
++            }
++        }
++    }
++
+     /// Keeping the column weights in the dense rounds' left half proves the
+     /// same: same point, claim and transcript bytes, on the table-driven
+     /// levels (whose JIT fold writes the weighted half) and the materialised
+diff --git a/src/bitz/kernels.rs b/src/bitz/kernels.rs
+index 5854a2905..56a91e305 100644
+--- a/src/bitz/kernels.rs
++++ b/src/bitz/kernels.rs
+@@ -280,7 +280,7 @@ pub(crate) fn fused_fold_round(
+                 .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+         }));
+     }
+-    let partials: Vec<(Gf, Gf)> = crate::cfg_chunks_mut!(q0_l, task)
++    let jobs = crate::cfg_chunks_mut!(q0_l, task)
+         .zip(crate::cfg_chunks_mut!(q1_l, task))
+         .zip(crate::cfg_chunks!(q2_l, task))
+         .zip(crate::cfg_chunks!(q3_l, task))
+@@ -288,9 +288,13 @@ pub(crate) fn fused_fold_round(
+         .zip(crate::cfg_chunks_mut!(q1_r, task))
+         .zip(crate::cfg_chunks!(q2_r, task))
+         .zip(crate::cfg_chunks!(q3_r, task))
+-        .enumerate()
+-        .map(fold_row!())
+-        .collect();
++        .enumerate();
++    #[cfg(feature = "parallel")]
++    let jobs = jobs.with_min_len(super::row_dispatch::fallback_grain(
++        w.rows(),
++        h * 8 * size_of::<Gf>(),
++    ));
++    let partials: Vec<(Gf, Gf)> = jobs.map(fold_row!()).collect();
+     total(partials)
+ }
+ 
+@@ -1511,7 +1515,19 @@ mod tests {
+     #[cfg(feature = "parallel")]
+     #[test]
+     fn cyclic_dense_rows_match_scalar_folds_and_sums() {
+-        let (rows, cols) = (32, 2048);
++        check_dense_row_grains(32, 2048, &[1, 16]);
++    }
++
++    #[cfg(feature = "parallel")]
++    #[test]
++    fn fallback_dense_row_grains_match_scalar_folds_and_sums_with_tails() {
++        // Above the matrix threshold, with neither row count divisible by
++        // the worker count nor column width divisible by the SIMD width.
++        check_dense_row_grains(259, 129, &[1, 2, 4, 8, 16]);
++    }
++
++    #[cfg(feature = "parallel")]
++    fn check_dense_row_grains(rows: usize, cols: usize, grains: &[usize]) {
+         let len = rows * cols;
+         let l: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 100 + i as u64));
+         let r: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 110 + i as u64));
+@@ -1522,7 +1538,7 @@ mod tests {
+             eq_c: &eq_c,
+             eq_y: &eq_y,
+         };
+-        let pools: Vec<_> = [1, 4, 8, 16]
++        let pools: Vec<_> = [1, 4, 8, 12, 16]
+             .into_iter()
+             .map(|workers| {
+                 rayon::ThreadPoolBuilder::new()
+@@ -1585,15 +1601,22 @@ mod tests {
+                 }
+                 for pool in &pools {
+                     pool.install(|| {
+-                        let [mut a0, mut a1, a2, a3] = input_l.clone();
+-                        let [mut b0, mut b1, b2, b3] = r.clone();
+-                        let got = fused_fold_round(
+-                            &mut a0, &mut a1, &a2, &a3, &mut b0, &mut b1, &b2, &b3, rho, w,
+-                            send_one, left,
+-                        );
+-                        assert_eq!(got, want_sums);
+-                        assert_eq!([a0, a1, a2, a3], want_l);
+-                        assert_eq!([b0, b1, b2, b3], want_r);
++                        for &grain in grains {
++                            super::super::row_dispatch::with_grain(grain, || {
++                                let [mut a0, mut a1, a2, a3] = input_l.clone();
++                                let [mut b0, mut b1, b2, b3] = r.clone();
++                                let got = fused_fold_round(
++                                    &mut a0, &mut a1, &a2, &a3, &mut b0, &mut b1, &b2, &b3, rho, w,
++                                    send_one, left,
++                                );
++                                assert_eq!(
++                                    got, want_sums,
++                                    "grain={grain}, rows={rows}, cols={cols}"
++                                );
++                                assert_eq!([a0, a1, a2, a3], want_l);
++                                assert_eq!([b0, b1, b2, b3], want_r);
++                            });
++                        }
+                     });
+                 }
+             }
+diff --git a/src/bitz/row_dispatch.rs b/src/bitz/row_dispatch.rs
+index 819e8f4ee..12771c1d4 100644
+--- a/src/bitz/row_dispatch.rs
++++ b/src/bitz/row_dispatch.rs
+@@ -4,6 +4,77 @@ use std::iter::StepBy;
+ use std::ops::Range;
+ use std::sync::Mutex;
+ 
++/// Bound fallback task coarsening without assuming persistent row ownership.
++/// Two potential tasks per worker leave room for work stealing; small passes
++/// and serial execution retain their existing scheduling.
++fn bounded_grain(requested: usize, rows: usize, matrix_bytes: usize, workers: usize) -> usize {
++    if workers <= 1 || matrix_bytes < 4 << 20 {
++        1
++    } else {
++        // Rayon halves indexed ranges when splitting. A power-of-two cap
++        // avoids rounding a five-row minimum up to eight-row leaves, for
++        // example, and losing the intended two tasks per worker.
++        let cap = (rows / workers.saturating_mul(2)).max(1);
++        requested.min(1 << cap.ilog2())
++    }
++}
++
++fn requested_grain() -> usize {
++    #[cfg(test)]
++    if let Some(requested) = TEST_GRAIN.get() {
++        return requested;
++    }
++    #[cfg(feature = "bench-internals")]
++    {
++        static GRAIN: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
++        *GRAIN.get_or_init(|| match std::env::var("BITZ_FOREST_ROW_GRAIN") {
++            Err(std::env::VarError::NotPresent) => 1,
++            Ok(value) => match value.as_str() {
++                "1" => 1,
++                "2" => 2,
++                "4" => 4,
++                "8" => 8,
++                "16" => 16,
++                _ => panic!("BITZ_FOREST_ROW_GRAIN must be 1, 2, 4, 8, or 16"),
++            },
++            Err(std::env::VarError::NotUnicode(_)) => {
++                panic!("BITZ_FOREST_ROW_GRAIN must be valid Unicode")
++            }
++        })
++    }
++    #[cfg(not(feature = "bench-internals"))]
++    1
++}
++
++pub(super) fn fallback_grain(rows: usize, matrix_bytes: usize) -> usize {
++    let requested = requested_grain();
++    if requested == 1 {
++        return 1;
++    }
++    bounded_grain(requested, rows, matrix_bytes, rayon::current_num_threads())
++}
++
++#[cfg(test)]
++thread_local! {
++    static TEST_GRAIN: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
++}
++
++/// Override only the calling proving thread; row jobs never consult this state.
++/// Call inside the test pool's `install`, so unrelated tests and worker threads
++/// retain their own settings, including when the test panics.
++#[cfg(test)]
++pub(super) fn with_grain<R>(requested: usize, run: impl FnOnce() -> R) -> R {
++    assert!(matches!(requested, 1 | 2 | 4 | 8 | 16));
++    struct Restore(Option<usize>);
++    impl Drop for Restore {
++        fn drop(&mut self) {
++            TEST_GRAIN.set(self.0);
++        }
++    }
++    let _restore = Restore(TEST_GRAIN.replace(Some(requested)));
++    run()
++}
++
+ /// Row `y` stays on worker `y % workers`. High-bit folds preserve that
+ /// owner while the number of rows remains a multiple of the worker count.
+ /// This avoids moving dirty arena rows between workers at every fold.
+@@ -61,6 +132,77 @@ impl CyclicRows {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn fallback_grain_preserves_small_passes_and_parallelism() {
++        for requested in [1, 2, 4, 8, 16] {
++            for workers in [1, 8, 12, 16] {
++                assert_eq!(bounded_grain(requested, 1024, (4 << 20) - 1, workers), 1);
++                for rows in [0, 1, 7, 31, 64, 127, 128, 129, 256, 259, 1024] {
++                    let grain = bounded_grain(requested, rows, 4 << 20, workers);
++                    assert!(grain.is_power_of_two() && grain <= requested);
++                    if workers == 1 || rows < 2 * workers {
++                        assert_eq!(grain, 1);
++                    } else {
++                        assert!(rows / grain >= 2 * workers);
++                    }
++                }
++            }
++        }
++        assert_eq!(bounded_grain(16, 128, 4 << 20, 12), 4);
++        assert_eq!(bounded_grain(16, 256, 4 << 20, 12), 8);
++    }
++
++    #[test]
++    fn fallback_row_grains_cover_disjoint_rows_and_tails() {
++        use rayon::prelude::*;
++
++        for workers in [1, 8, 12, 16] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                for requested in [1, 2, 4, 8, 16] {
++                    with_grain(requested, || {
++                        for rows in [0usize, 1, 127, 128, 129, 259] {
++                            // Partial final row checks exact coverage even
++                            // when neither rows nor elements divide the pool.
++                            let len = (rows * 3).saturating_sub(1);
++                            let mut values = vec![usize::MAX; len];
++                            let grain = fallback_grain(rows, 4 << 20);
++                            let visited: Vec<_> = values
++                                .par_chunks_mut(3)
++                                .enumerate()
++                                .with_min_len(grain)
++                                .map(|(row, values)| {
++                                    values.fill(row);
++                                    row
++                                })
++                                .collect();
++                            assert_eq!(visited, (0..rows).collect::<Vec<_>>());
++                            assert!(values.iter().enumerate().all(|(i, &value)| value == i / 3));
++                        }
++                        // The grain override cannot activate cyclic ownership
++                        // at twelve workers or change its existing sixteen rule.
++                        assert_eq!(CyclicRows::new(128, 4 << 20).is_some(), workers == 16);
++                    });
++                }
++            });
++        }
++    }
++
++    #[test]
++    fn scoped_grain_override_restores_nested_and_panicking_calls() {
++        with_grain(2, || {
++            assert_eq!(requested_grain(), 2);
++            with_grain(8, || assert_eq!(requested_grain(), 8));
++            assert_eq!(requested_grain(), 2);
++            assert!(std::panic::catch_unwind(|| with_grain(4, || panic!("test"))).is_err());
++            assert_eq!(requested_grain(), 2);
++        });
++        assert_eq!(TEST_GRAIN.get(), None);
++    }
++
+     #[test]
+     fn cyclic_rows_keep_disjoint_jobs_on_their_owner() {
+         let pool = rayon::ThreadPoolBuilder::new()
+diff --git a/src/piop/spartan/falcon1024_algebraic/ring.rs b/src/piop/spartan/falcon1024_algebraic/ring.rs
+index d29dc9073..fa332f331 100644
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -222,7 +222,16 @@ pub(super) fn prove(
+     field: &Cfg,
+     grinding_bits: u32,
+ ) -> Result<(Proof, PreparedClaim), FalconError> {
+-    prove_inner(transcript, layout, public, data, field, grinding_bits, None)
++    prove_inner(
++        transcript,
++        layout,
++        public,
++        data,
++        field,
++        grinding_bits,
++        None,
++        collapse_batch_size(),
++    )
+ }
+ 
+ #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]
+@@ -243,6 +252,7 @@ pub(super) fn prove_with_scratch(
+         field,
+         grinding_bits,
+         Some(scratch),
++        collapse_batch_size(),
+     )
+ }
+ 
+@@ -255,6 +265,7 @@ fn prove_inner(
+     field: &Cfg,
+     grinding_bits: u32,
+     scratch: Option<&CoordinateScratch>,
++    collapse_batch: usize,
+ ) -> Result<(Proof, PreparedClaim), FalconError> {
+     validate_context(layout, public, field, grinding_bits)?;
+     validate_witness(layout, data)?;
+@@ -293,7 +304,7 @@ fn prove_inner(
+     };
+     transcript.absorb_slice(b"coordinate-collapse");
+     let xi = squeeze_field(transcript, field).map_err(|e| error(e.to_string()))?;
+-    let claim = collapse_claim(&coordinates, &carries, xi, field);
++    let claim = collapse_claim_with_batch(&coordinates, &carries, xi, field, collapse_batch);
+     Ok((
+         Proof {
+             carries,
+@@ -311,6 +322,26 @@ pub(super) fn verify(
+     proof: &Proof,
+     field: &Cfg,
+     grinding_bits: u32,
++) -> Result<PreparedClaim, FalconError> {
++    verify_inner(
++        transcript,
++        layout,
++        public,
++        proof,
++        field,
++        grinding_bits,
++        collapse_batch_size(),
++    )
++}
++
++fn verify_inner(
++    transcript: &mut impl Transcript,
++    layout: &Layout,
++    public: &FalconAlgebraicStatement,
++    proof: &Proof,
++    field: &Cfg,
++    grinding_bits: u32,
++    collapse_batch: usize,
+ ) -> Result<PreparedClaim, FalconError> {
+     validate_context(layout, public, field, grinding_bits)?;
+     if proof.projection_nonce.is_some() != (grinding_bits != 0) {
+@@ -334,7 +365,13 @@ pub(super) fn verify(
+     }
+     transcript.absorb_slice(b"coordinate-collapse");
+     let xi = squeeze_field(transcript, field).map_err(|e| error(e.to_string()))?;
+-    Ok(collapse_claim(&coordinates, &proof.carries, xi, field))
++    Ok(collapse_claim_with_batch(
++        &coordinates,
++        &proof.carries,
++        xi,
++        field,
++        collapse_batch,
++    ))
+ }
+ 
+ fn validate_context(
+@@ -852,12 +889,73 @@ fn check_carries(carries: &[i64; EXTENSION_DEGREE], batch: usize) -> Result<(),
+     Ok(())
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:collapse")]
++fn collapse_batch_size() -> usize {
++    #[cfg(feature = "bench-internals")]
++    {
++        static BATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
++        *BATCH.get_or_init(|| match std::env::var("BITZ_ARITHMETIC_COLLAPSE_BATCH") {
++            Err(std::env::VarError::NotPresent) => 1,
++            Ok(value) => match value.as_str() {
++                "1" => 1,
++                "2" => 2,
++                "4" => 4,
++                "8" => 8,
++                _ => panic!("BITZ_ARITHMETIC_COLLAPSE_BATCH must be 1, 2, 4, or 8"),
++            },
++            Err(std::env::VarError::NotUnicode(_)) => {
++                panic!("BITZ_ARITHMETIC_COLLAPSE_BATCH must be valid Unicode")
++            }
++        })
++    }
++    #[cfg(not(feature = "bench-internals"))]
++    {
++        1
++    }
++}
++
++fn collapse_weights<const LANES: usize>(
++    values: &[CoordinatesInAlpha],
++    prepared: &<Cfg as PreparedLinearCombination<u64>>::Prepared<'_, EXTENSION_DEGREE>,
++) -> Vec<F> {
++    let chunks = values.par_chunks_exact(LANES);
++    let remainder = chunks.remainder();
++    // Collect an indexed iterator of fixed arrays, then flatten without copying
++    // or introducing an additional allocation/zeroing pass. Live Falcon vectors
++    // are multiples of N, so all supported batch widths divide their lengths.
++    let mut weights = chunks
++        .map(|chunk| {
++            prepared.unsigned_word_dots::<LANES>(|term| {
++                std::array::from_fn(|lane| u64::from(chunk[lane].coordinates()[term]))
++            })
++        })
++        .collect::<Vec<[F; LANES]>>()
++        .into_flattened();
++    // Keep the helper correct for arbitrary slices as well as Falcon geometry.
++    weights.extend(remainder.iter().map(|value| {
++        <Cfg as PreparedLinearCombination<u64>>::linear_combination(prepared, |k| {
++            u64::from(value.coordinates()[k])
++        })
++    }));
++    weights
++}
++
++#[cfg(test)]
+ fn collapse_claim(
+     coordinates: &Coordinates,
+     carries: &[i64; EXTENSION_DEGREE],
+     xi: F,
+     field: &Cfg,
++) -> PreparedClaim {
++    collapse_claim_with_batch(coordinates, carries, xi, field, 1)
++}
++
++#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:collapse")]
++fn collapse_claim_with_batch(
++    coordinates: &Coordinates,
++    carries: &[i64; EXTENSION_DEGREE],
++    xi: F,
++    field: &Cfg,
++    batch: usize,
+ ) -> PreparedClaim {
+     let mut xi_powers = [field.one(); EXTENSION_DEGREE];
+     for k in 1..EXTENSION_DEGREE {
+@@ -874,8 +972,15 @@ fn collapse_claim(
+             u64::from(value.coordinates()[k])
+         })
+     };
+-    let weights_s1 = coordinates.s1.par_iter().map(weight).collect();
+-    let weights_s2 = coordinates.s2.par_iter().map(weight).collect();
++    let collapse = |values: &[CoordinatesInAlpha]| match batch {
++        1 => values.par_iter().map(weight).collect(),
++        2 => collapse_weights::<2>(values, &prepared),
++        4 => collapse_weights::<4>(values, &prepared),
++        8 => collapse_weights::<8>(values, &prepared),
++        _ => panic!("unsupported coordinate collapse batch"),
++    };
++    let weights_s1 = collapse(&coordinates.s1);
++    let weights_s2 = collapse(&coordinates.s2);
+     // Eleven bounded signed coordinates share one mixed reduction; carries
+     // remain native integers throughout this dot product.
+     let mut target = FpSignedLinearAcc::<2, 2>::default();
+@@ -1126,6 +1231,13 @@ mod tests {
+             for xi in [0, 1, prime - 1, 1234567890123456789] {
+                 let xi = F::from_with_cfg(xi, &field);
+                 let actual = collapse_claim(&coordinates, &carries, xi, &field);
++                for batch in [2, 4, 8] {
++                    assert_eq!(
++                        collapse_claim_with_batch(&coordinates, &carries, xi, &field, batch),
++                        actual,
++                        "projection batch={batch}, prime={prime}"
++                    );
++                }
+                 let mut powers = [field.one(); EXTENSION_DEGREE];
+                 for k in 1..EXTENSION_DEGREE {
+                     powers[k] = field.mul(&powers[k - 1], &xi);
+@@ -1160,6 +1272,142 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn collapse_batches_preserve_lane_order_and_partial_tails() {
++        let basis =
++            PowerBasis::try_new(Ext::new(std::array::from_fn(|k| u16::from(k == 1)))).unwrap();
++        let values: Vec<_> = (0..257)
++            .map(|index| {
++                basis.encode(Ext::new(std::array::from_fn(|term| {
++                    [
++                        0,
++                        1,
++                        (Q - 1) as u16,
++                        ((index * 727 + term * 53) as i64 % Q) as u16,
++                    ][(index + term) % 4]
++                })))
++            })
++            .collect();
++        let field = field();
++        let coefficients: [F; EXTENSION_DEGREE] =
++            std::array::from_fn(|term| F::from_with_cfg(((term + 1) * 123456789) as u64, &field));
++        let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
++            &field,
++            coefficients,
++        );
++        for workers in [1, 4, 12] {
++            #[cfg(feature = "parallel")]
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            let check = || {
++                for len in (0..=17).chain([257]) {
++                    let input = &values[..len];
++                    let expected: Vec<_> = input
++                        .iter()
++                        .map(|value| {
++                            <Cfg as PreparedLinearCombination<u64>>::linear_combination(
++                                &prepared,
++                                |term| u64::from(value.coordinates()[term]),
++                            )
++                        })
++                        .collect();
++                    for actual in [
++                        collapse_weights::<1>(input, &prepared),
++                        collapse_weights::<2>(input, &prepared),
++                        collapse_weights::<4>(input, &prepared),
++                        collapse_weights::<8>(input, &prepared),
++                    ] {
++                        assert_eq!(actual, expected, "len={len}, workers={workers}");
++                    }
++                }
++            };
++            #[cfg(feature = "parallel")]
++            pool.install(check);
++            #[cfg(not(feature = "parallel"))]
++            check();
++        }
++    }
++
++    #[test]
++    fn collapse_batches_preserve_ring_proofs_and_transcripts() {
++        for prime in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
++            let field = F::make_cfg(&Uint::from(prime)).unwrap();
++            for (batch, grinding_bits) in [(1, 0), (3, 3), (17, 0)] {
++                let (layout, public, data) = fixture(batch);
++                let mut reference = Blake3Transcript::new();
++                let (expected_proof, expected_claim) = prove_inner(
++                    &mut reference,
++                    &layout,
++                    &public,
++                    &data,
++                    &field,
++                    grinding_bits,
++                    None,
++                    1,
++                )
++                .unwrap();
++                let expected_state: [u64; 4] =
++                    std::array::from_fn(|_| reference.get_challenge::<u64>());
++                for lanes in [1, 2, 4, 8] {
++                    let mut prover = Blake3Transcript::new();
++                    let (proof, claim) = prove_inner(
++                        &mut prover,
++                        &layout,
++                        &public,
++                        &data,
++                        &field,
++                        grinding_bits,
++                        None,
++                        lanes,
++                    )
++                    .unwrap();
++                    assert_eq!(proof, expected_proof);
++                    assert_eq!(claim, expected_claim);
++                    assert_eq!(dot(&claim, &data, &field), claim.target);
++                    let mut verifier = Blake3Transcript::new();
++                    let checked = verify_inner(
++                        &mut verifier,
++                        &layout,
++                        &public,
++                        &expected_proof,
++                        &field,
++                        grinding_bits,
++                        lanes,
++                    )
++                    .unwrap();
++                    assert_eq!(checked, expected_claim);
++                    assert_eq!(
++                        std::array::from_fn::<_, 4, _>(|_| prover.get_challenge::<u64>()),
++                        expected_state
++                    );
++                    assert_eq!(
++                        std::array::from_fn::<_, 4, _>(|_| verifier.get_challenge::<u64>()),
++                        expected_state
++                    );
++                    let mut altered = proof;
++                    altered.carries[0] += 1;
++                    let invalid_claim = verify_inner(
++                        &mut Blake3Transcript::new(),
++                        &layout,
++                        &public,
++                        &altered,
++                        &field,
++                        grinding_bits,
++                        lanes,
++                    );
++                    match invalid_claim {
++                        Ok(invalid_claim) => {
++                            assert_ne!(dot(&invalid_claim, &data, &field), invalid_claim.target);
++                        }
++                        Err(_) => assert_ne!(grinding_bits, 0),
++                    }
++                }
++            }
++        }
++    }
++
+     fn dot(claim: &PreparedClaim, data: &WitnessData, field: &Cfg) -> F {
+         let mut sum = field.zero();
+         for (weights, coefficients) in [
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding.rs b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+index 4197d400b..32a0e13f1 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+@@ -28,6 +28,7 @@ impl WordBridgeClaim {
+         &self.point[layout.row_vars() - 4..]
+     }
+ 
++    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_row_weights")]
+     pub fn row_weights(&self, layout: &Layout, field: &Cfg) -> Result<Vec<u128>, FalconError> {
+         if self.point.len() != rounds(layout)
+             || self.with_padding != (layout.batch() < layout.capacity())
+@@ -106,6 +107,7 @@ struct PublicWeights {
+     padding: F,
+ }
+ impl PublicWeights {
++    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_public_weights")]
+     fn new(form: &BindingForm<'_>) -> Self {
+         let f = form.field;
+         let mut slacks = form.slacks.clone();
+@@ -319,6 +321,7 @@ impl Sparse {
+ /// its contribution to P*U + (gamma-gamma*M)*V over at most 32 positions.
+ struct AggregateSpare(Vec<[F; 2]>);
+ impl AggregateSpare {
++    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_setup")]
+     fn new(source: &Sparse, weights: &PublicWeights, f: &Cfg) -> Self {
+         let mut values = vec![[f.zero(); 2]; SLACK_BITS.next_power_of_two()];
+         for &(index, bit) in &source.0 {
+@@ -423,6 +426,25 @@ pub(super) fn workspace_reuse_enabled() -> bool {
+     arithmetic_experiment("BITZ_ARITHMETIC_WORD_SCRATCH", false)
+ }
+ 
++fn dense_compaction_threshold() -> Option<usize> {
++    #[cfg(feature = "bench-internals")]
++    return match std::env::var("BITZ_ARITHMETIC_DENSE_COMPACTION") {
++        Err(std::env::VarError::NotPresent) => None,
++        Ok(value) => match value.as_str() {
++            "off" => None,
++            "2" => Some(2),
++            "4" => Some(4),
++            "8" => Some(8),
++            _ => panic!("BITZ_ARITHMETIC_DENSE_COMPACTION must be off, 2, 4, or 8"),
++        },
++        Err(std::env::VarError::NotUnicode(_)) => {
++            panic!("BITZ_ARITHMETIC_DENSE_COMPACTION must be valid Unicode")
++        }
++    };
++    #[cfg(not(feature = "bench-internals"))]
++    None
++}
++
+ #[derive(Clone, Copy, Debug, Default)]
+ struct WordOptions {
+     reuse_initial: bool,
+@@ -431,6 +453,7 @@ struct WordOptions {
+     scratch: bool,
+     factored_initial_fused: bool,
+     factored_fold_reduction: bool,
++    dense_compaction: Option<usize>,
+ }
+ 
+ impl WordOptions {
+@@ -452,6 +475,7 @@ impl WordOptions {
+                 "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION",
+                 false,
+             ),
++            dense_compaction: dense_compaction_threshold(),
+         }
+     }
+ }
+@@ -997,6 +1021,7 @@ fn initialize_dense(
+ }
+ 
+ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
++    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold", stride).entered();
+     if values.len() / stride == 2 {
+         values[0] = std::array::from_fn(|k| lerp(values[0][k], values[stride][k], r, f));
+         return [f.zero(); 2];
+@@ -1007,7 +1032,6 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
+         }
+         dense_sums(block, 2 * stride, f)
+     };
+-    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold").entered();
+     #[cfg(feature = "parallel")]
+     if values.len() / stride >= 4096 && rayon::current_num_threads() > 1 {
+         return values
+@@ -1018,9 +1042,42 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
+     fold(values)
+ }
+ 
++/// Move the live strided entries to the front without allocating or changing
++/// the retained capacity. The forward write cursor never overtakes an unread
++/// entry. This extra serial copy is experimental: saved sparse accesses in
++/// later rounds must outweigh it before enabling a threshold by default.
++fn compact_dense(values: &mut Vec<[F; 2]>, stride: usize) {
++    assert!(stride > 0 && values.len() % stride == 0);
++    let live = values.len() / stride;
++    let _span =
++        tracing::info_span!("falcon_algebraic:word_dense_compaction", stride, live).entered();
++    for i in 1..live {
++        values[i] = values[i * stride];
++    }
++    values.truncate(live);
++}
++
++#[inline]
++fn dense_fold_with_compaction(
++    values: &mut Vec<[F; 2]>,
++    stride: &mut usize,
++    r: F,
++    f: &Cfg,
++    threshold: Option<usize>,
++) -> [F; 2] {
++    let sums = dense_fold(values, *stride, r, f);
++    *stride *= 2;
++    if threshold.is_some_and(|threshold| *stride >= threshold) {
++        compact_dense(values, *stride);
++        *stride = 1;
++    }
++    sums
++}
++
+ /// Padding is checked while scanning the source, so C contributes zero until
+ /// the instance rounds. Evaluate its local MLE once instead of folding a
+ /// third full-size field table. The verifier never assumes padding is zero.
++#[tracing::instrument(skip_all, name = "falcon_algebraic:word_padding_counts")]
+ fn counts(
+     source: &Source,
+     layout: &Layout,
+@@ -1244,21 +1301,24 @@ fn prove_with_options_and_initial(
+     let mut weights = PublicWeights::new(&form);
+     let mut spare = Sparse::from_source(source, layout, f)?;
+     let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
+-    let (mut next, initial) = if let Some(initial) = initial {
+-        if factors.s1.is_some() || factors.norm.is_some() {
+-            return Err(failure(
+-                "precomputed initial claim requires dense coefficients",
+-            ));
+-        }
+-        (initial.round, initial.sum)
+-    } else if options.factored_initial_fused {
+-        if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
+-            first_round_factored_fused(&form, source, s1, norm, f, options.reuse_initial)
++    let (mut next, initial) = {
++        let _span = tracing::info_span!("falcon_algebraic:word_initial_sums").entered();
++        if let Some(initial) = initial {
++            if factors.s1.is_some() || factors.norm.is_some() {
++                return Err(failure(
++                    "precomputed initial claim requires dense coefficients",
++                ));
++            }
++            (initial.round, initial.sum)
++        } else if options.factored_initial_fused {
++            if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
++                first_round_factored_fused(&form, source, s1, norm, f, options.reuse_initial)
++            } else {
++                first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
++            }
+         } else {
+             first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
+         }
+-    } else {
+-        first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
+     };
+     let spare_initial = aggregate_spare.initial(&weights, f);
+     if f.add(&initial, &spare_initial) != target {
+@@ -1299,7 +1359,11 @@ fn prove_with_options_and_initial(
+         let polynomial = [c0, c1, c2];
+         absorb_field_elements(t, &polynomial, f);
+         proof.round_polynomials.push(polynomial);
+-        boundary.after_round(t, round).map_err(failure)?;
++        {
++            let _span =
++                tracing::info_span!("falcon_algebraic:word_round_grinding", round).entered();
++            boundary.after_round(t, round).map_err(failure)?;
++        }
+         let r = sample(t, f)?;
+         claim = f.add(&c0, &f.mul(&r, &f.add(&c1, &f.mul(&r, &c2))));
+         point.push(r);
+@@ -1307,21 +1371,24 @@ fn prove_with_options_and_initial(
+             let initial_form = form.take().unwrap();
+             next = first_fold_into(&initial_form, source, r, &factors, f, options, dense);
+         } else {
+-            next = dense_fold(dense, stride, r, f);
+-            stride *= 2;
+-        }
+-        if round < COEFFICIENT_LOG {
+-            aggregate_spare.as_mut().unwrap().fold(r, f);
+-        } else if round == COEFFICIENT_LOG {
+-            spare.project_instances(&point, f)?;
+-            aggregate_spare = None;
+-        } else {
+-            spare.fold(r, f);
++            next = dense_fold_with_compaction(dense, &mut stride, r, f, options.dense_compaction);
+         }
+-        if let Some(c) = &mut count {
+-            fold_small(c, r, f);
++        {
++            let _span =
++                tracing::info_span!("falcon_algebraic:word_auxiliary_fold", round).entered();
++            if round < COEFFICIENT_LOG {
++                aggregate_spare.as_mut().unwrap().fold(r, f);
++            } else if round == COEFFICIENT_LOG {
++                spare.project_instances(&point, f)?;
++                aggregate_spare = None;
++            } else {
++                spare.fold(r, f);
++            }
++            if let Some(c) = &mut count {
++                fold_small(c, r, f);
++            }
++            weights.fold(round, r, f);
+         }
+-        weights.fold(round, r, f);
+     }
+     let mut values = vec![dense[0][1], spare.terminal(f)];
+     let mut terminal = f.add(
+@@ -1337,7 +1404,10 @@ fn prove_with_options_and_initial(
+     }
+     t.absorb_slice(TERMINALS);
+     absorb_field_elements(t, &values, f);
+-    let terminal_merge_nonce = prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?;
++    let terminal_merge_nonce = {
++        let _span = tracing::info_span!("falcon_algebraic:word_terminal_grinding").entered();
++        prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?
++    };
+     let zeta = sample(t, f)?;
+     let claim = bind_terminal(t, point, &values, zeta, f);
+     let row_weights = claim.row_weights(layout, f)?;
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+index 69bc2a800..23a6c6ceb 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+@@ -890,50 +890,50 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
+     let source = source_fixture(&layout);
+     for mode in [0, 3] {
+         for challenges in 0..3 {
+-            let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
+-            let mut reference = Reference::new(&dense_form, &source, &f);
+-            let mut values = Vec::new();
+-            let mut stride = 1;
+-            let mut transcript = Blake3Transcript::new();
+-            transcript.absorb_slice(b"word-dense-reference-challenges");
+-            for round in 0..rounds(&layout) {
+-                let r = match challenges {
+-                    0 => f.zero(),
+-                    1 => f.one(),
+-                    _ => sample(&mut transcript, &f).unwrap(),
+-                };
+-                let sums = if round == 0 {
+-                    first_fold_into(
+-                        &form,
+-                        &source,
+-                        r,
+-                        &factors,
+-                        &f,
+-                        WordOptions {
+-                            fused_fold: true,
+-                            direct_init: true,
+-                            factored_fold_reduction: true,
+-                            ..WordOptions::default()
+-                        },
+-                        &mut values,
+-                    )
+-                } else {
+-                    let result = dense_fold(&mut values, stride, r, &f);
+-                    stride *= 2;
+-                    result
+-                };
+-                reference.fold(r, &f);
+-                let active: Vec<_> = values.iter().step_by(stride).copied().collect();
+-                let expected: Vec<_> = reference.weights[0]
+-                    .iter()
+-                    .zip(&reference.tables[0])
+-                    .map(|(&w, &x)| [w, x])
+-                    .collect();
+-                assert_eq!(
+-                    active, expected,
+-                    "mode={mode} challenge={challenges} round={round}"
+-                );
+-                assert_eq!(sums, dense_sums(&expected, 1, &f));
++            for compaction in [None, Some(2), Some(4), Some(8)] {
++                let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
++                let mut reference = Reference::new(&dense_form, &source, &f);
++                let mut values = Vec::new();
++                let mut stride = 1;
++                let mut transcript = Blake3Transcript::new();
++                transcript.absorb_slice(b"word-dense-reference-challenges");
++                for round in 0..rounds(&layout) {
++                    let r = match challenges {
++                        0 => f.zero(),
++                        1 => f.one(),
++                        _ => sample(&mut transcript, &f).unwrap(),
++                    };
++                    let sums = if round == 0 {
++                        first_fold_into(
++                            &form,
++                            &source,
++                            r,
++                            &factors,
++                            &f,
++                            WordOptions {
++                                fused_fold: true,
++                                direct_init: true,
++                                factored_fold_reduction: true,
++                                ..WordOptions::default()
++                            },
++                            &mut values,
++                        )
++                    } else {
++                        dense_fold_with_compaction(&mut values, &mut stride, r, &f, compaction)
++                    };
++                    reference.fold(r, &f);
++                    let active: Vec<_> = values.iter().step_by(stride).copied().collect();
++                    let expected: Vec<_> = reference.weights[0]
++                        .iter()
++                        .zip(&reference.tables[0])
++                        .map(|(&w, &x)| [w, x])
++                        .collect();
++                    assert_eq!(
++                        active, expected,
++                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?}"
++                    );
++                    assert_eq!(sums, dense_sums(&expected, 1, &f));
++                }
+             }
+         }
+     }
+@@ -994,6 +994,30 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+                     factored_fold_reduction: true,
+                     ..WordOptions::default()
+                 },
++                WordOptions {
++                    dense_compaction: Some(2),
++                    ..WordOptions::default()
++                },
++                WordOptions {
++                    dense_compaction: Some(4),
++                    direct_init: true,
++                    ..WordOptions::default()
++                },
++                WordOptions {
++                    dense_compaction: Some(8),
++                    direct_init: true,
++                    scratch: true,
++                    ..WordOptions::default()
++                },
++                WordOptions {
++                    reuse_initial: true,
++                    fused_fold: true,
++                    direct_init: true,
++                    scratch: true,
++                    factored_initial_fused: true,
++                    factored_fold_reduction: true,
++                    dense_compaction: None,
++                },
+                 WordOptions {
+                     reuse_initial: true,
+                     fused_fold: true,
+@@ -1001,6 +1025,7 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+                     scratch: true,
+                     factored_initial_fused: true,
+                     factored_fold_reduction: true,
++                    dense_compaction: Some(2),
+                 },
+             ] {
+                 let (form, factors, _) = factored_fixture(&layout, &f, mode);
+diff --git a/src/piop/spartan/falcon_integer.rs b/src/piop/spartan/falcon_integer.rs
+index 7088b308c..69ae23701 100644
+--- a/src/piop/spartan/falcon_integer.rs
++++ b/src/piop/spartan/falcon_integer.rs
+@@ -127,6 +127,23 @@ pub(super) fn prove<const K: usize>(
+ }
+ 
+ fn prefix_rounds<const K: usize>(field: &Cfg, instance_vars: usize) -> usize {
++    #[cfg(feature = "bench-internals")]
++    if K == 1 {
++        match std::env::var("BITZ_ARITHMETIC_NORM_PREFIX") {
++            Ok(value) => match value.as_str() {
++                "auto" => {}
++                "1" => return 1,
++                "2" => return 2,
++                "3" => return 3,
++                "4" => return 4,
++                _ => panic!("BITZ_ARITHMETIC_NORM_PREFIX must be auto, 1, 2, 3 or 4"),
++            },
++            Err(std::env::VarError::NotPresent) => {}
++            Err(std::env::VarError::NotUnicode(_)) => {
++                panic!("BITZ_ARITHMETIC_NORM_PREFIX must be valid Unicode")
++            }
++        }
++    }
+     #[cfg(feature = "parallel")]
+     let workers = rayon::current_num_threads();
+     #[cfg(not(feature = "parallel"))]
+@@ -363,7 +380,10 @@ fn prove_with_prefix<const K: usize>(
+         }
+         drop(coefficient_span);
+         absorb_field_elements(transcript, &coefficients, field);
+-        boundary.after_round(transcript, round)?;
++        {
++            let _span = tracing::info_span!("falcon_integer:round_boundary").entered();
++            boundary.after_round(transcript, round)?;
++        }
+         let challenge = squeeze_field(transcript, field)?;
+         claim = coefficients
+             .iter()
+diff --git a/vendor/field/src/prime/prepared_linear.rs b/vendor/field/src/prime/prepared_linear.rs
+index 1f4275ed5..f5c74fca1 100644
+--- a/vendor/field/src/prime/prepared_linear.rs
++++ b/vendor/field/src/prime/prepared_linear.rs
+@@ -231,6 +231,32 @@ impl<const L: usize, const N: usize> PreparedLinearCombination<Uint<N>> for FpCt
+         p.unsigned_dot(read)
+     }
+ }
++
++impl<const L: usize, const TERMS: usize> PreparedFixedWordWeights<'_, L, 1, TERMS> {
++    /// Evaluate independent unsigned word projections with shared coefficients.
++    /// `read` runs once per term in ascending order and returns one word for
++    /// each lane. The term-major loop exposes independent carry chains without
++    /// combining their accumulators or changing the reduction bound per result.
++    #[inline(always)]
++    pub fn unsigned_word_dots<const LANES: usize>(
++        &self,
++        mut read: impl FnMut(usize) -> [u64; LANES],
++    ) -> [Fp<L>; LANES] {
++        const { assert!(LANES > 0 && LANES <= 8) };
++        let mut accumulators = [UintAccumulator::<L, 1>::ZERO; LANES];
++        for term in 0..TERMS {
++            let values = read(term);
++            let weight = &self.positive[term][0];
++            for lane in 0..LANES {
++                accumulators[lane].mac(weight, &Uint::from_words([values[lane]]));
++            }
++        }
++        // Every lane has at most sixteen u64 operands: S < 16*p*2^64.
++        // For L>=2 this is below p*R; L=1 retains the general remainder path.
++        accumulators.map(|accumulator| finish_words(self.params, accumulator))
++    }
++}
++
+ impl<const L: usize, const N: usize> PreparedLinearCombination<Z<N>> for FpCtx<L> {
+     type Prepared<'a, const TERMS: usize> = PreparedFixedWordWeights<'a, L, N, TERMS>;
+     fn prepare_linear_combination<const TERMS: usize>(
+@@ -393,3 +419,78 @@ impl<const L: usize> FpCtx<L> {
+             .reduce(accumulator)
+     }
+ }
++
++#[cfg(test)]
++mod word_dot_tests {
++    use super::*;
++
++    fn check<const L: usize, const TERMS: usize, const LANES: usize>(prime: Uint<L>) {
++        let field = create_prime_field(prime);
++        let coefficients: [Fp<L>; TERMS] = core::array::from_fn(|term| match term % 4 {
++            0 => field.zero(),
++            1 => field.one(),
++            2 => field.neg(&field.one()),
++            _ => field.from_integer(&Uint::<1>::from_u64(0xdead_beef_1234_5678)),
++        });
++        let prepared = <FpCtx<L> as PreparedLinearCombination<u64>>::prepare_linear_combination(
++            &field,
++            coefficients,
++        );
++        for offset in 0..5 {
++            let inputs: [[u64; LANES]; TERMS] = core::array::from_fn(|term| {
++                core::array::from_fn(|lane| {
++                    [0, 1, 12288, u64::MAX - 1, u64::MAX][(term + lane + offset) % 5]
++                })
++            });
++            let mut calls = 0;
++            let actual = prepared.unsigned_word_dots(|term| {
++                assert_eq!(term, calls);
++                calls += 1;
++                inputs[term]
++            });
++            assert_eq!(calls, TERMS);
++            for lane in 0..LANES {
++                let expected = (0..TERMS).fold(field.zero(), |sum, term| {
++                    field.add(
++                        &sum,
++                        &field.mul(
++                            &coefficients[term],
++                            &field.from_integer(&Uint::<1>::from_u64(inputs[term][lane])),
++                        ),
++                    )
++                });
++                let scalar = <FpCtx<L> as PreparedLinearCombination<u64>>::linear_combination(
++                    &prepared,
++                    |term| inputs[term][lane],
++                );
++                assert_eq!(actual[lane], expected);
++                assert_eq!(actual[lane], scalar);
++            }
++        }
++    }
++
++    fn widths<const L: usize, const LANES: usize>(prime: Uint<L>) {
++        check::<L, 0, LANES>(prime);
++        check::<L, 1, LANES>(prime);
++        check::<L, 11, LANES>(prime);
++        check::<L, 16, LANES>(prime);
++    }
++
++    #[test]
++    fn prepared_unsigned_word_dots_preserve_independent_reductions() {
++        for prime in [17, (1u64 << 61) - 1, u64::MAX - 58] {
++            let prime = Uint::<1>::from_u64(prime);
++            widths::<1, 1>(prime);
++            widths::<1, 2>(prime);
++            widths::<1, 4>(prime);
++            widths::<1, 8>(prime);
++        }
++        for prime in [17, (1u128 << 127) - 1, u128::MAX - 158] {
++            let prime = Uint::<2>::from_words([prime as u64, (prime >> 64) as u64]);
++            widths::<2, 1>(prime);
++            widths::<2, 2>(prime);
++            widths::<2, 4>(prime);
++            widths::<2, 8>(prime);
++        }
++    }
++}

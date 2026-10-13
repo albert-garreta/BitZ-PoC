@@ -1,0 +1,15 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "verified_proofs": 6372,
+  "proofs_by_protocol": {
+    "bitz/falcon1024-algebraic/non-zk/v9": 3186,
+    "bitz/falcon512-algebraic/non-zk/v9": 3186
+  },
+  "frozen_baseline_cases": 48,
+  "input_source_equality": true,
+  "complete_proof_and_payload_equality": true,
+  "command_and_raw_hashes_verified": true,
+  "frozen_binary_hashes_verified": true,
+  "parser_hashes_verified": true,
+  "phases_complete": true
+}

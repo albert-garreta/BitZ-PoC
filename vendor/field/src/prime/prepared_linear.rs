@@ -231,6 +231,32 @@ impl<const L: usize, const N: usize> PreparedLinearCombination<Uint<N>> for FpCt
         p.unsigned_dot(read)
     }
 }
+
+impl<const L: usize, const TERMS: usize> PreparedFixedWordWeights<'_, L, 1, TERMS> {
+    /// Evaluate independent unsigned word projections with shared coefficients.
+    /// `read` runs once per term in ascending order and returns one word for
+    /// each lane. The term-major loop exposes independent carry chains without
+    /// combining their accumulators or changing the reduction bound per result.
+    #[inline(always)]
+    pub fn unsigned_word_dots<const LANES: usize>(
+        &self,
+        mut read: impl FnMut(usize) -> [u64; LANES],
+    ) -> [Fp<L>; LANES] {
+        const { assert!(LANES > 0 && LANES <= 8) };
+        let mut accumulators = [UintAccumulator::<L, 1>::ZERO; LANES];
+        for term in 0..TERMS {
+            let values = read(term);
+            let weight = &self.positive[term][0];
+            for lane in 0..LANES {
+                accumulators[lane].mac(weight, &Uint::from_words([values[lane]]));
+            }
+        }
+        // Every lane has at most sixteen u64 operands: S < 16*p*2^64.
+        // For L>=2 this is below p*R; L=1 retains the general remainder path.
+        accumulators.map(|accumulator| finish_words(self.params, accumulator))
+    }
+}
+
 impl<const L: usize, const N: usize> PreparedLinearCombination<Z<N>> for FpCtx<L> {
     type Prepared<'a, const TERMS: usize> = PreparedFixedWordWeights<'a, L, N, TERMS>;
     fn prepare_linear_combination<const TERMS: usize>(
@@ -391,5 +417,80 @@ impl<const L: usize> FpCtx<L> {
     ) -> Fp<L> {
         self.prepare_product_reduction(max_terms)
             .reduce(accumulator)
+    }
+}
+
+#[cfg(test)]
+mod word_dot_tests {
+    use super::*;
+
+    fn check<const L: usize, const TERMS: usize, const LANES: usize>(prime: Uint<L>) {
+        let field = create_prime_field(prime);
+        let coefficients: [Fp<L>; TERMS] = core::array::from_fn(|term| match term % 4 {
+            0 => field.zero(),
+            1 => field.one(),
+            2 => field.neg(&field.one()),
+            _ => field.from_integer(&Uint::<1>::from_u64(0xdead_beef_1234_5678)),
+        });
+        let prepared = <FpCtx<L> as PreparedLinearCombination<u64>>::prepare_linear_combination(
+            &field,
+            coefficients,
+        );
+        for offset in 0..5 {
+            let inputs: [[u64; LANES]; TERMS] = core::array::from_fn(|term| {
+                core::array::from_fn(|lane| {
+                    [0, 1, 12288, u64::MAX - 1, u64::MAX][(term + lane + offset) % 5]
+                })
+            });
+            let mut calls = 0;
+            let actual = prepared.unsigned_word_dots(|term| {
+                assert_eq!(term, calls);
+                calls += 1;
+                inputs[term]
+            });
+            assert_eq!(calls, TERMS);
+            for lane in 0..LANES {
+                let expected = (0..TERMS).fold(field.zero(), |sum, term| {
+                    field.add(
+                        &sum,
+                        &field.mul(
+                            &coefficients[term],
+                            &field.from_integer(&Uint::<1>::from_u64(inputs[term][lane])),
+                        ),
+                    )
+                });
+                let scalar = <FpCtx<L> as PreparedLinearCombination<u64>>::linear_combination(
+                    &prepared,
+                    |term| inputs[term][lane],
+                );
+                assert_eq!(actual[lane], expected);
+                assert_eq!(actual[lane], scalar);
+            }
+        }
+    }
+
+    fn widths<const L: usize, const LANES: usize>(prime: Uint<L>) {
+        check::<L, 0, LANES>(prime);
+        check::<L, 1, LANES>(prime);
+        check::<L, 11, LANES>(prime);
+        check::<L, 16, LANES>(prime);
+    }
+
+    #[test]
+    fn prepared_unsigned_word_dots_preserve_independent_reductions() {
+        for prime in [17, (1u64 << 61) - 1, u64::MAX - 58] {
+            let prime = Uint::<1>::from_u64(prime);
+            widths::<1, 1>(prime);
+            widths::<1, 2>(prime);
+            widths::<1, 4>(prime);
+            widths::<1, 8>(prime);
+        }
+        for prime in [17, (1u128 << 127) - 1, u128::MAX - 158] {
+            let prime = Uint::<2>::from_words([prime as u64, (prime >> 64) as u64]);
+            widths::<2, 1>(prime);
+            widths::<2, 2>(prime);
+            widths::<2, 4>(prime);
+            widths::<2, 8>(prime);
+        }
     }
 }

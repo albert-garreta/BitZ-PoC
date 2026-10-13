@@ -1,0 +1,173 @@
+Falcon locality experimental findings — 2026-10-13
+
+Decision: keep forest grain 1, dense compaction off, and collapse batch 1.
+The measured alternatives do not establish a reliable production improvement.
+Norm-prefix selection and final production confirmation are separate work; this
+note evaluates the frozen candidate-v1 experiments only. No benchmarks, builds,
+Rust tests, or source/runner edits were performed to produce this assessment.
+
+Method and provenance
+---------------------
+Canonical v9, batch 1024 / security 128, 12 physical workers with ordered CPUs
+[6,7,4,5,2,3,0,1,14,15,12,13], main CPU 6. Comparisons match phase, degree,
+mode, CPU placement and seed; seeds are 42/43/44. Screen and qualification use
+2 warmups + 7 timed proofs per seed/process, giving 21 timed proofs per cell.
+Profiles use 1 warmup + 3 timed proofs per seed, giving 9 timed proofs per cell.
+Warmups are excluded. Repeated samples share Prepared and are correlated.
+Negative changes mean lower elapsed time; ratios are descriptive, not claims
+of statistical significance. No cold-start conclusion follows from these phases.
+
+Candidate-v1 has features falcon-hybrid,bench-internals and native CPU flags:
+d3e36634e596b9cd90a0b9d2dc0ddce9c28f2d353614ccf81f2404e74a15b788.
+Frozen production baseline:
+bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511.
+Each experiment changes one explicit control selector; combined changes norm
+prefix 4 and collapse4. Candidate control is NOT the frozen baseline binary.
+Screen control itself is 0.99%/1.41% above baseline at N512/N1024, with mixed
+per-seed differences. Control-only wins must not be reported as production wins.
+
+Completed source phases contain 2196 verified proofs including warmups:
+screen12: 756; profile12: 144; qualify: 1296 across 1/8/12/16 workers. These counts
+include norm variants and other worker cells; tables below select 12 workers.
+The campaign runner reports matched input/source roots, complete proof Debug
+digests and payload lengths, plus frozen binary/parser/command/raw hashes.
+This note reads that existing validation; it does not independently rerun it.
+Debug digest equality is not a direct comparison of serialized proof bytes.
+
+Untraced screen12: total commit+prove medians
+-------------------------------------------
+ N   variant    ms       vs control%  vs baseline%  faster seeds/control
+ 512 baseline     31.565        -0.98         +0.00 2/3
+ 512 control      31.878        +0.00         +0.99 0/3
+ 512 forest2      32.052        +0.55         +1.54 1/3
+ 512 forest4      32.076        +0.62         +1.62 0/3
+ 512 forest8      32.215        +1.06         +2.06 0/3
+ 512 compact2     32.284        +1.27         +2.28 1/3
+ 512 compact4     31.648        -0.72         +0.26 3/3
+ 512 compact8     32.064        +0.58         +1.58 1/3
+ 512 collapse2    31.956        +0.24         +1.24 2/3
+ 512 collapse4    31.535        -1.08         -0.09 3/3
+ 512 collapse8    31.491        -1.21         -0.23 3/3
+1024 baseline     56.627        -1.39         +0.00 2/3
+1024 control      57.423        +0.00         +1.41 0/3
+1024 forest2      56.683        -1.29         +0.10 3/3
+1024 forest4      56.905        -0.90         +0.49 1/3
+1024 forest8      57.634        +0.37         +1.78 2/3
+1024 compact2     57.347        -0.13         +1.27 1/3
+1024 compact4     57.354        -0.12         +1.28 1/3
+1024 compact8     56.933        -0.85         +0.54 1/3
+1024 collapse2    57.026        -0.69         +0.71 2/3
+1024 collapse4    56.700        -1.26         +0.13 2/3
+1024 collapse8    56.895        -0.92         +0.47 2/3
+
+Forest interpretation: grain2 lowers N1024 versus control for all three seeds,
+but its pooled result is still 0.10% above baseline. N512 is slower pooled and
+all three N512 grain2 seed medians exceed baseline. Grain4/8 do not supply a
+cross-degree benefit. The traced forest2 stage also has mixed seed directions.
+Keep the default grain 1. This does not prove all grain choices lose everywhere.
+
+Grain 16 was implemented/test-covered but NOT benchmarked: it appears in
+configs.json and no completed phase manifest. At 12 workers, the row/task cap
+makes requested grains 1/2/4/8/16 become 1/2/4/4/4 for 128 rows (N512), and
+1/2/4/8/8 for 256 rows (N1024), on eligible >=4 MiB passes. Smaller later passes
+can clamp further. Therefore 16 selects the same effective policy as 8 here;
+no distinct measured 16 result is claimed. Requested 4 and 8 also coincide on
+the N512 128-row shape, so timing differences do not establish a grain effect.
+
+Compaction interpretation: compact4 improves N512 versus control in all three
+seeds, but its pooled result remains 0.26% above baseline. All N1024 compact4
+seed medians exceed baseline, and control comparisons are mixed. The profile
+explains a concrete cost: the added serial copy exceeds the observed reduction
+in later dense folds. It truncates live length without releasing allocation
+capacity. Keep off; parallel/out-of-place alternatives were not evaluated.
+
+Collapse interpretation: collapse4/8 produce small pooled decreases against
+control, but near-zero or positive baseline changes. N1024 seed directions are
+mixed. The stage profile shows no faster collapse, and follow-up qualification
+does not establish a consistent additional benefit on top of norm4. Keep batch 1.
+
+Traced profile12: same candidate-v1 control versus selected variant (ms)
+---------------------------------------------------------------------
+ N   experiment   stage                      control    variant
+ 512 forest2      forest                        18.324     18.371
+ 512 collapse4    ring collapse                  1.366      1.379
+ 512 compact4     later dense folds              1.017      0.987
+ 512 compact4     added compaction copy         absent      0.284
+ 512 compact4     enclosing binding              6.879      7.353
+1024 forest2      forest                        32.038     32.395
+1024 collapse4    ring collapse                  2.720      2.770
+1024 compact4     later dense folds              1.937      1.848
+1024 compact4     added compaction copy         absent      0.566
+1024 compact4     enclosing binding             10.349     10.996
+
+Collapse4 minus control is +0.013/+0.050 ms for N512/N1024; all three N1024
+collapse stage seed medians increase. Compact4 later-fold savings are only
+0.030/0.089 ms against added copies of 0.284/0.566 ms. Those separate median
+differences are approximate work accounting, not an identity for total latency.
+All compact4 enclosing binding seed medians increase. Forest2 stage changes
+are +0.047/+0.357 ms pooled, with mixed seed directions in both degrees.
+
+Trace overhead is substantial and differs from the old baseline instrumentation.
+Use candidate-control stage comparisons only; do not compare these stage times
+with frozen-baseline spans as evidence of regression. Nested wall spans overlap;
+profile total times are not substituted for untraced latency qualification.
+
+Untraced qualify at 12 workers: isolated collapse and interaction with norm4
+-------------------------------------------------------------------------
+ N   reference    candidate   reference ms  candidate ms   change%  seed42/43/44%
+ 512 control      collapse4        31.924        31.692     -0.73  -0.46/-2.06/-0.06
+ 512 norm4        combined         30.880        31.309     +1.39  +0.66/+1.45/+0.56
+1024 control      collapse4        57.350        57.044     -0.53  +0.38/-2.79/+0.39
+1024 norm4        combined         55.361        55.273     -0.16  +0.99/-0.56/-0.20
+
+At N512, adding collapse4 to norm4 is slower in every seed. At N1024, its
+pooled 0.16% decrease has mixed seeds. Elsewhere in qualification, combination
+changes versus norm4 are -0.08%/-0.41% at N512 8/16 workers and +0.40%/+0.19%
+at N1024 8/16 workers. No consistent incremental benefit justifies promotion.
+
+PCS diagnostics and next bounded hypothesis
+------------------------------------------
+baseline-profiles/assessment.txt reports whole PCS 3.077/4.041 ms and aggregated
+induced-basis 0.46/0.61 ms for N512/N1024 (nine traced samples each at 12 workers).
+The source derivation in pcs-dispatch.txt proves initial sparse NTT is already
+selected: message logs 13/14, rate exponent 1, 309 queries against 112/120 dispatch
+cutoffs. Recursive levels use dense construction. The aggregate timer does not
+identify a dominant level, allocation or reduction, and the 0.59/0.56 ms residual
+cannot be assigned to NTT. Query/fold grinding must not be mistaken for pure
+field arithmetic; textual timers are rounded to 0.01 ms.
+
+A separate hypothesis is one full-domain sparse-transpose buffer with active
+256-element windows, replacing HashMap/per-window allocations and densification
+copy. Full buffers are 256/512 KiB, with 64/128 possible windows. Actual active
+window counts were not measured. Keep weights, within-window arithmetic, output
+basis, enforced sum and transcript identical. PCS remains unchanged here;
+neither this idea nor a PCS speedup was implemented or demonstrated.
+
+Code and evidence references
+----------------------------
+- src/bitz/row_dispatch.rs:10 — public-geometry/task grain cap; :22 selector.
+  src/bitz/forest.rs:1307 and src/bitz/kernels.rs:283 — existing row dispatch.
+- src/piop/spartan/falcon1024_algebraic/word_binding.rs:431 — compaction flag;
+  :1049 serial compaction and :1062 fold integration. Capacity stays allocated.
+- src/piop/spartan/falcon1024_algebraic/ring.rs:896 — collapse flag; :916
+  batched projection. vendor/field/src/prime/prepared_linear.rs:241 provides
+  term-major independent accumulators; protocol/transcript order is unchanged.
+- vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:2368 — NTT dispatch;
+  :2422 window allocations; :2458 densification; :4097 initial call; :4278
+  recursive dense call. Full geometry/query derivation: pcs-dispatch.txt.
+- Evidence relative to this directory: phases/screen12.json, phases/profile12.json,
+  phases/qualify.json; runs/<phase>/<job> contains exact command/raw/result files.
+  summary.json and profile-summary.json contain all pooled and per-seed values;
+  validation.json records frozen-runner integrity/proof checks. Detailed context:
+  screen12-assessment.txt, profile12-assessment.txt, qualify-assessment.txt,
+  forest-runner-review.txt, ring-review.txt, baseline-profiles/pcs-summary.json.
+- candidate-v1-binary.json, candidate-v1-build-command.json, candidate-v1-source.json
+  and candidate-v1.patch freeze the implementation tested in these three phases.
+
+Input snapshot SHA256 (summaries can grow when subsequent phases complete):
+5cc4add4a633c77b9614b023fd8e8488d9d565063970a3737e2dafe4874540b6  summary.json
+0f774ac6a0c6adcdf45affbd580ade38e5c0dbdc8305582a88d137473d925b2a  profile-summary.json
+85a3b307e68c8cc1ebc641bd24618d2f1b36a03a416060137842205b7ed028be  validation.json
+4b26814d15560ba1c19f2cdbe539a62a645e45a636d7b863821120fd2c76ba4f  phases/screen12.json
+f44879d10351fab51154128ce2f701a53c0ec81b55f520f11045e0c1fb27ef4c  phases/profile12.json
+a277e153de8d9ec9eb3847ece598a4b845c508953fbd8ff4d5e725dd84fc7feb  phases/qualify.json

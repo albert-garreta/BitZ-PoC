@@ -28,6 +28,7 @@ impl WordBridgeClaim {
         &self.point[layout.row_vars() - 4..]
     }
 
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_row_weights")]
     pub fn row_weights(&self, layout: &Layout, field: &Cfg) -> Result<Vec<u128>, FalconError> {
         if self.point.len() != rounds(layout)
             || self.with_padding != (layout.batch() < layout.capacity())
@@ -106,6 +107,7 @@ struct PublicWeights {
     padding: F,
 }
 impl PublicWeights {
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_public_weights")]
     fn new(form: &BindingForm<'_>) -> Self {
         let f = form.field;
         let mut slacks = form.slacks.clone();
@@ -319,6 +321,7 @@ impl Sparse {
 /// its contribution to P*U + (gamma-gamma*M)*V over at most 32 positions.
 struct AggregateSpare(Vec<[F; 2]>);
 impl AggregateSpare {
+    #[tracing::instrument(skip_all, name = "falcon_algebraic:word_spare_setup")]
     fn new(source: &Sparse, weights: &PublicWeights, f: &Cfg) -> Self {
         let mut values = vec![[f.zero(); 2]; SLACK_BITS.next_power_of_two()];
         for &(index, bit) in &source.0 {
@@ -423,6 +426,25 @@ pub(super) fn workspace_reuse_enabled() -> bool {
     arithmetic_experiment("BITZ_ARITHMETIC_WORD_SCRATCH", false)
 }
 
+fn dense_compaction_threshold() -> Option<usize> {
+    #[cfg(feature = "bench-internals")]
+    return match std::env::var("BITZ_ARITHMETIC_DENSE_COMPACTION") {
+        Err(std::env::VarError::NotPresent) => None,
+        Ok(value) => match value.as_str() {
+            "off" => None,
+            "2" => Some(2),
+            "4" => Some(4),
+            "8" => Some(8),
+            _ => panic!("BITZ_ARITHMETIC_DENSE_COMPACTION must be off, 2, 4, or 8"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_DENSE_COMPACTION must be valid Unicode")
+        }
+    };
+    #[cfg(not(feature = "bench-internals"))]
+    None
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct WordOptions {
     reuse_initial: bool,
@@ -431,6 +453,7 @@ struct WordOptions {
     scratch: bool,
     factored_initial_fused: bool,
     factored_fold_reduction: bool,
+    dense_compaction: Option<usize>,
 }
 
 impl WordOptions {
@@ -452,6 +475,7 @@ impl WordOptions {
                 "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION",
                 false,
             ),
+            dense_compaction: dense_compaction_threshold(),
         }
     }
 }
@@ -997,6 +1021,7 @@ fn initialize_dense(
 }
 
 fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
+    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold", stride).entered();
     if values.len() / stride == 2 {
         values[0] = std::array::from_fn(|k| lerp(values[0][k], values[stride][k], r, f));
         return [f.zero(); 2];
@@ -1007,7 +1032,6 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
         }
         dense_sums(block, 2 * stride, f)
     };
-    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold").entered();
     #[cfg(feature = "parallel")]
     if values.len() / stride >= 4096 && rayon::current_num_threads() > 1 {
         return values
@@ -1018,9 +1042,42 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
     fold(values)
 }
 
+/// Move the live strided entries to the front without allocating or changing
+/// the retained capacity. The forward write cursor never overtakes an unread
+/// entry. This extra serial copy is experimental: saved sparse accesses in
+/// later rounds must outweigh it before enabling a threshold by default.
+fn compact_dense(values: &mut Vec<[F; 2]>, stride: usize) {
+    assert!(stride > 0 && values.len() % stride == 0);
+    let live = values.len() / stride;
+    let _span =
+        tracing::info_span!("falcon_algebraic:word_dense_compaction", stride, live).entered();
+    for i in 1..live {
+        values[i] = values[i * stride];
+    }
+    values.truncate(live);
+}
+
+#[inline]
+fn dense_fold_with_compaction(
+    values: &mut Vec<[F; 2]>,
+    stride: &mut usize,
+    r: F,
+    f: &Cfg,
+    threshold: Option<usize>,
+) -> [F; 2] {
+    let sums = dense_fold(values, *stride, r, f);
+    *stride *= 2;
+    if threshold.is_some_and(|threshold| *stride >= threshold) {
+        compact_dense(values, *stride);
+        *stride = 1;
+    }
+    sums
+}
+
 /// Padding is checked while scanning the source, so C contributes zero until
 /// the instance rounds. Evaluate its local MLE once instead of folding a
 /// third full-size field table. The verifier never assumes padding is zero.
+#[tracing::instrument(skip_all, name = "falcon_algebraic:word_padding_counts")]
 fn counts(
     source: &Source,
     layout: &Layout,
@@ -1244,21 +1301,24 @@ fn prove_with_options_and_initial(
     let mut weights = PublicWeights::new(&form);
     let mut spare = Sparse::from_source(source, layout, f)?;
     let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
-    let (mut next, initial) = if let Some(initial) = initial {
-        if factors.s1.is_some() || factors.norm.is_some() {
-            return Err(failure(
-                "precomputed initial claim requires dense coefficients",
-            ));
-        }
-        (initial.round, initial.sum)
-    } else if options.factored_initial_fused {
-        if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
-            first_round_factored_fused(&form, source, s1, norm, f, options.reuse_initial)
+    let (mut next, initial) = {
+        let _span = tracing::info_span!("falcon_algebraic:word_initial_sums").entered();
+        if let Some(initial) = initial {
+            if factors.s1.is_some() || factors.norm.is_some() {
+                return Err(failure(
+                    "precomputed initial claim requires dense coefficients",
+                ));
+            }
+            (initial.round, initial.sum)
+        } else if options.factored_initial_fused {
+            if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
+                first_round_factored_fused(&form, source, s1, norm, f, options.reuse_initial)
+            } else {
+                first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
+            }
         } else {
             first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
         }
-    } else {
-        first_round_with_factors(&form, source, &factors, f, options.reuse_initial)
     };
     let spare_initial = aggregate_spare.initial(&weights, f);
     if f.add(&initial, &spare_initial) != target {
@@ -1299,7 +1359,11 @@ fn prove_with_options_and_initial(
         let polynomial = [c0, c1, c2];
         absorb_field_elements(t, &polynomial, f);
         proof.round_polynomials.push(polynomial);
-        boundary.after_round(t, round).map_err(failure)?;
+        {
+            let _span =
+                tracing::info_span!("falcon_algebraic:word_round_grinding", round).entered();
+            boundary.after_round(t, round).map_err(failure)?;
+        }
         let r = sample(t, f)?;
         claim = f.add(&c0, &f.mul(&r, &f.add(&c1, &f.mul(&r, &c2))));
         point.push(r);
@@ -1307,21 +1371,24 @@ fn prove_with_options_and_initial(
             let initial_form = form.take().unwrap();
             next = first_fold_into(&initial_form, source, r, &factors, f, options, dense);
         } else {
-            next = dense_fold(dense, stride, r, f);
-            stride *= 2;
+            next = dense_fold_with_compaction(dense, &mut stride, r, f, options.dense_compaction);
         }
-        if round < COEFFICIENT_LOG {
-            aggregate_spare.as_mut().unwrap().fold(r, f);
-        } else if round == COEFFICIENT_LOG {
-            spare.project_instances(&point, f)?;
-            aggregate_spare = None;
-        } else {
-            spare.fold(r, f);
+        {
+            let _span =
+                tracing::info_span!("falcon_algebraic:word_auxiliary_fold", round).entered();
+            if round < COEFFICIENT_LOG {
+                aggregate_spare.as_mut().unwrap().fold(r, f);
+            } else if round == COEFFICIENT_LOG {
+                spare.project_instances(&point, f)?;
+                aggregate_spare = None;
+            } else {
+                spare.fold(r, f);
+            }
+            if let Some(c) = &mut count {
+                fold_small(c, r, f);
+            }
+            weights.fold(round, r, f);
         }
-        if let Some(c) = &mut count {
-            fold_small(c, r, f);
-        }
-        weights.fold(round, r, f);
     }
     let mut values = vec![dense[0][1], spare.terminal(f)];
     let mut terminal = f.add(
@@ -1337,7 +1404,10 @@ fn prove_with_options_and_initial(
     }
     t.absorb_slice(TERMINALS);
     absorb_field_elements(t, &values, f);
-    let terminal_merge_nonce = prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?;
+    let terminal_merge_nonce = {
+        let _span = tracing::info_span!("falcon_algebraic:word_terminal_grinding").entered();
+        prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?
+    };
     let zeta = sample(t, f)?;
     let claim = bind_terminal(t, point, &values, zeta, f);
     let row_weights = claim.row_weights(layout, f)?;

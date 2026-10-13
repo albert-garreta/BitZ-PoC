@@ -1,0 +1,113 @@
+Falcon locality and arithmetic optimization results — 2026-10-13
+
+Enable four native square-norm prefix rounds for Falcon-512/8 workers and
+Falcon-1024/12 workers. Both improve total prover latency in both confirmation
+passes and all 24 selected per-seed comparisons. These are prover-latency
+tradeoffs: verification and memory costs are reported below.
+
+Falcon-512/12 retains its original prefix 1: the prefix 2/4 candidates offered
+small prover gains but lost them in verification after proving. Other parallel
+cases and the existing serial policy retain their previous prefix selection.
+The new parallel policy requires K=1, capacity 1024 and modulus>=2^125. It
+applies to padded batches 513..1024; performance qualification is at batch 1024.
+
+Forest row grain, binding compaction and batched ring projection are implemented
+and tested as bench-internals experiments. They did not establish reliable
+production gains. Defaults remain grain 1, compaction off, collapse batch 1.
+Finer binding/norm profiling and the reproducible experiment runner are retained.
+
+BEFORE / AFTER
+Canonical arithmetic Falcon v9, batch 1024, security 128, Ryzen 9 9950X3D.
+Native builds; fixed ordered physical worker CPUs; main/auxiliary CPU 6.
+Untraced total commit+prove medians in milliseconds, from accepted2 only:
+
+Falcon  workers  mode        before       after     change
+   512        8  cold         30.837      29.973     -2.80%
+   512        8  repeated     28.330      27.949     -1.35%
+   512       12  cold         33.981      34.090     +0.32%
+   512       12  repeated     31.777      31.609     -0.53%
+  1024        8  cold         56.180      56.054     -0.22%
+  1024        8  repeated     51.243      51.086     -0.31%
+  1024       12  cold         59.645      57.768     -3.15%
+  1024       12  repeated     56.707      55.651     -1.86%
+
+Independent confirmation ranges (accepted1 and accepted2 kept separate):
+- 512/8 prover improves 1.28–1.35% repeated, 2.29–2.80% cold.
+- 1024/12 prover improves 1.86–2.55% repeated, 2.82–3.15% cold.
+- 512/12 and 1024/8 retain their prior policies. Small timing shifts in those
+  cells are not claimed as optimization wins.
+
+Unchanged-policy regression checks, one untraced repeated pass:
+Falcon  workers       before       after     change
+   512        1      139.269     139.157     -0.08%
+   512       16       28.168      28.219     +0.18%
+  1024        1      269.819     269.459     -0.13%
+  1024       16       48.548      48.894     +0.71%
+
+The 1024/16 pooled increase 0.71% is retained; seed directions are mixed
+(-1.45%,+0.93%,+3.18%). These measurements do not establish improved performance in every configuration.
+
+COSTS / INTERPRETATION
+- 512/8 cold verification after proving rises 11.85–12.02% (accepted2:
+  8.209→9.181 ms). Combined commit+prove+verify rises 0.41–0.85%. Repeated
+  combined latency improves 0.99–1.22%, with essentially unchanged peak RSS.
+- 1024/12 repeated peak RSS rises 18.28–18.57%, approximately 32 MiB
+  (accepted2:173.12→204.77 MiB). Cold peak falls about 2.8%. Cold verification
+  rises 3.23–3.77%, but combined latency improves 1.54–2.17% repeated and
+  1.60–2.44% cold. One repeated seed has a small combined-latency increase.
+- Verification follows proving in the same process. An isolated verifier
+  benchmark was not performed. No allocator/cache cause is established.
+- Cold means a fresh process/Prepared; CPU caches were not flushed. Repeated
+  samples share Prepared. Peak RSS includes warmups and all process work;
+  retained RSS is a distinct measure. Setup is excluded from prover latency.
+- Each latency cell uses 3 seeds with 7 measured samples per seed (21 total);
+  repeated cases have 2 warmups per seed. No outliers were discarded. These
+  are descriptive ratios, not significance tests or cross-hardware claims.
+
+STAGE EVIDENCE / REJECTED EXPERIMENTS
+Production-light profiles put 1024/12 norm time at 3.350→2.247 ms. Unchanged
+512/12 norm is 2.146→2.125 ms. Forest remains largest at about 14.5/27.0 ms.
+Traced profiles are separate diagnostics; nested stages overlap and cannot
+be added to total latency. Other stage changes do not establish a mechanism.
+Matched candidate-v1 profiles found:
+- Compaction added 0.284/0.566 ms copying for 512/1024 against only 0.030/0.089 ms
+  saved in later folds. It retains vector capacity.
+- Collapse batch 4 changed collapse 1.366/2.720→1.379/2.770 ms.
+- Larger forest tasks produced mixed or regressing total/stage results.
+  Grain 16 is implemented/tested but not separately measured; its clamped
+  policy equals grain 8 for the measured 12-worker geometries.
+See experiment-findings.txt for controls, seed evidence and negative results.
+Detailed experiment traces have extra overhead and are compared only against
+the same instrumented binary. PCS was profiled, not changed; both top-level
+openings already use sparse NTT. See pcs-dispatch.txt.
+
+CORRECTNESS / PROVENANCE
+Global validation: 6,372 proofs verified including warmups, both degrees.
+The final accepted candidate contributes 1068 proofs (912 measured), 7 phases.
+Input/source roots, complete proof Debug digests and payload lengths match
+baseline. This compares proof values and payload sizes, not serialized byte
+streams directly. Security ledger, transcript and proof format are unchanged.
+Batch 1024/security 128 payloads: 256368 bytes (512), 321304 bytes (1024).
+Coverage includes 100/128-bit security and partial batches 3/129/513. The final
+candidate directly checks batch 513 at 8/12 workers and 100-bit security;
+earlier policies cover additional partial shapes. Padding timings are not
+performance qualification.
+Native tests: Falcon 365 passed (3 ignored), BitZ 94 passed (1 ignored), prepared
+batch arithmetic passed. Production-feature Falcon tests also passed. Final
+selector norm tests: 6 passed. Portable field test, nonparallel hybrid library
+check and 12 Python runner tests passed. Independent reviews found no actionable
+correctness, transcript or arithmetic-bound issues. Hash validation covers
+binaries, parsers/helpers, exact commands and raw outputs.
+
+Baseline revision:80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+Baseline binary SHA256:
+bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511
+Current candidate: candidate-accepted, production falcon-hybrid features.
+Candidate binary SHA256:
+c768431de56893effcb985e0bbfb380b6f0dbdb1714319772297eb0cfdc37b4b
+
+accepted-report.txt and accepted-comparison.json contain the final candidate.
+candidate-accepted-source.json/patch identify its source. validation.json and
+final-validation.log cover all experiments. phases/ and runs/ preserve exact
+commands, affinity, samples and hashes. Historical final*,v2*,production* and
+lowmemory* files describe earlier candidates, not the current defaults.

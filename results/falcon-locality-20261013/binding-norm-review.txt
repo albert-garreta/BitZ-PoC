@@ -1,0 +1,112 @@
+Independent binding-compaction and norm-prefix review
+Date: 2026-10-13
+Baseline: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+Scope: working-tree changes to word_binding.rs, word_binding_tests.rs,
+falcon_integer.rs, and benches/common/falcon_stage_timings.rs.
+Method: source/diff inspection only. No edits to implementation, builds, tests,
+or prover/benchmark executions by this reviewer.
+
+Result: no remaining actionable correctness or safety findings.
+One profiling defect was reported, fixed by root, and rechecked below.
+
+Compaction invariant and overflow
+--------------------------------
+word_binding.rs:924 initializes source_bits/32 dense [weight,value] slots after
+the first word challenge. The number of live slots is a power of two; before
+each later fold it equals values.len()/stride and is at least2.
+
+dense_fold (1023-1043) writes each folded value into the first slot of its pair
+and computes the next sums at twice the old stride. The new wrapper (1061-1074)
+retains those already-computed sums, doubles the stride, and optionally copies
+the live entries to the front. Thus compaction changes storage only, including
+the terminal fold where the single live entry is values[0].
+
+compact_dense (1049-1058) checks nonzero stride and exact divisibility. For
+i<live=len/stride, the source index i*stride is in bounds and is no smaller
+than the forward destination i. Earlier writes cannot overwrite later source
+entries. All accessed entries were initialized by the prior fold/initializer;
+the change introduces no unsafe code or uninitialized reads. Truncation keeps
+Vec capacity, and resetting stride to1 restores the same live sequence.
+
+Before doubling, 2*stride<=values.len(), so stride multiplication is bounded by
+the allocated vector length. In the parallel branch live>=4096, hence
+1024*stride<=values.len()/4 and chunk-size multiplication cannot overflow.
+Compaction's i*stride is likewise bounded by len. The number of products in
+each existing dense_sums accumulator is unchanged: a parallel fold chunk has
+256 next-round products; serial folds retain the existing <2^64-term bound
+for FpProductAcc<2>'s full-width product accumulator with a headroom limb
+(vendor/field/src/integer/product.rs:79-84). No new accumulator bound is needed.
+
+Scratch reuse
+-------------
+Compaction truncates length without reallocating or shrinking capacity. The
+next direct initialization clears length, writes every required spare slot,
+and publishes length after completion (word_binding.rs:943-981). The ordinary
+initializer resizes the initialized vector and overwrites all slots (983-1016).
+Neither path assumes the previous proof retained its original length. Existing
+scratch lease/concurrency behavior is unchanged.
+
+Transcript and defaults
+-----------------------
+The word round still computes [c0,c1,c2], absorbs it, invokes the same grinding
+boundary, samples r, updates the claim, then folds (1357-1374). Compaction is
+after folding and cannot change a challenge or a polynomial. Auxiliary folds,
+padding, terminal checking, terminal absorption, grinding, and zeta sampling
+retain their order (1376-1412).
+
+BITZ_ARITHMETIC_DENSE_COMPACTION accepts off/2/4/8 only in bench-internals;
+unset and production remain off (429-447). The new branches/indexes depend on
+public lengths, stride, and an explicit experiment option. They add no new
+witness-dependent branch or indexing class; this is not an overall constant-
+time claim about the prover.
+
+Norm-prefix selector
+--------------------
+falcon_integer.rs:129-146 adds bench-only auto/1/2/3/4 overrides for K==1.
+Unset/auto preserve the old policy, and K==4 ignores this square-norm override.
+The existing validation at173-185 still rejects invalid dimensions/widths
+before reads or transcript writes; width is capped to row_vars at192.
+For width<=4 and row_vars<=20, the native square-grid sum bound remains2^54:
+(2^width * 2^15)^2 * 2^(row_vars-width). See native_prefix.rs:90-92.
+No arithmetic, round degree, protocol encoding, or boundary policy changed.
+
+Tests inspected (not executed here)
+----------------------------------
+- word_binding_tests.rs:887 compares each round's live entries against the
+  independent dense Reference for compaction off/2/4/8, dense/factored modes,
+  and challenges0/1/transcript-generated through the terminal value.
+- word_binding_tests.rs:943 compares complete word proofs, bridge outputs,
+  transcript states and verifier results across the compaction choices and
+  combined options. A shared workspace runs batches3/1/17/3 with61-/127-bit
+  fields and zero/nonzero grinding; its retained capacity is checked after
+  each run. Wrong targets are still rejected.
+- Existing falcon_integer.rs:715 compare_prefixes covers widths1..4 against
+  an ordinary dense proof, all coefficients, challenges, terminal values,
+  grinding nonces and verifier results. It includes full i16 boundaries,
+  nonconstant fourth-prefix coordinates, degenerate challenges, widths capped
+  by small row counts, and invalid initial claims. Tests879/884 instantiate
+  K==1/K==4. Invalid dimensions are separately rejected before any read/absorb.
+
+Profiling finding resolved
+--------------------------
+The first draft added an outer falcon_integer:native_prefix span around
+Prefix::new, which already creates the same named span at native_prefix.rs:49.
+Both would pass the new light filter, and the profile summarizer sums by name,
+double-counting this setup. Root removed the redundant outer span; the existing
+inner span with prefix_rounds metadata remains. Verified the final diff.
+
+The remaining new scopes only observe setup/fold/grinding work. A dense-fold
+scope now also includes its terminal case and records stride. Light profiles
+admit per-round word/integer and grinding spans, so they have greater diagnostic
+overhead than prior light profiles. They must remain separate from untraced
+latency evidence; nested wall durations overlap and cannot be added indiscriminately.
+
+Reviewed file SHA256:
+word_binding.rs:
+  5ab732f4e09e6909e3b9f190fa4cccc5acb286fadc0a2753473caa3db53ee71c
+word_binding_tests.rs:
+  e67bd8f577af0032892ed9b0ff7d039c5ec76d2e1cff8fd1a0db288a83fdd719
+falcon_integer.rs:
+  2757dd58ac4cc09458f788e01e2bc003f88d21e321990cb94bd67c02e8439729
+benches/common/falcon_stage_timings.rs:
+  ab03f988b93adbc543d499e5d390e0d3309fb347de84406d7d2f134d0ad99277

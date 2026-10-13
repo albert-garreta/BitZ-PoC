@@ -1,0 +1,67 @@
+Independent ring-collapse batching review, 2026-10-13
+Reviewer: /root/arithmetic_binding_plan
+
+Scope: working-tree changes to
+src/piop/spartan/falcon1024_algebraic/ring.rs and
+vendor/field/src/prime/prepared_linear.rs, relative to baseline80e141a1a.
+Conclusion: no actionable correctness, overflow, ordering, or transcript
+findings identified. This was a read-only source review; no build, test,
+benchmark, or prover was run by this reviewer for these changes.
+
+Algebra and accumulation bounds
+- PreparedFixedWordWeights is constructed through its existing checked
+  constructor, which limits TERMS to16. Its fields are private. The new
+  unsigned_word_dots helper accepts1..8 lanes at compile time and keeps a
+  separate UintAccumulator<L,1> for every lane.
+- Each lane receives exactly the same TERMS unsigned-word products as the
+  scalar unsigned_dot path, in ascending term order. Only independent lanes
+  are interleaved. No lanes or carries are combined.
+- Every prepared weight is a residue below p. For an unsigned u64 input,
+  S < TERMS*p*2^64 <=16*p*2^64 = p*2^68. For L>=2, R=2^(64L)>=2^128,
+  so S<pR and the existing single Montgomery REDC in finish_words is valid.
+  The accumulator has L+2 words, exceeding the at-most64L+68-bit bound.
+  L=1 continues through the existing general remainder/canonical conversion
+  path. TERMS=0 returns zero through the same reduction path.
+- Prepared weights retain their existing extra Montgomery factor; reusing
+  finish_words produces the same field representation as scalar evaluation.
+  The helper introduces no ISA-specific arithmetic, unsafe accesses, or
+  narrowing conversion. Field-kernel portability remains that of the existing
+  UintAccumulator/finish_words implementations.
+
+Ring integration, lane order, and tails
+- collapse_weights uses indexed par_chunks_exact and collects fixed arrays in
+  input-chunk order. Lane i reads coordinate vector chunk[i] for every term.
+  Vec::into_flattened preserves that order without manual layout conversion.
+  The scalar remainder appends the final original vectors in order.
+- Production vectors have batch*N entries, divisible by2/4/8 for both Falcon
+  degrees. Empty and arbitrary short/tail slices are also handled correctly.
+- The associated prepared type is fixed by Cfg and PreparedLinearCombination;
+  the inherent public method is available on that concrete type without
+  exporting a new ring-facing representation or constructing it manually.
+- xi powers, prepared weights, signed carry/target computation, coefficient
+  dimensions, and canonical native-coordinate interpretation are unchanged.
+
+Transcript and default policy
+- Both prover and verifier select a computational batch size and then call the
+  same existing validation/challenge/absorption sequence. Carries are absorbed
+  and projection grinding completes before xi is sampled. Batching only changes
+  evaluation of the already-fixed coordinate projection after that challenge.
+- The benchmark selector accepts1/2/4/8 and defaults to1; production without
+  bench-internals always selects1. The1 path preserves the original scalar
+  prepared-combination loop. No proof fields, security parameters, equations,
+  transcript labels, or verification checks change.
+
+Inspected tests and limits
+- Field tests compare independent-lane output both to ordinary field arithmetic
+  and scalar prepared dots. They cover0/1/11/16 terms,1/2/4/8 lanes, L=1/L=2,
+  small and near-word-boundary moduli, zero/negative-one coefficients, and
+  operands through u64::MAX; callback order/count is checked.
+- Ring tests cover coordinate bounds, xi=0/1/p-1, both61-/127-bit prime paths,
+  all supported lane widths, empty/short/tail slices through257 entries, and
+  pools with1/4/12 workers. Complete ring proofs and transcript continuations
+  are compared across widths, with partial batches, grinding, and changed
+  carries checked against the returned relation.
+- These are inspected tests, not reviewer-observed passes. Central native and
+  portable builds/tests must establish execution. The review establishes no
+  performance improvement; lane interleaving can increase register pressure,
+  and the scalar-tail extension can reallocate for arbitrary non-Falcon tails.

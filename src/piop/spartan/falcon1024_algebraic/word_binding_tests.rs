@@ -890,50 +890,50 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
     let source = source_fixture(&layout);
     for mode in [0, 3] {
         for challenges in 0..3 {
-            let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
-            let mut reference = Reference::new(&dense_form, &source, &f);
-            let mut values = Vec::new();
-            let mut stride = 1;
-            let mut transcript = Blake3Transcript::new();
-            transcript.absorb_slice(b"word-dense-reference-challenges");
-            for round in 0..rounds(&layout) {
-                let r = match challenges {
-                    0 => f.zero(),
-                    1 => f.one(),
-                    _ => sample(&mut transcript, &f).unwrap(),
-                };
-                let sums = if round == 0 {
-                    first_fold_into(
-                        &form,
-                        &source,
-                        r,
-                        &factors,
-                        &f,
-                        WordOptions {
-                            fused_fold: true,
-                            direct_init: true,
-                            factored_fold_reduction: true,
-                            ..WordOptions::default()
-                        },
-                        &mut values,
-                    )
-                } else {
-                    let result = dense_fold(&mut values, stride, r, &f);
-                    stride *= 2;
-                    result
-                };
-                reference.fold(r, &f);
-                let active: Vec<_> = values.iter().step_by(stride).copied().collect();
-                let expected: Vec<_> = reference.weights[0]
-                    .iter()
-                    .zip(&reference.tables[0])
-                    .map(|(&w, &x)| [w, x])
-                    .collect();
-                assert_eq!(
-                    active, expected,
-                    "mode={mode} challenge={challenges} round={round}"
-                );
-                assert_eq!(sums, dense_sums(&expected, 1, &f));
+            for compaction in [None, Some(2), Some(4), Some(8)] {
+                let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
+                let mut reference = Reference::new(&dense_form, &source, &f);
+                let mut values = Vec::new();
+                let mut stride = 1;
+                let mut transcript = Blake3Transcript::new();
+                transcript.absorb_slice(b"word-dense-reference-challenges");
+                for round in 0..rounds(&layout) {
+                    let r = match challenges {
+                        0 => f.zero(),
+                        1 => f.one(),
+                        _ => sample(&mut transcript, &f).unwrap(),
+                    };
+                    let sums = if round == 0 {
+                        first_fold_into(
+                            &form,
+                            &source,
+                            r,
+                            &factors,
+                            &f,
+                            WordOptions {
+                                fused_fold: true,
+                                direct_init: true,
+                                factored_fold_reduction: true,
+                                ..WordOptions::default()
+                            },
+                            &mut values,
+                        )
+                    } else {
+                        dense_fold_with_compaction(&mut values, &mut stride, r, &f, compaction)
+                    };
+                    reference.fold(r, &f);
+                    let active: Vec<_> = values.iter().step_by(stride).copied().collect();
+                    let expected: Vec<_> = reference.weights[0]
+                        .iter()
+                        .zip(&reference.tables[0])
+                        .map(|(&w, &x)| [w, x])
+                        .collect();
+                    assert_eq!(
+                        active, expected,
+                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?}"
+                    );
+                    assert_eq!(sums, dense_sums(&expected, 1, &f));
+                }
             }
         }
     }
@@ -995,12 +995,37 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
                     ..WordOptions::default()
                 },
                 WordOptions {
+                    dense_compaction: Some(2),
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    dense_compaction: Some(4),
+                    direct_init: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    dense_compaction: Some(8),
+                    direct_init: true,
+                    scratch: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
                     reuse_initial: true,
                     fused_fold: true,
                     direct_init: true,
                     scratch: true,
                     factored_initial_fused: true,
                     factored_fold_reduction: true,
+                    dense_compaction: None,
+                },
+                WordOptions {
+                    reuse_initial: true,
+                    fused_fold: true,
+                    direct_init: true,
+                    scratch: true,
+                    factored_initial_fused: true,
+                    factored_fold_reduction: true,
+                    dense_compaction: Some(2),
                 },
             ] {
                 let (form, factors, _) = factored_fixture(&layout, &f, mode);

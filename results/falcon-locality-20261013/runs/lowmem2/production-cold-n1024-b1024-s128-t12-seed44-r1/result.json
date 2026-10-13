@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b1024-s128-t12-seed44-r1",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 44,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 1,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "b117c5b5b7f13cd047d5275d11f19cbf7edca527296d0bd6dd6bdaa6c831f188",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "88d7fb38078332067061190b18c835ac2faa86c786720e805e39571e3bf154ac",
+      "proof_debug_digest": "1ef644df598363902c352bb33abc6557d32b6d624f2fbc35c11e88eeb48c627d",
+      "total_prover_ms": 58.781271000000004,
+      "prove_ms": 53.564592000000005,
+      "witness_commit_ms": 5.2165989999999995,
+      "verify_ms": 14.912052000000001,
+      "process_peak_rss_kib": 136876,
+      "proof_payload_bytes": 321432,
+      "iteration": 0,
+      "prepare_ms": 0.145285,
+      "external_input_ms": 1764.035762,
+      "prover_minor_faults": 56455,
+      "process_rss_before_prover_kib": 22844,
+      "process_rss_after_prover_kib": 73636,
+      "process_retained_rss_kib": 61284,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "5245b1921161b610d44fc2d5112bd18ffada1497ac4b3fd958eda8e9972d604c",
+  "stdout_sha256": "c262f653da529d3e50cd4a8b79b6bf34c31cbb5ae89e11a92d87a7724512a16b",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "2e3fa4aebb0d35d3026dd362e151b4171c495ac38bc56039e85204d040120552"
+}

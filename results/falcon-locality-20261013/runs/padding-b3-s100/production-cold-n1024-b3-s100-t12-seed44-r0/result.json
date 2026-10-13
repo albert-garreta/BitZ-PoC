@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b3-s100-t12-seed44-r0",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 44,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 0,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "3a879ea84478cb0193890744b479263258e1a58bc0de1716dba91c347eae09b9",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "9b330b913dc139ed89eba48b4891f2e03012b4017b92bf7f0c07bbf26acb0677",
+      "source_root": "2c7315ff678e1a42352662471e7d984eb4927420a98020f1b9336f97255658d1",
+      "proof_debug_digest": "498463678609c983a1ecb9b7d03013041047fb94182bbb5f1c7a33a2dcc0e20a",
+      "total_prover_ms": 4.81145,
+      "prove_ms": 4.634957,
+      "witness_commit_ms": 0.17637299999999997,
+      "verify_ms": 2.3224370000000003,
+      "process_peak_rss_kib": 18720,
+      "proof_payload_bytes": 81112,
+      "iteration": 0,
+      "prepare_ms": 0.08853799999999999,
+      "external_input_ms": 26.625442999999997,
+      "prover_minor_faults": 3288,
+      "process_rss_before_prover_kib": 6576,
+      "process_rss_after_prover_kib": 12756,
+      "process_retained_rss_kib": 12756,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "c4568ca213d195fcf882e82dedca90a2e3f330dd9e2ffaa7e7ce61d4aa96f8e6",
+  "stdout_sha256": "4ea8f82f49bd0a71d367909f34d4116b3b2aaffee40ecb6c78593e5d944efa0f",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "de31a72e46bc96e2078ed1c009a2ebd60e3a307e974809a14cae3a0f0f4280b6"
+}

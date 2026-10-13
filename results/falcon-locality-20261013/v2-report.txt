@@ -1,0 +1,351 @@
+Falcon locality final production report
+
+Completed final campaign
+Baseline revision: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+Baseline SHA256: bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511
+Final candidate SHA256: 6404c0dcae46edd6af44c199afe4b88d37cbc5e74e6ed9e5439bd9124cf4c7b2
+
+Selected default: four native square-norm prefix rounds only for K=1,
+instance_vars=10, modulus>=2^125, and (row_vars,workers)=(10,8),(10,12),
+or(11,12). These correspond to Falcon512 at8/12 workers and Falcon1024
+at12 workers for the measured batch1024/security128 cases. Existing serial
+and rejection policies remain unchanged. Collapse batch1, dense compaction
+off and forest row grain1 remain the production defaults.
+
+This report contains only final* phases using the hashes above. Earlier
+experimental and production-candidate measurements are excluded. Each phase
+is compared with its own baseline at the same worker/main CPU placement.
+No phase pooling, significance claim, outlier exclusion or traced/untraced
+latency mixing is performed. A positive change is a higher measurement.
+
+SELECTED-SCOPE CHECKS AND TRADEOFFS
+The rows below retain both passes; seed counts do not imply significance.
+N512/8w: final1 -1.26%; final2 -1.48%; lower seed medians 6/6; two pooled wins=True; no final8-worker norm profile.
+  final1: verify -0.71%; process peak -0.26%.
+  final1 measured commit+prove+verify: 37.553→37.114ms (-1.17%).
+  final2: verify -1.38%; process peak 0.27%.
+  final2 measured commit+prove+verify: 39.023→38.568ms (-1.16%).
+N512/12w: final1 -0.47%; final2 -0.74%; lower seed medians 5/6; two pooled wins=True; norm stage -28.22%.
+  final1: verify 2.72%; process peak 21.85%.
+  final1 measured commit+prove+verify: 40.676→40.817ms (0.34%).
+  final2: verify 2.51%; process peak 21.98%.
+  final2 measured commit+prove+verify: 41.599→41.598ms (-0.00%).
+N1024/12w: final1 -1.29%; final2 -1.65%; lower seed medians 5/6; two pooled wins=True; norm stage -31.98%.
+  final1: verify -1.48%; process peak 18.08%.
+  final1 measured commit+prove+verify: 73.119→72.253ms (-1.18%).
+  final2: verify -1.68%; process peak 18.13%.
+  final2 measured commit+prove+verify: 72.641→71.577ms (-1.47%).
+final-cold1 N512/12w: total -2.91%, verify 15.57%, process peak -8.13%.
+final-cold1 N1024/12w: total -2.79%, verify 3.92%, process peak -2.99%.
+final-cold2 N512/12w: total -1.33%, verify 15.16%, process peak -8.18%.
+final-cold2 N1024/12w: total -3.66%, verify 4.55%, process peak -2.72%.
+final-cold1 N512/12w measured commit+prove+verify: 42.056→42.291ms (0.56%).
+final-cold1 N1024/12w measured commit+prove+verify: 74.121→72.991ms (-1.52%).
+final-cold2 N512/12w measured commit+prove+verify: 41.905→42.667ms (1.82%).
+final-cold2 N1024/12w measured commit+prove+verify: 74.231→72.690ms (-2.08%).
+
+REPEATED COMMIT+PROVE CONFIRMATION
+phase             N workers new_norm  baseline_ms candidate_ms change%  seed changes
+final1            512       1 False        139.377      138.834   -0.39%  42:-0.07% 43:0.04% 44:-0.39%
+final1            512       8 True          28.259       27.903   -1.26%  42:-1.35% 43:-2.15% 44:-1.44%
+final1            512      12 True          31.600       31.453   -0.47%  42:-0.35% 43:-2.01% 44:-1.61%
+final1            512      16 False         28.461       28.240   -0.78%  42:-0.52% 43:0.51% 44:-1.58%
+final1           1024       1 False        269.662      269.500   -0.06%  42:-0.01% 43:-0.08% 44:-0.01%
+final1           1024       8 False         51.224       51.246    0.04%  42:0.51% 43:0.29% 44:-1.05%
+final1           1024      12 True          56.976       56.240   -1.29%  42:-2.74% 43:-0.73% 44:0.31%
+final1           1024      16 False         48.984       48.878   -0.22%  42:1.20% 43:-0.01% 44:-1.54%
+final2            512       1 False        139.302      139.375    0.05%  42:0.06% 43:0.14% 44:0.22%
+final2            512       8 True          29.397       28.962   -1.48%  42:-1.65% 43:-1.48% 44:-1.94%
+final2            512      12 True          32.322       32.084   -0.74%  42:-0.74% 43:-0.43% 44:1.09%
+final2            512      16 False         28.220       28.597    1.34%  42:-0.04% 43:1.30% 44:0.14%
+final2           1024       1 False        270.582      269.273   -0.48%  42:-0.52% 43:-0.29% 44:-0.25%
+final2           1024       8 False         51.068       51.217    0.29%  42:0.86% 43:-0.01% 44:0.42%
+final2           1024      12 True          56.666       55.730   -1.65%  42:-1.94% 43:-1.11% 44:-2.05%
+final2           1024      16 False         48.988       48.786   -0.41%  42:0.89% 43:-0.49% 44:-1.92%
+
+Per-phase flags; all measurements retained (including unchanged selector paths):
+  final1 N512/1w: pooled -0.39%; higher seed medians ['43'].
+  final1 N512/16w: pooled -0.78%; higher seed medians ['43'].
+  final1 N1024/8w: pooled 0.04%; higher seed medians ['42', '43'].
+  final1 N1024/12w: pooled -1.29%; higher seed medians ['44'].
+  final1 N1024/16w: pooled -0.22%; higher seed medians ['42'].
+  final2 N512/1w: pooled 0.05%; higher seed medians ['42', '43', '44'].
+  final2 N512/12w: pooled -0.74%; higher seed medians ['44'].
+  final2 N512/16w: pooled 1.34%; higher seed medians ['43', '44'].
+  final2 N1024/8w: pooled 0.29%; higher seed medians ['42', '44'].
+  final2 N1024/16w: pooled -0.41%; higher seed medians ['42'].
+
+COLD COMMIT+PROVE CONFIRMATION
+phase             N workers new_norm  baseline_ms candidate_ms change%  seed changes
+final-cold1       512      12 True          34.043       33.052   -2.91%  42:-3.40% 43:-3.24% 44:-2.42%
+final-cold1      1024      12 True          59.512       57.854   -2.79%  42:-2.53% 43:-2.74% 44:-3.51%
+final-cold2       512      12 True          33.893       33.442   -1.33%  42:-3.06% 43:-1.23% 44:-1.22%
+final-cold2      1024      12 True          59.690       57.508   -3.66%  42:-4.61% 43:-1.09% 44:-4.53%
+
+Per-phase flags; all measurements retained (including unchanged selector paths):
+
+COMPONENTS, VERIFIER AND MEMORY (untraced main repeated/cold phases)
+Durations are independent stage medians; do not add them to reconstruct total.
+Process peak uses each process's lifetime maximum, including warmups. Retained
+RSS includes inputs, allocator and Prepared after proof/verification; it is
+not cached-scratch capacity. Neither proves a memory-allocation cause.
+phase             N workers metric                         baseline   candidate   change%
+final-cold1       512      12 prove_ms                           30.891      29.974    -2.97%
+final-cold1       512      12 witness_commit_ms                   3.174       3.126    -1.50%
+final-cold1       512      12 verify_ms                           8.023       9.273    15.57%
+final-cold1       512      12 process_retained_rss_kib            74696       34804   -53.41%
+final-cold1       512      12 proof_payload_bytes                256368      256368     0.00%
+final-cold1       512      12 process_peak_median_kib             82016       75352    -8.13%
+final-cold1       512      12 process_peak_maximum_kib            83100       75828    -8.75%
+final-cold1      1024      12 prove_ms                           54.115      52.457    -3.06%
+final-cold1      1024      12 witness_commit_ms                   5.468       5.292    -3.21%
+final-cold1      1024      12 verify_ms                          14.636      15.211     3.92%
+final-cold1      1024      12 process_retained_rss_kib            78768       61216   -22.28%
+final-cold1      1024      12 proof_payload_bytes                321304      321304     0.00%
+final-cold1      1024      12 process_peak_median_kib            140872      136656    -2.99%
+final-cold1      1024      12 process_peak_maximum_kib           141400      137408    -2.82%
+final-cold2       512      12 prove_ms                           30.831      30.179    -2.12%
+final-cold2       512      12 witness_commit_ms                   3.163       3.145    -0.56%
+final-cold2       512      12 verify_ms                           8.041       9.260    15.16%
+final-cold2       512      12 process_retained_rss_kib            74668       34844   -53.33%
+final-cold2       512      12 proof_payload_bytes                256368      256368     0.00%
+final-cold2       512      12 process_peak_median_kib             82180       75460    -8.18%
+final-cold2       512      12 process_peak_maximum_kib            82724       75964    -8.17%
+final-cold2      1024      12 prove_ms                           54.132      52.164    -3.64%
+final-cold2      1024      12 witness_commit_ms                   5.423       5.360    -1.16%
+final-cold2      1024      12 verify_ms                          14.553      15.215     4.55%
+final-cold2      1024      12 process_retained_rss_kib            78836       61224   -22.34%
+final-cold2      1024      12 proof_payload_bytes                321304      321304     0.00%
+final-cold2      1024      12 process_peak_median_kib            140696      136868    -2.72%
+final-cold2      1024      12 process_peak_maximum_kib           141624      137736    -2.75%
+final1            512       1 prove_ms                          130.483     129.940    -0.42%
+final1            512       1 witness_commit_ms                   8.934       8.887    -0.52%
+final1            512       1 verify_ms                          30.435      30.295    -0.46%
+final1            512       1 process_retained_rss_kib            38968       38980     0.03%
+final1            512       1 proof_payload_bytes                256368      256368     0.00%
+final1            512       1 process_peak_median_kib             83188       83632     0.53%
+final1            512       1 process_peak_maximum_kib            83580       83856     0.33%
+final1            512       8 prove_ms                           26.322      25.959    -1.38%
+final1            512       8 witness_commit_ms                   1.910       1.897    -0.66%
+final1            512       8 verify_ms                           9.303       9.237    -0.71%
+final1            512       8 process_retained_rss_kib            42104       41888    -0.51%
+final1            512       8 proof_payload_bytes                256368      256368     0.00%
+final1            512       8 process_peak_median_kib             85908       85684    -0.26%
+final1            512       8 process_peak_maximum_kib            86248       85704    -0.63%
+final1            512      12 prove_ms                           29.300      29.053    -0.85%
+final1            512      12 witness_commit_ms                   2.315       2.298    -0.73%
+final1            512      12 verify_ms                           9.056       9.302     2.72%
+final1            512      12 process_retained_rss_kib            44912       42500    -5.37%
+final1            512      12 proof_payload_bytes                256368      256368     0.00%
+final1            512      12 process_peak_median_kib             88328      107628    21.85%
+final1            512      12 process_peak_maximum_kib            88348      108472    22.78%
+final1            512      16 prove_ms                           26.031      25.887    -0.55%
+final1            512      16 witness_commit_ms                   2.327       2.316    -0.47%
+final1            512      16 verify_ms                           9.615       9.632     0.18%
+final1            512      16 process_retained_rss_kib            47164       47212     0.10%
+final1            512      16 proof_payload_bytes                256368      256368     0.00%
+final1            512      16 process_peak_median_kib             90060       89892    -0.19%
+final1            512      16 process_peak_maximum_kib            90228       90676     0.50%
+final1           1024       1 prove_ms                          252.697     252.487    -0.08%
+final1           1024       1 witness_commit_ms                  17.010      16.943    -0.39%
+final1           1024       1 verify_ms                          59.828      59.705    -0.20%
+final1           1024       1 process_retained_rss_kib            59648       59744     0.16%
+final1           1024       1 proof_payload_bytes                321304      321304     0.00%
+final1           1024       1 process_peak_median_kib            206880      206668    -0.10%
+final1           1024       1 process_peak_maximum_kib           206976      206680    -0.14%
+final1           1024       8 prove_ms                           47.635      47.697     0.13%
+final1           1024       8 witness_commit_ms                   3.618       3.583    -0.98%
+final1           1024       8 verify_ms                          16.496      16.485    -0.07%
+final1           1024       8 process_retained_rss_kib            78924       78896    -0.04%
+final1           1024       8 proof_payload_bytes                321304      321304     0.00%
+final1           1024       8 process_peak_median_kib            175776      176008     0.13%
+final1           1024       8 process_peak_maximum_kib           176164      176136    -0.02%
+final1           1024      12 prove_ms                           53.013      52.097    -1.73%
+final1           1024      12 witness_commit_ms                   3.845       4.128     7.37%
+final1           1024      12 verify_ms                          16.133      15.893    -1.48%
+final1           1024      12 process_retained_rss_kib            80532       65200   -19.04%
+final1           1024      12 proof_payload_bytes                321304      321304     0.00%
+final1           1024      12 process_peak_median_kib            177556      209656    18.08%
+final1           1024      12 process_peak_maximum_kib           178208      209888    17.78%
+final1           1024      16 prove_ms                           45.230      44.914    -0.70%
+final1           1024      16 witness_commit_ms                   3.863       3.852    -0.28%
+final1           1024      16 verify_ms                          15.207      15.100    -0.71%
+final1           1024      16 process_retained_rss_kib            83380       83864     0.58%
+final1           1024      16 proof_payload_bytes                321304      321304     0.00%
+final1           1024      16 process_peak_median_kib            179624      179744     0.07%
+final1           1024      16 process_peak_maximum_kib           179668      180756     0.61%
+final2            512       1 prove_ms                          130.176     130.443     0.20%
+final2            512       1 witness_commit_ms                   8.918       8.881    -0.41%
+final2            512       1 verify_ms                          30.448      30.333    -0.38%
+final2            512       1 process_retained_rss_kib            38972       38952    -0.05%
+final2            512       1 proof_payload_bytes                256368      256368     0.00%
+final2            512       1 process_peak_median_kib             83456       83400    -0.07%
+final2            512       1 process_peak_maximum_kib            83688       83472    -0.26%
+final2            512       8 prove_ms                           27.482      27.099    -1.39%
+final2            512       8 witness_commit_ms                   1.932       1.925    -0.37%
+final2            512       8 verify_ms                           9.740       9.606    -1.38%
+final2            512       8 process_retained_rss_kib            41892       41944     0.12%
+final2            512       8 proof_payload_bytes                256368      256368     0.00%
+final2            512       8 process_peak_median_kib             85664       85892     0.27%
+final2            512       8 process_peak_maximum_kib            85864       85984     0.14%
+final2            512      12 prove_ms                           29.968      29.901    -0.22%
+final2            512      12 witness_commit_ms                   2.385       2.322    -2.62%
+final2            512      12 verify_ms                           9.276       9.510     2.51%
+final2            512      12 process_retained_rss_kib            44932       42704    -4.96%
+final2            512      12 proof_payload_bytes                256368      256368     0.00%
+final2            512      12 process_peak_median_kib             88472      107920    21.98%
+final2            512      12 process_peak_maximum_kib            88496      108400    22.49%
+final2            512      16 prove_ms                           25.840      26.358     2.00%
+final2            512      16 witness_commit_ms                   2.344       2.314    -1.29%
+final2            512      16 verify_ms                           9.576       9.656     0.84%
+final2            512      16 process_retained_rss_kib            47000       47180     0.38%
+final2            512      16 proof_payload_bytes                256368      256368     0.00%
+final2            512      16 process_peak_median_kib             90212       89932    -0.31%
+final2            512      16 process_peak_maximum_kib            90248       90212    -0.04%
+final2           1024       1 prove_ms                          253.489     252.247    -0.49%
+final2           1024       1 witness_commit_ms                  17.005      16.963    -0.25%
+final2           1024       1 verify_ms                          59.826      59.702    -0.21%
+final2           1024       1 process_retained_rss_kib            59752       59628    -0.21%
+final2           1024       1 proof_payload_bytes                321304      321304     0.00%
+final2           1024       1 process_peak_median_kib            206640      206680     0.02%
+final2           1024       1 process_peak_maximum_kib           207168      207176     0.00%
+final2           1024       8 prove_ms                           47.513      47.677     0.35%
+final2           1024       8 witness_commit_ms                   3.524       3.585     1.75%
+final2           1024       8 verify_ms                          16.484      16.555     0.43%
+final2           1024       8 process_retained_rss_kib            78820       78856     0.05%
+final2           1024       8 proof_payload_bytes                321304      321304     0.00%
+final2           1024       8 process_peak_median_kib            175684      176044     0.20%
+final2           1024       8 process_peak_maximum_kib           176416      176048    -0.21%
+final2           1024      12 prove_ms                           52.780      51.647    -2.15%
+final2           1024      12 witness_commit_ms                   3.822       4.201     9.91%
+final2           1024      12 verify_ms                          15.880      15.613    -1.68%
+final2           1024      12 process_retained_rss_kib            80920       64884   -19.82%
+final2           1024      12 proof_payload_bytes                321304      321304     0.00%
+final2           1024      12 process_peak_median_kib            177504      209688    18.13%
+final2           1024      12 process_peak_maximum_kib           177620      209708    18.07%
+final2           1024      16 prove_ms                           45.220      44.929    -0.64%
+final2           1024      16 witness_commit_ms                   3.823       3.802    -0.55%
+final2           1024      16 verify_ms                          15.401      15.069    -2.15%
+final2           1024      16 process_retained_rss_kib            83656       83244    -0.49%
+final2           1024      16 proof_payload_bytes                321304      321304     0.00%
+final2           1024      16 process_peak_median_kib            178920      179360     0.25%
+final2           1024      16 process_peak_maximum_kib           179960      180124     0.09%
+
+MEASURED COMMIT+PROVE+VERIFY (sum per trial BEFORE taking medians)
+Each sample is total_prover_ms + verify_ms from the same proof. These sums
+exclude input generation, preparation, resource sampling and teardown.
+They are not sums of separately computed stage medians. Warmups are excluded.
+phase             N workers baseline_ms candidate_ms change%  seed changes
+final-cold1       512      12      42.056       42.291    0.56%  42:0.34% 43:0.77% 44:1.15%
+final-cold1      1024      12      74.121       72.991   -1.52%  42:-1.47% 43:-0.99% 44:-1.81%
+final-cold2       512      12      41.905       42.667    1.82%  42:0.63% 43:1.76% 44:1.89%
+final-cold2      1024      12      74.231       72.690   -2.08%  42:-2.60% 43:0.24% 44:-3.58%
+final1            512       1     169.898      169.240   -0.39%  42:-0.12% 43:-0.08% 44:-0.39%
+final1            512       8      37.553       37.114   -1.17%  42:-1.40% 43:-1.86% 44:-1.39%
+final1            512      12      40.676       40.817    0.34%  42:0.53% 43:-1.07% 44:-0.22%
+final1            512      16      38.090       37.880   -0.55%  42:-1.19% 43:0.49% 44:-1.35%
+final1           1024       1     329.652      329.341   -0.09%  42:-0.09% 43:-0.12% 44:-0.00%
+final1           1024       8      67.645       67.792    0.22%  42:0.59% 43:0.22% 44:-0.92%
+final1           1024      12      73.119       72.253   -1.18%  42:-2.66% 43:-0.65% 44:0.26%
+final1           1024      16      64.073       64.268    0.30%  42:0.96% 43:-0.27% 44:-1.49%
+final2            512       1     169.721      169.708   -0.01%  42:-0.08% 43:0.02% 44:0.11%
+final2            512       8      39.023       38.568   -1.16%  42:-0.89% 43:-1.16% 44:-1.75%
+final2            512      12      41.599       41.598   -0.00%  42:-0.00% 43:0.92% 44:2.48%
+final2            512      16      37.815       38.270    1.20%  42:0.09% 43:1.18% 44:0.51%
+final2           1024       1     330.415      329.013   -0.42%  42:-0.34% 43:-0.27% 44:-0.26%
+final2           1024       8      67.551       67.806    0.38%  42:0.66% 43:-0.06% 44:0.53%
+final2           1024      12      72.641       71.577   -1.47%  42:-1.95% 43:-1.25% 44:-1.51%
+final2           1024      16      64.305       64.049   -0.40%  42:0.22% 43:-0.64% 44:-2.36%
+
+FINAL LIGHTWEIGHT PROFILE — DIAGNOSTIC ONLY
+Baseline and final production use the original lightweight stage allowlist.
+Traced wall spans overlap and include instrumentation overhead; do not treat
+their deltas as untraced latency or add parent and child stages.
+ N stage                       baseline_ms candidate_ms change%  seed changes
+ 512 norm (integer_outer)               2.120        1.521  -28.22%  42:-28.65% 43:-28.83% 44:-27.10%
+ 512 binding                            4.782        4.614   -3.50%  42:-4.55% 43:-4.21% 44:-2.24%
+ 512 binding construction               0.548        0.548    0.00%  42:-0.23% 43:-0.26% 44:0.28%
+ 512 binding first fold                 1.074        1.048   -2.41%  42:-4.15% 43:-1.08% 44:-2.05%
+ 512 forest                            14.491       14.131   -2.48%  42:-1.63% 43:-4.21% 44:-1.70%
+ 512 ring                               2.782        2.765   -0.60%  42:-1.95% 43:-0.75% 44:1.38%
+ 512 ring coordinates                   0.722        0.686   -5.02%  42:-1.60% 43:-7.53% 44:-3.26%
+ 512 ring collapse                      1.368        1.389    1.58%  42:0.21% 43:0.79% 44:1.90%
+ 512 ring carries                       0.203        0.199   -2.23%  42:-12.26% 43:15.22% 44:-1.48%
+ 512 PCS                                3.074        3.063   -0.36%  42:0.35% 43:-0.71% 44:-0.36%
+1024 norm (integer_outer)               3.320        2.258  -31.98%  42:-30.80% 43:-31.80% 44:-31.57%
+1024 binding                            8.042        6.462  -19.65%  42:-20.90% 43:-16.07% 44:-19.70%
+1024 binding construction               1.080        1.064   -1.44%  42:-1.74% 43:-0.83% 44:-1.65%
+1024 binding first fold                 1.956        1.922   -1.73%  42:-1.65% 43:-3.26% 44:2.13%
+1024 forest                            26.993       26.770   -0.83%  42:1.28% 43:-1.68% 44:1.33%
+1024 ring                               5.472        5.438   -0.62%  42:-0.70% 43:-2.33% 44:-0.20%
+1024 ring coordinates                   1.473        1.380   -6.36%  42:-6.55% 43:-5.94% 44:-6.05%
+1024 ring collapse                      2.741        2.720   -0.75%  42:0.74% 43:-0.73% 44:-1.12%
+1024 ring carries                       0.500        0.565   13.03%  42:17.73% 43:5.44% 44:13.03%
+1024 PCS                                4.044        4.071    0.67%  42:0.63% 43:0.67% 44:-1.18%
+
+PADDING / SECURITY CHECKS
+These have one cold proof per seed/case, so timing differences are descriptive
+and do not qualify a performance default. Same-seed payload medians match.
+phase                           N samples baseline_ms candidate_ms verify_change% bytes
+final-padding-b1024-s100        512       3      30.041       29.224          17.21% 217008
+final-padding-b1024-s100       1024       3      55.032       54.251           4.05% 276320
+final-padding-b129-s100         512       3      11.389       11.430          -0.06% 136834
+final-padding-b129-s100        1024       3      17.581       17.954           0.22% 178786
+final-padding-b129-s128         512       3      14.193       14.275          -0.37% 164786
+final-padding-b129-s128        1024       3      21.274       21.171          -0.14% 214090
+final-padding-b3-s100           512       3       4.879        4.644           2.52% 80136
+final-padding-b3-s100          1024       3       4.829        4.857          -5.17% 81112
+final-padding-b3-s128           512       3       6.264        6.352          -0.13% 96576
+final-padding-b3-s128          1024       3       6.633        6.670           0.41% 97960
+final-padding-b513-s100         512       3      26.748       26.433          -1.16% 216450
+final-padding-b513-s100        1024       3      48.804       47.707           0.29% 275666
+final-padding-b513-s128         512       3      30.580       30.233          -0.12% 256386
+final-padding-b513-s128        1024       3      52.791       52.134          -0.15% 320234
+
+PHASE COUNTS AND VALIDATION SCOPE
+final-cold1: {"measured_proofs": 84, "processes": 84, "proofs_including_warmups": 84}
+final-cold2: {"measured_proofs": 84, "processes": 84, "proofs_including_warmups": 84}
+final-padding-b1024-s100: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b129-s100: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b129-s128: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b3-s100: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b3-s128: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b513-s100: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-padding-b513-s128: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+final-profile: {"measured_proofs": 36, "processes": 12, "proofs_including_warmups": 48}
+final1: {"measured_proofs": 336, "processes": 48, "proofs_including_warmups": 432}
+final2: {"measured_proofs": 336, "processes": 48, "proofs_including_warmups": 432}
+The runner creates summaries only after its proof/source/input, full proof
+identity, payload and raw/binary/parser provenance checks. This analysis
+trusts those completed summaries and checks final binary hashes, manifest
+cell coverage, matching topology and payload medians. It does not rerun
+proof verification or the global validator while other phases are active.
+
+TEST LOG SUMMARIES (reported individually; do not sum overlapping suites)
+test-final.log:
+  test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 974 filtered out; finished in 0.07s
+test-native-0.log:
+  test result: ok. 365 passed; 0 failed; 3 ignored; 0 measured; 613 filtered out; finished in 81.12s
+test-native-1.log:
+  test result: ok. 94 passed; 0 failed; 1 ignored; 0 measured; 886 filtered out; finished in 1.65s
+test-native-2.log:
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.00s
+test-portable-0.log:
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+test-production.log:
+  test result: ok. 365 passed; 0 failed; 3 ignored; 0 measured; 612 filtered out; finished in 80.26s
+test-runner.log:
+  Ran 12 tests in 0.020s
+  OK
+
+CONFIDENCE LIMITS
+Repeated samples share one process and Prepared; cold means first proof in
+a fresh process/Prepared, not flushed CPU caches. Each pass has three seed
+processes per repeated cell; report both passes without pooling them.
+No universal verifier-speed or zero-regression claim follows from medians.
+Keep any positive total/seed/verify differences in the assessment. Unchanged
+paths can also fluctuate. No cause is inferred solely from faults or RSS.
+instance_vars=10 is a padded-capacity condition, not an exact live-batch guard.
+The padding checks establish limited exercised cases, not all throughput
+behavior. This host's CPU placement/cache topology limits generalization.
+The report generator launched no tests, builds, provers or benchmarks.

@@ -111,7 +111,7 @@ pub(super) fn prove<const K: usize>(
 ) -> Result<Output<K>, SumcheckError> {
     // The width changes only the prover representation. All ordinary round
     // messages and grinding boundaries remain in their original positions.
-    let prefix_rounds = prefix_rounds::<K>(field, rho.len());
+    let prefix_rounds = prefix_rounds::<K>(field, row_vars, rho.len());
     prove_with_prefix(
         field,
         transcript,
@@ -126,18 +126,45 @@ pub(super) fn prove<const K: usize>(
     )
 }
 
-fn prefix_rounds<const K: usize>(field: &Cfg, instance_vars: usize) -> usize {
+fn prefix_rounds<const K: usize>(field: &Cfg, row_vars: usize, instance_vars: usize) -> usize {
+    #[cfg(feature = "bench-internals")]
+    if K == 1 {
+        match std::env::var("BITZ_ARITHMETIC_NORM_PREFIX") {
+            Ok(value) => match value.as_str() {
+                "auto" => {}
+                "1" => return 1,
+                "2" => return 2,
+                "3" => return 3,
+                "4" => return 4,
+                _ => panic!("BITZ_ARITHMETIC_NORM_PREFIX must be auto, 1, 2, 3 or 4"),
+            },
+            Err(std::env::VarError::NotPresent) => {}
+            Err(std::env::VarError::NotUnicode(_)) => {
+                panic!("BITZ_ARITHMETIC_NORM_PREFIX must be valid Unicode")
+            }
+        }
+    }
     #[cfg(feature = "parallel")]
     let workers = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
     let workers = 1;
-    // One-core 126-bit sweeps favor four native rounds for the square sum,
-    // and three when rejection's row equality weights are also present.
-    if workers == 1 && instance_vars == 10 && field.modulus_u128() >= 1u128 << 125 {
-        if K == 1 { 4 } else { 3 }
-    } else {
-        1
+    if instance_vars == 10 && field.modulus_u128() >= 1u128 << 125 {
+        // One-core sweeps favor four square-sum rounds, or three when
+        // rejection's row equality weights are also present.
+        if workers == 1 {
+            return if K == 1 { 4 } else { 3 };
+        }
+        // Choose native prefixes by public Falcon geometry. Production
+        // qualification, including cold/repeated lifecycle costs, is recorded
+        // in results/falcon-locality-20261013. Other parallel cases retain one.
+        if K == 1 {
+            match (row_vars, workers) {
+                (10, 8) | (11, 12) => return 4,
+                _ => {}
+            }
+        }
     }
+    1
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -363,7 +390,10 @@ fn prove_with_prefix<const K: usize>(
         }
         drop(coefficient_span);
         absorb_field_elements(transcript, &coefficients, field);
-        boundary.after_round(transcript, round)?;
+        {
+            let _span = tracing::info_span!("falcon_integer:round_boundary").entered();
+            boundary.after_round(transcript, round)?;
+        }
         let challenge = squeeze_field(transcript, field)?;
         claim = coefficients
             .iter()

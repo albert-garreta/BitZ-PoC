@@ -1,0 +1,157 @@
+RUN production-profile/production-repeated-n512-b1024-s128-t12-seed43-r0
+OK production-repeated-n512-b1024-s128-t12-seed43-r0
+RUN production-profile/baseline-repeated-n512-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed43-r0
+RUN production-profile/baseline-repeated-n512-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed44-r0
+RUN production-profile/production-repeated-n512-b1024-s128-t12-seed44-r0
+OK production-repeated-n512-b1024-s128-t12-seed44-r0
+RUN production-profile/baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN production-profile/production-repeated-n1024-b1024-s128-t12-seed44-r0
+OK production-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN production-profile/baseline-repeated-n512-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed42-r0
+RUN production-profile/production-repeated-n512-b1024-s128-t12-seed42-r0
+OK production-repeated-n512-b1024-s128-t12-seed42-r0
+RUN production-profile/production-repeated-n1024-b1024-s128-t12-seed42-r0
+OK production-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN production-profile/baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN production-profile/production-repeated-n1024-b1024-s128-t12-seed43-r0
+OK production-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN production-profile/baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 6, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 1638, "bitz/falcon512-algebraic/non-zk/v9": 1638}, "schema": "bitz/falcon-locality-optimization/v1", "verified_proofs": 3276}
+cold1        baseline           N=512 t=12 cold     n=21 total=34.162 verify=8.026 traced=False
+cold1        baseline           N=1024 t=12 cold     n=21 total=59.474 verify=14.613 traced=False
+cold1        production         N=512 t=12 cold     n=21 total=33.218 verify=9.218 traced=False
+cold1        production         N=1024 t=12 cold     n=21 total=57.601 verify=15.123 traced=False
+cold2        baseline           N=512 t=12 cold     n=21 total=33.873 verify=8.034 traced=False
+cold2        baseline           N=1024 t=12 cold     n=21 total=59.338 verify=14.685 traced=False
+cold2        production         N=512 t=12 cold     n=21 total=33.406 verify=9.251 traced=False
+cold2        production         N=1024 t=12 cold     n=21 total=57.513 verify=15.052 traced=False
+production-profile baseline           N=512 t=12 repeated n=9 total=32.842 verify=9.449 traced=True
+production-profile baseline           N=1024 t=12 repeated n=9 total=56.770 verify=15.857 traced=True
+production-profile production         N=512 t=12 repeated n=9 total=32.040 verify=9.399 traced=True
+production-profile production         N=1024 t=12 repeated n=9 total=58.395 verify=15.587 traced=True
+production1  baseline           N=512 t=1 repeated n=21 total=139.079 verify=30.431 traced=False
+production1  baseline           N=512 t=8 repeated n=21 total=28.423 verify=9.275 traced=False
+production1  baseline           N=512 t=12 repeated n=21 total=32.749 verify=9.284 traced=False
+production1  baseline           N=512 t=16 repeated n=21 total=29.222 verify=9.620 traced=False
+production1  baseline           N=1024 t=1 repeated n=21 total=269.973 verify=59.795 traced=False
+production1  baseline           N=1024 t=8 repeated n=21 total=51.101 verify=16.450 traced=False
+production1  baseline           N=1024 t=12 repeated n=21 total=57.212 verify=16.083 traced=False
+production1  baseline           N=1024 t=16 repeated n=21 total=48.461 verify=15.017 traced=False
+production1  production         N=512 t=1 repeated n=21 total=139.076 verify=30.246 traced=False
+production1  production         N=512 t=8 repeated n=21 total=27.991 verify=9.191 traced=False
+production1  production         N=512 t=12 repeated n=21 total=31.317 verify=9.294 traced=False
+production1  production         N=512 t=16 repeated n=21 total=28.435 verify=9.223 traced=False
+production1  production         N=1024 t=1 repeated n=21 total=269.285 verify=59.371 traced=False
+production1  production         N=1024 t=8 repeated n=21 total=52.402 verify=16.610 traced=False
+production1  production         N=1024 t=12 repeated n=21 total=55.668 verify=15.625 traced=False
+production1  production         N=1024 t=16 repeated n=21 total=48.145 verify=15.283 traced=False
+production2  baseline           N=512 t=1 repeated n=21 total=138.834 verify=30.410 traced=False
+production2  baseline           N=512 t=8 repeated n=21 total=28.324 verify=9.225 traced=False
+production2  baseline           N=512 t=12 repeated n=21 total=32.316 verify=9.107 traced=False
+production2  baseline           N=512 t=16 repeated n=21 total=28.342 verify=9.526 traced=False
+production2  baseline           N=1024 t=1 repeated n=21 total=269.750 verify=59.845 traced=False
+production2  baseline           N=1024 t=8 repeated n=21 total=51.278 verify=16.568 traced=False
+production2  baseline           N=1024 t=12 repeated n=21 total=57.922 verify=16.147 traced=False
+production2  baseline           N=1024 t=16 repeated n=21 total=49.147 verify=15.345 traced=False
+production2  production         N=512 t=1 repeated n=21 total=139.315 verify=30.225 traced=False
+production2  production         N=512 t=8 repeated n=21 total=27.910 verify=9.172 traced=False
+production2  production         N=512 t=12 repeated n=21 total=31.353 verify=9.435 traced=False
+production2  production         N=512 t=16 repeated n=21 total=28.193 verify=9.171 traced=False
+production2  production         N=1024 t=1 repeated n=21 total=269.239 verify=59.592 traced=False
+production2  production         N=1024 t=8 repeated n=21 total=50.664 verify=15.925 traced=False
+production2  production         N=1024 t=12 repeated n=21 total=55.635 verify=15.500 traced=False
+production2  production         N=1024 t=16 repeated n=21 total=49.210 verify=15.308 traced=False
+profile12    baseline           N=512 t=12 repeated n=9 total=32.560 verify=9.722 traced=True
+profile12    baseline           N=1024 t=12 repeated n=9 total=56.916 verify=15.276 traced=True
+profile12    collapse4          N=512 t=12 repeated n=9 total=41.929 verify=9.365 traced=True
+profile12    collapse4          N=1024 t=12 repeated n=9 total=68.084 verify=15.651 traced=True
+profile12    compact4           N=512 t=12 repeated n=9 total=42.582 verify=9.412 traced=True
+profile12    compact4           N=1024 t=12 repeated n=9 total=68.087 verify=15.471 traced=True
+profile12    control            N=512 t=12 repeated n=9 total=42.713 verify=9.526 traced=True
+profile12    control            N=1024 t=12 repeated n=9 total=68.676 verify=16.023 traced=True
+profile12    forest2            N=512 t=12 repeated n=9 total=42.228 verify=9.345 traced=True
+profile12    forest2            N=1024 t=12 repeated n=9 total=68.850 verify=16.128 traced=True
+profile12    norm4              N=512 t=12 repeated n=9 total=41.815 verify=9.481 traced=True
+profile12    norm4              N=1024 t=12 repeated n=9 total=68.839 verify=15.533 traced=True
+qualify      baseline           N=512 t=1 repeated n=21 total=138.881 verify=30.382 traced=False
+qualify      baseline           N=512 t=8 repeated n=21 total=28.189 verify=9.227 traced=False
+qualify      baseline           N=512 t=12 repeated n=21 total=32.196 verify=9.116 traced=False
+qualify      baseline           N=512 t=16 repeated n=21 total=28.600 verify=9.635 traced=False
+qualify      baseline           N=1024 t=1 repeated n=21 total=269.882 verify=59.735 traced=False
+qualify      baseline           N=1024 t=8 repeated n=21 total=51.260 verify=16.496 traced=False
+qualify      baseline           N=1024 t=12 repeated n=21 total=56.770 verify=16.004 traced=False
+qualify      baseline           N=1024 t=16 repeated n=21 total=48.783 verify=15.192 traced=False
+qualify      collapse4          N=512 t=1 repeated n=21 total=139.142 verify=30.462 traced=False
+qualify      collapse4          N=512 t=8 repeated n=21 total=28.365 verify=9.223 traced=False
+qualify      collapse4          N=512 t=12 repeated n=21 total=31.692 verify=9.465 traced=False
+qualify      collapse4          N=512 t=16 repeated n=21 total=28.832 verify=9.692 traced=False
+qualify      collapse4          N=1024 t=1 repeated n=21 total=270.445 verify=60.194 traced=False
+qualify      collapse4          N=1024 t=8 repeated n=21 total=51.251 verify=16.402 traced=False
+qualify      collapse4          N=1024 t=12 repeated n=21 total=57.044 verify=15.361 traced=False
+qualify      collapse4          N=1024 t=16 repeated n=21 total=48.727 verify=15.147 traced=False
+qualify      combined           N=512 t=1 repeated n=21 total=139.285 verify=30.522 traced=False
+qualify      combined           N=512 t=8 repeated n=21 total=27.856 verify=9.165 traced=False
+qualify      combined           N=512 t=12 repeated n=21 total=31.309 verify=9.319 traced=False
+qualify      combined           N=512 t=16 repeated n=21 total=27.998 verify=9.278 traced=False
+qualify      combined           N=1024 t=1 repeated n=21 total=270.067 verify=60.093 traced=False
+qualify      combined           N=1024 t=8 repeated n=21 total=51.035 verify=16.137 traced=False
+qualify      combined           N=1024 t=12 repeated n=21 total=55.273 verify=15.608 traced=False
+qualify      combined           N=1024 t=16 repeated n=21 total=48.065 verify=15.075 traced=False
+qualify      control            N=512 t=1 repeated n=21 total=139.007 verify=30.359 traced=False
+qualify      control            N=512 t=8 repeated n=21 total=28.148 verify=9.155 traced=False
+qualify      control            N=512 t=12 repeated n=21 total=31.924 verify=9.476 traced=False
+qualify      control            N=512 t=16 repeated n=21 total=28.554 verify=9.673 traced=False
+qualify      control            N=1024 t=1 repeated n=21 total=269.499 verify=59.750 traced=False
+qualify      control            N=1024 t=8 repeated n=21 total=51.076 verify=16.379 traced=False
+qualify      control            N=1024 t=12 repeated n=21 total=57.350 verify=15.539 traced=False
+qualify      control            N=1024 t=16 repeated n=21 total=48.949 verify=15.273 traced=False
+qualify      norm2              N=512 t=1 repeated n=21 total=140.677 verify=30.386 traced=False
+qualify      norm2              N=512 t=8 repeated n=21 total=28.015 verify=9.225 traced=False
+qualify      norm2              N=512 t=12 repeated n=21 total=31.669 verify=9.513 traced=False
+qualify      norm2              N=512 t=16 repeated n=21 total=28.244 verify=9.534 traced=False
+qualify      norm2              N=1024 t=1 repeated n=21 total=272.623 verify=59.073 traced=False
+qualify      norm2              N=1024 t=8 repeated n=21 total=50.903 verify=16.314 traced=False
+qualify      norm2              N=1024 t=12 repeated n=21 total=55.620 verify=15.486 traced=False
+qualify      norm2              N=1024 t=16 repeated n=21 total=48.774 verify=15.265 traced=False
+qualify      norm4              N=512 t=1 repeated n=21 total=139.201 verify=30.379 traced=False
+qualify      norm4              N=512 t=8 repeated n=21 total=27.878 verify=9.199 traced=False
+qualify      norm4              N=512 t=12 repeated n=21 total=30.880 verify=9.251 traced=False
+qualify      norm4              N=512 t=16 repeated n=21 total=28.113 verify=9.248 traced=False
+qualify      norm4              N=1024 t=1 repeated n=21 total=269.407 verify=59.553 traced=False
+qualify      norm4              N=1024 t=8 repeated n=21 total=50.832 verify=16.102 traced=False
+qualify      norm4              N=1024 t=12 repeated n=21 total=55.361 verify=15.521 traced=False
+qualify      norm4              N=1024 t=16 repeated n=21 total=47.974 verify=15.222 traced=False
+screen12     baseline           N=512 t=12 repeated n=21 total=31.565 verify=9.086 traced=False
+screen12     baseline           N=1024 t=12 repeated n=21 total=56.627 verify=15.814 traced=False
+screen12     collapse2          N=512 t=12 repeated n=21 total=31.956 verify=9.655 traced=False
+screen12     collapse2          N=1024 t=12 repeated n=21 total=57.026 verify=15.634 traced=False
+screen12     collapse4          N=512 t=12 repeated n=21 total=31.535 verify=9.462 traced=False
+screen12     collapse4          N=1024 t=12 repeated n=21 total=56.700 verify=15.441 traced=False
+screen12     collapse8          N=512 t=12 repeated n=21 total=31.491 verify=9.435 traced=False
+screen12     collapse8          N=1024 t=12 repeated n=21 total=56.895 verify=15.355 traced=False
+screen12     compact2           N=512 t=12 repeated n=21 total=32.284 verify=9.185 traced=False
+screen12     compact2           N=1024 t=12 repeated n=21 total=57.347 verify=15.396 traced=False
+screen12     compact4           N=512 t=12 repeated n=21 total=31.648 verify=9.467 traced=False
+screen12     compact4           N=1024 t=12 repeated n=21 total=57.354 verify=15.386 traced=False
+screen12     compact8           N=512 t=12 repeated n=21 total=32.064 verify=9.531 traced=False
+screen12     compact8           N=1024 t=12 repeated n=21 total=56.933 verify=15.372 traced=False
+screen12     control            N=512 t=12 repeated n=21 total=31.878 verify=9.474 traced=False
+screen12     control            N=1024 t=12 repeated n=21 total=57.423 verify=15.683 traced=False
+screen12     forest2            N=512 t=12 repeated n=21 total=32.052 verify=9.574 traced=False
+screen12     forest2            N=1024 t=12 repeated n=21 total=56.683 verify=15.382 traced=False
+screen12     forest4            N=512 t=12 repeated n=21 total=32.076 verify=9.508 traced=False
+screen12     forest4            N=1024 t=12 repeated n=21 total=56.905 verify=15.453 traced=False
+screen12     forest8            N=512 t=12 repeated n=21 total=32.215 verify=9.605 traced=False
+screen12     forest8            N=1024 t=12 repeated n=21 total=57.634 verify=15.206 traced=False
+screen12     norm2              N=512 t=12 repeated n=21 total=31.246 verify=9.406 traced=False
+screen12     norm2              N=1024 t=12 repeated n=21 total=55.780 verify=15.613 traced=False
+screen12     norm3              N=512 t=12 repeated n=21 total=31.398 verify=9.504 traced=False
+screen12     norm3              N=1024 t=12 repeated n=21 total=57.738 verify=16.077 traced=False
+screen12     norm4              N=512 t=12 repeated n=21 total=31.176 verify=9.233 traced=False
+screen12     norm4              N=1024 t=12 repeated n=21 total=55.130 verify=15.550 traced=False

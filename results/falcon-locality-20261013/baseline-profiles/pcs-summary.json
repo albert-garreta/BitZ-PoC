@@ -1,0 +1,153 @@
+{
+  "rows": [
+    {
+      "degree": 512,
+      "workers": 12,
+      "measured_proofs": 9,
+      "medians_ms": {
+        "induce_ms": 0.46,
+        "initial_sumcheck_ms": 0.44,
+        "introduce_glue_ms": 0.1,
+        "opens_ms": 0.06,
+        "recursive_commits_ms": 0.31,
+        "recursive_folds_ms": 0.29,
+        "total_ms": 2.25,
+        "unattributed_ms": 0.5899999999999999
+      },
+      "seed_medians_ms": {
+        "42": {
+          "induce_ms": 0.47,
+          "initial_sumcheck_ms": 0.45,
+          "introduce_glue_ms": 0.1,
+          "opens_ms": 0.06,
+          "recursive_commits_ms": 0.31,
+          "recursive_folds_ms": 0.36,
+          "total_ms": 2.32,
+          "unattributed_ms": 0.5899999999999999
+        },
+        "43": {
+          "induce_ms": 0.46,
+          "initial_sumcheck_ms": 0.35,
+          "introduce_glue_ms": 0.11,
+          "opens_ms": 0.06,
+          "recursive_commits_ms": 0.31,
+          "recursive_folds_ms": 0.27,
+          "total_ms": 2.16,
+          "unattributed_ms": 0.5899999999999999
+        },
+        "44": {
+          "induce_ms": 0.45,
+          "initial_sumcheck_ms": 0.45,
+          "introduce_glue_ms": 0.09,
+          "opens_ms": 0.06,
+          "recursive_commits_ms": 0.32,
+          "recursive_folds_ms": 0.29,
+          "total_ms": 2.25,
+          "unattributed_ms": 0.5900000000000001
+        }
+      },
+      "wall_medians_ms": {
+        "falcon_algebraic:arithmetic": 6.990221,
+        "falcon_algebraic:binding": 4.843263,
+        "falcon_algebraic:binding_construction": 0.545561,
+        "falcon_algebraic:bitz": 15.206769,
+        "falcon_algebraic:integer_outer": 2.1323000000000003,
+        "falcon_algebraic:pcs": 3.077216,
+        "falcon_algebraic:prove": 30.478552,
+        "falcon_algebraic:ring": 2.790264,
+        "falcon_algebraic:word_first_fold": 1.064322,
+        "falcon_algebraic_ring:carries": 0.211961,
+        "falcon_algebraic_ring:collapse": 1.3768120000000001,
+        "falcon_algebraic_ring:coordinate_work": 0.700514,
+        "falcon_algebraic_ring:coordinates": 0.726683,
+        "falcon_bridge:column_packing": 0.111821,
+        "falcon_bridge:integer_folds": 0.377824,
+        "falcon_bridge:power_tables": 0.059161,
+        "falcon_bridge:wfbitz_forest": 14.296119,
+        "op:deferred_first_fold": 0.103165,
+        "op:extra_bases": 0.327218,
+        "op:initial_messages": 0.285851,
+        "op:ligerito": 2.2677560000000003,
+        "op:ring_switch": 0.440172
+      }
+    },
+    {
+      "degree": 1024,
+      "workers": 12,
+      "measured_proofs": 9,
+      "medians_ms": {
+        "induce_ms": 0.61,
+        "initial_sumcheck_ms": 0.49,
+        "introduce_glue_ms": 0.11,
+        "opens_ms": 0.07,
+        "recursive_commits_ms": 0.49,
+        "recursive_folds_ms": 0.38,
+        "total_ms": 2.72,
+        "unattributed_ms": 0.56
+      },
+      "seed_medians_ms": {
+        "42": {
+          "induce_ms": 0.61,
+          "initial_sumcheck_ms": 0.49,
+          "introduce_glue_ms": 0.12,
+          "opens_ms": 0.07,
+          "recursive_commits_ms": 0.49,
+          "recursive_folds_ms": 0.5,
+          "total_ms": 2.83,
+          "unattributed_ms": 0.5699999999999998
+        },
+        "43": {
+          "induce_ms": 0.61,
+          "initial_sumcheck_ms": 0.53,
+          "introduce_glue_ms": 0.1,
+          "opens_ms": 0.07,
+          "recursive_commits_ms": 0.49,
+          "recursive_folds_ms": 0.36,
+          "total_ms": 2.72,
+          "unattributed_ms": 0.5699999999999998
+        },
+        "44": {
+          "induce_ms": 0.61,
+          "initial_sumcheck_ms": 0.49,
+          "introduce_glue_ms": 0.12,
+          "opens_ms": 0.07,
+          "recursive_commits_ms": 0.47,
+          "recursive_folds_ms": 0.38,
+          "total_ms": 2.66,
+          "unattributed_ms": 0.5300000000000002
+        }
+      },
+      "wall_medians_ms": {
+        "falcon_algebraic:arithmetic": 11.457444,
+        "falcon_algebraic:binding": 8.105649,
+        "falcon_algebraic:binding_construction": 1.075202,
+        "falcon_algebraic:bitz": 28.618106,
+        "falcon_algebraic:integer_outer": 3.297883,
+        "falcon_algebraic:pcs": 4.040887,
+        "falcon_algebraic:prove": 53.710157,
+        "falcon_algebraic:ring": 5.546632,
+        "falcon_algebraic:word_first_fold": 1.917905,
+        "falcon_algebraic_ring:carries": 0.511136,
+        "falcon_algebraic_ring:collapse": 2.742963,
+        "falcon_algebraic_ring:coordinate_work": 1.443939,
+        "falcon_algebraic_ring:coordinates": 1.467814,
+        "falcon_bridge:column_packing": 0.21675,
+        "falcon_bridge:integer_folds": 0.7138490000000001,
+        "falcon_bridge:power_tables": 0.05843,
+        "falcon_bridge:wfbitz_forest": 27.153598000000002,
+        "op:deferred_first_fold": 0.170743,
+        "op:extra_bases": 0.562423,
+        "op:initial_messages": 0.520224,
+        "op:ligerito": 2.7418020000000003,
+        "op:ring_switch": 0.680657
+      }
+    }
+  ],
+  "parser_sha256": "04f2997e90f48cebeb20d1f62d17bfe230a81c3d2685b34cf0b2f3deda429e52",
+  "notes": [
+    "Warmups excluded by matching each text block to its closing op:ligerito and prover span ID, then normalized trial order.",
+    "Text durations have 0.01 ms precision. Unattributed time is a per-proof residual of those rounded values.",
+    "Initial/recursive sumcheck timers include their challenge grinding; deferred_first_fold is nested within initial sumcheck.",
+    "Tracing is diagnostic only. No latency qualification or before/after speedup is inferred."
+  ]
+}

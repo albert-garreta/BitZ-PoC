@@ -1304,13 +1304,17 @@ impl<'a> Forest<'a> {
             });
             return partials.into_iter().fold((Gf::zero(), Gf::zero()), add);
         }
-        let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
+        let jobs = cfg_chunks_mut!(e_lo, cols)
             .zip(cfg_chunks_mut!(e_hi, cols))
             .zip(cfg_chunks_mut!(o_lo, cols))
             .zip(cfg_chunks_mut!(o_hi, cols))
-            .enumerate()
-            .map(sum_row!())
-            .collect();
+            .enumerate();
+        #[cfg(feature = "parallel")]
+        let jobs = jobs.with_min_len(super::row_dispatch::fallback_grain(
+            rows,
+            2 * half * std::mem::size_of::<Gf>(),
+        ));
+        let partials: Vec<(Gf, Gf)> = jobs.map(sum_row!()).collect();
         partials.into_iter().fold((Gf::zero(), Gf::zero()), add)
     }
 
@@ -2487,6 +2491,49 @@ mod tests {
                         }
                     });
                     assert_eq!(retained[y * cols + c], expected, "t={t} s={s} y={y} c={c}");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn fallback_row_grains_preserve_complete_forest_proof() {
+        use crate::bitz::row_dispatch::with_grain;
+        use crate::bitz::transcript::build_kernel_prover;
+
+        let pools = [1, 8, 12, 16].map(|workers| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+        });
+        // Tiny gathered rows include partial column groups. The larger nibble
+        // shape has 128 JIT rows and exactly 4 MiB of JIT output, so its 8/12
+        // worker fallback exercises coarse grains rather than the size guard.
+        for (t, s, nibble) in [(7, 3, false), (13, 9, true)] {
+            let (packed, images) = random_grid(t, s, (t * 877 + s) as u64);
+            let mut state = 0x524F_575F_4752_4149;
+            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+            let prove = |grain| {
+                with_grain(grain, || {
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
+                        nibble,
+                        nibble_from: 0,
+                    });
+                    let mut ps = build_kernel_prover(b"forest-row-grain/v1", b"instance");
+                    let terminal = forest.prove(&mut ps, &zeta);
+                    (terminal, ps.finish().narg_string)
+                })
+            };
+            let expected = pools[0].install(|| prove(1));
+            for (workers, pool) in [8, 12, 16].into_iter().zip(&pools[1..]) {
+                for grain in [1, 2, 4, 8, 16] {
+                    assert_eq!(
+                        pool.install(|| prove(grain)),
+                        expected,
+                        "t={t}, s={s}, workers={workers}, grain={grain}"
+                    );
                 }
             }
         }

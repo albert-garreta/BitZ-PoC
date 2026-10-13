@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b1024-s128-t12-seed43-r3",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 43,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 3,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "47a2e676377578809ac0e1d7d2342757725a883a9217efdebc2b28bcf203c323",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 57.396564999999995,
+      "prove_ms": 52.124752,
+      "witness_commit_ms": 5.2717529999999995,
+      "verify_ms": 15.017812000000001,
+      "process_peak_rss_kib": 136500,
+      "proof_payload_bytes": 321304,
+      "iteration": 0,
+      "prepare_ms": 0.16053399999999998,
+      "external_input_ms": 1766.136423,
+      "prover_minor_faults": 56380,
+      "process_rss_before_prover_kib": 22784,
+      "process_rss_after_prover_kib": 73312,
+      "process_retained_rss_kib": 60896,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "824bb2c6c9b5f060c9e90d0c451d61cc86a236ff47fe5dea8546557255d7efcc",
+  "stdout_sha256": "9716855f0ff9141640af269719ef653698873118698e5912fd8209cdee9140d2",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "1f518a60d7a6bbc86c8b3d722158fd390e9513f6c20ea9f36545be23e8ca7c67"
+}

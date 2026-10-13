@@ -1,0 +1,77 @@
+Final norm-prefix default and StageTimings review, 2026-10-13
+Baseline: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+
+Conclusion: no actionable correctness, safety, transcript, feature-gating, or
+scope findings. Read-only source and saved-evidence review. No builds, tests,
+proofs, benchmarks, or source modifications were performed. Final production
+build/performance confirmation is separate and was still running at review time.
+
+Default policy
+- src/piop/spartan/falcon_integer.rs:129 selects width using K, public instance
+  dimension, field modulus, and worker count. New production behavior is exactly
+  K=1, instance_vars=10, modulus>=2^125, workers in {8,12,16} => width 4.
+- For the same dimension/modulus, serial behavior is unchanged: K=1 => 4 and
+  K=4 => 3. Other parallel worker counts retain 1; K=4 parallel retains 1.
+  Other dimensions/moduli retain 1. The no-parallel build sets workers=1 via
+  cfg guards (:147-150), so it introduces no unconditional Rayon dependency.
+- Benchmark-only BITZ_ARITHMETIC_NORM_PREFIX may explicitly select 1..4 for
+  K=1 before the production policy. auto/unset falls through to the policy;
+  invalid/non-Unicode overrides fail. Non-bench builds do not read this selector.
+- prove_with_prefix (:180-211) still validates row_vars in 1..=20, width in
+  1..=4, K in {1,4}, dimensions and boundary configuration before reading the
+  witness or absorbing messages. Width is capped to row_vars. Thus small row
+  dimensions remain safe even when public policy initially returns four.
+- No native-prefix implementation changed. native_prefix.rs:89 retains the
+  signed-i16 bound (2^width*2^15)^2 * 2^(row_vars-width) <= 2^54 at width<=4,
+  row_vars<=20, which fits i64. Grid length <=81 matches its fixed scratch.
+- falcon_integer.rs:388-394 still absorbs each ordinary polynomial, executes
+  the round boundary/grinding, then derives its challenge. Prefix width changes
+  representation and work, not the message count, coefficient meaning, nonce
+  boundary, Fiat-Shamir ordering, or verifier. The added boundary span is purely
+  observational. Only the existing native_prefix span remains; no duplicate
+  wrapper can double-count its elapsed time.
+- Existing tests at falcon_integer.rs:885/890 compare widths 1..4 against an
+  independent dense prover for K=1/K=4, signed boundary values, degenerate points,
+  grinding/nonces, proof/terminal/transcript equality, verification and rejection
+  of a wrong initial claim. Source coverage inspected; tests not rerun here.
+
+StageTimings feature gate
+- benches/common/falcon_stage_timings.rs:52 gates the newly admitted word-round,
+  integer-round and grinding diagnostics with cfg!(feature="bench-internals").
+  In production without that feature, detailed is false, and the remaining
+  LIGHT predicate is identical to baseline 80e141a1a. In particular the original
+  word_first_fold aggregate remains admitted; no new integer/grinding spans are
+  added to production LIGHT.
+- Full trace with LIGHT unset retains its original enabled=true behavior.
+  benches/falcon_algebraic.rs:73 installs StageTimings only for --trace, so the
+  matched untraced latency runs do not acquire this subscriber. Detailed traces
+  remain diagnostic and must not be substituted for untraced latency results.
+
+Qualification cross-check (saved evidence, not rerun)
+- qualify-comparison.txt agrees that norm4 beats the frozen baseline pooled
+  median and all three seed medians in every promoted degree/worker case.
+  Each side has 21 post-warmup samples: seven samples for each of three seeds.
+  Total prover ms, baseline -> norm4:
+    Falcon-512:   8 workers 28.189 -> 27.878 (-1.10%)
+                 12 workers 32.196 -> 30.880 (-4.09%)
+                 16 workers 28.600 -> 28.113 (-1.70%)
+    Falcon-1024:  8 workers 51.260 -> 50.832 (-0.84%)
+                 12 workers 56.770 -> 55.361 (-2.48%)
+                 16 workers 48.783 -> 47.974 (-1.66%)
+- These are repeated-process qualification observations, not a confidence-
+  interval claim or final production-binary measurements. Within-process
+  samples are correlated and worker placement is part of the measured setup.
+- Process-maximum peak-RSS medians increase by 19.87/19.63 MiB for Falcon-512
+  at 12/16 workers, and 32.25/32.37/32.07 MiB for Falcon-1024 at 8/12/16.
+  Falcon-512 at 8 workers is essentially unchanged (+56 KiB). Retained RSS does
+  not have the same increase; peak and retained measurements must be reported
+  separately. The source comment correctly acknowledges higher peak memory.
+- Saved validation.json records 2,196 verified v9 proofs across both degrees,
+  six frozen baseline cases, complete proof/payload equality, input/source
+  equality, and verified command/raw/binary/parser hashes. This review read
+  that report rather than independently revalidating every raw trial.
+
+Reviewed SHA-256
+c47e1f84b2da02883d3a1d7e96f24816ef233e5ef4024a144d117887b48fb51c  src/piop/spartan/falcon_integer.rs
+c38548cc828a06d189ca2c0c0b7649aa44aad379dd20ad1da22709df975e1f4b  src/piop/spartan/falcon_integer/native_prefix.rs
+94c591930f43cae67ea69850405ac1a229531924ea1d183942c0602cf1239926  benches/common/falcon_stage_timings.rs

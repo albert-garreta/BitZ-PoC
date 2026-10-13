@@ -222,7 +222,16 @@ pub(super) fn prove(
     field: &Cfg,
     grinding_bits: u32,
 ) -> Result<(Proof, PreparedClaim), FalconError> {
-    prove_inner(transcript, layout, public, data, field, grinding_bits, None)
+    prove_inner(
+        transcript,
+        layout,
+        public,
+        data,
+        field,
+        grinding_bits,
+        None,
+        collapse_batch_size(),
+    )
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]
@@ -243,6 +252,7 @@ pub(super) fn prove_with_scratch(
         field,
         grinding_bits,
         Some(scratch),
+        collapse_batch_size(),
     )
 }
 
@@ -255,6 +265,7 @@ fn prove_inner(
     field: &Cfg,
     grinding_bits: u32,
     scratch: Option<&CoordinateScratch>,
+    collapse_batch: usize,
 ) -> Result<(Proof, PreparedClaim), FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
     validate_witness(layout, data)?;
@@ -293,7 +304,7 @@ fn prove_inner(
     };
     transcript.absorb_slice(b"coordinate-collapse");
     let xi = squeeze_field(transcript, field).map_err(|e| error(e.to_string()))?;
-    let claim = collapse_claim(&coordinates, &carries, xi, field);
+    let claim = collapse_claim_with_batch(&coordinates, &carries, xi, field, collapse_batch);
     Ok((
         Proof {
             carries,
@@ -311,6 +322,26 @@ pub(super) fn verify(
     proof: &Proof,
     field: &Cfg,
     grinding_bits: u32,
+) -> Result<PreparedClaim, FalconError> {
+    verify_inner(
+        transcript,
+        layout,
+        public,
+        proof,
+        field,
+        grinding_bits,
+        collapse_batch_size(),
+    )
+}
+
+fn verify_inner(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    proof: &Proof,
+    field: &Cfg,
+    grinding_bits: u32,
+    collapse_batch: usize,
 ) -> Result<PreparedClaim, FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
     if proof.projection_nonce.is_some() != (grinding_bits != 0) {
@@ -334,7 +365,13 @@ pub(super) fn verify(
     }
     transcript.absorb_slice(b"coordinate-collapse");
     let xi = squeeze_field(transcript, field).map_err(|e| error(e.to_string()))?;
-    Ok(collapse_claim(&coordinates, &proof.carries, xi, field))
+    Ok(collapse_claim_with_batch(
+        &coordinates,
+        &proof.carries,
+        xi,
+        field,
+        collapse_batch,
+    ))
 }
 
 fn validate_context(
@@ -852,12 +889,73 @@ fn check_carries(carries: &[i64; EXTENSION_DEGREE], batch: usize) -> Result<(), 
     Ok(())
 }
 
-#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:collapse")]
+fn collapse_batch_size() -> usize {
+    #[cfg(feature = "bench-internals")]
+    {
+        static BATCH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        *BATCH.get_or_init(|| match std::env::var("BITZ_ARITHMETIC_COLLAPSE_BATCH") {
+            Err(std::env::VarError::NotPresent) => 1,
+            Ok(value) => match value.as_str() {
+                "1" => 1,
+                "2" => 2,
+                "4" => 4,
+                "8" => 8,
+                _ => panic!("BITZ_ARITHMETIC_COLLAPSE_BATCH must be 1, 2, 4, or 8"),
+            },
+            Err(std::env::VarError::NotUnicode(_)) => {
+                panic!("BITZ_ARITHMETIC_COLLAPSE_BATCH must be valid Unicode")
+            }
+        })
+    }
+    #[cfg(not(feature = "bench-internals"))]
+    {
+        1
+    }
+}
+
+fn collapse_weights<const LANES: usize>(
+    values: &[CoordinatesInAlpha],
+    prepared: &<Cfg as PreparedLinearCombination<u64>>::Prepared<'_, EXTENSION_DEGREE>,
+) -> Vec<F> {
+    let chunks = values.par_chunks_exact(LANES);
+    let remainder = chunks.remainder();
+    // Collect an indexed iterator of fixed arrays, then flatten without copying
+    // or introducing an additional allocation/zeroing pass. Live Falcon vectors
+    // are multiples of N, so all supported batch widths divide their lengths.
+    let mut weights = chunks
+        .map(|chunk| {
+            prepared.unsigned_word_dots::<LANES>(|term| {
+                std::array::from_fn(|lane| u64::from(chunk[lane].coordinates()[term]))
+            })
+        })
+        .collect::<Vec<[F; LANES]>>()
+        .into_flattened();
+    // Keep the helper correct for arbitrary slices as well as Falcon geometry.
+    weights.extend(remainder.iter().map(|value| {
+        <Cfg as PreparedLinearCombination<u64>>::linear_combination(prepared, |k| {
+            u64::from(value.coordinates()[k])
+        })
+    }));
+    weights
+}
+
+#[cfg(test)]
 fn collapse_claim(
     coordinates: &Coordinates,
     carries: &[i64; EXTENSION_DEGREE],
     xi: F,
     field: &Cfg,
+) -> PreparedClaim {
+    collapse_claim_with_batch(coordinates, carries, xi, field, 1)
+}
+
+#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:collapse")]
+fn collapse_claim_with_batch(
+    coordinates: &Coordinates,
+    carries: &[i64; EXTENSION_DEGREE],
+    xi: F,
+    field: &Cfg,
+    batch: usize,
 ) -> PreparedClaim {
     let mut xi_powers = [field.one(); EXTENSION_DEGREE];
     for k in 1..EXTENSION_DEGREE {
@@ -874,8 +972,15 @@ fn collapse_claim(
             u64::from(value.coordinates()[k])
         })
     };
-    let weights_s1 = coordinates.s1.par_iter().map(weight).collect();
-    let weights_s2 = coordinates.s2.par_iter().map(weight).collect();
+    let collapse = |values: &[CoordinatesInAlpha]| match batch {
+        1 => values.par_iter().map(weight).collect(),
+        2 => collapse_weights::<2>(values, &prepared),
+        4 => collapse_weights::<4>(values, &prepared),
+        8 => collapse_weights::<8>(values, &prepared),
+        _ => panic!("unsupported coordinate collapse batch"),
+    };
+    let weights_s1 = collapse(&coordinates.s1);
+    let weights_s2 = collapse(&coordinates.s2);
     // Eleven bounded signed coordinates share one mixed reduction; carries
     // remain native integers throughout this dot product.
     let mut target = FpSignedLinearAcc::<2, 2>::default();
@@ -1126,6 +1231,13 @@ mod tests {
             for xi in [0, 1, prime - 1, 1234567890123456789] {
                 let xi = F::from_with_cfg(xi, &field);
                 let actual = collapse_claim(&coordinates, &carries, xi, &field);
+                for batch in [2, 4, 8] {
+                    assert_eq!(
+                        collapse_claim_with_batch(&coordinates, &carries, xi, &field, batch),
+                        actual,
+                        "projection batch={batch}, prime={prime}"
+                    );
+                }
                 let mut powers = [field.one(); EXTENSION_DEGREE];
                 for k in 1..EXTENSION_DEGREE {
                     powers[k] = field.mul(&powers[k - 1], &xi);
@@ -1156,6 +1268,142 @@ mod tests {
                     )
                 });
                 assert_eq!(actual.target, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn collapse_batches_preserve_lane_order_and_partial_tails() {
+        let basis =
+            PowerBasis::try_new(Ext::new(std::array::from_fn(|k| u16::from(k == 1)))).unwrap();
+        let values: Vec<_> = (0..257)
+            .map(|index| {
+                basis.encode(Ext::new(std::array::from_fn(|term| {
+                    [
+                        0,
+                        1,
+                        (Q - 1) as u16,
+                        ((index * 727 + term * 53) as i64 % Q) as u16,
+                    ][(index + term) % 4]
+                })))
+            })
+            .collect();
+        let field = field();
+        let coefficients: [F; EXTENSION_DEGREE] =
+            std::array::from_fn(|term| F::from_with_cfg(((term + 1) * 123456789) as u64, &field));
+        let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
+            &field,
+            coefficients,
+        );
+        for workers in [1, 4, 12] {
+            #[cfg(feature = "parallel")]
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            let check = || {
+                for len in (0..=17).chain([257]) {
+                    let input = &values[..len];
+                    let expected: Vec<_> = input
+                        .iter()
+                        .map(|value| {
+                            <Cfg as PreparedLinearCombination<u64>>::linear_combination(
+                                &prepared,
+                                |term| u64::from(value.coordinates()[term]),
+                            )
+                        })
+                        .collect();
+                    for actual in [
+                        collapse_weights::<1>(input, &prepared),
+                        collapse_weights::<2>(input, &prepared),
+                        collapse_weights::<4>(input, &prepared),
+                        collapse_weights::<8>(input, &prepared),
+                    ] {
+                        assert_eq!(actual, expected, "len={len}, workers={workers}");
+                    }
+                }
+            };
+            #[cfg(feature = "parallel")]
+            pool.install(check);
+            #[cfg(not(feature = "parallel"))]
+            check();
+        }
+    }
+
+    #[test]
+    fn collapse_batches_preserve_ring_proofs_and_transcripts() {
+        for prime in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+            let field = F::make_cfg(&Uint::from(prime)).unwrap();
+            for (batch, grinding_bits) in [(1, 0), (3, 3), (17, 0)] {
+                let (layout, public, data) = fixture(batch);
+                let mut reference = Blake3Transcript::new();
+                let (expected_proof, expected_claim) = prove_inner(
+                    &mut reference,
+                    &layout,
+                    &public,
+                    &data,
+                    &field,
+                    grinding_bits,
+                    None,
+                    1,
+                )
+                .unwrap();
+                let expected_state: [u64; 4] =
+                    std::array::from_fn(|_| reference.get_challenge::<u64>());
+                for lanes in [1, 2, 4, 8] {
+                    let mut prover = Blake3Transcript::new();
+                    let (proof, claim) = prove_inner(
+                        &mut prover,
+                        &layout,
+                        &public,
+                        &data,
+                        &field,
+                        grinding_bits,
+                        None,
+                        lanes,
+                    )
+                    .unwrap();
+                    assert_eq!(proof, expected_proof);
+                    assert_eq!(claim, expected_claim);
+                    assert_eq!(dot(&claim, &data, &field), claim.target);
+                    let mut verifier = Blake3Transcript::new();
+                    let checked = verify_inner(
+                        &mut verifier,
+                        &layout,
+                        &public,
+                        &expected_proof,
+                        &field,
+                        grinding_bits,
+                        lanes,
+                    )
+                    .unwrap();
+                    assert_eq!(checked, expected_claim);
+                    assert_eq!(
+                        std::array::from_fn::<_, 4, _>(|_| prover.get_challenge::<u64>()),
+                        expected_state
+                    );
+                    assert_eq!(
+                        std::array::from_fn::<_, 4, _>(|_| verifier.get_challenge::<u64>()),
+                        expected_state
+                    );
+                    let mut altered = proof;
+                    altered.carries[0] += 1;
+                    let invalid_claim = verify_inner(
+                        &mut Blake3Transcript::new(),
+                        &layout,
+                        &public,
+                        &altered,
+                        &field,
+                        grinding_bits,
+                        lanes,
+                    );
+                    match invalid_claim {
+                        Ok(invalid_claim) => {
+                            assert_ne!(dot(&invalid_claim, &data, &field), invalid_claim.target);
+                        }
+                        Err(_) => assert_ne!(grinding_bits, 0),
+                    }
+                }
             }
         }
     }

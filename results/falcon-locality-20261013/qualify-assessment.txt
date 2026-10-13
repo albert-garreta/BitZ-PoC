@@ -1,0 +1,220 @@
+Falcon locality qualification assessment — 2026-10-13
+
+Conclusion: select norm4 alone for the qualified parallel shape, subject to
+confirmation with the final production-default binary. All18 per-seed total
+medians at8/12/16 workers improve versus both the frozen baseline and the
+candidate control. Leave collapse batching, dense compaction and forest row
+grain at their previous defaults. Keep the serial norm policy unchanged.
+
+Evidence scope
+--------------
+Only untraced phase qualify is used below. Canonical Falcon-512/1024, batch1024,
+security128,1/8/12/16 physical workers, repeated Prepared, seeds42/43/44.
+Each variant/degree/worker cell contains3 processes,2 warmups/process and
+7 measured samples/process:21 post-warmup measurements per cell. Six variants
+produce144 processes,1296 verified proofs including warmups and1008 measured
+proofs in this phase. Repeated measurements within a process are correlated.
+Worker order is6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9 truncated to the selected
+count; main CPU6. No values from screen12/profile12 are pooled into this phase.
+
+The runner validation snapshot covers2196 verified proofs across all three
+completed phases. It confirms input/source identity, full proof and payload
+equality, frozen binary and raw-file hashes, and parser provenance. The
+qualification proof-payload medians remain256368/321304 bytes for512/1024,
+with exact matching per-seed payloads. No proof-size or protocol change.
+
+Norm4 selection
+---------------
+Pooled total commit+prove reductions versus baseline are:
+                  8 workers      12 workers      16 workers
+  Falcon512        1.10%            4.09%            1.70%
+  Falcon1024       0.84%            2.48%            1.66%
+Every one of the18 underlying seed medians also decreases against baseline.
+The smallest seed decrease is0.27% (512,16 workers,seed42); the largest is
+4.35% (512,12 workers,seed42). All18 also decrease against candidate control,
+although one control process is anomalous as documented below. These are
+descriptive measured differences, not statistical-significance claims.
+
+The proposed/source selector chooses width4 for K==1, instance_vars==10,
+field modulus>=2^125 and workers8/12/16. It retains the previous one-worker
+width4 square-norm /width3 rejection policy, and leaves other cases unchanged.
+The parallel selector matches the measured full batch1024/security128 shape.
+instance_vars is a padded-capacity condition: throughput for partial batches
+with the same capacity, other field moduli above the threshold, or unmeasured
+worker counts is not established by this campaign. Correctness tests cover
+representation equivalence independently; this report does not claim to rerun
+them. Final production-default measurements remain the confirmation step.
+
+At one worker both frozen baseline/control already select norm4. Explicit
+norm4 changes pooled totals by+0.23% (512) /-0.18% (1024) versus baseline,
+while all six serial per-seed comparisons are slightly higher. This is not a
+new serial optimization. In particular, pooled medians are not averages of
+per-seed medians. Retain every measurement rather than selecting a favorable
+aggregation. Explicit norm2 is about1% slower serially.
+
+Control outlier retained
+------------------------
+Falcon1024,16 workers,control seed43 has a total median61.137089ms versus
+48.636906ms/48.813210ms for control seeds42/44. Its prover median is57.204798ms;
+the corresponding baseline seed43 is48.373238ms total and norm4 is47.726595ms.
+No sample or process was discarded. The norm4/control seed43 ratio suggests
+a21.94% decrease, which is not a credible estimate of the isolated prefix
+benefit from this process alone. The same seed versus baseline decreases1.34%,
+and the other norm4/baseline seeds decrease1.64% and2.10%. Use the complete
+baseline/control/per-seed record and the next production pass for interpretation.
+No cause for the elevated control process is established by these summaries.
+
+Tradeoffs to report
+-------------------
+Peak RSS: norm4 process-peak medians are essentially unchanged for512 at
+8 workers, but increase23.16%/22.04% at12/16 workers relative to control.
+For1024 they increase18.79%/18.06%/18.08% at8/12/16 workers. These are
+process-lifetime maxima including warmups, not retained buffer capacity.
+Retained RSS is lower at12/16 workers for512 and all parallel counts for1024.
+Do not infer lower process peak merely from a smaller materialized norm table.
+
+Falcon1024 commit time increases with norm4:3.551→3.911ms (8 workers),
+3.820→4.147ms (12),3.824→4.144ms (16) versus control, while prove time
+decreases47.476→46.891ms,53.529→51.143ms,45.285→43.803ms respectively.
+Total commit+prove still improves at every parallel cell and seed. The summaries
+do not establish the reason for the commit change; do not attribute it to new
+commit arithmetic. Each total is measured per proof, not reconstructed by
+adding independent stage medians.
+
+Verifier timings are mixed against baseline (for example512/12 is+1.48%,
+1024/16 is+0.20%, while several other cells are lower). No verifier algorithm
+was optimized by this selector, and this phase does not establish a universal
+verifier-speed improvement. Keep final production verify checks in the report.
+
+Other candidates
+----------------
+collapse4 alone does not consistently improve either degree across workers.
+Adding it to norm4 changes total medians versus norm4 by:
+                    8 workers      12 workers      16 workers
+  Falcon512          -0.08%           +1.39%           -0.41%
+  Falcon1024         +0.40%           -0.16%           +0.19%
+Its per-seed gains are also mixed. Leave collapse batch1; the combination does
+not provide a consistent extra benefit and is slower at512/12.
+
+norm2 is a reasonable lower-memory alternative for further specialized work:
+it lowers process-peak medians for512/12,512/16 and every parallel1024 cell.
+It is slower than norm4 in all six parallel pooled totals. It also has a
+1024/16 seed43 baseline regression (+3.38%), so avoid declaring it uniformly
+better from pooled totals alone. No additional defaults are selected here.
+Dense compaction and forest grain were excluded after their prior screen;
+qualification supplies no new evidence to promote them.
+
+Limits
+------
+Only repeated operation has been qualified here. No cold-run claim is made.
+The source promotion and final production binary can have different code
+layout from this benchmark-feature binary; the two planned production passes
+are required confirmation. Keep those phases separate and retain outliers.
+No builds, tests, provers or benchmark processes were launched for this analysis.
+
+Pooled medians, resources and same-phase norm4 changes
+----------------------------------------------------
+ N   workers  variant      total     prove    commit   verify  peak_KiB retained_KiB
+ 512       1 baseline    138.881   130.001     8.915   30.382     83380        38888
+ 512       1 control     139.007   130.113     8.878   30.359     83712        39208
+ 512       1 norm4       139.201   130.324     8.872   30.379     83928        39236
+ 512       8 baseline     28.189    26.282     1.909    9.227     85720        41968
+ 512       8 control      28.148    26.311     1.838    9.155     86084        42012
+ 512       8 norm4        27.878    25.953     1.893    9.199     85776        42116
+ 512      12 baseline     32.196    29.847     2.329    9.116     88340        44972
+ 512      12 control      31.924    29.638     2.277    9.476     88252        45204
+ 512      12 norm4        30.880    28.583     2.297    9.251    108688        42948
+ 512      16 baseline     28.600    26.185     2.391    9.635     89920        47148
+ 512      16 control      28.554    26.248     2.366    9.673     90156        47424
+ 512      16 norm4        28.113    25.859     2.340    9.248    110024        45372
+1024       1 baseline    269.882   252.946    17.000   59.735    206696        59612
+1024       1 control     269.499   252.598    16.939   59.750    207268        59968
+1024       1 norm4       269.407   252.358    16.992   59.553    207184        60024
+1024       8 baseline     51.260    47.685     3.609   16.496    176064        78844
+1024       8 control      51.076    47.475     3.551   16.379    176008        79160
+1024       8 norm4        50.832    46.891     3.911   16.102    209088        63696
+1024      12 baseline     56.770    52.997     3.779   16.004    176780        80172
+1024      12 control      57.350    53.529     3.820   15.539    177808        81144
+1024      12 norm4        55.361    51.143     4.147   15.521    209924        64852
+1024      16 baseline     48.783    44.896     3.862   15.192    179436        83400
+1024      16 control      48.949    45.285     3.824   15.273    179780        84100
+1024      16 norm4        47.974    43.802     4.144   15.222    212276        68328
+
+All candidate total changes (%) — pooled and seeds42/43/44
+---------------------------------------------------------
+Negative means lower elapsed time.
+ N   workers variant    reference   pooled    seed42   seed43   seed44
+ 512       1 collapse4  control     +0.097   -0.075   +0.151   +0.097
+ 512       1 collapse4  baseline    +0.187   +0.049   +0.106   +0.187
+ 512       1 norm2      control     +1.202   +1.114   +0.882   +1.202
+ 512       1 norm2      baseline    +1.293   +1.240   +0.837   +1.293
+ 512       1 norm4      control     +0.140   -0.076   +0.215   +0.118
+ 512       1 norm4      baseline    +0.230   +0.048   +0.169   +0.208
+ 512       1 combined   control     +0.200   +0.008   +0.040   +0.200
+ 512       1 combined   baseline    +0.291   +0.132   -0.005   +0.291
+ 512       8 collapse4  control     +0.772   +0.877   -0.307   +0.826
+ 512       8 collapse4  baseline    +0.623   +1.218   -0.813   -0.287
+ 512       8 norm2      control     -0.471   -0.912   -0.201   -0.079
+ 512       8 norm2      baseline    -0.618   -0.577   -0.707   -1.182
+ 512       8 norm4      control     -0.957   -1.396   -1.683   -0.446
+ 512       8 norm4      baseline    -1.103   -1.062   -2.182   -1.545
+ 512       8 combined   control     -1.038   -1.476   -1.019   -0.750
+ 512       8 combined   baseline    -1.184   -1.143   -1.521   -1.845
+ 512      12 collapse4  control     -0.727   -0.460   -2.063   -0.063
+ 512      12 collapse4  baseline    -1.565   -0.951   -1.396   -1.807
+ 512      12 norm2      control     -0.799   -1.100   -2.491   -0.092
+ 512      12 norm2      baseline    -1.636   -1.588   -1.827   -1.835
+ 512      12 norm4      control     -3.272   -3.879   -3.873   -0.168
+ 512      12 norm4      baseline    -4.088   -4.353   -3.218   -1.910
+ 512      12 combined   control     -1.926   -3.241   -2.483   +0.387
+ 512      12 combined   baseline    -2.753   -3.718   -1.819   -1.364
+ 512      16 collapse4  control     +0.971   +0.642   +1.918   +0.850
+ 512      16 collapse4  baseline    +0.810   +1.111   +3.306   +0.972
+ 512      16 norm2      control     -1.087   -1.030   -2.644   -0.739
+ 512      16 norm2      baseline    -1.245   -0.569   -1.318   -0.618
+ 512      16 norm4      control     -1.545   -0.734   -2.759   -2.305
+ 512      16 norm4      baseline    -1.702   -0.272   -1.434   -2.187
+ 512      16 combined   control     -1.949   -1.795   -1.039   -2.510
+ 512      16 combined   baseline    -2.105   -1.338   +0.309   -2.391
+1024       1 collapse4  control     +0.351   +0.547   +0.609   +0.504
+1024       1 collapse4  baseline    +0.209   +0.341   +0.486   +0.681
+1024       1 norm2      control     +1.159   +1.201   +1.202   +0.985
+1024       1 norm2      baseline    +1.016   +0.994   +1.077   +1.163
+1024       1 norm4      control     -0.034   +0.369   +0.179   +0.187
+1024       1 norm4      baseline    -0.176   +0.163   +0.056   +0.364
+1024       1 combined   control     +0.211   +0.537   +0.111   +0.100
+1024       1 combined   baseline    +0.069   +0.331   -0.012   +0.276
+1024       8 collapse4  control     +0.342   +0.308   -0.392   +0.442
+1024       8 collapse4  baseline    -0.018   -0.385   -0.595   +0.433
+1024       8 norm2      control     -0.338   -0.033   -0.514   -0.460
+1024       8 norm2      baseline    -0.696   -0.724   -0.717   -0.469
+1024       8 norm4      control     -0.478   -0.280   -0.407   -0.926
+1024       8 norm4      baseline    -0.835   -0.969   -0.610   -0.935
+1024       8 combined   control     -0.080   -0.060   +0.106   -0.323
+1024       8 combined   baseline    -0.438   -0.750   -0.098   -0.332
+1024      12 collapse4  control     -0.533   +0.375   -2.794   +0.385
+1024      12 collapse4  baseline    +0.481   +0.657   -0.937   +0.710
+1024      12 norm2      control     -3.015   -1.519   -3.558   -4.590
+1024      12 norm2      baseline    -2.026   -1.243   -1.715   -4.281
+1024      12 norm4      control     -3.467   -3.188   -3.488   -3.428
+1024      12 norm4      baseline    -2.482   -2.916   -1.643   -3.115
+1024      12 combined   control     -3.622   -2.228   -4.024   -3.619
+1024      12 combined   baseline    -2.639   -1.954   -2.189   -3.307
+1024      16 collapse4  control     -0.454   +0.645  -20.106   -0.344
+1024      16 collapse4  baseline    -0.115   +0.346   +0.975   -1.012
+1024      16 norm2      control     -0.357   +0.282  -18.206   -1.678
+1024      16 norm2      baseline    -0.018   -0.016   +3.376   -2.337
+1024      16 norm4      control     -1.991   -1.349  -21.935   -1.444
+1024      16 norm4      baseline    -1.657   -1.641   -1.337   -2.104
+1024      16 combined   control     -1.805   -1.175  -22.080   -0.892
+1024      16 combined   baseline    -1.471   -1.468   -1.520   -1.556
+
+Artifact snapshots used (SHA256)
+-------------------------------
+summary.json: a7630b348698d47e9ffaeeef6fa3e5eb1daf206fe69150c1bbb937ebbe16c221
+validation.json: 668c498b46091cca5378d46449ebe5196b50c61149bbd87be6ebafe555242d36
+phases/qualify.json: a277e153de8d9ec9eb3847ece598a4b845c508953fbd8ff4d5e725dd84fc7feb
+qualify-comparison.json: a7133f7c2b62cf02b3122401d9dcb87e9c7e9466e72851146a9cd76f397e3922
+
+Detailed metric/per-seed ratios: qualify-comparison.json and .txt.
+Generated using compare.py --phase qualify --output-prefix qualify-comparison.

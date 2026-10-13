@@ -1,0 +1,147 @@
+Falcon locality profile12 stage assessment — 2026-10-13
+
+Conclusion: the candidate-control profiles support the norm4 mechanism, give
+no collapse4 stage benefit, and show that compact4 copy cost exceeds its small
+later-fold saving. Forest2 has no consistent traced forest improvement. Keep
+latency selection tied to the separate untraced qualification.
+
+Scope and interpretation
+------------------------
+profile12 only: batch1024, security128,12 physical workers, repeated Prepared,
+seeds42/43/44 and9 post-warmup samples per variant/degree. CPU order and input
+cases match within the phase. All deltas below compare candidate variants with
+the candidate control. Frozen baseline spans have less instrumentation and
+are deliberately excluded from these stage comparisons.
+
+In particular, baseline binding4.798/8.005ms versus candidate control
+6.879/10.349ms is not evidence of a production binding regression: additional
+per-round spans and span-output handling change the measured scope overhead.
+The same caution applies to parent arithmetic, forest, PCS and prover spans.
+Profiles diagnose where work moves; they are not untraced end-to-end latency.
+Nested spans overlap. A difference of stage medians is descriptive and is not
+a median of paired per-proof differences or an exact accounting identity.
+
+Norm4: supported work reduction
+-------------------------------
+For512/1024, aggregate integer coefficients decrease0.759→0.376ms and
+1.077→0.439ms; aggregate integer folds decrease1.266→0.471ms and
+2.161→0.751ms. The newly selected native-prefix setup costs0.537/0.920ms.
+Including that setup, the containing integer_outer scope decreases
+3.943→3.323ms (-0.620) and5.246→4.146ms (-1.101). All six per-seed
+integer_outer medians decrease, by15.29–15.74% (512) and20.30–21.49% (1024).
+Coefficient and fold medians also decrease for every seed. Round-boundary
+grinding remains approximately0.673→0.678ms /0.702→0.711ms.
+
+This agrees with the implementation: falcon_integer.rs:193 prepares the native
+prefix, :223 uses its coefficients for the initial ordinary rounds, and :408
+delays full field-table materialization until the final prefix challenge.
+With width4 the first field table has one-eighth as many entries as width1.
+The proof still sends each ordinary round and samples its challenge after the
+same boundary (:378–386). This changes prover representation, not round count
+or grinding. The screen12 memory measurements remain a separate tradeoff;
+a smaller first field table does not by itself imply a smaller process peak.
+
+The norm4 whole binding scope falls1.402ms at1024, but construction, initial
+sums, first fold and later dense folds do not show a corresponding reduction.
+Do not attribute that outer-scope difference to a binding-kernel improvement or
+claim an additional independent speedup from it. These aggregate diagnostics
+do not explain the remaining difference. No norm2 trace was taken in this
+phase, so its stage mix cannot be inferred from norm4.
+
+Collapse4: no measured collapse improvement
+-----------------------------------------
+Collapse changes1.366→1.379ms (+0.013) and2.720→2.770ms (+0.050).
+512 seed deltas are mixed; all three1024 seed medians increase. Whole ring
+changes2.820→2.805ms and5.559→5.514ms, with differences in coordinate/carry
+timing, but that does not establish faster collapse. Treat screen12 small
+pooled total decreases versus control as an unresolved candidate. Compare
+isolated norm4 with norm4+collapse4 in untraced qualification before enabling
+collapse batching. The field arithmetic/order proof is separate from speed.
+
+Compact4: copy cost outweighs observed locality benefit
+-----------------------------------------------------
+Later dense folds decrease1.017→0.987ms (-0.030) and1.937→1.848ms (-0.089).
+Compaction adds0.284/0.566ms in a separate sibling span. The sums of these
+pooled stage medians are therefore about0.254/0.478ms higher; this is a rough
+work-accounting comparison, not an exact total median. The enclosing binding
+scope increases6.879→7.353ms and10.349→10.996ms, with every seed higher.
+
+The source implementation matches the diagnostic: compact_dense at
+word_binding.rs:1049 runs a serial copy after dense_fold, and :1061 retains
+capacity while resetting the live stride. It saves no retained allocation.
+These results argue for leaving this compaction experiment off; they do not
+establish that every possible parallel/out-of-place compaction design loses.
+
+Forest2 and remaining binding work
+----------------------------------
+The forest scope changes18.324→18.371ms and32.038→32.395ms; per-seed deltas
+are mixed for each degree. This provides no consistent stage support for a
+larger row grain. Keep the untraced forest result separate from incidental
+changes elsewhere in these profiles.
+
+The new binding spans now expose candidate-control costs directly:
+  construction       0.537 /1.063ms
+  source scan        0.112 /0.164ms
+  initial sums       0.424 /0.832ms
+  first dense fold   1.052 /1.920ms
+  later dense folds  1.017 /1.937ms
+  round grinding    0.684 /0.714ms
+  auxiliary folds   0.263 /0.277ms
+  row weights       0.080 /0.077ms
+These are traced wall durations, not an additive decomposition of untraced
+binding. Auxiliary folds already contain spare project/fold spans. Grinding
+also appears within broader spartan:grinding totals. Avoid double counting.
+First and later folds remain comparable-sized measured work; the tested
+serial compaction does not remove enough of the latter cost.
+
+No builds, tests, provers or benchmark processes were run for this analysis.
+Only existing summaries and source were read. No implementation was changed.
+
+Candidate/control pooled traced stage medians (milliseconds)
+----------------------------------------------------------
+ N   variant    stage                            control  candidate    delta
+ 512 norm4      falcon_algebraic:integer_outer            3.942631   3.322980  -0.619651
+ 512 norm4      falcon_integer:coefficients               0.759305   0.375859  -0.383446
+ 512 norm4      falcon_integer:fold                       1.265762   0.471021  -0.794741
+ 512 norm4      falcon_integer:round_boundary             0.672749   0.678085  +0.005336
+ 512 collapse4  falcon_algebraic_ring:collapse            1.366212   1.378956  +0.012744
+ 512 collapse4  falcon_algebraic:ring                     2.819939   2.804840  -0.015099
+ 512 compact4   falcon_algebraic:word_dense_fold          1.017372   0.986975  -0.030397
+ 512 compact4   falcon_algebraic:binding                  6.878549   7.352836  +0.474287
+ 512 forest2    falcon_bridge:wfbitz_forest              18.324140  18.371399  +0.047259
+1024 norm4      falcon_algebraic:integer_outer            5.246315   4.145674  -1.100641
+1024 norm4      falcon_integer:coefficients               1.076625   0.439168  -0.637457
+1024 norm4      falcon_integer:fold                       2.160964   0.750721  -1.410243
+1024 norm4      falcon_integer:round_boundary             0.701887   0.711181  +0.009294
+1024 collapse4  falcon_algebraic_ring:collapse            2.719940   2.770015  +0.050075
+1024 collapse4  falcon_algebraic:ring                     5.558745   5.514362  -0.044383
+1024 compact4   falcon_algebraic:word_dense_fold          1.936989   1.848182  -0.088807
+1024 compact4   falcon_algebraic:binding                 10.349068  10.996071  +0.647003
+1024 forest2    falcon_bridge:wfbitz_forest              32.037986  32.395282  +0.357296
+
+Per-seed stage change percentages versus candidate control
+---------------------------------------------------------
+ N   variant    stage                                    seed42   seed43   seed44
+ 512 norm4      falcon_algebraic:integer_outer            -15.561  -15.736  -15.290
+ 512 norm4      falcon_integer:coefficients               -50.767  -50.347  -49.873
+ 512 norm4      falcon_integer:fold                       -62.325  -63.559  -63.061
+ 512 norm4      falcon_integer:round_boundary              +0.961   -0.858   +1.328
+ 512 collapse4  falcon_algebraic_ring:collapse             +1.387   -2.388   +1.057
+ 512 collapse4  falcon_algebraic:ring                      -3.153   -2.040   +0.311
+ 512 compact4   falcon_algebraic:word_dense_fold           +0.595   -1.056   -5.038
+ 512 compact4   falcon_algebraic:binding                   +6.431   +6.828   +6.132
+ 512 forest2    falcon_bridge:wfbitz_forest                +2.547   +0.724   -0.867
+1024 norm4      falcon_algebraic:integer_outer            -20.297  -21.489  -20.632
+1024 norm4      falcon_integer:coefficients               -59.233  -59.598  -58.201
+1024 norm4      falcon_integer:fold                       -64.253  -66.269  -65.450
+1024 norm4      falcon_integer:round_boundary              +0.560   +0.992   +2.662
+1024 collapse4  falcon_algebraic_ring:collapse             +3.378   +1.539   +1.513
+1024 collapse4  falcon_algebraic:ring                      +0.827   -0.318   -1.715
+1024 compact4   falcon_algebraic:word_dense_fold           -6.130   -3.541   -8.368
+1024 compact4   falcon_algebraic:binding                   +7.347   +6.937   +6.053
+1024 forest2    falcon_bridge:wfbitz_forest                +1.791   +1.707   -2.115
+
+Profile artifact snapshots (SHA256)
+----------------------------------
+profile-summary.json: ddc937cee3ebb059737d1dc9db414ea33a5e9c770e993a72040167a21a789d9a
+phases/profile12.json: f44879d10351fab51154128ce2f701a53c0ec81b55f520f11045e0c1fb27ef4c

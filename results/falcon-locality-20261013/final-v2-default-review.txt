@@ -1,0 +1,45 @@
+Narrow production norm-prefix gate review, 2026-10-13
+
+Conclusion: no actionable findings. Source-only review of the v2 selector and
+caller geometry; no builds, tests, proofs, benchmarks, or source edits. Final
+v2 binary confirmation remains pending. The earlier final-default-review.txt
+describes the broader v1 gate and is superseded here for default-policy scope.
+
+- falcon_integer.rs:114 now passes the existing public row_vars argument into
+  prefix_rounds. It passes the same unchanged value to prove_with_prefix (:118).
+  No new arithmetic, witness access, validation ordering, or transcript action
+  is introduced by this parameter plumbing.
+- falcon_integer.rs:151 retains instance_vars==10 and modulus>=2^125. Within
+  this guard, the serial return at :154 precedes the new tuple condition, so
+  K=1 width4 and K=4 width3 remain unchanged for every previously covered serial
+  row shape. The no-parallel build still selects workers=1 through cfg guards.
+- The parallel tuple pattern at :161 means exactly K=1 and either
+  (row_vars=10, workers=8 or 12) or (row_vars=11, workers=12). Rust's 8|12 here
+  is an or-pattern inside the tuple, not a bitwise expression. K=4, workers16,
+  row_vars11/workers8, other worker counts, and other row dimensions return1.
+  Other instance dimensions/moduli also return1. Explicit bench-only overrides
+  remain unchanged and do not apply in the production build.
+- Both Falcon degrees include the same backend: falcon512_algebraic.rs:3 sets
+  DEGREE=512; falcon1024_algebraic/mod.rs:8 sets DEGREE=1024. backend.rs:26-27
+  defines N=DEGREE and COEFFICIENT_LOG=ilog2(N). arithmetic.rs:587-604 calls
+  falcon_integer::prove with row_vars=COEFFICIENT_LOG+1 and a one-element array
+  witness reader, establishing K=1. Its two components each contain N values.
+  Therefore Falcon-512 maps to row_vars10 and Falcon-1024 to row_vars11:
+       workers              1       8       12       16
+       Falcon-512 K=1       4       4        4        1
+       Falcon-1024 K=1      4       1        4        1
+  This table assumes instance_vars10 and the required field modulus.
+- Instance dimension means padded capacity, not necessarily exactly 1024 live
+  signatures: source.rs:78 uses batch.next_power_of_two(), and arithmetic.rs:576
+  samples ilog2(capacity) instance coordinates. Thus the selected capacity1024
+  shape also covers live batches513..1023 with zero padding. This matches the
+  requested public-dimension gate; measured batch1024 performance should not be
+  described as separately measured evidence for those partial batches.
+- Native-prefix implementation, validated width bounds, coefficient equations,
+  ordinary-round/grinding/challenge order, and StageTimings feature gate are
+  unchanged from the previous review. Width1 fallback is the original policy
+  for the newly excluded parallel cases. This narrowing does not modify the
+  proof format or security parameters.
+
+Reviewed SHA-256
+0fbe69bf7fc078287ca6527081f278b3d24f3cbaace3c03a0fb7edd765c3e30d  src/piop/spartan/falcon_integer.rs

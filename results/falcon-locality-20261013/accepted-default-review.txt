@@ -1,0 +1,57 @@
+Accepted selector and verifier-delta review, 2026-10-13
+
+Actionable source findings: none. This is a read-only review; no builds, tests,
+proofs, benchmarks, profiling, or source edits were performed. The accepted
+binary's confirmation was pending at review time. This file supersedes the
+width-two policy recorded in lowmemory-default-review.txt and final-scope-review.txt.
+
+Final selector
+- falcon_integer.rs:162 now selects width4 only for K1 with (row_vars,workers)
+  equal to (10,8) or (11,12), under the existing instance_vars10 and modulus
+  >=2^125 guard (:151). Removing (10,12)=>2 makes that case reach return1 (:167).
+- Since the common arithmetic caller uses COEFFICIENT_LOG+1 and K1, production
+  parallel width4 is limited to Falcon-512/8 workers and Falcon-1024/12 workers.
+  Falcon-512/12, all sixteen-worker cases and Falcon-1024/8 now use width1.
+- Serial K1=4/K4=3 is unchanged under the existing instance/modulus guard;
+  other shapes and parallel K4 retain1. Explicit benchmark overrides and
+  feature guards remain unchanged. The capacity1024/partial-batch caveat from
+  prior reviews still applies.
+- This removal changes only a public performance policy. It invokes the
+  existing width1 path, preserving validation, ordinary polynomials, grinding,
+  challenges, proof format and security. No mathematical implementation changes.
+
+Verifier-facing diff and the Falcon-512/12 verification increase
+- arithmetic.rs:628-680 verify_norm is unchanged. It verifies the received
+  ordinary sumcheck and terminal relation; it never calls prefix_rounds,
+  Prefix::new, or the prover's prefix selector. Therefore changing a prover
+  prefix does not add verifier equations or rounds. Source/proof equality
+  cannot itself guarantee equal verifier wall time in separately built runs.
+- ring.rs:318 now wraps verify_inner and obtains collapse_batch_size. In
+  production without bench-internals this selector returns constant1. The
+  batch1 arm at :976 is the same scalar par_iter projection as baseline, with
+  identical weights, vector lengths, carries, coordinate generation and
+  validation. No added parallel projection or allocation is selected.
+- In a bench-internals experimental control, collapse_batch_size does read the
+  process-cached OnceLock selector. This is an actual added selection step,
+  not an added full-vector pass. Source review does not establish a measurable
+  fraction of the reported verification regression from it.
+- word_binding.rs:32 and :110 add tracing instrumentation to row_weights and
+  PublicWeights::new, which the verifier does call. Their computations are
+  unchanged. The other newly instrumented word prover stages and optional
+  dense compaction are not entered by verify_with_factors (:1449).
+- Untraced benchmark runs do not install StageTimings; production LIGHT also
+  excludes the newly admitted detailed names. Disabled tracing still executes
+  its normal callsite/enablement machinery, but no new verifier stage events
+  are emitted in the matched untraced runs. This inspection provides no timing
+  evidence attributing the observed increase to that machinery.
+- No new verifier arithmetic pass, changed worker policy, changed proof size,
+  or changed cryptographic checking was found that concretely explains the
+  Falcon-512/12 increase already seen with width1 experimental control. The
+  cause remains unestablished; do not attribute it to prefix4, cache effects,
+  code generation, CPU behavior, or instrumentation without separate evidence.
+  The final answer should report the selected binary's measured verification
+  and lifecycle results, including any residual regression, independently of
+  the unchanged protocol and source-level verifier equations.
+
+Reviewed SHA-256
+1232d73cfe5ff4842a49088d744d50ea0915173d2f271fbb83c4ca6b70128630  src/piop/spartan/falcon_integer.rs

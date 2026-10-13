@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b1024-s128-t12-seed44-r5",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 44,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 5,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "e25aa4d11bd39b90daf90a8a9ab6d8ce7df77e89977a073d343b830d48443203",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "88d7fb38078332067061190b18c835ac2faa86c786720e805e39571e3bf154ac",
+      "proof_debug_digest": "1ef644df598363902c352bb33abc6557d32b6d624f2fbc35c11e88eeb48c627d",
+      "total_prover_ms": 56.75323899999999,
+      "prove_ms": 51.466888000000004,
+      "witness_commit_ms": 5.286281000000001,
+      "verify_ms": 15.225364,
+      "process_peak_rss_kib": 136568,
+      "proof_payload_bytes": 321432,
+      "iteration": 0,
+      "prepare_ms": 0.167276,
+      "external_input_ms": 1795.693734,
+      "prover_minor_faults": 56409,
+      "process_rss_before_prover_kib": 22876,
+      "process_rss_after_prover_kib": 73504,
+      "process_retained_rss_kib": 61152,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "034d43c1c3191adf5ba0422d9840d367c319da32b9eaf27832fdc0778f6b6b87",
+  "stdout_sha256": "d0fc350f7be969934ddcdd5d0d20c982f87174be420b60fa6fcea8bc91dc341d",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "6f6fb6f68c567244bd8deb88f1b97e9a5fca38a02ffea80f6736156f6c3bf9ea"
+}

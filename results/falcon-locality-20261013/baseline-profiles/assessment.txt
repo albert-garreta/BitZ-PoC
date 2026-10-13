@@ -1,0 +1,61 @@
+Frozen baseline PCS diagnostics, 2026-10-13
+
+Six sequential processes completed with the requested frozen production binary
+bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511.
+Both degrees use batch1024/security128, 12 physical workers on CPUs
+[6,7,4,5,2,3,0,1,14,15,12,13], main CPU6, seeds42/43/44, one warmup and
+three measured proofs per seed. BITZ_TRACE, BITZ_FALCON_LIGHT_PROFILE, and
+LIG_PROVE_TRACE are enabled. No build/test/prover overlapped these six processes.
+
+The existing strict normalizer verified security, dimensions, trial ordering,
+worker/main/auxiliary affinity, canonical protocol, and payload consistency.
+All24 proofs verify and match the prior baseline's input digest, source root,
+proof Debug digest, and payload. Six warmups are excluded from the summaries.
+Source/build provenance, exact commands and overrides, raw stdout/stderr,
+process records, and normalized results are preserved alongside this note.
+
+Median diagnostics (nine measured proofs per degree), milliseconds:
+                                      Falcon512   Falcon1024
+Whole PCS wall span                      3.077        4.041
+Ligerito textual total                   2.25         2.72
+  induce_sumcheck_poly                   0.46         0.61
+  initial sumcheck                       0.44         0.49
+  recursive commits (NTT + Merkle)        0.31         0.49
+  recursive sumcheck folds               0.29         0.38
+  introduce_new + glue                   0.10         0.11
+  opens                                 0.06         0.07
+  unattributed textual-total residual    0.59         0.56
+
+Induced-basis construction is the largest named Ligerito substage. It is a
+concrete next profiling target, but the residual is also substantial. The
+residual is computed per proof before taking its median and includes unscoped
+work; it cannot be attributed entirely to any one operation. Query grinding,
+query sampling, and some basis/configuration setup lie outside the printed
+substage timers. Initial and recursive fold timers themselves include their
+fold-challenge grinding, so these are not pure arithmetic timings.
+
+Potential proof-preserving experiment: first record which implementation of
+induce_sumcheck_poly_auto (vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:
+2358) runs for each level and how long it spends in construction versus
+reduction. The dense implementation (2140) makes one full accumulator and one
+temporary basis per worker, then serially XOR-reduces worker accumulators;
+reducing coefficient ranges in parallel or accumulating generated basis
+coefficients directly could remove a serial pass or temporary-buffer traffic.
+The sparse-NTT implementation already exists; do not present introducing it as
+new. If it is selected, its sparse-window allocation/densification and dense
+transpose sweeps (2390 onward) need separate evidence instead. The existing
+text timers do not identify the selected branch, so no branch-specific speedup
+is established. Keep query order, equality weights, output basis, enforced sum,
+grinding requirements and transcript operations identical.
+
+Limits: textual durations are rounded to0.01ms, nested spans overlap, and
+diagnostic logging changes timing. The median substage values need not sum to
+the median total. Deferred first-fold wall time is included in initial
+sumcheck; it must not be added again. These six processes are diagnostics only,
+not latency qualification or evidence of a before/after improvement.
+
+parse-pcs.py validates raw artifact hashes and reuses the strict normalizer.
+Each textual timer block is matched to its closing op:ligerito span, its actual
+prover ancestor ID, and the corresponding normalized trial in order before
+warmups are removed. Per-proof mappings are in each pcs-timings.json; pooled
+and per-seed medians are in pcs-summary.json.

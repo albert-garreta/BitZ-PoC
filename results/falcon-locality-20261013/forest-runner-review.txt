@@ -1,0 +1,100 @@
+Read-only forest and locality-runner review, 2026-10-13
+Baseline: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+
+Conclusion: no actionable correctness, memory-safety, transcript, or evidence-
+provenance findings in the reviewed changes. This is a source review, including
+a self-review of the forest changes I authored. No builds, tests, benchmarks,
+profiling, or source modifications were performed for this review. Execution
+results remain the responsibility of the coordinated validation campaign.
+
+Forest bounds and ownership
+- src/bitz/row_dispatch.rs:10 bounds grain using public row count, matrix bytes,
+  requested grain, and worker count. Requested values are restricted to
+  1/2/4/8/16 at lines 22 and 65. Serial and below-4-MiB passes retain grain 1.
+  The divisor is nonzero after the workers<=1 guard; saturating multiplication
+  cannot wrap it to zero. max(1) makes ilog2 defined, including zero rows. The
+  resulting shift fits usize and the grain stays positive and power-of-two.
+- The cap allows at least two potential tasks per worker when rows permit;
+  this is a splitting bound, not a guarantee of two actually scheduled tasks.
+  No worker identity or divisibility assumption is introduced. CyclicRows at
+  row_dispatch.rs:87 retains its existing power-of-two-worker and divisible-row
+  requirements, and remains the earlier dispatch branch in both kernels.
+- forest.rs:1307 and kernels.rs:283 change only the indexed iterator's minimum
+  split length. Existing disjoint mutable row chunks, row indexes, scalar/SIMD
+  arithmetic, output dimensions, partial collection, and reduction stay intact.
+  Existing matrix-byte expressions are reused from the preceding dispatch
+  checks; there is no newly expanded arithmetic or allocation-size domain.
+  Dense single-row chunking remains unchanged because its effective grain is 1.
+- The row_dispatch module and new call sites are guarded by feature=parallel
+  (src/bitz/mod.rs:38, forest.rs:1312, kernels.rs:292). Sequential iteration has
+  no Rayon dependency added by this change. Non-bench builds return grain 1;
+  benchmark builds also default to 1. Invalid explicit values fail immediately.
+- The test override is thread-local and evaluated by the proving thread before
+  spawning row work. Tests call it inside pool.install; a drop guard restores
+  nested/panicking overrides. Worker closures do not consult thread-local state.
+- Source coverage: row_dispatch.rs:136 checks caps and threshold boundaries;
+  :156 checks zero/partial/tail rows, exact disjoint coverage, and unchanged
+  cyclic eligibility; :195 checks override restoration. kernels.rs:1523 checks
+  259x129 tail geometry against an independent scalar reference across all
+  grains, 1/4/8/12/16 workers, all left-weight modes, and both send_one values.
+  forest.rs:2501 compares terminal point/claim and complete transcript bytes
+  against a one-worker reference on small gathered and >=4-MiB nibble shapes.
+
+Effective-grain interpretation (requested 1,2,4,8,16)
+- 128 rows, >=4 MiB: 8 workers => 1,2,4,8,8;
+  12 workers => 1,2,4,4,4. At 16 workers this shape uses existing CyclicRows.
+- 256 rows, >=4 MiB: 8 workers => 1,2,4,8,16;
+  12 workers => 1,2,4,8,8. At 16 workers this shape uses existing CyclicRows.
+- Later rounds may fall below the byte threshold or tighter row cap. Report
+  effective policy, rather than treating each requested value as a distinct
+  implementation. Frozen-baseline timing must still qualify the default path;
+  source equivalence alone does not establish zero code-generation overhead.
+
+Runner methodology and provenance
+- Reviewed scripts/falcon_locality_optimization.py and its synthetic test file,
+  including the delta from the independently reviewed worker runner. The new
+  whitelist/defaults at lines 28-76 isolate forest grain, dense compaction,
+  collapse batching, and native norm prefix. Each named experiment differs from
+  explicit control in one selector; baseline uses its original binary/defaults.
+- Configurations at :79 validate names, binary roles, allowed selector strings,
+  filters and ordered CPU lists. Manifest construction at :120 freezes binary
+  hashes, jobs, dimensions, seeds, trial counts, topology, and parser/helper
+  hashes. Matched case blocks and variants are reproducibly randomized.
+- Commands at :177 use each job's worker/main CPUs. subprocess_env at :53 strips
+  inherited arithmetic/kernel/trace selectors before explicit overrides. Trace
+  alone enables --trace, light profiling, BITZ_TRACE, and LIG_PROVE_TRACE (:188).
+  Nontraced latency trials cannot inherit these diagnostic flags.
+- validate_result (:200) rejects failed processes, mismatched manifest/job,
+  command/raw/process hashes, or saved trials that differ from renormalized raw
+  output. validate_all (:218) rejects changed parsers/helpers/binaries, incomplete
+  or extra results, inconsistent inputs/source roots or complete proof digest/
+  payload, and cases with no frozen baseline. Shared normalization additionally
+  checks requested security, protocol v9, exact worker/main/auxiliary affinity,
+  verified status, trial order, finite metrics, and payload-size consistency
+  (scripts/falcon_buffer_optimization.py:60 and binder_experiments.py).
+- Summary groups separate phases, variants, workers, cold/repeated and trace.
+  Samples exclude warmups; per-seed medians are retained. Cold means first proof
+  in a fresh process/Prepared object, not flushed hardware/page caches. Repeated
+  samples share Prepared with warmups. Process peak RSS is a lifetime high-water
+  mark, not a per-proof allocation measurement.
+- profile_samples (:280) requires the expected number of prover roots and takes
+  only each sampled root/descendants. It excludes warmups/verifier spans and
+  preserves but ignores plaintext diagnostics. Nanosecond fields are converted
+  to ms. Nested elapsed spans overlap, and summed worker time is not wall time;
+  both caveats are recorded in the profile summary. LIG_PROVE_TRACE adds work,
+  so those runs are for attribution, not latency qualification.
+- The synthetic tests cover polluted parent environments, frozen parser/binary
+  changes, wrong topology/security/protocol/order, missing baseline/stale results,
+  proof mismatch, raw-command changes, and trace filtering. The new test at
+  test_falcon_locality_optimization.py:107 checks all 15 locality variants and
+  diagnostic isolation. These tests were inspected, not independently executed.
+- Some selectors intentionally coincide on a given shape: for example norm4
+  already matches auto on the qualified one-worker large-batch field case.
+  Treat these as control-equivalence observations, not independent speedups.
+
+Reviewed SHA-256
+ac4ad1d642e7be9bcfb2ed09d62e258d023dd2165101901bfa9ad904e4744299  src/bitz/row_dispatch.rs
+af47b6e4964658736f143da3da27e32f19c67729e7f0a952e3edaefea56cf97b  src/bitz/kernels.rs
+039b234a5ed9e14ed8fb16f466ba3f58349d9aacb87ee31189d4c98e095510ce  src/bitz/forest.rs
+5cbfd8b34e047c0cc7c9d7f98788ddf697057852af51f0eb8bf602c5f328dc05  scripts/falcon_locality_optimization.py
+af831c8a6a1c9f3c1fc37af4901aa46e7015cf47a8282c189608c9672c08ec57  scripts/test_falcon_locality_optimization.py

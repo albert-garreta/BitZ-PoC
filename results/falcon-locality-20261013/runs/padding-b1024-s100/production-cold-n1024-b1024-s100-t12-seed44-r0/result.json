@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "production-cold-n1024-b1024-s100-t12-seed44-r0",
+    "variant": "arithmetic",
+    "config": "production",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 44,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 0,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "b693dfadcd85c10ff39439955f68de0c8a191b6eac9fe48977a479b61ff439bf",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "source_root": "88d7fb38078332067061190b18c835ac2faa86c786720e805e39571e3bf154ac",
+      "proof_debug_digest": "d2d728bbb164effe29a0d786d174fd09679631f10a8666151363e9f4b44cfb42",
+      "total_prover_ms": 54.712337,
+      "prove_ms": 49.380663999999996,
+      "witness_commit_ms": 5.331613,
+      "verify_ms": 14.515134000000002,
+      "process_peak_rss_kib": 136864,
+      "proof_payload_bytes": 276320,
+      "iteration": 0,
+      "prepare_ms": 0.11410500000000001,
+      "external_input_ms": 1793.787736,
+      "prover_minor_faults": 56522,
+      "process_rss_before_prover_kib": 22848,
+      "process_rss_after_prover_kib": 73972,
+      "process_retained_rss_kib": 61620,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "3ad7af7b1b6760923e1567e9a94e797bdced3033ff57c2a4e380ab1bb9e88849",
+  "stdout_sha256": "c956258eb108bee212020582aa18c46d042106781771c60b73e2ae318a31f7be",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "75a4fd6141b928b1a8082fdd9c42f2e3ac61fc07a0761005cfae5784dce4802a"
+}

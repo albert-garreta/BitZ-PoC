@@ -1,0 +1,6 @@
+{
+  "revision": "80e141a1ae415b3bc9805c5be0b13aa0c89f646b",
+  "binary": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-twelve-workers-20261013/candidate-production",
+  "sha256": "bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511",
+  "source_evidence": "../falcon-twelve-workers-20261013/candidate-production-source.json"
+}

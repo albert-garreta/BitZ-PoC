@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-locality-20261013/candidate-v1",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "12",
+    "--seed",
+    "42",
+    "--warmup",
+    "2",
+    "--iterations",
+    "7"
+  ],
+  "overrides": {
+    "BITZ_FOREST_ROW_GRAIN": "1",
+    "BITZ_ARITHMETIC_DENSE_COMPACTION": "off",
+    "BITZ_ARITHMETIC_COLLAPSE_BATCH": "1",
+    "BITZ_ARITHMETIC_NORM_PREFIX": "auto",
+    "RAYON_NUM_THREADS": "12",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "d3e36634e596b9cd90a0b9d2dc0ddce9c28f2d353614ccf81f2404e74a15b788",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-locality-20261013/candidate-lowmemory",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "44",
+    "--warmup",
+    "2",
+    "--iterations",
+    "7"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "16",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "4105b765f304d919fe532881548c13b74f5320b6fa759a366a946ccce96d5ef3",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

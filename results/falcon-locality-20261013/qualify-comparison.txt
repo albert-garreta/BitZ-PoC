@@ -1,0 +1,810 @@
+Falcon locality comparison
+
+- All ratios are candidate/reference; a negative percentage means a lower measurement.
+- Latency comparisons contain trace=false rows only. Traced stage timings are separate diagnostics.
+- References must match phase, degree, batch, security, workers, mode, and ordered worker/main CPU placement.
+- Each available baseline and control is compared separately; no reference is borrowed from another phase.
+- Medians are the runner's pooled post-warmup sample medians; seed ratios use each seed's own medians.
+- Repeated samples within one process are correlated; ratios do not establish statistical significance.
+- process_peak_rss_kib in metric tables is the sampled trial median. The separate process_peak_rss block uses each process's maximum, including warmups.
+- Retained RSS includes inputs, allocator and Prepared; missing metrics are null, never zero.
+- Profile spans can overlap, and summed worker-time fields are not wall time. Trace overhead prevents treating these as untraced latency.
+- Proof byte medians alone do not establish proof equality. Consult the runner's validation.json and raw provenance.
+- This helper trusts the runner summaries; it does not revalidate proofs, binary hashes or raw sample files.
+
+UNTRACED LATENCY AND RESOURCES
+
+[qualify] collapse4 / baseline N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.142 /      138.881  ratio  1.0019 change    0.19%  seeds [42:1.0005 43:1.0011 44:1.0019]
+  prove_ms                                                      130.250 /      130.001  ratio  1.0019 change    0.19%  seeds [42:1.0010 43:1.0016 44:1.0019]
+  witness_commit_ms                                               8.880 /        8.915  ratio  0.9960 change   -0.40%  seeds [42:0.9947 43:0.9945 44:0.9965]
+  verify_ms                                                      30.462 /       30.382  ratio  1.0026 change    0.26%  seeds [42:1.0025 43:1.0019 44:1.0028]
+  process_peak_rss_kib                                            83688 /        83380  ratio  1.0037 change    0.37%  seeds [42:0.9990 43:1.0039 44:1.0055]
+  process_retained_rss_kib                                        39188 /        38888  ratio  1.0077 change    0.77%  seeds [42:1.0041 43:1.0081 44:1.0119]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83688 /        83380  ratio  1.0037 change    0.37%  seeds []
+  process_peak_maxima_maximum_kib                                 83708 /        83620  ratio  1.0011 change    0.11%  seeds []
+
+[qualify] collapse4 / control N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.142 /      139.007  ratio  1.0010 change    0.10%  seeds [42:0.9992 43:1.0015 44:1.0010]
+  prove_ms                                                      130.250 /      130.113  ratio  1.0011 change    0.11%  seeds [42:0.9992 43:1.0013 44:1.0011]
+  witness_commit_ms                                               8.880 /        8.878  ratio  1.0002 change    0.02%  seeds [42:1.0020 43:1.0002 44:0.9998]
+  verify_ms                                                      30.462 /       30.359  ratio  1.0034 change    0.34%  seeds [42:1.0033 43:1.0028 44:1.0032]
+  process_peak_rss_kib                                            83688 /        83712  ratio  0.9997 change   -0.03%  seeds [42:0.9977 43:1.0048 44:0.9997]
+  process_retained_rss_kib                                        39188 /        39208  ratio  0.9995 change   -0.05%  seeds [42:0.9966 43:0.9995 44:1.0043]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83688 /        83712  ratio  0.9997 change   -0.03%  seeds []
+  process_peak_maxima_maximum_kib                                 83708 /        83728  ratio  0.9998 change   -0.02%  seeds []
+
+[qualify] collapse4 / baseline N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                28.365 /       28.189  ratio  1.0062 change    0.62%  seeds [42:1.0122 43:0.9919 44:0.9971]
+  prove_ms                                                       26.477 /       26.282  ratio  1.0074 change    0.74%  seeds [42:1.0129 43:0.9910 44:0.9962]
+  witness_commit_ms                                               1.899 /        1.909  ratio  0.9952 change   -0.48%  seeds [42:0.9698 43:1.0002 44:0.9979]
+  verify_ms                                                       9.223 /        9.227  ratio  0.9996 change   -0.04%  seeds [42:1.0146 43:0.9879 44:0.9945]
+  process_peak_rss_kib                                            85496 /        85548  ratio  0.9994 change   -0.06%  seeds [42:1.0060 43:0.9952 44:0.9994]
+  process_retained_rss_kib                                        42140 /        41968  ratio  1.0041 change    0.41%  seeds [42:1.0105 43:1.0033 44:0.9988]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85836 /        85720  ratio  1.0014 change    0.14%  seeds []
+  process_peak_maxima_maximum_kib                                 86020 /        85908  ratio  1.0013 change    0.13%  seeds []
+
+[qualify] collapse4 / control N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                28.365 /       28.148  ratio  1.0077 change    0.77%  seeds [42:1.0088 43:0.9969 44:1.0083]
+  prove_ms                                                       26.477 /       26.311  ratio  1.0063 change    0.63%  seeds [42:1.0091 43:0.9953 44:1.0045]
+  witness_commit_ms                                               1.899 /        1.838  ratio  1.0335 change    3.35%  seeds [42:1.0276 43:0.9887 44:1.0436]
+  verify_ms                                                       9.223 /        9.155  ratio  1.0074 change    0.74%  seeds [42:1.0152 43:0.9968 44:1.0113]
+  process_peak_rss_kib                                            85496 /        85632  ratio  0.9984 change   -0.16%  seeds [42:1.0021 43:1.0013 44:0.9932]
+  process_retained_rss_kib                                        42140 /        42012  ratio  1.0030 change    0.30%  seeds [42:1.0034 43:1.0070 44:0.9957]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85836 /        86084  ratio  0.9971 change   -0.29%  seeds []
+  process_peak_maxima_maximum_kib                                 86020 /        86304  ratio  0.9967 change   -0.33%  seeds []
+
+[qualify] collapse4 / baseline N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.692 /       32.196  ratio  0.9844 change   -1.56%  seeds [42:0.9905 43:0.9860 44:0.9819]
+  prove_ms                                                       29.383 /       29.847  ratio  0.9845 change   -1.55%  seeds [42:0.9889 43:0.9860 44:0.9815]
+  witness_commit_ms                                               2.279 /        2.329  ratio  0.9785 change   -2.15%  seeds [42:0.9564 43:0.9648 44:0.9771]
+  verify_ms                                                       9.465 /        9.116  ratio  1.0383 change    3.83%  seeds [42:1.0332 43:1.0527 44:1.0596]
+  process_peak_rss_kib                                            88300 /        88040  ratio  1.0030 change    0.30%  seeds [42:1.0062 43:1.0037 44:1.0012]
+  process_retained_rss_kib                                        45216 /        44972  ratio  1.0054 change    0.54%  seeds [42:1.0080 43:1.0044 44:1.0020]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  88456 /        88340  ratio  1.0013 change    0.13%  seeds []
+  process_peak_maxima_maximum_kib                                 88528 /        88452  ratio  1.0009 change    0.09%  seeds []
+
+[qualify] collapse4 / control N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.692 /       31.924  ratio  0.9927 change   -0.73%  seeds [42:0.9954 43:0.9794 44:0.9994]
+  prove_ms                                                       29.383 /       29.638  ratio  0.9914 change   -0.86%  seeds [42:0.9966 43:0.9788 44:0.9980]
+  witness_commit_ms                                               2.279 /        2.277  ratio  1.0010 change    0.10%  seeds [42:0.9738 43:1.0014 44:1.0176]
+  verify_ms                                                       9.465 /        9.476  ratio  0.9989 change   -0.11%  seeds [42:0.9881 43:0.9907 44:1.0056]
+  process_peak_rss_kib                                            88300 /        88208  ratio  1.0010 change    0.10%  seeds [42:1.0034 43:0.9961 44:1.0069]
+  process_retained_rss_kib                                        45216 /        45204  ratio  1.0003 change    0.03%  seeds [42:1.0073 43:0.9982 44:0.9968]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  88456 /        88252  ratio  1.0023 change    0.23%  seeds []
+  process_peak_maxima_maximum_kib                                 88528 /        89168  ratio  0.9928 change   -0.72%  seeds []
+
+[qualify] collapse4 / baseline N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.832 /       28.600  ratio  1.0081 change    0.81%  seeds [42:1.0111 43:1.0331 44:1.0097]
+  prove_ms                                                       26.433 /       26.185  ratio  1.0094 change    0.94%  seeds [42:1.0087 43:1.0417 44:1.0075]
+  witness_commit_ms                                               2.412 /        2.391  ratio  1.0091 change    0.91%  seeds [42:1.0091 43:0.9534 44:1.0281]
+  verify_ms                                                       9.692 /        9.635  ratio  1.0060 change    0.60%  seeds [42:1.0088 43:1.0078 44:0.9050]
+  process_peak_rss_kib                                            89336 /        89472  ratio  0.9985 change   -0.15%  seeds [42:0.9985 43:1.0024 44:0.9932]
+  process_retained_rss_kib                                        47224 /        47148  ratio  1.0016 change    0.16%  seeds [42:1.0052 43:1.0036 44:0.9690]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  90032 /        89920  ratio  1.0012 change    0.12%  seeds []
+  process_peak_maxima_maximum_kib                                 90188 /        90052  ratio  1.0015 change    0.15%  seeds []
+
+[qualify] collapse4 / control N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.832 /       28.554  ratio  1.0097 change    0.97%  seeds [42:1.0064 43:1.0192 44:1.0085]
+  prove_ms                                                       26.433 /       26.248  ratio  1.0070 change    0.70%  seeds [42:1.0048 43:1.0228 44:1.0054]
+  witness_commit_ms                                               2.412 /        2.366  ratio  1.0197 change    1.97%  seeds [42:1.0194 43:0.9690 44:1.0419]
+  verify_ms                                                       9.692 /        9.673  ratio  1.0020 change    0.20%  seeds [42:1.0086 43:0.9950 44:0.9069]
+  process_peak_rss_kib                                            89336 /        89932  ratio  0.9934 change   -0.66%  seeds [42:0.9934 43:0.9979 44:0.9895]
+  process_retained_rss_kib                                        47224 /        47424  ratio  0.9958 change   -0.42%  seeds [42:1.0005 43:0.9988 44:0.9634]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  90032 /        90156  ratio  0.9986 change   -0.14%  seeds []
+  process_peak_maxima_maximum_kib                                 90188 /        90168  ratio  1.0002 change    0.02%  seeds []
+
+[qualify] collapse4 / baseline N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               270.445 /      269.882  ratio  1.0021 change    0.21%  seeds [42:1.0034 43:1.0049 44:1.0068]
+  prove_ms                                                      253.376 /      252.946  ratio  1.0017 change    0.17%  seeds [42:1.0047 43:1.0046 44:1.0083]
+  witness_commit_ms                                              16.963 /       17.000  ratio  0.9978 change   -0.22%  seeds [42:1.0065 43:0.9968 44:0.9948]
+  verify_ms                                                      60.194 /       59.735  ratio  1.0077 change    0.77%  seeds [42:1.0058 43:1.0569 44:1.0081]
+  process_peak_rss_kib                                           207012 /       206696  ratio  1.0015 change    0.15%  seeds [42:1.0015 43:1.0013 44:1.0009]
+  process_retained_rss_kib                                        60008 /        59612  ratio  1.0066 change    0.66%  seeds [42:1.0054 43:1.0087 44:1.0095]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207012 /       206696  ratio  1.0015 change    0.15%  seeds []
+  process_peak_maxima_maximum_kib                                207160 /       206972  ratio  1.0009 change    0.09%  seeds []
+
+[qualify] collapse4 / control N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               270.445 /      269.499  ratio  1.0035 change    0.35%  seeds [42:1.0055 43:1.0061 44:1.0050]
+  prove_ms                                                      253.376 /      252.598  ratio  1.0031 change    0.31%  seeds [42:1.0057 43:1.0065 44:1.0056]
+  witness_commit_ms                                              16.963 /       16.939  ratio  1.0014 change    0.14%  seeds [42:1.0076 43:0.9965 44:0.9999]
+  verify_ms                                                      60.194 /       59.750  ratio  1.0074 change    0.74%  seeds [42:1.0053 43:1.0571 44:1.0094]
+  process_peak_rss_kib                                           207012 /       207268  ratio  0.9988 change   -0.12%  seeds [42:0.9989 43:0.9984 44:0.9994]
+  process_retained_rss_kib                                        60008 /        59968  ratio  1.0007 change    0.07%  seeds [42:0.9983 43:1.0360 44:1.0001]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207012 /       207268  ratio  0.9988 change   -0.12%  seeds []
+  process_peak_maxima_maximum_kib                                207160 /       207280  ratio  0.9994 change   -0.06%  seeds []
+
+[qualify] collapse4 / baseline N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                51.251 /       51.260  ratio  0.9998 change   -0.02%  seeds [42:0.9961 43:0.9940 44:1.0043]
+  prove_ms                                                       47.646 /       47.685  ratio  0.9992 change   -0.08%  seeds [42:0.9953 43:0.9966 44:1.0080]
+  witness_commit_ms                                               3.539 /        3.609  ratio  0.9805 change   -1.95%  seeds [42:1.0060 43:0.9703 44:0.9865]
+  verify_ms                                                      16.402 /       16.496  ratio  0.9943 change   -0.57%  seeds [42:0.9918 43:0.9917 44:0.9996]
+  process_peak_rss_kib                                           176224 /       175532  ratio  1.0039 change    0.39%  seeds [42:1.0053 43:1.0008 44:1.0010]
+  process_retained_rss_kib                                        79476 /        78844  ratio  1.0080 change    0.80%  seeds [42:1.0112 43:1.0088 44:1.0049]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 176488 /       176064  ratio  1.0024 change    0.24%  seeds []
+  process_peak_maxima_maximum_kib                                176736 /       176124  ratio  1.0035 change    0.35%  seeds []
+
+[qualify] collapse4 / control N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                51.251 /       51.076  ratio  1.0034 change    0.34%  seeds [42:1.0031 43:0.9961 44:1.0044]
+  prove_ms                                                       47.646 /       47.475  ratio  1.0036 change    0.36%  seeds [42:1.0017 43:0.9985 44:1.0099]
+  witness_commit_ms                                               3.539 /        3.551  ratio  0.9966 change   -0.34%  seeds [42:1.0316 43:0.9773 44:0.9731]
+  verify_ms                                                      16.402 /       16.379  ratio  1.0014 change    0.14%  seeds [42:0.9990 43:1.0011 44:1.0064]
+  process_peak_rss_kib                                           176224 /       175916  ratio  1.0018 change    0.18%  seeds [42:1.0019 43:1.0020 44:1.0062]
+  process_retained_rss_kib                                        79476 /        79160  ratio  1.0040 change    0.40%  seeds [42:1.0025 43:1.0030 44:1.0039]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 176488 /       176008  ratio  1.0027 change    0.27%  seeds []
+  process_peak_maxima_maximum_kib                                176736 /       176204  ratio  1.0030 change    0.30%  seeds []
+
+[qualify] collapse4 / baseline N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                57.044 /       56.770  ratio  1.0048 change    0.48%  seeds [42:1.0066 43:0.9906 44:1.0071]
+  prove_ms                                                       53.215 /       52.997  ratio  1.0041 change    0.41%  seeds [42:1.0084 43:0.9911 44:0.9996]
+  witness_commit_ms                                               3.839 /        3.779  ratio  1.0158 change    1.58%  seeds [42:0.9995 43:1.0108 44:1.0422]
+  verify_ms                                                      15.361 /       16.004  ratio  0.9598 change   -4.02%  seeds [42:0.9534 43:0.9940 44:0.9528]
+  process_peak_rss_kib                                           177080 /       176556  ratio  1.0030 change    0.30%  seeds [42:1.0041 43:1.0076 44:0.9978]
+  process_retained_rss_kib                                        80800 /        80172  ratio  1.0078 change    0.78%  seeds [42:1.0095 43:1.0097 44:0.9998]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 177276 /       176780  ratio  1.0028 change    0.28%  seeds []
+  process_peak_maxima_maximum_kib                                177460 /       177700  ratio  0.9986 change   -0.14%  seeds []
+
+[qualify] collapse4 / control N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                57.044 /       57.350  ratio  0.9947 change   -0.53%  seeds [42:1.0038 43:0.9721 44:1.0039]
+  prove_ms                                                       53.215 /       53.529  ratio  0.9941 change   -0.59%  seeds [42:1.0015 43:0.9737 44:1.0025]
+  witness_commit_ms                                               3.839 /        3.820  ratio  1.0050 change    0.50%  seeds [42:1.0099 43:0.9901 44:1.0095]
+  verify_ms                                                      15.361 /       15.539  ratio  0.9885 change   -1.15%  seeds [42:0.9794 43:0.9981 44:1.0047]
+  process_peak_rss_kib                                           177080 /       177776  ratio  0.9961 change   -0.39%  seeds [42:0.9970 43:0.9961 44:0.9977]
+  process_retained_rss_kib                                        80800 /        81144  ratio  0.9958 change   -0.42%  seeds [42:0.9995 43:0.9925 44:0.9919]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 177276 /       177808  ratio  0.9970 change   -0.30%  seeds []
+  process_peak_maxima_maximum_kib                                177460 /       177896  ratio  0.9975 change   -0.25%  seeds []
+
+[qualify] collapse4 / baseline N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.727 /       48.783  ratio  0.9989 change   -0.11%  seeds [42:1.0035 43:1.0097 44:0.9899]
+  prove_ms                                                       44.885 /       44.896  ratio  0.9998 change   -0.02%  seeds [42:1.0048 43:1.0116 44:0.9910]
+  witness_commit_ms                                               3.833 /        3.862  ratio  0.9926 change   -0.74%  seeds [42:0.9786 43:1.0122 44:0.9926]
+  verify_ms                                                      15.147 /       15.192  ratio  0.9971 change   -0.29%  seeds [42:1.0124 43:1.0179 44:0.9745]
+  process_peak_rss_kib                                           179708 /       178788  ratio  1.0051 change    0.51%  seeds [42:0.9992 43:1.0076 44:1.0081]
+  process_retained_rss_kib                                        84172 /        83400  ratio  1.0093 change    0.93%  seeds [42:1.0021 43:1.0187 44:1.0157]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 180404 /       179436  ratio  1.0054 change    0.54%  seeds []
+  process_peak_maxima_maximum_kib                                180592 /       180508  ratio  1.0005 change    0.05%  seeds []
+
+[qualify] collapse4 / control N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.727 /       48.949  ratio  0.9955 change   -0.45%  seeds [42:1.0064 43:0.7989 44:0.9966]
+  prove_ms                                                       44.885 /       45.285  ratio  0.9912 change   -0.88%  seeds [42:1.0087 43:0.7870 44:0.9972]
+  witness_commit_ms                                               3.833 /        3.824  ratio  1.0023 change    0.23%  seeds [42:0.9875 43:0.9748 44:1.0130]
+  verify_ms                                                      15.147 /       15.273  ratio  0.9918 change   -0.82%  seeds [42:1.0014 43:0.9645 44:0.9968]
+  process_peak_rss_kib                                           179708 /       179180  ratio  1.0029 change    0.29%  seeds [42:0.9990 43:0.9977 44:1.0079]
+  process_retained_rss_kib                                        84172 /        84100  ratio  1.0009 change    0.09%  seeds [42:1.0003 43:0.9979 44:1.0078]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 180404 /       179780  ratio  1.0035 change    0.35%  seeds []
+  process_peak_maxima_maximum_kib                                180592 /       180096  ratio  1.0028 change    0.28%  seeds []
+
+[qualify] combined / baseline N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.285 /      138.881  ratio  1.0029 change    0.29%  seeds [42:1.0013 43:0.9999 44:1.0029]
+  prove_ms                                                      130.419 /      130.001  ratio  1.0032 change    0.32%  seeds [42:1.0013 43:1.0004 44:1.0032]
+  witness_commit_ms                                               8.892 /        8.915  ratio  0.9974 change   -0.26%  seeds [42:0.9978 43:0.9950 44:0.9965]
+  verify_ms                                                      30.522 /       30.382  ratio  1.0046 change    0.46%  seeds [42:1.0029 43:1.0091 44:1.0034]
+  process_peak_rss_kib                                            83676 /        83380  ratio  1.0036 change    0.36%  seeds [42:1.0033 43:1.0036 44:0.9997]
+  process_retained_rss_kib                                        39176 /        38888  ratio  1.0074 change    0.74%  seeds [42:1.0052 43:1.0103 44:1.0072]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83676 /        83380  ratio  1.0036 change    0.36%  seeds []
+  process_peak_maxima_maximum_kib                                 83892 /        83620  ratio  1.0033 change    0.33%  seeds []
+
+[qualify] combined / control N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.285 /      139.007  ratio  1.0020 change    0.20%  seeds [42:1.0001 43:1.0004 44:1.0020]
+  prove_ms                                                      130.419 /      130.113  ratio  1.0024 change    0.24%  seeds [42:0.9994 43:1.0001 44:1.0024]
+  witness_commit_ms                                               8.892 /        8.878  ratio  1.0016 change    0.16%  seeds [42:1.0050 43:1.0007 44:0.9998]
+  verify_ms                                                      30.522 /       30.359  ratio  1.0054 change    0.54%  seeds [42:1.0037 43:1.0100 44:1.0038]
+  process_peak_rss_kib                                            83676 /        83712  ratio  0.9996 change   -0.04%  seeds [42:1.0020 43:1.0044 44:0.9940]
+  process_retained_rss_kib                                        39176 /        39208  ratio  0.9992 change   -0.08%  seeds [42:0.9978 43:1.0016 44:0.9996]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83676 /        83712  ratio  0.9996 change   -0.04%  seeds []
+  process_peak_maxima_maximum_kib                                 83892 /        83728  ratio  1.0020 change    0.20%  seeds []
+
+[qualify] combined / baseline N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                27.856 /       28.189  ratio  0.9882 change   -1.18%  seeds [42:0.9886 43:0.9848 44:0.9815]
+  prove_ms                                                       25.949 /       26.282  ratio  0.9874 change   -1.26%  seeds [42:0.9875 43:0.9823 44:0.9793]
+  witness_commit_ms                                               1.916 /        1.909  ratio  1.0039 change    0.39%  seeds [42:0.9702 43:1.0229 44:0.9766]
+  verify_ms                                                       9.165 /        9.227  ratio  0.9933 change   -0.67%  seeds [42:0.9913 43:1.0018 44:0.9947]
+  process_peak_rss_kib                                            85580 /        85548  ratio  1.0004 change    0.04%  seeds [42:1.0033 43:1.0008 44:0.9985]
+  process_retained_rss_kib                                        41976 /        41968  ratio  1.0002 change    0.02%  seeds [42:1.0017 43:1.0010 44:0.9984]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85712 /        85720  ratio  0.9999 change   -0.01%  seeds []
+  process_peak_maxima_maximum_kib                                 86272 /        85908  ratio  1.0042 change    0.42%  seeds []
+
+[qualify] combined / control N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                27.856 /       28.148  ratio  0.9896 change   -1.04%  seeds [42:0.9852 43:0.9898 44:0.9925]
+  prove_ms                                                       25.949 /       26.311  ratio  0.9863 change   -1.37%  seeds [42:0.9838 43:0.9865 44:0.9876]
+  witness_commit_ms                                               1.916 /        1.838  ratio  1.0426 change    4.26%  seeds [42:1.0280 43:1.0111 44:1.0213]
+  verify_ms                                                       9.165 /        9.155  ratio  1.0011 change    0.11%  seeds [42:0.9920 43:1.0107 44:1.0116]
+  process_peak_rss_kib                                            85580 /        85632  ratio  0.9994 change   -0.06%  seeds [42:0.9994 43:1.0070 44:0.9922]
+  process_retained_rss_kib                                        41976 /        42012  ratio  0.9991 change   -0.09%  seeds [42:0.9947 43:1.0046 44:0.9953]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85712 /        86084  ratio  0.9957 change   -0.43%  seeds []
+  process_peak_maxima_maximum_kib                                 86272 /        86304  ratio  0.9996 change   -0.04%  seeds []
+
+[qualify] combined / baseline N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.309 /       32.196  ratio  0.9725 change   -2.75%  seeds [42:0.9628 43:0.9818 44:0.9864]
+  prove_ms                                                       29.045 /       29.847  ratio  0.9731 change   -2.69%  seeds [42:0.9624 43:0.9779 44:0.9868]
+  witness_commit_ms                                               2.302 /        2.329  ratio  0.9884 change   -1.16%  seeds [42:0.9509 43:0.9952 44:0.9874]
+  verify_ms                                                       9.319 /        9.116  ratio  1.0222 change    2.22%  seeds [42:1.0093 43:1.0356 44:1.0399]
+  process_peak_rss_kib                                           108252 /        88040  ratio  1.2296 change   22.96%  seeds [42:1.2409 43:1.2326 44:1.2272]
+  process_retained_rss_kib                                        42892 /        44972  ratio  0.9537 change   -4.63%  seeds [42:0.9600 43:0.9482 44:0.9503]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 108252 /        88340  ratio  1.2254 change   22.54%  seeds []
+  process_peak_maxima_maximum_kib                                108896 /        88452  ratio  1.2311 change   23.11%  seeds []
+
+[qualify] combined / control N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.309 /       31.924  ratio  0.9807 change   -1.93%  seeds [42:0.9676 43:0.9752 44:1.0039]
+  prove_ms                                                       29.045 /       29.638  ratio  0.9800 change   -2.00%  seeds [42:0.9699 43:0.9708 44:1.0034]
+  witness_commit_ms                                               2.302 /        2.277  ratio  1.0112 change    1.12%  seeds [42:0.9682 43:1.0329 44:1.0283]
+  verify_ms                                                       9.319 /        9.476  ratio  0.9834 change   -1.66%  seeds [42:0.9652 43:0.9746 44:0.9870]
+  process_peak_rss_kib                                           108252 /        88208  ratio  1.2272 change   22.72%  seeds [42:1.2375 43:1.2232 44:1.2342]
+  process_retained_rss_kib                                        42892 /        45204  ratio  0.9489 change   -5.11%  seeds [42:0.9593 43:0.9424 44:0.9454]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 108252 /        88252  ratio  1.2266 change   22.66%  seeds []
+  process_peak_maxima_maximum_kib                                108896 /        89168  ratio  1.2212 change   22.12%  seeds []
+
+[qualify] combined / baseline N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                27.998 /       28.600  ratio  0.9789 change   -2.11%  seeds [42:0.9866 43:1.0031 44:0.9761]
+  prove_ms                                                       25.598 /       26.185  ratio  0.9776 change   -2.24%  seeds [42:0.9836 43:1.0082 44:0.9718]
+  witness_commit_ms                                               2.309 /        2.391  ratio  0.9657 change   -3.43%  seeds [42:0.9643 43:0.9601 44:1.0100]
+  verify_ms                                                       9.278 /        9.635  ratio  0.9630 change   -3.70%  seeds [42:0.9576 43:0.9851 44:0.9573]
+  process_peak_rss_kib                                           110328 /        89472  ratio  1.2331 change   23.31%  seeds [42:1.2331 43:1.2356 44:1.2318]
+  process_retained_rss_kib                                        45432 /        47148  ratio  0.9636 change   -3.64%  seeds [42:0.9633 43:0.9656 44:0.9595]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 110328 /        89920  ratio  1.2270 change   22.70%  seeds []
+  process_peak_maxima_maximum_kib                                110676 /        90052  ratio  1.2290 change   22.90%  seeds []
+
+[qualify] combined / control N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                27.998 /       28.554  ratio  0.9805 change   -1.95%  seeds [42:0.9820 43:0.9896 44:0.9749]
+  prove_ms                                                       25.598 /       26.248  ratio  0.9752 change   -2.48%  seeds [42:0.9798 43:0.9899 44:0.9697]
+  witness_commit_ms                                               2.309 /        2.366  ratio  0.9758 change   -2.42%  seeds [42:0.9742 43:0.9758 44:1.0235]
+  verify_ms                                                       9.278 /        9.673  ratio  0.9592 change   -4.08%  seeds [42:0.9575 43:0.9726 44:0.9593]
+  process_peak_rss_kib                                           110328 /        89932  ratio  1.2268 change   22.68%  seeds [42:1.2268 43:1.2301 44:1.2273]
+  process_retained_rss_kib                                        45432 /        47424  ratio  0.9580 change   -4.20%  seeds [42:0.9587 43:0.9610 44:0.9539]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 110328 /        90156  ratio  1.2237 change   22.37%  seeds []
+  process_peak_maxima_maximum_kib                                110676 /        90168  ratio  1.2274 change   22.74%  seeds []
+
+[qualify] combined / baseline N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               270.067 /      269.882  ratio  1.0007 change    0.07%  seeds [42:1.0033 43:0.9999 44:1.0028]
+  prove_ms                                                      253.079 /      252.946  ratio  1.0005 change    0.05%  seeds [42:1.0043 43:0.9996 44:1.0033]
+  witness_commit_ms                                              16.989 /       17.000  ratio  0.9993 change   -0.07%  seeds [42:1.0075 43:0.9991 44:0.9964]
+  verify_ms                                                      60.093 /       59.735  ratio  1.0060 change    0.60%  seeds [42:1.0022 43:1.0031 44:1.0159]
+  process_peak_rss_kib                                           207020 /       206696  ratio  1.0016 change    0.16%  seeds [42:1.0024 43:1.0017 44:0.9999]
+  process_retained_rss_kib                                        59972 /        59612  ratio  1.0060 change    0.60%  seeds [42:1.0052 43:1.0081 44:1.0069]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207020 /       206696  ratio  1.0016 change    0.16%  seeds []
+  process_peak_maxima_maximum_kib                                207192 /       206972  ratio  1.0011 change    0.11%  seeds []
+
+[qualify] combined / control N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               270.067 /      269.499  ratio  1.0021 change    0.21%  seeds [42:1.0054 43:1.0011 44:1.0010]
+  prove_ms                                                      253.079 /      252.598  ratio  1.0019 change    0.19%  seeds [42:1.0053 43:1.0014 44:1.0006]
+  witness_commit_ms                                              16.989 /       16.939  ratio  1.0029 change    0.29%  seeds [42:1.0086 43:0.9988 44:1.0014]
+  verify_ms                                                      60.093 /       59.750  ratio  1.0057 change    0.57%  seeds [42:1.0018 43:1.0033 44:1.0172]
+  process_peak_rss_kib                                           207020 /       207268  ratio  0.9988 change   -0.12%  seeds [42:0.9997 43:0.9988 44:0.9984]
+  process_retained_rss_kib                                        59972 /        59968  ratio  1.0001 change    0.01%  seeds [42:0.9982 43:1.0354 44:0.9976]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207020 /       207268  ratio  0.9988 change   -0.12%  seeds []
+  process_peak_maxima_maximum_kib                                207192 /       207280  ratio  0.9996 change   -0.04%  seeds []
+
+[qualify] combined / baseline N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                51.035 /       51.260  ratio  0.9956 change   -0.44%  seeds [42:0.9925 43:0.9990 44:0.9967]
+  prove_ms                                                       47.064 /       47.685  ratio  0.9870 change   -1.30%  seeds [42:0.9875 43:0.9898 44:0.9883]
+  witness_commit_ms                                               3.919 /        3.609  ratio  1.0860 change    8.60%  seeds [42:1.0963 43:1.1365 44:1.0620]
+  verify_ms                                                      16.137 /       16.496  ratio  0.9782 change   -2.18%  seeds [42:0.9737 43:0.9761 44:0.9835]
+  process_peak_rss_kib                                           208704 /       175532  ratio  1.1890 change   18.90%  seeds [42:1.1937 43:1.1850 44:1.1853]
+  process_retained_rss_kib                                        63652 /        78844  ratio  0.8073 change  -19.27%  seeds [42:0.8115 43:0.8062 44:0.8092]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 208704 /       176064  ratio  1.1854 change   18.54%  seeds []
+  process_peak_maxima_maximum_kib                                209388 /       176124  ratio  1.1889 change   18.89%  seeds []
+
+[qualify] combined / control N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                51.035 /       51.076  ratio  0.9992 change   -0.08%  seeds [42:0.9994 43:1.0011 44:0.9968]
+  prove_ms                                                       47.064 /       47.475  ratio  0.9913 change   -0.87%  seeds [42:0.9939 43:0.9916 44:0.9901]
+  witness_commit_ms                                               3.919 /        3.551  ratio  1.1038 change   10.38%  seeds [42:1.1243 43:1.1446 44:1.0475]
+  verify_ms                                                      16.137 /       16.379  ratio  0.9852 change   -1.48%  seeds [42:0.9808 43:0.9853 44:0.9902]
+  process_peak_rss_kib                                           208704 /       175916  ratio  1.1864 change   18.64%  seeds [42:1.1898 43:1.1864 44:1.1915]
+  process_retained_rss_kib                                        63652 /        79160  ratio  0.8041 change  -19.59%  seeds [42:0.8045 43:0.8015 44:0.8084]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 208704 /       176008  ratio  1.1858 change   18.58%  seeds []
+  process_peak_maxima_maximum_kib                                209388 /       176204  ratio  1.1883 change   18.83%  seeds []
+
+[qualify] combined / baseline N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.273 /       56.770  ratio  0.9736 change   -2.64%  seeds [42:0.9805 43:0.9781 44:0.9669]
+  prove_ms                                                       51.210 /       52.997  ratio  0.9663 change   -3.37%  seeds [42:0.9751 43:0.9698 44:0.9568]
+  witness_commit_ms                                               4.139 /        3.779  ratio  1.0950 change    9.50%  seeds [42:1.0956 43:1.0906 44:1.1001]
+  verify_ms                                                      15.608 /       16.004  ratio  0.9753 change   -2.47%  seeds [42:0.9657 43:0.9951 44:0.9692]
+  process_peak_rss_kib                                           209900 /       176556  ratio  1.1889 change   18.89%  seeds [42:1.1910 43:1.1944 44:1.1825]
+  process_retained_rss_kib                                        65188 /        80172  ratio  0.8131 change  -18.69%  seeds [42:0.8142 43:0.8112 44:0.8314]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209900 /       176780  ratio  1.1874 change   18.74%  seeds []
+  process_peak_maxima_maximum_kib                                210284 /       177700  ratio  1.1834 change   18.34%  seeds []
+
+[qualify] combined / control N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.273 /       57.350  ratio  0.9638 change   -3.62%  seeds [42:0.9777 43:0.9598 44:0.9638]
+  prove_ms                                                       51.210 /       53.529  ratio  0.9567 change   -4.33%  seeds [42:0.9685 43:0.9528 44:0.9595]
+  witness_commit_ms                                               4.139 /        3.820  ratio  1.0834 change    8.34%  seeds [42:1.1071 43:1.0683 44:1.0655]
+  verify_ms                                                      15.608 /       15.539  ratio  1.0044 change    0.44%  seeds [42:0.9921 43:0.9992 44:1.0220]
+  process_peak_rss_kib                                           209900 /       177776  ratio  1.1807 change   18.07%  seeds [42:1.1826 43:1.1807 44:1.1823]
+  process_retained_rss_kib                                        65188 /        81144  ratio  0.8034 change  -19.66%  seeds [42:0.8062 43:0.7974 44:0.8249]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209900 /       177808  ratio  1.1805 change   18.05%  seeds []
+  process_peak_maxima_maximum_kib                                210284 /       177896  ratio  1.1821 change   18.21%  seeds []
+
+[qualify] combined / baseline N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.065 /       48.783  ratio  0.9853 change   -1.47%  seeds [42:0.9853 43:0.9848 44:0.9844]
+  prove_ms                                                       43.827 /       44.896  ratio  0.9762 change   -2.38%  seeds [42:0.9806 43:0.9746 44:0.9723]
+  witness_commit_ms                                               4.247 /        3.862  ratio  1.0999 change    9.99%  seeds [42:1.0901 43:1.1057 44:1.1059]
+  verify_ms                                                      15.075 /       15.192  ratio  0.9923 change   -0.77%  seeds [42:1.0069 43:0.9925 44:1.0030]
+  process_peak_rss_kib                                           211220 /       178788  ratio  1.1814 change   18.14%  seeds [42:1.1777 43:1.1854 44:1.1814]
+  process_retained_rss_kib                                        68468 /        83400  ratio  0.8210 change  -17.90%  seeds [42:0.8208 43:0.8271 44:0.7952]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 211220 /       179436  ratio  1.1771 change   17.71%  seeds []
+  process_peak_maxima_maximum_kib                                211420 /       180508  ratio  1.1713 change   17.13%  seeds []
+
+[qualify] combined / control N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.065 /       48.949  ratio  0.9819 change   -1.81%  seeds [42:0.9882 43:0.7792 44:0.9911]
+  prove_ms                                                       43.827 /       45.285  ratio  0.9678 change   -3.22%  seeds [42:0.9845 43:0.7583 44:0.9784]
+  witness_commit_ms                                               4.247 /        3.824  ratio  1.1107 change   11.07%  seeds [42:1.1000 43:1.0648 44:1.1286]
+  verify_ms                                                      15.075 /       15.273  ratio  0.9871 change   -1.29%  seeds [42:0.9959 43:0.9405 44:1.0260]
+  process_peak_rss_kib                                           211220 /       179180  ratio  1.1788 change   17.88%  seeds [42:1.1774 43:1.1738 44:1.1811]
+  process_retained_rss_kib                                        68468 /        84100  ratio  0.8141 change  -18.59%  seeds [42:0.8194 43:0.8101 44:0.7889]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 211220 /       179780  ratio  1.1749 change   17.49%  seeds []
+  process_peak_maxima_maximum_kib                                211420 /       180096  ratio  1.1739 change   17.39%  seeds []
+
+[qualify] control / baseline N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.007 /      138.881  ratio  1.0009 change    0.09%  seeds [42:1.0012 43:0.9995 44:1.0009]
+  prove_ms                                                      130.113 /      130.001  ratio  1.0009 change    0.09%  seeds [42:1.0019 43:1.0003 44:1.0009]
+  witness_commit_ms                                               8.878 /        8.915  ratio  0.9958 change   -0.42%  seeds [42:0.9928 43:0.9943 44:0.9967]
+  verify_ms                                                      30.359 /       30.382  ratio  0.9992 change   -0.08%  seeds [42:0.9992 43:0.9991 44:0.9996]
+  process_peak_rss_kib                                            83712 /        83380  ratio  1.0040 change    0.40%  seeds [42:1.0013 43:0.9991 44:1.0058]
+  process_retained_rss_kib                                        39208 /        38888  ratio  1.0082 change    0.82%  seeds [42:1.0075 43:1.0086 44:1.0076]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83712 /        83380  ratio  1.0040 change    0.40%  seeds []
+  process_peak_maxima_maximum_kib                                 83728 /        83620  ratio  1.0013 change    0.13%  seeds []
+
+[qualify] control / baseline N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                28.148 /       28.189  ratio  0.9985 change   -0.15%  seeds [42:1.0034 43:0.9949 44:0.9890]
+  prove_ms                                                       26.311 /       26.282  ratio  1.0011 change    0.11%  seeds [42:1.0038 43:0.9957 44:0.9917]
+  witness_commit_ms                                               1.838 /        1.909  ratio  0.9629 change   -3.71%  seeds [42:0.9438 43:1.0116 44:0.9562]
+  verify_ms                                                       9.155 /        9.227  ratio  0.9922 change   -0.78%  seeds [42:0.9993 43:0.9911 44:0.9833]
+  process_peak_rss_kib                                            85632 /        85548  ratio  1.0010 change    0.10%  seeds [42:1.0039 43:0.9939 44:1.0063]
+  process_retained_rss_kib                                        42012 /        41968  ratio  1.0010 change    0.10%  seeds [42:1.0071 43:0.9964 44:1.0030]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  86084 /        85720  ratio  1.0042 change    0.42%  seeds []
+  process_peak_maxima_maximum_kib                                 86304 /        85908  ratio  1.0046 change    0.46%  seeds []
+
+[qualify] control / baseline N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.924 /       32.196  ratio  0.9916 change   -0.84%  seeds [42:0.9951 43:1.0068 44:0.9826]
+  prove_ms                                                       29.638 /       29.847  ratio  0.9930 change   -0.70%  seeds [42:0.9923 43:1.0073 44:0.9835]
+  witness_commit_ms                                               2.277 /        2.329  ratio  0.9775 change   -2.25%  seeds [42:0.9822 43:0.9635 44:0.9602]
+  verify_ms                                                       9.476 /        9.116  ratio  1.0395 change    3.95%  seeds [42:1.0457 43:1.0626 44:1.0537]
+  process_peak_rss_kib                                            88208 /        88040  ratio  1.0019 change    0.19%  seeds [42:1.0028 43:1.0077 44:0.9943]
+  process_retained_rss_kib                                        45204 /        44972  ratio  1.0052 change    0.52%  seeds [42:1.0007 43:1.0062 44:1.0052]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  88252 /        88340  ratio  0.9990 change   -0.10%  seeds []
+  process_peak_maxima_maximum_kib                                 89168 /        88452  ratio  1.0081 change    0.81%  seeds []
+
+[qualify] control / baseline N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.554 /       28.600  ratio  0.9984 change   -0.16%  seeds [42:1.0047 43:1.0136 44:1.0012]
+  prove_ms                                                       26.248 /       26.185  ratio  1.0024 change    0.24%  seeds [42:1.0039 43:1.0185 44:1.0021]
+  witness_commit_ms                                               2.366 /        2.391  ratio  0.9896 change   -1.04%  seeds [42:0.9899 43:0.9839 44:0.9868]
+  verify_ms                                                       9.673 /        9.635  ratio  1.0040 change    0.40%  seeds [42:1.0001 43:1.0129 44:0.9979]
+  process_peak_rss_kib                                            89932 /        89472  ratio  1.0051 change    0.51%  seeds [42:1.0051 43:1.0045 44:1.0037]
+  process_retained_rss_kib                                        47424 /        47148  ratio  1.0059 change    0.59%  seeds [42:1.0047 43:1.0048 44:1.0059]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  90156 /        89920  ratio  1.0026 change    0.26%  seeds []
+  process_peak_maxima_maximum_kib                                 90168 /        90052  ratio  1.0013 change    0.13%  seeds []
+
+[qualify] control / baseline N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               269.499 /      269.882  ratio  0.9986 change   -0.14%  seeds [42:0.9979 43:0.9988 44:1.0018]
+  prove_ms                                                      252.598 /      252.946  ratio  0.9986 change   -0.14%  seeds [42:0.9990 43:0.9981 44:1.0026]
+  witness_commit_ms                                              16.939 /       17.000  ratio  0.9964 change   -0.36%  seeds [42:0.9989 43:1.0003 44:0.9949]
+  verify_ms                                                      59.750 /       59.735  ratio  1.0002 change    0.02%  seeds [42:1.0004 43:0.9998 44:0.9987]
+  process_peak_rss_kib                                           207268 /       206696  ratio  1.0028 change    0.28%  seeds [42:1.0027 43:1.0029 44:1.0015]
+  process_retained_rss_kib                                        59968 /        59612  ratio  1.0060 change    0.60%  seeds [42:1.0070 43:0.9736 44:1.0093]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207268 /       206696  ratio  1.0028 change    0.28%  seeds []
+  process_peak_maxima_maximum_kib                                207280 /       206972  ratio  1.0015 change    0.15%  seeds []
+
+[qualify] control / baseline N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                51.076 /       51.260  ratio  0.9964 change   -0.36%  seeds [42:0.9931 43:0.9980 44:0.9999]
+  prove_ms                                                       47.475 /       47.685  ratio  0.9956 change   -0.44%  seeds [42:0.9936 43:0.9981 44:0.9982]
+  witness_commit_ms                                               3.551 /        3.609  ratio  0.9839 change   -1.61%  seeds [42:0.9752 43:0.9929 44:1.0138]
+  verify_ms                                                      16.379 /       16.496  ratio  0.9929 change   -0.71%  seeds [42:0.9928 43:0.9906 44:0.9932]
+  process_peak_rss_kib                                           175916 /       175532  ratio  1.0022 change    0.22%  seeds [42:1.0033 43:0.9988 44:0.9948]
+  process_retained_rss_kib                                        79160 /        78844  ratio  1.0040 change    0.40%  seeds [42:1.0086 43:1.0058 44:1.0010]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 176008 /       176064  ratio  0.9997 change   -0.03%  seeds []
+  process_peak_maxima_maximum_kib                                176204 /       176124  ratio  1.0005 change    0.05%  seeds []
+
+[qualify] control / baseline N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                57.350 /       56.770  ratio  1.0102 change    1.02%  seeds [42:1.0028 43:1.0191 44:1.0032]
+  prove_ms                                                       53.529 /       52.997  ratio  1.0100 change    1.00%  seeds [42:1.0068 43:1.0178 44:0.9971]
+  witness_commit_ms                                               3.820 /        3.779  ratio  1.0108 change    1.08%  seeds [42:0.9897 43:1.0209 44:1.0325]
+  verify_ms                                                      15.539 /       16.004  ratio  0.9709 change   -2.91%  seeds [42:0.9734 43:0.9959 44:0.9483]
+  process_peak_rss_kib                                           177776 /       176556  ratio  1.0069 change    0.69%  seeds [42:1.0071 43:1.0116 44:1.0002]
+  process_retained_rss_kib                                        81144 /        80172  ratio  1.0121 change    1.21%  seeds [42:1.0100 43:1.0173 44:1.0079]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 177808 /       176780  ratio  1.0058 change    0.58%  seeds []
+  process_peak_maxima_maximum_kib                                177896 /       177700  ratio  1.0011 change    0.11%  seeds []
+
+[qualify] control / baseline N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.949 /       48.783  ratio  1.0034 change    0.34%  seeds [42:0.9970 43:1.2639 44:0.9933]
+  prove_ms                                                       45.285 /       44.896  ratio  1.0087 change    0.87%  seeds [42:0.9961 43:1.2853 44:0.9937]
+  witness_commit_ms                                               3.824 /        3.862  ratio  0.9903 change   -0.97%  seeds [42:0.9910 43:1.0384 44:0.9799]
+  verify_ms                                                      15.273 /       15.192  ratio  1.0053 change    0.53%  seeds [42:1.0110 43:1.0553 44:0.9776]
+  process_peak_rss_kib                                           179180 /       178788  ratio  1.0022 change    0.22%  seeds [42:1.0002 43:1.0099 44:1.0002]
+  process_retained_rss_kib                                        84100 /        83400  ratio  1.0084 change    0.84%  seeds [42:1.0017 43:1.0209 44:1.0079]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 179780 /       179436  ratio  1.0019 change    0.19%  seeds []
+  process_peak_maxima_maximum_kib                                180096 /       180508  ratio  0.9977 change   -0.23%  seeds []
+
+[qualify] norm2 / baseline N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               140.677 /      138.881  ratio  1.0129 change    1.29%  seeds [42:1.0124 43:1.0084 44:1.0129]
+  prove_ms                                                      131.795 /      130.001  ratio  1.0138 change    1.38%  seeds [42:1.0138 43:1.0094 44:1.0138]
+  witness_commit_ms                                               8.878 /        8.915  ratio  0.9958 change   -0.42%  seeds [42:0.9946 43:0.9934 44:0.9963]
+  verify_ms                                                      30.386 /       30.382  ratio  1.0001 change    0.01%  seeds [42:0.9990 43:0.9996 44:1.0010]
+  process_peak_rss_kib                                            84008 /        83380  ratio  1.0075 change    0.75%  seeds [42:0.9978 43:1.0075 44:1.0114]
+  process_retained_rss_kib                                        39344 /        38888  ratio  1.0117 change    1.17%  seeds [42:1.0090 43:1.0156 44:1.0117]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  84008 /        83380  ratio  1.0075 change    0.75%  seeds []
+  process_peak_maxima_maximum_kib                                 84184 /        83620  ratio  1.0067 change    0.67%  seeds []
+
+[qualify] norm2 / control N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               140.677 /      139.007  ratio  1.0120 change    1.20%  seeds [42:1.0111 43:1.0088 44:1.0120]
+  prove_ms                                                      131.795 /      130.113  ratio  1.0129 change    1.29%  seeds [42:1.0119 43:1.0092 44:1.0129]
+  witness_commit_ms                                               8.878 /        8.878  ratio  1.0000 change   -0.00%  seeds [42:1.0018 43:0.9992 44:0.9996]
+  verify_ms                                                      30.386 /       30.359  ratio  1.0009 change    0.09%  seeds [42:0.9997 43:1.0005 44:1.0014]
+  process_peak_rss_kib                                            84008 /        83712  ratio  1.0035 change    0.35%  seeds [42:0.9966 43:1.0084 44:1.0056]
+  process_retained_rss_kib                                        39344 /        39208  ratio  1.0035 change    0.35%  seeds [42:1.0015 43:1.0069 44:1.0041]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  84008 /        83712  ratio  1.0035 change    0.35%  seeds []
+  process_peak_maxima_maximum_kib                                 84184 /        83728  ratio  1.0054 change    0.54%  seeds []
+
+[qualify] norm2 / baseline N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                28.015 /       28.189  ratio  0.9938 change   -0.62%  seeds [42:0.9942 43:0.9929 44:0.9882]
+  prove_ms                                                       26.215 /       26.282  ratio  0.9975 change   -0.25%  seeds [42:0.9975 43:0.9929 44:0.9919]
+  witness_commit_ms                                               1.863 /        1.909  ratio  0.9758 change   -2.42%  seeds [42:0.9531 43:1.0288 44:0.9556]
+  verify_ms                                                       9.225 /        9.227  ratio  0.9998 change   -0.02%  seeds [42:1.0012 43:1.0033 44:0.9956]
+  process_peak_rss_kib                                            85700 /        85548  ratio  1.0018 change    0.18%  seeds [42:1.0027 43:1.0011 44:1.0024]
+  process_retained_rss_kib                                        42504 /        41968  ratio  1.0128 change    1.28%  seeds [42:1.0086 43:1.0130 44:1.0128]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  86300 /        85720  ratio  1.0068 change    0.68%  seeds []
+  process_peak_maxima_maximum_kib                                 86316 /        85908  ratio  1.0047 change    0.47%  seeds []
+
+[qualify] norm2 / control N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                28.015 /       28.148  ratio  0.9953 change   -0.47%  seeds [42:0.9909 43:0.9980 44:0.9992]
+  prove_ms                                                       26.215 /       26.311  ratio  0.9964 change   -0.36%  seeds [42:0.9937 43:0.9971 44:1.0003]
+  witness_commit_ms                                               1.863 /        1.838  ratio  1.0134 change    1.34%  seeds [42:1.0099 43:1.0170 44:0.9994]
+  verify_ms                                                       9.225 /        9.155  ratio  1.0076 change    0.76%  seeds [42:1.0019 43:1.0123 44:1.0125]
+  process_peak_rss_kib                                            85700 /        85632  ratio  1.0008 change    0.08%  seeds [42:0.9988 43:1.0073 44:0.9961]
+  process_retained_rss_kib                                        42504 /        42012  ratio  1.0117 change    1.17%  seeds [42:1.0015 43:1.0166 44:1.0097]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  86300 /        86084  ratio  1.0025 change    0.25%  seeds []
+  process_peak_maxima_maximum_kib                                 86316 /        86304  ratio  1.0001 change    0.01%  seeds []
+
+[qualify] norm2 / baseline N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.669 /       32.196  ratio  0.9836 change   -1.64%  seeds [42:0.9841 43:0.9817 44:0.9816]
+  prove_ms                                                       29.274 /       29.847  ratio  0.9808 change   -1.92%  seeds [42:0.9828 43:0.9779 44:0.9793]
+  witness_commit_ms                                               2.325 /        2.329  ratio  0.9980 change   -0.20%  seeds [42:0.9587 43:0.9951 44:1.0017]
+  verify_ms                                                       9.513 /        9.116  ratio  1.0436 change    4.36%  seeds [42:1.0355 43:1.0624 44:1.0588]
+  process_peak_rss_kib                                            85156 /        88040  ratio  0.9672 change   -3.28%  seeds [42:0.9712 43:0.9645 44:0.9678]
+  process_retained_rss_kib                                        41956 /        44972  ratio  0.9329 change   -6.71%  seeds [42:0.9314 43:0.9282 44:0.9366]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85232 /        88340  ratio  0.9648 change   -3.52%  seeds []
+  process_peak_maxima_maximum_kib                                 85372 /        88452  ratio  0.9652 change   -3.48%  seeds []
+
+[qualify] norm2 / control N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                31.669 /       31.924  ratio  0.9920 change   -0.80%  seeds [42:0.9890 43:0.9751 44:0.9991]
+  prove_ms                                                       29.274 /       29.638  ratio  0.9877 change   -1.23%  seeds [42:0.9905 43:0.9708 44:0.9957]
+  witness_commit_ms                                               2.325 /        2.277  ratio  1.0210 change    2.10%  seeds [42:0.9761 43:1.0328 44:1.0432]
+  verify_ms                                                       9.513 /        9.476  ratio  1.0039 change    0.39%  seeds [42:0.9903 43:0.9998 44:1.0049]
+  process_peak_rss_kib                                            85156 /        88208  ratio  0.9654 change   -3.46%  seeds [42:0.9685 43:0.9572 44:0.9733]
+  process_retained_rss_kib                                        41956 /        45204  ratio  0.9281 change   -7.19%  seeds [42:0.9307 43:0.9225 44:0.9318]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85232 /        88252  ratio  0.9658 change   -3.42%  seeds []
+  process_peak_maxima_maximum_kib                                 85372 /        89168  ratio  0.9574 change   -4.26%  seeds []
+
+[qualify] norm2 / baseline N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.244 /       28.600  ratio  0.9875 change   -1.25%  seeds [42:0.9943 43:0.9868 44:0.9938]
+  prove_ms                                                       25.901 /       26.185  ratio  0.9891 change   -1.09%  seeds [42:0.9922 43:0.9885 44:0.9951]
+  witness_commit_ms                                               2.342 /        2.391  ratio  0.9794 change   -2.06%  seeds [42:1.0014 43:0.9737 44:0.9664]
+  verify_ms                                                       9.534 /        9.635  ratio  0.9895 change   -1.05%  seeds [42:0.9075 43:0.9835 44:0.9897]
+  process_peak_rss_kib                                            87684 /        89472  ratio  0.9800 change   -2.00%  seeds [42:0.9797 43:0.9812 44:0.9860]
+  process_retained_rss_kib                                        45188 /        47148  ratio  0.9584 change   -4.16%  seeds [42:0.9550 43:0.9584 44:0.9651]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  88076 /        89920  ratio  0.9795 change   -2.05%  seeds []
+  process_peak_maxima_maximum_kib                                 88584 /        90052  ratio  0.9837 change   -1.63%  seeds []
+
+[qualify] norm2 / control N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.244 /       28.554  ratio  0.9891 change   -1.09%  seeds [42:0.9897 43:0.9736 44:0.9926]
+  prove_ms                                                       25.901 /       26.248  ratio  0.9868 change   -1.32%  seeds [42:0.9884 43:0.9706 44:0.9930]
+  witness_commit_ms                                               2.342 /        2.366  ratio  0.9897 change   -1.03%  seeds [42:1.0117 43:0.9897 44:0.9794]
+  verify_ms                                                       9.534 /        9.673  ratio  0.9856 change   -1.44%  seeds [42:0.9074 43:0.9710 44:0.9918]
+  process_peak_rss_kib                                            87684 /        89932  ratio  0.9750 change   -2.50%  seeds [42:0.9747 43:0.9768 44:0.9823]
+  process_retained_rss_kib                                        45188 /        47424  ratio  0.9529 change   -4.71%  seeds [42:0.9505 43:0.9538 44:0.9595]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  88076 /        90156  ratio  0.9769 change   -2.31%  seeds []
+  process_peak_maxima_maximum_kib                                 88584 /        90168  ratio  0.9824 change   -1.76%  seeds []
+
+[qualify] norm2 / baseline N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               272.623 /      269.882  ratio  1.0102 change    1.02%  seeds [42:1.0099 43:1.0108 44:1.0116]
+  prove_ms                                                      255.961 /      252.946  ratio  1.0119 change    1.19%  seeds [42:1.0125 43:1.0128 44:1.0138]
+  witness_commit_ms                                              16.643 /       17.000  ratio  0.9790 change   -2.10%  seeds [42:0.9799 43:0.9794 44:0.9800]
+  verify_ms                                                      59.073 /       59.735  ratio  0.9889 change   -1.11%  seeds [42:0.9862 43:0.9881 44:0.9916]
+  process_peak_rss_kib                                           163396 /       206696  ratio  0.7905 change  -20.95%  seeds [42:0.7907 43:0.7906 44:0.7887]
+  process_retained_rss_kib                                        63424 /        59612  ratio  1.0639 change    6.39%  seeds [42:1.0622 43:1.0666 44:1.0629]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 163396 /       206696  ratio  0.7905 change  -20.95%  seeds []
+  process_peak_maxima_maximum_kib                                163432 /       206972  ratio  0.7896 change  -21.04%  seeds []
+
+[qualify] norm2 / control N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               272.623 /      269.499  ratio  1.0116 change    1.16%  seeds [42:1.0120 43:1.0120 44:1.0098]
+  prove_ms                                                      255.961 /      252.598  ratio  1.0133 change    1.33%  seeds [42:1.0134 43:1.0147 44:1.0112]
+  witness_commit_ms                                              16.643 /       16.939  ratio  0.9825 change   -1.75%  seeds [42:0.9810 43:0.9791 44:0.9850]
+  verify_ms                                                      59.073 /       59.750  ratio  0.9887 change   -1.13%  seeds [42:0.9857 43:0.9883 44:0.9928]
+  process_peak_rss_kib                                           163396 /       207268  ratio  0.7883 change  -21.17%  seeds [42:0.7886 43:0.7883 44:0.7876]
+  process_retained_rss_kib                                        63424 /        59968  ratio  1.0576 change    5.76%  seeds [42:1.0547 43:1.0955 44:1.0531]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 163396 /       207268  ratio  0.7883 change  -21.17%  seeds []
+  process_peak_maxima_maximum_kib                                163432 /       207280  ratio  0.7885 change  -21.15%  seeds []
+
+[qualify] norm2 / baseline N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                50.903 /       51.260  ratio  0.9930 change   -0.70%  seeds [42:0.9928 43:0.9928 44:0.9953]
+  prove_ms                                                       47.160 /       47.685  ratio  0.9890 change   -1.10%  seeds [42:0.9901 43:0.9890 44:0.9918]
+  witness_commit_ms                                               3.761 /        3.609  ratio  1.0421 change    4.21%  seeds [42:1.0478 43:1.0565 44:1.0411]
+  verify_ms                                                      16.314 /       16.496  ratio  0.9890 change   -1.10%  seeds [42:0.9838 43:0.9881 44:0.9922]
+  process_peak_rss_kib                                           165804 /       175532  ratio  0.9446 change   -5.54%  seeds [42:0.9473 43:0.9417 44:0.9405]
+  process_retained_rss_kib                                        66764 /        78844  ratio  0.8468 change  -15.32%  seeds [42:0.8509 43:0.8490 44:0.8437]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 166092 /       176064  ratio  0.9434 change   -5.66%  seeds []
+  process_peak_maxima_maximum_kib                                166164 /       176124  ratio  0.9434 change   -5.66%  seeds []
+
+[qualify] norm2 / control N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                50.903 /       51.076  ratio  0.9966 change   -0.34%  seeds [42:0.9997 43:0.9949 44:0.9954]
+  prove_ms                                                       47.160 /       47.475  ratio  0.9934 change   -0.66%  seeds [42:0.9965 43:0.9908 44:0.9936]
+  witness_commit_ms                                               3.761 /        3.551  ratio  1.0592 change    5.92%  seeds [42:1.0745 43:1.0641 44:1.0269]
+  verify_ms                                                      16.314 /       16.379  ratio  0.9961 change   -0.39%  seeds [42:0.9910 43:0.9974 44:0.9989]
+  process_peak_rss_kib                                           165804 /       175916  ratio  0.9425 change   -5.75%  seeds [42:0.9442 43:0.9428 44:0.9454]
+  process_retained_rss_kib                                        66764 /        79160  ratio  0.8434 change  -15.66%  seeds [42:0.8436 43:0.8441 44:0.8429]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 166092 /       176008  ratio  0.9437 change   -5.63%  seeds []
+  process_peak_maxima_maximum_kib                                166164 /       176204  ratio  0.9430 change   -5.70%  seeds []
+
+[qualify] norm2 / baseline N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.620 /       56.770  ratio  0.9797 change   -2.03%  seeds [42:0.9876 43:0.9829 44:0.9572]
+  prove_ms                                                       51.663 /       52.997  ratio  0.9748 change   -2.52%  seeds [42:0.9866 43:0.9804 44:0.9476]
+  witness_commit_ms                                               3.957 /        3.779  ratio  1.0471 change    4.71%  seeds [42:1.0342 43:1.0441 44:1.0678]
+  verify_ms                                                      15.486 /       16.004  ratio  0.9676 change   -3.24%  seeds [42:0.9611 43:0.9748 44:0.9785]
+  process_peak_rss_kib                                           166632 /       176556  ratio  0.9438 change   -5.62%  seeds [42:0.9464 43:0.9480 44:0.9390]
+  process_retained_rss_kib                                        68220 /        80172  ratio  0.8509 change  -14.91%  seeds [42:0.8499 43:0.8560 44:0.8413]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 166784 /       176780  ratio  0.9435 change   -5.65%  seeds []
+  process_peak_maxima_maximum_kib                                167092 /       177700  ratio  0.9403 change   -5.97%  seeds []
+
+[qualify] norm2 / control N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.620 /       57.350  ratio  0.9698 change   -3.02%  seeds [42:0.9848 43:0.9644 44:0.9541]
+  prove_ms                                                       51.663 /       53.529  ratio  0.9651 change   -3.49%  seeds [42:0.9799 43:0.9632 44:0.9504]
+  witness_commit_ms                                               3.957 /        3.820  ratio  1.0359 change    3.59%  seeds [42:1.0450 43:1.0227 44:1.0342]
+  verify_ms                                                      15.486 /       15.539  ratio  0.9966 change   -0.34%  seeds [42:0.9874 43:0.9788 44:1.0318]
+  process_peak_rss_kib                                           166632 /       177776  ratio  0.9373 change   -6.27%  seeds [42:0.9397 43:0.9372 44:0.9389]
+  process_retained_rss_kib                                        68220 /        81144  ratio  0.8407 change  -15.93%  seeds [42:0.8415 43:0.8414 44:0.8348]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 166784 /       177808  ratio  0.9380 change   -6.20%  seeds []
+  process_peak_maxima_maximum_kib                                167092 /       177896  ratio  0.9393 change   -6.07%  seeds []
+
+[qualify] norm2 / baseline N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.774 /       48.783  ratio  0.9998 change   -0.02%  seeds [42:0.9998 43:1.0338 44:0.9766]
+  prove_ms                                                       44.810 /       44.896  ratio  0.9981 change   -0.19%  seeds [42:0.9983 43:1.0339 44:0.9778]
+  witness_commit_ms                                               3.970 /        3.862  ratio  1.0280 change    2.80%  seeds [42:1.0173 43:1.0597 44:1.0166]
+  verify_ms                                                      15.265 /       15.192  ratio  1.0048 change    0.48%  seeds [42:1.0219 43:1.0085 44:0.9688]
+  process_peak_rss_kib                                           168412 /       178788  ratio  0.9420 change   -5.80%  seeds [42:0.9355 43:0.9462 44:0.9426]
+  process_retained_rss_kib                                        71060 /        83400  ratio  0.8520 change  -14.80%  seeds [42:0.8561 43:0.8601 44:0.8491]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 168428 /       179436  ratio  0.9387 change   -6.13%  seeds []
+  process_peak_maxima_maximum_kib                                168528 /       180508  ratio  0.9336 change   -6.64%  seeds []
+
+[qualify] norm2 / control N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                48.774 /       48.949  ratio  0.9964 change   -0.36%  seeds [42:1.0028 43:0.8179 44:0.9832]
+  prove_ms                                                       44.810 /       45.285  ratio  0.9895 change   -1.05%  seeds [42:1.0023 43:0.8044 44:0.9840]
+  witness_commit_ms                                               3.970 /        3.824  ratio  1.0381 change    3.81%  seeds [42:1.0266 43:1.0205 44:1.0375]
+  verify_ms                                                      15.265 /       15.273  ratio  0.9995 change   -0.05%  seeds [42:1.0108 43:0.9557 44:0.9910]
+  process_peak_rss_kib                                           168412 /       179180  ratio  0.9399 change   -6.01%  seeds [42:0.9353 43:0.9369 44:0.9424]
+  process_retained_rss_kib                                        71060 /        84100  ratio  0.8449 change  -15.51%  seeds [42:0.8546 43:0.8425 44:0.8424]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 168428 /       179780  ratio  0.9369 change   -6.31%  seeds []
+  process_peak_maxima_maximum_kib                                168528 /       180096  ratio  0.9358 change   -6.42%  seeds []
+
+[qualify] norm4 / baseline N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.201 /      138.881  ratio  1.0023 change    0.23%  seeds [42:1.0005 43:1.0017 44:1.0021]
+  prove_ms                                                      130.324 /      130.001  ratio  1.0025 change    0.25%  seeds [42:1.0011 43:1.0023 44:1.0021]
+  witness_commit_ms                                               8.872 /        8.915  ratio  0.9952 change   -0.48%  seeds [42:0.9930 43:0.9944 44:0.9962]
+  verify_ms                                                      30.379 /       30.382  ratio  0.9999 change   -0.01%  seeds [42:0.9988 43:0.9976 44:1.0002]
+  process_peak_rss_kib                                            83928 /        83380  ratio  1.0066 change    0.66%  seeds [42:1.0040 43:1.0066 44:1.0025]
+  process_retained_rss_kib                                        39236 /        38888  ratio  1.0089 change    0.89%  seeds [42:1.0068 43:1.0104 44:1.0056]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83928 /        83380  ratio  1.0066 change    0.66%  seeds []
+  process_peak_maxima_maximum_kib                                 83952 /        83620  ratio  1.0040 change    0.40%  seeds []
+
+[qualify] norm4 / control N=512 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               139.201 /      139.007  ratio  1.0014 change    0.14%  seeds [42:0.9992 43:1.0021 44:1.0012]
+  prove_ms                                                      130.324 /      130.113  ratio  1.0016 change    0.16%  seeds [42:0.9992 43:1.0021 44:1.0012]
+  witness_commit_ms                                               8.872 /        8.878  ratio  0.9993 change   -0.07%  seeds [42:1.0002 43:1.0001 44:0.9995]
+  verify_ms                                                      30.379 /       30.359  ratio  1.0007 change    0.07%  seeds [42:0.9996 43:0.9985 44:1.0006]
+  process_peak_rss_kib                                            83928 /        83712  ratio  1.0026 change    0.26%  seeds [42:1.0027 43:1.0074 44:0.9968]
+  process_retained_rss_kib                                        39236 /        39208  ratio  1.0007 change    0.07%  seeds [42:0.9993 43:1.0017 44:0.9980]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  83928 /        83712  ratio  1.0026 change    0.26%  seeds []
+  process_peak_maxima_maximum_kib                                 83952 /        83728  ratio  1.0027 change    0.27%  seeds []
+
+[qualify] norm4 / baseline N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                27.878 /       28.189  ratio  0.9890 change   -1.10%  seeds [42:0.9894 43:0.9782 44:0.9845]
+  prove_ms                                                       25.953 /       26.282  ratio  0.9875 change   -1.25%  seeds [42:0.9875 43:0.9744 44:0.9874]
+  witness_commit_ms                                               1.893 /        1.909  ratio  0.9920 change   -0.80%  seeds [42:1.0119 43:1.0172 44:0.9567]
+  verify_ms                                                       9.199 /        9.227  ratio  0.9969 change   -0.31%  seeds [42:0.9994 43:0.9860 44:1.0080]
+  process_peak_rss_kib                                            85380 /        85548  ratio  0.9980 change   -0.20%  seeds [42:1.0046 43:0.9944 44:0.9948]
+  process_retained_rss_kib                                        42116 /        41968  ratio  1.0035 change    0.35%  seeds [42:1.0064 43:1.0028 44:0.9992]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85776 /        85720  ratio  1.0007 change    0.07%  seeds []
+  process_peak_maxima_maximum_kib                                 85880 /        85908  ratio  0.9997 change   -0.03%  seeds []
+
+[qualify] norm4 / control N=512 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                27.878 /       28.148  ratio  0.9904 change   -0.96%  seeds [42:0.9860 43:0.9832 44:0.9955]
+  prove_ms                                                       25.953 /       26.311  ratio  0.9864 change   -1.36%  seeds [42:0.9838 43:0.9786 44:0.9957]
+  witness_commit_ms                                               1.893 /        1.838  ratio  1.0302 change    3.02%  seeds [42:1.0722 43:1.0055 44:1.0006]
+  verify_ms                                                       9.199 /        9.155  ratio  1.0047 change    0.47%  seeds [42:1.0001 43:0.9949 44:1.0251]
+  process_peak_rss_kib                                            85380 /        85632  ratio  0.9971 change   -0.29%  seeds [42:1.0007 43:1.0006 44:0.9886]
+  process_retained_rss_kib                                        42116 /        42012  ratio  1.0025 change    0.25%  seeds [42:0.9993 43:1.0064 44:0.9962]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                  85776 /        86084  ratio  0.9964 change   -0.36%  seeds []
+  process_peak_maxima_maximum_kib                                 85880 /        86304  ratio  0.9951 change   -0.49%  seeds []
+
+[qualify] norm4 / baseline N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                30.880 /       32.196  ratio  0.9591 change   -4.09%  seeds [42:0.9565 43:0.9678 44:0.9809]
+  prove_ms                                                       28.583 /       29.847  ratio  0.9577 change   -4.23%  seeds [42:0.9518 43:0.9631 44:0.9795]
+  witness_commit_ms                                               2.297 /        2.329  ratio  0.9861 change   -1.39%  seeds [42:0.9638 43:0.9858 44:0.9808]
+  verify_ms                                                       9.251 /        9.116  ratio  1.0148 change    1.48%  seeds [42:1.0010 43:1.0340 44:1.0423]
+  process_peak_rss_kib                                           108688 /        88040  ratio  1.2345 change   23.45%  seeds [42:1.2385 43:1.2352 44:1.2327]
+  process_retained_rss_kib                                        42948 /        44972  ratio  0.9550 change   -4.50%  seeds [42:0.9568 43:0.9558 44:0.9545]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 108688 /        88340  ratio  1.2303 change   23.03%  seeds []
+  process_peak_maxima_maximum_kib                                108736 /        88452  ratio  1.2293 change   22.93%  seeds []
+
+[qualify] norm4 / control N=512 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                30.880 /       31.924  ratio  0.9673 change   -3.27%  seeds [42:0.9612 43:0.9613 44:0.9983]
+  prove_ms                                                       28.583 /       29.638  ratio  0.9644 change   -3.56%  seeds [42:0.9592 43:0.9561 44:0.9960]
+  witness_commit_ms                                               2.297 /        2.277  ratio  1.0088 change    0.88%  seeds [42:0.9813 43:1.0231 44:1.0214]
+  verify_ms                                                       9.251 /        9.476  ratio  0.9763 change   -2.37%  seeds [42:0.9573 43:0.9731 44:0.9892]
+  process_peak_rss_kib                                           108688 /        88208  ratio  1.2322 change   23.22%  seeds [42:1.2351 43:1.2258 44:1.2397]
+  process_retained_rss_kib                                        42948 /        45204  ratio  0.9501 change   -4.99%  seeds [42:0.9561 43:0.9499 44:0.9497]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 108688 /        88252  ratio  1.2316 change   23.16%  seeds []
+  process_peak_maxima_maximum_kib                                108736 /        89168  ratio  1.2195 change   21.95%  seeds []
+
+[qualify] norm4 / baseline N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.113 /       28.600  ratio  0.9830 change   -1.70%  seeds [42:0.9973 43:0.9857 44:0.9781]
+  prove_ms                                                       25.859 /       26.185  ratio  0.9875 change   -1.25%  seeds [42:0.9994 43:0.9882 44:0.9762]
+  witness_commit_ms                                               2.340 /        2.391  ratio  0.9787 change   -2.13%  seeds [42:0.9636 43:0.9758 44:0.9917]
+  verify_ms                                                       9.248 /        9.635  ratio  0.9599 change   -4.01%  seeds [42:0.9604 43:0.9588 44:0.9575]
+  process_peak_rss_kib                                           110024 /        89472  ratio  1.2297 change   22.97%  seeds [42:1.2324 43:1.2283 44:1.2326]
+  process_retained_rss_kib                                        45372 /        47148  ratio  0.9623 change   -3.77%  seeds [42:0.9592 43:0.9638 44:0.9622]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 110024 /        89920  ratio  1.2236 change   22.36%  seeds []
+  process_peak_maxima_maximum_kib                                110264 /        90052  ratio  1.2244 change   22.44%  seeds []
+
+[qualify] norm4 / control N=512 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                28.113 /       28.554  ratio  0.9845 change   -1.55%  seeds [42:0.9927 43:0.9724 44:0.9769]
+  prove_ms                                                       25.859 /       26.248  ratio  0.9852 change   -1.48%  seeds [42:0.9955 43:0.9703 44:0.9741]
+  witness_commit_ms                                               2.340 /        2.366  ratio  0.9890 change   -1.10%  seeds [42:0.9734 43:0.9918 44:1.0050]
+  verify_ms                                                       9.248 /        9.673  ratio  0.9560 change   -4.40%  seeds [42:0.9603 43:0.9466 44:0.9595]
+  process_peak_rss_kib                                           110024 /        89932  ratio  1.2234 change   22.34%  seeds [42:1.2261 43:1.2228 44:1.2281]
+  process_retained_rss_kib                                        45372 /        47424  ratio  0.9567 change   -4.33%  seeds [42:0.9547 43:0.9591 44:0.9566]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 110024 /        90156  ratio  1.2204 change   22.04%  seeds []
+  process_peak_maxima_maximum_kib                                110264 /        90168  ratio  1.2229 change   22.29%  seeds []
+
+[qualify] norm4 / baseline N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               269.407 /      269.882  ratio  0.9982 change   -0.18%  seeds [42:1.0016 43:1.0006 44:1.0036]
+  prove_ms                                                      252.358 /      252.946  ratio  0.9977 change   -0.23%  seeds [42:1.0028 43:1.0007 44:1.0038]
+  witness_commit_ms                                              16.992 /       17.000  ratio  0.9995 change   -0.05%  seeds [42:0.9968 43:0.9969 44:0.9992]
+  verify_ms                                                      59.553 /       59.735  ratio  0.9969 change   -0.31%  seeds [42:0.9981 43:0.9941 44:0.9961]
+  process_peak_rss_kib                                           207184 /       206696  ratio  1.0024 change    0.24%  seeds [42:1.0027 43:1.0025 44:0.9998]
+  process_retained_rss_kib                                        60024 /        59612  ratio  1.0069 change    0.69%  seeds [42:1.0087 43:1.0097 44:1.0068]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207184 /       206696  ratio  1.0024 change    0.24%  seeds []
+  process_peak_maxima_maximum_kib                                207256 /       206972  ratio  1.0014 change    0.14%  seeds []
+
+[qualify] norm4 / control N=1024 batch=1024 security=128 workers=1 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6] main=6
+  total_prover_ms                                               269.407 /      269.499  ratio  0.9997 change   -0.03%  seeds [42:1.0037 43:1.0018 44:1.0019]
+  prove_ms                                                      252.358 /      252.598  ratio  0.9990 change   -0.10%  seeds [42:1.0038 43:1.0025 44:1.0011]
+  witness_commit_ms                                              16.992 /       16.939  ratio  1.0031 change    0.31%  seeds [42:0.9979 43:0.9966 44:1.0043]
+  verify_ms                                                      59.553 /       59.750  ratio  0.9967 change   -0.33%  seeds [42:0.9976 43:0.9943 44:0.9973]
+  process_peak_rss_kib                                           207184 /       207268  ratio  0.9996 change   -0.04%  seeds [42:1.0000 43:0.9996 44:0.9984]
+  process_retained_rss_kib                                        60024 /        59968  ratio  1.0009 change    0.09%  seeds [42:1.0017 43:1.0372 44:0.9975]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 207184 /       207268  ratio  0.9996 change   -0.04%  seeds []
+  process_peak_maxima_maximum_kib                                207256 /       207280  ratio  0.9999 change   -0.01%  seeds []
+
+[qualify] norm4 / baseline N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                50.832 /       51.260  ratio  0.9916 change   -0.84%  seeds [42:0.9903 43:0.9939 44:0.9907]
+  prove_ms                                                       46.891 /       47.685  ratio  0.9834 change   -1.66%  seeds [42:0.9827 43:0.9859 44:0.9854]
+  witness_commit_ms                                               3.911 /        3.609  ratio  1.0837 change    8.37%  seeds [42:1.0895 43:1.1096 44:1.0593]
+  verify_ms                                                      16.102 /       16.496  ratio  0.9761 change   -2.39%  seeds [42:0.9788 43:0.9777 44:0.9740]
+  process_peak_rss_kib                                           209088 /       175532  ratio  1.1912 change   19.12%  seeds [42:1.1920 43:1.1858 44:1.1880]
+  process_retained_rss_kib                                        63696 /        78844  ratio  0.8079 change  -19.21%  seeds [42:0.8101 43:0.8126 44:0.8069]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209088 /       176064  ratio  1.1876 change   18.76%  seeds []
+  process_peak_maxima_maximum_kib                                209152 /       176124  ratio  1.1875 change   18.75%  seeds []
+
+[qualify] norm4 / control N=1024 batch=1024 security=128 workers=8 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1] main=6
+  total_prover_ms                                                50.832 /       51.076  ratio  0.9952 change   -0.48%  seeds [42:0.9972 43:0.9959 44:0.9907]
+  prove_ms                                                       46.891 /       47.475  ratio  0.9877 change   -1.23%  seeds [42:0.9891 43:0.9877 44:0.9872]
+  witness_commit_ms                                               3.911 /        3.551  ratio  1.1014 change   10.14%  seeds [42:1.1173 43:1.1175 44:1.0448]
+  verify_ms                                                      16.102 /       16.379  ratio  0.9831 change   -1.69%  seeds [42:0.9859 43:0.9870 44:0.9807]
+  process_peak_rss_kib                                           209088 /       175916  ratio  1.1886 change   18.86%  seeds [42:1.1881 43:1.1872 44:1.1943]
+  process_retained_rss_kib                                        63696 /        79160  ratio  0.8046 change  -19.54%  seeds [42:0.8032 43:0.8078 44:0.8062]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209088 /       176008  ratio  1.1879 change   18.79%  seeds []
+  process_peak_maxima_maximum_kib                                209152 /       176204  ratio  1.1870 change   18.70%  seeds []
+
+[qualify] norm4 / baseline N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.361 /       56.770  ratio  0.9752 change   -2.48%  seeds [42:0.9708 43:0.9836 44:0.9688]
+  prove_ms                                                       51.143 /       52.997  ratio  0.9650 change   -3.50%  seeds [42:0.9646 43:0.9735 44:0.9570]
+  witness_commit_ms                                               4.147 /        3.779  ratio  1.0973 change    9.73%  seeds [42:1.0934 43:1.0952 44:1.0984]
+  verify_ms                                                      15.521 /       16.004  ratio  0.9698 change   -3.02%  seeds [42:0.9633 43:0.9867 44:0.9723]
+  process_peak_rss_kib                                           209924 /       176556  ratio  1.1890 change   18.90%  seeds [42:1.1909 43:1.1945 44:1.1799]
+  process_retained_rss_kib                                        64852 /        80172  ratio  0.8089 change  -19.11%  seeds [42:0.8124 43:0.8073 44:0.8405]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209924 /       176780  ratio  1.1875 change   18.75%  seeds []
+  process_peak_maxima_maximum_kib                                210260 /       177700  ratio  1.1832 change   18.32%  seeds []
+
+[qualify] norm4 / control N=1024 batch=1024 security=128 workers=12 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13] main=6
+  total_prover_ms                                                55.361 /       57.350  ratio  0.9653 change   -3.47%  seeds [42:0.9681 43:0.9651 44:0.9657]
+  prove_ms                                                       51.143 /       53.529  ratio  0.9554 change   -4.46%  seeds [42:0.9580 43:0.9564 44:0.9598]
+  witness_commit_ms                                               4.147 /        3.820  ratio  1.0856 change    8.56%  seeds [42:1.1048 43:1.0727 44:1.0638]
+  verify_ms                                                      15.521 /       15.539  ratio  0.9988 change   -0.12%  seeds [42:0.9896 43:0.9908 44:1.0252]
+  process_peak_rss_kib                                           209924 /       177776  ratio  1.1808 change   18.08%  seeds [42:1.1825 43:1.1808 44:1.1797]
+  process_retained_rss_kib                                        64852 /        81144  ratio  0.7992 change  -20.08%  seeds [42:0.8044 43:0.7935 44:0.8339]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 209924 /       177808  ratio  1.1806 change   18.06%  seeds []
+  process_peak_maxima_maximum_kib                                210260 /       177896  ratio  1.1819 change   18.19%  seeds []
+
+[qualify] norm4 / baseline N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                47.974 /       48.783  ratio  0.9834 change   -1.66%  seeds [42:0.9836 43:0.9866 44:0.9790]
+  prove_ms                                                       43.802 /       44.896  ratio  0.9756 change   -2.44%  seeds [42:0.9760 43:0.9749 44:0.9725]
+  witness_commit_ms                                               4.144 /        3.862  ratio  1.0731 change    7.31%  seeds [42:1.0776 43:1.0881 44:1.0729]
+  verify_ms                                                      15.222 /       15.192  ratio  1.0020 change    0.20%  seeds [42:1.0371 43:1.0054 44:0.9764]
+  process_peak_rss_kib                                           212276 /       178788  ratio  1.1873 change   18.73%  seeds [42:1.1802 43:1.1925 44:1.1874]
+  process_retained_rss_kib                                        68328 /        83400  ratio  0.8193 change  -18.07%  seeds [42:0.8165 43:0.8100 44:0.8222]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 212276 /       179436  ratio  1.1830 change   18.30%  seeds []
+  process_peak_maxima_maximum_kib                                212300 /       180508  ratio  1.1761 change   17.61%  seeds []
+
+[qualify] norm4 / control N=1024 batch=1024 security=128 workers=16 mode=repeated samples={'candidate': 21, 'reference': 21} CPUs=[6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9] main=6
+  total_prover_ms                                                47.974 /       48.949  ratio  0.9801 change   -1.99%  seeds [42:0.9865 43:0.7806 44:0.9856]
+  prove_ms                                                       43.802 /       45.285  ratio  0.9673 change   -3.27%  seeds [42:0.9799 43:0.7585 44:0.9787]
+  witness_commit_ms                                               4.144 /        3.824  ratio  1.0836 change    8.36%  seeds [42:1.0874 43:1.0480 44:1.0950]
+  verify_ms                                                      15.222 /       15.273  ratio  0.9967 change   -0.33%  seeds [42:1.0258 43:0.9528 44:0.9988]
+  process_peak_rss_kib                                           212276 /       179180  ratio  1.1847 change   18.47%  seeds [42:1.1799 43:1.1808 44:1.1871]
+  process_retained_rss_kib                                        68328 /        84100  ratio  0.8125 change  -18.75%  seeds [42:0.8151 43:0.7934 44:0.8157]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_maxima_median_kib                                 212276 /       179780  ratio  1.1808 change   18.08%  seeds []
+  process_peak_maxima_maximum_kib                                212300 /       180096  ratio  1.1788 change   17.88%  seeds []
+
+TRACED STAGE DIAGNOSTICS
+  No matched comparisons available.

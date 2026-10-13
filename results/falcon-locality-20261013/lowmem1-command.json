@@ -1,0 +1,20 @@
+[
+  "/home/john-wu/.local/bin/python3",
+  "/home/john-wu/code/BitZ-pcs/scripts/falcon_locality_optimization.py",
+  "--output",
+  "/home/john-wu/code/BitZ-pcs/results/falcon-locality-20261013",
+  "--binary",
+  "/home/john-wu/code/BitZ-pcs/.tmp/falcon-locality-20261013/candidate-lowmemory",
+  "--baseline",
+  "/home/john-wu/code/BitZ-pcs/.tmp/falcon-twelve-workers-20261013/candidate-production",
+  "--variants",
+  "baseline",
+  "production",
+  "--phase",
+  "lowmem1",
+  "--threads",
+  "12",
+  "--modes",
+  "cold",
+  "repeated"
+]

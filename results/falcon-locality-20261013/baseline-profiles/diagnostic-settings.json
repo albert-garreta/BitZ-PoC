@@ -1,0 +1,61 @@
+{
+  "schema": "bitz/falcon-standalone-pcs-diagnostics/v1",
+  "settings": {
+    "batch": 1024,
+    "security": 128,
+    "platform": "linux",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "candidate_production": true
+  },
+  "binary": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-twelve-workers-20261013/candidate-production",
+    "sha256": "bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511"
+  },
+  "source_artifacts": {
+    "candidate-production-source.json": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-twelve-workers-20261013/candidate-production-source.json",
+      "sha256": "a39b0b7bc0f3966e96506e9c22a8021ad9186fe2957ef496c71e43d0178f5c76"
+    },
+    "candidate-production.patch": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-twelve-workers-20261013/candidate-production.patch",
+      "sha256": "444ff6b189db25f03c0a7fa317de2006b046864e4f45f3c45e959c524fca6e13"
+    },
+    "candidate-production-binary.json": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-twelve-workers-20261013/candidate-production-binary.json",
+      "sha256": "9863091868de17ac20a627a2667db1fdabd14b5fe89a6268e8fa418fefe78c5d"
+    },
+    "production-build-audit.json": {
+      "path": "/home/john-wu/code/BitZ-pcs/results/falcon-twelve-workers-20261013/production-build-audit.json",
+      "sha256": "c6e64d051df75b6e0236a3800f695dc4ff06e1db138ada553944dbbdac157a69"
+    }
+  },
+  "parser_provenance": {
+    "runner_sha256": "91ff631788c99b6701a54d566b632b858e7362cc843a00063405c79999376ff7",
+    "helper_sha256": {
+      "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c",
+      "binder_experiments.py": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+      "falcon_buffer_optimization.py": "260d7405a37c94fd073a7bd54fef99c81ca12df50d1a479df34ae3c55332b737",
+      "falcon_arithmetic_optimization.py": "cee383fc08bf55b372aac6fcaabcf22f032fb3f9e31402200edd1aba13456667"
+    }
+  },
+  "runner_sha256": "8e3e0db7dd8daa51440bd4c76786bf2b5e138eebaac9f7039c1711d686b010e6",
+  "notes": [
+    "Six sequential fresh processes; one warmup and three samples per process.",
+    "Diagnostic tracing only; not latency qualification.",
+    "Environment uses the existing strict runtime-selector scrubber and recorded overrides."
+  ]
+}

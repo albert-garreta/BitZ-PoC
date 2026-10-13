@@ -1,0 +1,84 @@
+   Compiling unicode-ident v1.0.24
+   Compiling find-msvc-tools v0.1.11
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.13.1
+   Compiling rustix v1.1.4
+   Compiling generic-array v0.14.7
+   Compiling hybrid-array v0.4.14
+   Compiling syn v1.0.109
+   Compiling paste v1.0.15
+   Compiling thiserror v1.0.69
+   Compiling clap_lex v1.1.0
+   Compiling binius-utils v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling itertools v0.15.0
+   Compiling serde_json v1.0.151
+   Compiling smallvec v1.16.0
+   Compiling chacha20 v0.10.2
+   Compiling thread_local v1.1.10
+   Compiling proc-macro2 v1.0.107
+   Compiling num-integer v0.1.47
+   Compiling cc v1.4.4
+   Compiling tracing-subscriber v0.3.23
+   Compiling regex-lite v0.1.9
+   Compiling condtype v1.3.0
+   Compiling rand v0.10.2
+   Compiling rand_pcg v0.9.0
+   Compiling num-bigint v0.4.8
+   Compiling quote v1.0.47
+   Compiling crypto-common v0.2.2
+   Compiling inout v0.2.2
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling terminal_size v0.4.4
+   Compiling perfetto-sdk-sys v1.3.0
+   Compiling sha2-asm v0.6.4
+   Compiling blake3 v1.8.7
+   Compiling clap_builder v4.6.6
+   Compiling sha2 v0.10.9
+   Compiling cipher v0.5.2
+   Compiling aes v0.9.3
+   Compiling trait-set v0.3.0
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling bytemuck_derive v1.12.1
+   Compiling clap v4.6.6
+   Compiling bytemuck v1.25.2
+   Compiling thiserror v2.0.20
+   Compiling thiserror-impl v1.0.69
+   Compiling derive_more-impl v2.1.1
+   Compiling tracing-attributes v0.1.31
+   Compiling divan-macros v0.1.21
+   Compiling divan v0.1.21
+   Compiling tracing v0.1.44
+   Compiling serde v1.0.229
+   Compiling derive_more v2.1.1
+   Compiling binius-field v0.1.0 (https://github.com/IrreducibleOSS/binius64.git?rev=49deecec1bf691c57aeadcda2499316d8094fcd8#49deecec)
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling bincode v1.3.3
+   Compiling toml_edit v0.22.27
+   Compiling toml v0.8.23
+   Compiling flock-core v0.1.0 (https://github.com/succinctlabs/flock.git?rev=85fc0e7cc002e7ca4dffdff805ba89976e9a5293#85fc0e7c)
+   Compiling perfetto-sdk v1.1.1
+   Compiling tracing-perfetto-sdk v1.0.0
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+warning: unused import: `num_traits::ConstZero`
+  --> src/gf128/wide.rs:80:9
+   |
+80 |     use num_traits::ConstZero;
+   |         ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `field` (lib test) generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 35.83s
+     Running unittests src/lib.rs (.tmp/falcon-ring-portable-target/debug/deps/field-99211df1f90f8230)
+
+running 1 test
+test prime::prepared_linear::word_dot_tests::prepared_unsigned_word_dots_preserve_independent_reductions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+

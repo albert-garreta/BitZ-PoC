@@ -1,0 +1,58 @@
+{
+  "schema": "bitz/falcon-locality-optimization/v1",
+  "job": {
+    "id": "baseline-cold-n512-b513-s128-t8-seed42-r0",
+    "variant": "arithmetic",
+    "config": "baseline",
+    "binary": "baseline",
+    "protocol": "canonical",
+    "degree": 512,
+    "threads": 8,
+    "seed": 42,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1
+    ],
+    "main_cpu": 6,
+    "repetition": 0,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "cf430c354928a5d761036fe097cccea494729e7df376ec16eb219ce044c4e471",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v9",
+      "input_digest": "e5e059edcff56b90262a63d8a333e994812d9ded6175d7d1dec6564cd48609f8",
+      "source_root": "23176a93416e5217d0900c10de11b59ac96222e9d457deacaa40aad83abb7daa",
+      "proof_debug_digest": "d806b63fb562832eb083b85299946a8117ce68c1ddfbe0efcf459167480a7a36",
+      "total_prover_ms": 27.271852,
+      "prove_ms": 25.059399,
+      "witness_commit_ms": 2.212383,
+      "verify_ms": 5.902089,
+      "process_peak_rss_kib": 73484,
+      "proof_payload_bytes": 253954,
+      "iteration": 0,
+      "prepare_ms": 0.14146699999999998,
+      "external_input_ms": 446.041915,
+      "prover_minor_faults": 26989,
+      "process_rss_before_prover_kib": 10004,
+      "process_rss_after_prover_kib": 42116,
+      "process_retained_rss_kib": 49896,
+      "prepared_scratch_bytes_before_prover": null,
+      "prepared_retained_scratch_bytes": null
+    }
+  ],
+  "command_sha256": "f552d0aa6439900042fd1972f17edd5a3808b2e8a9cfbf56204e1c78017739f2",
+  "stdout_sha256": "1bed4893663b9413458f50083b0b8aabbce0dc4a8fa4cf08bd4ee9de16422ec2",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "4ac577e5b49d322ec69f14ade538a69e74aa9a308743d1b1f4ea0856a6f1652c"
+}

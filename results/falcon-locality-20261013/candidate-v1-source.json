@@ -1,0 +1,17 @@
+{
+  "base": "80e141a1ae415b3bc9805c5be0b13aa0c89f646b",
+  "patch_sha256": "645a40c71973abf91c2ae2f87e731eb5c488e39c6f2cd6954f00ddd4ae963ba3",
+  "files": {
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "5ab732f4e09e6909e3b9f190fa4cccc5acb286fadc0a2753473caa3db53ee71c",
+    "benches/common/falcon_stage_timings.rs": "ab03f988b93adbc543d499e5d390e0d3309fb347de84406d7d2f134d0ad99277",
+    "src/piop/spartan/falcon_integer.rs": "2757dd58ac4cc09458f788e01e2bc003f88d21e321990cb94bd67c02e8439729",
+    "src/bitz/forest.rs": "039b234a5ed9e14ed8fb16f466ba3f58349d9aacb87ee31189d4c98e095510ce",
+    "src/piop/spartan/falcon1024_algebraic/ring.rs": "bfbab32c50a5b15a67376d3e9b4c7a9ebd2058853087f7bd523e3392a61308b3",
+    "src/bitz/kernels.rs": "af47b6e4964658736f143da3da27e32f19c67729e7f0a952e3edaefea56cf97b",
+    "vendor/field/src/prime/prepared_linear.rs": "62302a2a3e2dfca219b89d9c4d3242d188b9710a3660a31b32c5af0260f7c118",
+    "scripts/test_falcon_locality_optimization.py": "af831c8a6a1c9f3c1fc37af4901aa46e7015cf47a8282c189608c9672c08ec57",
+    "scripts/falcon_locality_optimization.py": "5cbfd8b34e047c0cc7c9d7f98788ddf697057852af51f0eb8bf602c5f328dc05",
+    "src/bitz/row_dispatch.rs": "ac4ad1d642e7be9bcfb2ed09d62e258d023dd2165101901bfa9ad904e4744299",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "e67bd8f577af0032892ed9b0ff7d039c5ec76d2e1cff8fd1a0db288a83fdd719"
+  }
+}

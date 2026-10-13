@@ -1,0 +1,197 @@
+RUN screen12/collapse2-repeated-n512-b1024-s128-t12-seed44-r0
+OK collapse2-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/collapse4-repeated-n512-b1024-s128-t12-seed44-r0
+OK collapse4-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/baseline-repeated-n512-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/forest8-repeated-n512-b1024-s128-t12-seed44-r0
+OK forest8-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/norm4-repeated-n512-b1024-s128-t12-seed44-r0
+OK norm4-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/compact2-repeated-n512-b1024-s128-t12-seed44-r0
+OK compact2-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/norm2-repeated-n512-b1024-s128-t12-seed44-r0
+OK norm2-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/norm3-repeated-n512-b1024-s128-t12-seed44-r0
+OK norm3-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/forest2-repeated-n512-b1024-s128-t12-seed44-r0
+OK forest2-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/compact4-repeated-n512-b1024-s128-t12-seed44-r0
+OK compact4-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/forest4-repeated-n512-b1024-s128-t12-seed44-r0
+OK forest4-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/compact8-repeated-n512-b1024-s128-t12-seed44-r0
+OK compact8-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/collapse8-repeated-n512-b1024-s128-t12-seed44-r0
+OK collapse8-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/control-repeated-n512-b1024-s128-t12-seed44-r0
+OK control-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen12/forest2-repeated-n512-b1024-s128-t12-seed42-r0
+OK forest2-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/collapse8-repeated-n512-b1024-s128-t12-seed42-r0
+OK collapse8-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/collapse4-repeated-n512-b1024-s128-t12-seed42-r0
+OK collapse4-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/collapse2-repeated-n512-b1024-s128-t12-seed42-r0
+OK collapse2-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/compact4-repeated-n512-b1024-s128-t12-seed42-r0
+OK compact4-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/compact8-repeated-n512-b1024-s128-t12-seed42-r0
+OK compact8-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/forest4-repeated-n512-b1024-s128-t12-seed42-r0
+OK forest4-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/baseline-repeated-n512-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/norm4-repeated-n512-b1024-s128-t12-seed42-r0
+OK norm4-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/norm3-repeated-n512-b1024-s128-t12-seed42-r0
+OK norm3-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/control-repeated-n512-b1024-s128-t12-seed42-r0
+OK control-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/forest8-repeated-n512-b1024-s128-t12-seed42-r0
+OK forest8-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/compact2-repeated-n512-b1024-s128-t12-seed42-r0
+OK compact2-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/norm2-repeated-n512-b1024-s128-t12-seed42-r0
+OK norm2-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen12/forest4-repeated-n1024-b1024-s128-t12-seed44-r0
+OK forest4-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/norm2-repeated-n1024-b1024-s128-t12-seed44-r0
+OK norm2-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/compact2-repeated-n1024-b1024-s128-t12-seed44-r0
+OK compact2-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/collapse8-repeated-n1024-b1024-s128-t12-seed44-r0
+OK collapse8-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/collapse4-repeated-n1024-b1024-s128-t12-seed44-r0
+OK collapse4-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/compact8-repeated-n1024-b1024-s128-t12-seed44-r0
+OK compact8-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/control-repeated-n1024-b1024-s128-t12-seed44-r0
+OK control-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/forest8-repeated-n1024-b1024-s128-t12-seed44-r0
+OK forest8-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/compact4-repeated-n1024-b1024-s128-t12-seed44-r0
+OK compact4-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/collapse2-repeated-n1024-b1024-s128-t12-seed44-r0
+OK collapse2-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/forest2-repeated-n1024-b1024-s128-t12-seed44-r0
+OK forest2-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/norm4-repeated-n1024-b1024-s128-t12-seed44-r0
+OK norm4-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/norm3-repeated-n1024-b1024-s128-t12-seed44-r0
+OK norm3-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen12/forest8-repeated-n1024-b1024-s128-t12-seed43-r0
+OK forest8-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/forest2-repeated-n1024-b1024-s128-t12-seed43-r0
+OK forest2-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/compact2-repeated-n1024-b1024-s128-t12-seed43-r0
+OK compact2-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/norm3-repeated-n1024-b1024-s128-t12-seed43-r0
+OK norm3-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/control-repeated-n1024-b1024-s128-t12-seed43-r0
+OK control-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/norm2-repeated-n1024-b1024-s128-t12-seed43-r0
+OK norm2-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/collapse2-repeated-n1024-b1024-s128-t12-seed43-r0
+OK collapse2-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/collapse8-repeated-n1024-b1024-s128-t12-seed43-r0
+OK collapse8-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/compact8-repeated-n1024-b1024-s128-t12-seed43-r0
+OK compact8-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/compact4-repeated-n1024-b1024-s128-t12-seed43-r0
+OK compact4-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/norm4-repeated-n1024-b1024-s128-t12-seed43-r0
+OK norm4-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/collapse4-repeated-n1024-b1024-s128-t12-seed43-r0
+OK collapse4-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/forest4-repeated-n1024-b1024-s128-t12-seed43-r0
+OK forest4-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen12/forest2-repeated-n1024-b1024-s128-t12-seed42-r0
+OK forest2-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/collapse4-repeated-n1024-b1024-s128-t12-seed42-r0
+OK collapse4-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/compact4-repeated-n1024-b1024-s128-t12-seed42-r0
+OK compact4-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/norm4-repeated-n1024-b1024-s128-t12-seed42-r0
+OK norm4-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/control-repeated-n1024-b1024-s128-t12-seed42-r0
+OK control-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/compact2-repeated-n1024-b1024-s128-t12-seed42-r0
+OK compact2-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/collapse8-repeated-n1024-b1024-s128-t12-seed42-r0
+OK collapse8-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/forest4-repeated-n1024-b1024-s128-t12-seed42-r0
+OK forest4-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/compact8-repeated-n1024-b1024-s128-t12-seed42-r0
+OK compact8-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/norm2-repeated-n1024-b1024-s128-t12-seed42-r0
+OK norm2-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/norm3-repeated-n1024-b1024-s128-t12-seed42-r0
+OK norm3-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/forest8-repeated-n1024-b1024-s128-t12-seed42-r0
+OK forest8-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/collapse2-repeated-n1024-b1024-s128-t12-seed42-r0
+OK collapse2-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen12/norm3-repeated-n512-b1024-s128-t12-seed43-r0
+OK norm3-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/baseline-repeated-n512-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/norm4-repeated-n512-b1024-s128-t12-seed43-r0
+OK norm4-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/control-repeated-n512-b1024-s128-t12-seed43-r0
+OK control-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/forest2-repeated-n512-b1024-s128-t12-seed43-r0
+OK forest2-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/norm2-repeated-n512-b1024-s128-t12-seed43-r0
+OK norm2-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/compact8-repeated-n512-b1024-s128-t12-seed43-r0
+OK compact8-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/collapse8-repeated-n512-b1024-s128-t12-seed43-r0
+OK collapse8-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/collapse2-repeated-n512-b1024-s128-t12-seed43-r0
+OK collapse2-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/forest4-repeated-n512-b1024-s128-t12-seed43-r0
+OK forest4-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/compact2-repeated-n512-b1024-s128-t12-seed43-r0
+OK compact2-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/forest8-repeated-n512-b1024-s128-t12-seed43-r0
+OK forest8-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/collapse4-repeated-n512-b1024-s128-t12-seed43-r0
+OK collapse4-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen12/compact4-repeated-n512-b1024-s128-t12-seed43-r0
+OK compact4-repeated-n512-b1024-s128-t12-seed43-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 6, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 378, "bitz/falcon512-algebraic/non-zk/v9": 378}, "schema": "bitz/falcon-locality-optimization/v1", "verified_proofs": 756}
+screen12     baseline           N=512 t=12 repeated n=21 total=31.565 verify=9.086 traced=False
+screen12     baseline           N=1024 t=12 repeated n=21 total=56.627 verify=15.814 traced=False
+screen12     collapse2          N=512 t=12 repeated n=21 total=31.956 verify=9.655 traced=False
+screen12     collapse2          N=1024 t=12 repeated n=21 total=57.026 verify=15.634 traced=False
+screen12     collapse4          N=512 t=12 repeated n=21 total=31.535 verify=9.462 traced=False
+screen12     collapse4          N=1024 t=12 repeated n=21 total=56.700 verify=15.441 traced=False
+screen12     collapse8          N=512 t=12 repeated n=21 total=31.491 verify=9.435 traced=False
+screen12     collapse8          N=1024 t=12 repeated n=21 total=56.895 verify=15.355 traced=False
+screen12     compact2           N=512 t=12 repeated n=21 total=32.284 verify=9.185 traced=False
+screen12     compact2           N=1024 t=12 repeated n=21 total=57.347 verify=15.396 traced=False
+screen12     compact4           N=512 t=12 repeated n=21 total=31.648 verify=9.467 traced=False
+screen12     compact4           N=1024 t=12 repeated n=21 total=57.354 verify=15.386 traced=False
+screen12     compact8           N=512 t=12 repeated n=21 total=32.064 verify=9.531 traced=False
+screen12     compact8           N=1024 t=12 repeated n=21 total=56.933 verify=15.372 traced=False
+screen12     control            N=512 t=12 repeated n=21 total=31.878 verify=9.474 traced=False
+screen12     control            N=1024 t=12 repeated n=21 total=57.423 verify=15.683 traced=False
+screen12     forest2            N=512 t=12 repeated n=21 total=32.052 verify=9.574 traced=False
+screen12     forest2            N=1024 t=12 repeated n=21 total=56.683 verify=15.382 traced=False
+screen12     forest4            N=512 t=12 repeated n=21 total=32.076 verify=9.508 traced=False
+screen12     forest4            N=1024 t=12 repeated n=21 total=56.905 verify=15.453 traced=False
+screen12     forest8            N=512 t=12 repeated n=21 total=32.215 verify=9.605 traced=False
+screen12     forest8            N=1024 t=12 repeated n=21 total=57.634 verify=15.206 traced=False
+screen12     norm2              N=512 t=12 repeated n=21 total=31.246 verify=9.406 traced=False
+screen12     norm2              N=1024 t=12 repeated n=21 total=55.780 verify=15.613 traced=False
+screen12     norm3              N=512 t=12 repeated n=21 total=31.398 verify=9.504 traced=False
+screen12     norm3              N=1024 t=12 repeated n=21 total=57.738 verify=16.077 traced=False
+screen12     norm4              N=512 t=12 repeated n=21 total=31.176 verify=9.233 traced=False
+screen12     norm4              N=1024 t=12 repeated n=21 total=55.130 verify=15.550 traced=False

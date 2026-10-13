@@ -280,7 +280,7 @@ pub(crate) fn fused_fold_round(
                 .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
         }));
     }
-    let partials: Vec<(Gf, Gf)> = crate::cfg_chunks_mut!(q0_l, task)
+    let jobs = crate::cfg_chunks_mut!(q0_l, task)
         .zip(crate::cfg_chunks_mut!(q1_l, task))
         .zip(crate::cfg_chunks!(q2_l, task))
         .zip(crate::cfg_chunks!(q3_l, task))
@@ -288,9 +288,13 @@ pub(crate) fn fused_fold_round(
         .zip(crate::cfg_chunks_mut!(q1_r, task))
         .zip(crate::cfg_chunks!(q2_r, task))
         .zip(crate::cfg_chunks!(q3_r, task))
-        .enumerate()
-        .map(fold_row!())
-        .collect();
+        .enumerate();
+    #[cfg(feature = "parallel")]
+    let jobs = jobs.with_min_len(super::row_dispatch::fallback_grain(
+        w.rows(),
+        h * 8 * size_of::<Gf>(),
+    ));
+    let partials: Vec<(Gf, Gf)> = jobs.map(fold_row!()).collect();
     total(partials)
 }
 
@@ -1511,7 +1515,19 @@ mod tests {
     #[cfg(feature = "parallel")]
     #[test]
     fn cyclic_dense_rows_match_scalar_folds_and_sums() {
-        let (rows, cols) = (32, 2048);
+        check_dense_row_grains(32, 2048, &[1, 16]);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn fallback_dense_row_grains_match_scalar_folds_and_sums_with_tails() {
+        // Above the matrix threshold, with neither row count divisible by
+        // the worker count nor column width divisible by the SIMD width.
+        check_dense_row_grains(259, 129, &[1, 2, 4, 8, 16]);
+    }
+
+    #[cfg(feature = "parallel")]
+    fn check_dense_row_grains(rows: usize, cols: usize, grains: &[usize]) {
         let len = rows * cols;
         let l: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 100 + i as u64));
         let r: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 110 + i as u64));
@@ -1522,7 +1538,7 @@ mod tests {
             eq_c: &eq_c,
             eq_y: &eq_y,
         };
-        let pools: Vec<_> = [1, 4, 8, 16]
+        let pools: Vec<_> = [1, 4, 8, 12, 16]
             .into_iter()
             .map(|workers| {
                 rayon::ThreadPoolBuilder::new()
@@ -1585,15 +1601,22 @@ mod tests {
                 }
                 for pool in &pools {
                     pool.install(|| {
-                        let [mut a0, mut a1, a2, a3] = input_l.clone();
-                        let [mut b0, mut b1, b2, b3] = r.clone();
-                        let got = fused_fold_round(
-                            &mut a0, &mut a1, &a2, &a3, &mut b0, &mut b1, &b2, &b3, rho, w,
-                            send_one, left,
-                        );
-                        assert_eq!(got, want_sums);
-                        assert_eq!([a0, a1, a2, a3], want_l);
-                        assert_eq!([b0, b1, b2, b3], want_r);
+                        for &grain in grains {
+                            super::super::row_dispatch::with_grain(grain, || {
+                                let [mut a0, mut a1, a2, a3] = input_l.clone();
+                                let [mut b0, mut b1, b2, b3] = r.clone();
+                                let got = fused_fold_round(
+                                    &mut a0, &mut a1, &a2, &a3, &mut b0, &mut b1, &b2, &b3, rho, w,
+                                    send_one, left,
+                                );
+                                assert_eq!(
+                                    got, want_sums,
+                                    "grain={grain}, rows={rows}, cols={cols}"
+                                );
+                                assert_eq!([a0, a1, a2, a3], want_l);
+                                assert_eq!([b0, b1, b2, b3], want_r);
+                            });
+                        }
                     });
                 }
             }

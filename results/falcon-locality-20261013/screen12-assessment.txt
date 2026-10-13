@@ -1,0 +1,166 @@
+Falcon locality screen12 assessment — 2026-10-13
+
+Conclusion: qualify norm4 as the strongest latency candidate, retain norm2 as a
+lower-memory alternative, and keep collapse batching separate until its small
+additional benefit repeats. Do not promote forest grain or dense compaction from
+this screen. No production-default change is justified by this screen alone.
+
+Scope and evidence
+------------------
+Untraced screen12 only: canonical Falcon-512/1024, batch1024, security128,
+12 physical workers, repeated Prepared, seeds42/43/44. Each variant/degree has
+3 processes, 2 warmups/process and 7 measured proofs/process (21 samples total).
+Ordered worker CPUs: 6,7,4,5,2,3,0,1,14,15,12,13; main CPU6. All comparisons
+below use the same phase, degree, mode and CPU placement. No traced timing or
+prior-campaign timing is pooled into this assessment.
+
+Runner validation reports756 verified proofs including warmups, complete proof
+and payload equality against the six baseline input cases, matching input/source
+identity, frozen binary hashes and raw command/output/parser provenance.
+Pooled proof payload medians remain256368 bytes (512) and321304 bytes (1024);
+per-seed byte lengths vary with the input and match the corresponding baseline.
+
+Control qualification matters: candidate-control total is0.99%/1.41% higher
+than the frozen baseline for512/1024. Its per-seed differences are mixed, so
+this screen does not establish a cause. A win against control alone is not
+equivalent to a net production improvement. Keep both comparisons in follow-up.
+
+Primary observations
+--------------------
+1. norm4: totals31.176/55.130ms; lower than control by2.20%/3.99% and frozen
+   baseline by1.23%/2.64%. All six per-seed total medians improve against both
+   references. Versus control, prove changes-2.18%/-5.38%, commit-0.54%/+9.34%,
+   and verify-2.54%/-0.85%. The1024 total already includes the commit increase.
+   Do not add separately computed stage medians to reconstruct total medians.
+   Process-peak medians increase89,020→108,452KiB (+21.83%) and
+   177,468→209,576KiB (+18.09%); these are per-process maxima including warmups.
+   Retained RSS after verification falls45,352→43,192KiB and81,040→65,296KiB.
+   Peak and retained memory describe different points in the lifecycle.
+
+2. norm2: totals31.246/55.780ms, -1.98%/-2.86% versus control and
+   -1.01%/-1.50% versus frozen baseline. All six seed medians improve against
+   control; five of six improve against baseline (512 seed42 is+0.70%).
+   Process-peak medians fall to84,808/167,036KiB (-4.73%/-5.88% versus control).
+   norm4 is only0.070ms faster than norm2 at512 in the pooled total, and0.650ms
+   faster at1024. This is a real memory/latency choice to remeasure, not a reason
+   to discard norm2. norm3 is slower than both at1024 and has higher peak RSS.
+
+3. collapse4: totals31.535/56.700ms, -1.08%/-1.26% against control, but only
+   -0.09%/+0.13% against baseline. Five of six seed medians improve against
+   control, only three of six against baseline. collapse8 is slightly lower
+   at512 but higher at1024; neither shows a clear cross-degree net advantage.
+   Trace collapse itself, then qualify norm4 alone alongside norm4+collapse4
+   to determine whether batching contributes beyond the norm improvement.
+
+4. Dense compaction: compact4 is-0.72%/-0.12% against control, but
+   +0.26%/+1.28% against baseline. Its1024 seed medians are mixed against
+   control and all higher than baseline. compact2/8 have no consistent
+   cross-degree advantage. Keep off; profiles can distinguish copy cost from
+   later-fold locality changes without treating trace wall time as qualification.
+
+5. Forest grain: forest2 is+0.55%/-1.29% against control and+1.54%/+0.10%
+   against baseline; all512 seed medians exceed baseline. Larger grains do
+   not improve both degrees. Keep grain1. A1024 control-only difference does
+   not justify enabling it for512 or another worker count.
+
+Limits and next comparison
+--------------------------
+This is one repeated-mode screen at12 workers, with three independent processes
+per variant/degree and correlated samples within each process. These descriptive
+ratios make no statistical-significance claim. They do not establish cold-start
+behavior,1/8/16-worker results, partial batches or other security settings.
+Profiles can localize the changes but have instrumentation overhead. Qualify
+norm4 and the proposed combination against same-phase baseline/control across
+workers, keeping isolated norm4 as an anchor and norm2 as the memory alternative.
+No benchmark, build, prover, test or implementation change was performed for
+ this analysis; only the existing runner summaries and metadata were read.
+
+Pooled total commit+prove medians and change percentages
+------------------------------------------------------
+Negative percentages mean lower elapsed time. Each row is candidate/reference.
+ N   variant      total_ms   vs_control%  vs_baseline%
+ 512 baseline       31.565         -0.98          0.00
+ 512 control        31.878          0.00          0.99
+ 512 forest2        32.052          0.55          1.54
+ 512 forest4        32.076          0.62          1.62
+ 512 forest8        32.215          1.06          2.06
+ 512 compact2       32.284          1.27          2.28
+ 512 compact4       31.648         -0.72          0.26
+ 512 compact8       32.064          0.58          1.58
+ 512 collapse2      31.956          0.24          1.24
+ 512 collapse4      31.535         -1.08         -0.09
+ 512 collapse8      31.491         -1.21         -0.23
+ 512 norm2          31.246         -1.98         -1.01
+ 512 norm3          31.398         -1.51         -0.53
+ 512 norm4          31.176         -2.20         -1.23
+1024 baseline       56.627         -1.39          0.00
+1024 control        57.423          0.00          1.41
+1024 forest2        56.683         -1.29          0.10
+1024 forest4        56.905         -0.90          0.49
+1024 forest8        57.634          0.37          1.78
+1024 compact2       57.347         -0.13          1.27
+1024 compact4       57.354         -0.12          1.28
+1024 compact8       56.933         -0.85          0.54
+1024 collapse2      57.026         -0.69          0.71
+1024 collapse4      56.700         -1.26          0.13
+1024 collapse8      56.895         -0.92          0.47
+1024 norm2          55.780         -2.86         -1.50
+1024 norm3          57.738          0.55          1.96
+1024 norm4          55.130         -3.99         -2.64
+
+Per-seed total changes (%) against control / frozen baseline
+-----------------------------------------------------------
+ N   variant       control:42,43,44       baseline:42,43,44
+ 512 forest2      -1.38  +0.13  +1.03     +0.93  +1.87  +0.86
+ 512 forest4      +1.12  +0.28  +0.38     +3.48  +2.02  +0.21
+ 512 forest8      +1.17  +0.23  +0.93     +3.54  +1.97  +0.76
+ 512 compact2     -0.07  +1.65  +1.52     +2.27  +3.41  +1.35
+ 512 compact4     -0.73  -0.78  -1.05     +1.59  +0.95  -1.22
+ 512 compact8     +0.42  -0.49  +0.52     +2.77  +1.23  +0.35
+ 512 collapse2    -0.74  -0.16  +0.80     +1.58  +1.58  +0.63
+ 512 collapse4    -1.50  -1.69  -1.24     +0.80  +0.01  -1.41
+ 512 collapse8    -2.11  -1.27  -0.34     +0.18  +0.44  -0.51
+ 512 norm2        -1.60  -2.12  -1.95     +0.70  -0.42  -2.12
+ 512 norm3        -2.39  -1.51  -1.21     -0.11  +0.20  -1.38
+ 512 norm4        -2.52  -2.24  -2.18     -0.24  -0.54  -2.34
+1024 forest2      -1.06  -0.21  -0.39     +0.63  -0.63  +0.27
+1024 forest4      -0.87  +0.54  +0.28     +0.82  +0.12  +0.94
+1024 forest8      -0.58  +2.21  -0.14     +1.12  +1.78  +0.52
+1024 compact2     -0.83  +1.31  +1.66     +0.86  +0.88  +2.33
+1024 compact4     -0.67  +2.04  +0.78     +1.02  +1.61  +1.45
+1024 compact8     -1.14  +0.34  +1.21     +0.54  -0.08  +1.88
+1024 collapse2    -1.06  +1.67  -0.43     +0.63  +1.25  +0.23
+1024 collapse4    -2.07  +1.13  -1.33     -0.40  +0.71  -0.68
+1024 collapse8    -0.87  +0.98  -0.65     +0.82  +0.56  +0.01
+1024 norm2        -2.99  -1.25  -2.17     -1.34  -1.66  -1.52
+1024 norm3        +3.66  +2.18  +1.28     +5.43  +1.75  +1.95
+1024 norm4        -4.67  -2.40  -3.12     -3.05  -2.81  -2.48
+
+Supporting absolute metrics (ms, process-peak and retained RSS in KiB)
+--------------------------------------------------------------------
+ N   variant     prove     commit    verify    peak_med  retained
+ 512 baseline     29.202     2.316     9.086       88260     44888
+ 512 control      29.588     2.333     9.474       89020     45352
+ 512 norm2        28.921     2.320     9.406       84808     41820
+ 512 norm4        28.944     2.321     9.233      108452     43192
+ 512 collapse4    29.322     2.304     9.462       88456     45204
+ 512 compact4     29.373     2.315     9.467       88248     45108
+ 512 forest2      29.647     2.289     9.574       88776     45384
+1024 baseline     52.864     3.807    15.814      177232     80568
+1024 control      53.735     3.763    15.683      177468     81040
+1024 norm2        51.886     3.942    15.613      167036     68276
+1024 norm4        50.843     4.114    15.550      209576     65296
+1024 collapse4    52.884     3.830    15.441      177344     80940
+1024 compact4     53.529     3.815    15.386      177572     80580
+1024 forest2      52.908     3.835    15.382      177076     80416
+
+Artifact snapshots used (SHA256)
+-------------------------------
+summary.json: 763b5f866d101d5296b774659d5c4ede348435a788694f27127eb00a552354d7
+profile-summary.json: ddc937cee3ebb059737d1dc9db414ea33a5e9c770e993a72040167a21a789d9a
+validation.json: 2f0e5807b735fb0519f28282defa665f471ce432849a0cc3325708dea58415ee
+phases/screen12.json: 4b26814d15560ba1c19f2cdbe539a62a645e45a636d7b863821120fd2c76ba4f
+comparison.json: c7b42cd9c6b458ae5877a8d9f4e2d82b0f352e9c0363387d84a29a2eb1902f55
+
+Full per-metric and per-seed ratios: comparison.json / comparison.txt.
+Regenerate using compare.py --phase screen12; do not pool follow-up phases.

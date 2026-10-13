@@ -47,7 +47,14 @@ where
         if !*LIGHT.get_or_init(|| std::env::var_os("BITZ_FALCON_LIGHT_PROFILE").is_some()) {
             return true;
         }
-        metadata.name().starts_with("falcon_factored_ring:")
+        // Detailed experiment builds expose per-round diagnostics. Production
+        // builds retain the lightweight stage set used by the frozen baseline.
+        let detailed = cfg!(feature = "bench-internals")
+            && (metadata.name().starts_with("falcon_algebraic:word_")
+                || metadata.name().starts_with("falcon_integer:")
+                || matches!(metadata.name(), "lig:grind_pow" | "spartan:grinding"));
+        detailed
+            || metadata.name().starts_with("falcon_factored_ring:")
             || matches!(
                 metadata.name(),
                 "falcon_algebraic:commit"

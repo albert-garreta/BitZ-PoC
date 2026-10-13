@@ -1,0 +1,31 @@
+Falcon512 / 12-worker width1 control verifier check — 2026-10-13
+
+The unchanged width1 candidate-v1 control already had slower repeated-mode
+verification than the frozen baseline in both earlier untraced phases.
+Each comparison below is within its own phase, batch1024/security128, with
+identical worker/main CPU placement and21 measured samples over3 seeds.
+
+phase      baseline_ms control_ms pooled_change   seed42   seed43   seed44
+screen12      9.085570   9.474145        +4.277%   +5.024%  +5.578%  +4.215%
+qualify       9.116028   9.475737        +3.946%   +4.567%  +6.260%  +5.367%
+
+The frozen candidate-v1 control used BITZ_ARITHMETIC_NORM_PREFIX=auto, with
+the old multi-worker width1 policy. Other experimental selectors were off/
+their original values. The same candidate build was used for each phase's
+explicit prefix experiments. The baseline was the separate frozen production
+binary from80e141a1a, so these are not identical builds with only a prefix flag
+changed.
+
+This is a confound when attributing the repeated verifier difference solely
+to prefix2 or prefix4. It does not identify compiler layout, allocation/cache
+behavior or another implementation change as the cause.
+
+No completed width1-control cold row exists at Falcon512/12 in these phases.
+Therefore this evidence neither explains nor dismisses the roughly15% cold
+verification regression observed in the newer prefix2/prefix4 production
+candidates. Fresh accepted-candidate width1 cold measurements are necessary
+to test that narrower question directly. Keep the observed lifecycle costs
+in each candidate's report regardless of the eventual explanation.
+
+Read-only analysis of summary.json and the earlier phase/selector settings.
+No test, build, prover or benchmark process was launched for this check.

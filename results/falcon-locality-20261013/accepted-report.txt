@@ -1,0 +1,380 @@
+Falcon accepted candidate assessment
+
+Completed campaign
+Baseline: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b / bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511
+Accepted candidate SHA256: c768431de56893effcb985e0bbfb380b6f0dbdb1714319772297eb0cfdc37b4b
+
+Candidate policy: norm prefix4 for Falcon512/8 and Falcon1024/12;
+Falcon512/12 and other defaults retain their previous policy.
+The parallel changes require K=1, instance_vars=10 and modulus>=2^125.
+Earlier v1/v2/qualification measurements are excluded. Compare each phase
+with its same-phase frozen baseline and identical ordered CPU placement.
+No samples are removed, and modes and confirmation passes stay separate.
+
+Lifecycle is total_prover_ms + verify_ms within each individual sample,
+then summarized by pooled/per-seed medians. It includes commit+prove+verify
+and excludes setup, input generation, sampling overhead and teardown.
+Verification follows proving in the same process; no isolated verifier
+benchmark was performed. These measured verifier costs remain in the report.
+
+POLICY CHECKS (descriptive, no significance claim)
+
+Falcon512/8 workers: prefix4
+accepted1 repeated: prover -1.28%; lifecycle -1.22%; verify -0.27%; process peak -0.07%.
+accepted2 repeated: prover -1.35%; lifecycle -0.99%; verify -0.38%; process peak 0.18%.
+repeated: both pooled prover medians lower=True; both pooled lifecycle medians higher=False.
+accepted1 cold: prover -2.29%; lifecycle 0.85%; verify 12.02%; process peak -8.22%.
+accepted2 cold: prover -2.80%; lifecycle 0.41%; verify 11.85%; process peak -8.14%.
+cold: both pooled prover medians lower=True; both pooled lifecycle medians higher=True.
+
+Falcon1024/12 workers: prefix4
+accepted1 repeated: prover -2.55%; lifecycle -2.17%; verify -2.48%; process peak 18.57%.
+accepted2 repeated: prover -1.86%; lifecycle -1.54%; verify 0.41%; process peak 18.28%.
+repeated: both pooled prover medians lower=True; both pooled lifecycle medians higher=False.
+accepted1 cold: prover -2.82%; lifecycle -1.60%; verify 3.77%; process peak -2.82%.
+accepted2 cold: prover -3.15%; lifecycle -2.44%; verify 3.23%; process peak -2.80%.
+cold: both pooled prover medians lower=True; both pooled lifecycle medians higher=False.
+
+Falcon512/12 workers: reverted prefix1
+accepted1 repeated: prover 0.25%; lifecycle 0.11%; verify -0.71%; process peak 0.70%.
+accepted2 repeated: prover -0.53%; lifecycle -0.29%; verify -0.23%; process peak -0.09%.
+repeated: both pooled prover medians lower=False; both pooled lifecycle medians higher=False.
+accepted1 cold: prover 0.71%; lifecycle 0.49%; verify -0.04%; process peak 0.32%.
+accepted2 cold: prover 0.32%; lifecycle -0.04%; verify -0.44%; process peak -0.00%.
+cold: both pooled prover medians lower=False; both pooled lifecycle medians higher=False.
+
+ALL UNTRACED COMPARISONS (negative percentages mean lower measurements)
+Every metric includes seed-specific ratios in the accompanying JSON.
+
+accepted-padding N512 batch513 security128 workers12 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                30.706 /       30.793  ratio  0.9972 change   -0.28%  seeds [42:0.9884 43:1.0048 44:1.0036]
+  commit_prove_verify_ms                                         36.759 /       36.771  ratio  0.9997 change   -0.03%  seeds [42:0.9897 43:1.0053 44:1.0014]
+  prove_ms                                                       27.913 /       28.164  ratio  0.9911 change   -0.89%  seeds [42:0.9848 43:0.9958 44:1.0154]
+  witness_commit_ms                                               2.884 /        2.815  ratio  1.0245 change    2.45%  seeds [42:1.0245 43:1.1014 44:0.8900]
+  verify_ms                                                       6.048 /        6.077  ratio  0.9952 change   -0.48%  seeds [42:0.9961 43:1.0078 44:0.9907]
+  process_retained_rss_kib                                        50756 /        50604  ratio  1.0030 change    0.30%  seeds [42:1.0094 43:1.0025 44:0.9988]
+  proof_payload_bytes                                            256386 /       256386  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         72780 /        72852  ratio  0.9990 change   -0.10%  seeds []
+  process_peak_maximum_kib                                        73136 /        73128  ratio  1.0001 change    0.01%  seeds []
+
+accepted-padding N1024 batch513 security128 workers12 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                50.620 /       52.590  ratio  0.9626 change   -3.74%  seeds [42:0.9717 43:0.9930 44:0.9450]
+  commit_prove_verify_ms                                         60.286 /       62.223  ratio  0.9689 change   -3.11%  seeds [42:0.9752 43:1.0069 44:0.9496]
+  prove_ms                                                       46.145 /       48.464  ratio  0.9521 change   -4.79%  seeds [42:0.9660 43:0.9941 44:0.9449]
+  witness_commit_ms                                               4.476 /        4.350  ratio  1.0289 change    2.89%  seeds [42:1.0338 43:0.9803 44:0.9457]
+  verify_ms                                                       9.665 /        9.633  ratio  1.0034 change    0.34%  seeds [42:0.9941 43:1.0827 44:0.9744]
+  process_retained_rss_kib                                        53232 /        52688  ratio  1.0103 change    1.03%  seeds [42:1.0094 43:1.0143 44:1.0111]
+  proof_payload_bytes                                            320234 /       320234  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        126216 /       131384  ratio  0.9607 change   -3.93%  seeds []
+  process_peak_maximum_kib                                       126824 /       131448  ratio  0.9648 change   -3.52%  seeds []
+
+accepted-padding8 N512 batch513 security128 workers8 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                26.109 /       27.101  ratio  0.9634 change   -3.66%  seeds [42:0.9574 43:0.9830 44:0.9730]
+  commit_prove_verify_ms                                         32.076 /       32.979  ratio  0.9726 change   -2.74%  seeds [42:0.9669 43:0.9861 44:0.9779]
+  prove_ms                                                       24.057 /       24.623  ratio  0.9770 change   -2.30%  seeds [42:0.9600 43:0.9833 44:0.9713]
+  witness_commit_ms                                               2.080 /        2.212  ratio  0.9403 change   -5.97%  seeds [42:0.9273 43:0.9801 44:0.9922]
+  verify_ms                                                       5.943 /        5.902  ratio  1.0069 change    0.69%  seeds [42:1.0110 43:1.0001 44:1.0002]
+  process_retained_rss_kib                                        49508 /        49936  ratio  0.9914 change   -0.86%  seeds [42:0.9876 43:0.9950 44:0.9911]
+  proof_payload_bytes                                            256386 /       256386  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         69896 /        72852  ratio  0.9594 change   -4.06%  seeds []
+  process_peak_maximum_kib                                        69988 /        73484  ratio  0.9524 change   -4.76%  seeds []
+
+accepted-padding8 N1024 batch513 security128 workers8 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                47.849 /       47.864  ratio  0.9997 change   -0.03%  seeds [42:0.9981 43:1.0070 44:1.0056]
+  commit_prove_verify_ms                                         57.690 /       57.699  ratio  0.9999 change   -0.01%  seeds [42:0.9984 43:1.0046 44:1.0042]
+  prove_ms                                                       43.750 /       43.910  ratio  0.9963 change   -0.37%  seeds [42:1.0013 43:0.9940 44:1.0011]
+  witness_commit_ms                                               4.289 /        4.030  ratio  1.0644 change    6.44%  seeds [42:0.9628 43:1.1551 44:1.0539]
+  verify_ms                                                       9.841 /        9.840  ratio  1.0001 change    0.01%  seeds [42:1.0001 43:0.9930 44:0.9973]
+  process_retained_rss_kib                                        51680 /        51828  ratio  0.9971 change   -0.29%  seeds [42:0.9944 43:1.0061 44:0.9961]
+  proof_payload_bytes                                            320234 /       320234  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        130964 /       131228  ratio  0.9980 change   -0.20%  seeds []
+  process_peak_maximum_kib                                       131460 /       131460  ratio  1.0000 change    0.00%  seeds []
+
+accepted-regress N512 batch1024 security128 workers1 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                               139.157 /      139.269  ratio  0.9992 change   -0.08%  seeds [42:1.0006 43:0.9968 44:0.9992]
+  commit_prove_verify_ms                                        169.668 /      169.835  ratio  0.9990 change   -0.10%  seeds [42:0.9998 43:0.9966 44:0.9990]
+  prove_ms                                                      130.258 /      130.339  ratio  0.9994 change   -0.06%  seeds [42:1.0011 43:0.9972 44:0.9994]
+  witness_commit_ms                                               8.885 /        8.948  ratio  0.9930 change   -0.70%  seeds [42:0.9967 43:0.9884 44:0.9959]
+  verify_ms                                                      30.369 /       30.442  ratio  0.9976 change   -0.24%  seeds [42:0.9991 43:0.9979 44:0.9967]
+  process_retained_rss_kib                                        38972 /        38828  ratio  1.0037 change    0.37%  seeds [42:1.0033 43:0.9985 44:1.0069]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         83452 /        83428  ratio  1.0003 change    0.03%  seeds []
+  process_peak_maximum_kib                                        83636 /        83440  ratio  1.0023 change    0.23%  seeds []
+
+accepted-regress N512 batch1024 security128 workers16 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                28.219 /       28.168  ratio  1.0018 change    0.18%  seeds [42:1.0018 43:0.9971 44:0.9453]
+  commit_prove_verify_ms                                         37.547 /       37.771  ratio  0.9941 change   -0.59%  seeds [42:0.9997 43:0.9953 44:0.9432]
+  prove_ms                                                       25.890 /       25.837  ratio  1.0020 change    0.20%  seeds [42:1.0022 43:0.9957 44:0.9370]
+  witness_commit_ms                                               2.365 /        2.333  ratio  1.0136 change    1.36%  seeds [42:1.0037 43:1.0294 44:1.0040]
+  verify_ms                                                       9.472 /        9.558  ratio  0.9910 change   -0.90%  seeds [42:0.9903 43:0.9968 44:0.9467]
+  process_retained_rss_kib                                        47104 /        46952  ratio  1.0032 change    0.32%  seeds [42:1.0068 43:0.9915 44:1.0091]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         89780 /        90000  ratio  0.9976 change   -0.24%  seeds []
+  process_peak_maximum_kib                                        89792 /        90172  ratio  0.9958 change   -0.42%  seeds []
+
+accepted-regress N1024 batch1024 security128 workers1 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                               269.459 /      269.819  ratio  0.9987 change   -0.13%  seeds [42:0.9982 43:0.9964 44:1.0004]
+  commit_prove_verify_ms                                        329.261 /      329.881  ratio  0.9981 change   -0.19%  seeds [42:0.9980 43:0.9989 44:0.9997]
+  prove_ms                                                      252.447 /      252.813  ratio  0.9986 change   -0.14%  seeds [42:0.9980 43:0.9964 44:1.0005]
+  witness_commit_ms                                              16.983 /       17.032  ratio  0.9971 change   -0.29%  seeds [42:0.9964 43:0.9979 44:0.9979]
+  verify_ms                                                      59.739 /       59.842  ratio  0.9983 change   -0.17%  seeds [42:0.9965 43:1.0010 44:0.9987]
+  process_retained_rss_kib                                        59700 /        59644  ratio  1.0009 change    0.09%  seeds [42:1.0010 43:1.0010 44:0.9981]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        206620 /       206452  ratio  1.0008 change    0.08%  seeds []
+  process_peak_maximum_kib                                       206884 /       206904  ratio  0.9999 change   -0.01%  seeds []
+
+accepted-regress N1024 batch1024 security128 workers16 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                48.894 /       48.548  ratio  1.0071 change    0.71%  seeds [42:0.9855 43:1.0093 44:1.0318]
+  commit_prove_verify_ms                                         63.787 /       63.656  ratio  1.0021 change    0.21%  seeds [42:0.9838 43:1.0060 44:1.0352]
+  prove_ms                                                       45.167 /       44.793  ratio  1.0083 change    0.83%  seeds [42:0.9835 43:1.0095 44:1.0327]
+  witness_commit_ms                                               3.822 /        3.757  ratio  1.0173 change    1.73%  seeds [42:1.0279 43:0.9923 44:1.0261]
+  verify_ms                                                      15.038 /       15.104  ratio  0.9957 change   -0.43%  seeds [42:0.9734 43:0.9993 44:1.0190]
+  process_retained_rss_kib                                        83592 /        83532  ratio  1.0007 change    0.07%  seeds [42:1.0052 43:0.9943 44:1.0021]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        179656 /       179588  ratio  1.0004 change    0.04%  seeds []
+  process_peak_maximum_kib                                       180460 /       179604  ratio  1.0048 change    0.48%  seeds []
+
+accepted-security100 N512 batch1024 security100 workers12 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                30.539 /       31.066  ratio  0.9830 change   -1.70%  seeds [42:0.9729 43:1.0067 44:0.9768]
+  commit_prove_verify_ms                                         37.966 /       38.351  ratio  0.9900 change   -1.00%  seeds [42:0.9775 43:1.0047 44:0.9858]
+  prove_ms                                                       27.329 /       27.923  ratio  0.9787 change   -2.13%  seeds [42:0.9660 43:1.0007 44:0.9726]
+  witness_commit_ms                                               3.210 /        3.143  ratio  1.0213 change    2.13%  seeds [42:1.0362 43:1.0582 44:1.0137]
+  verify_ms                                                       7.427 /        7.287  ratio  1.0192 change    1.92%  seeds [42:0.9969 43:0.9962 44:1.0241]
+  process_retained_rss_kib                                        74664 /        74776  ratio  0.9985 change   -0.15%  seeds [42:0.9979 43:0.9976 44:1.0072]
+  proof_payload_bytes                                            217008 /       217008  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         81732 /        81892  ratio  0.9980 change   -0.20%  seeds []
+  process_peak_maximum_kib                                        82336 /        81916  ratio  1.0051 change    0.51%  seeds []
+
+accepted-security100 N1024 batch1024 security100 workers12 cold samples{'candidate': 3, 'reference': 3}
+  total_prover_ms                                                54.376 /       56.012  ratio  0.9708 change   -2.92%  seeds [42:0.9834 43:0.9708 44:0.9476]
+  commit_prove_verify_ms                                         68.698 /       69.797  ratio  0.9842 change   -1.58%  seeds [42:0.9991 43:0.9842 44:0.9603]
+  prove_ms                                                       48.747 /       50.430  ratio  0.9666 change   -3.34%  seeds [42:0.9925 43:0.9666 44:0.9419]
+  witness_commit_ms                                               5.528 /        5.582  ratio  0.9904 change   -0.96%  seeds [42:0.9053 43:1.0086 44:0.9999]
+  verify_ms                                                      14.334 /       13.785  ratio  1.0398 change    3.98%  seeds [42:1.0627 43:1.0389 44:1.0107]
+  process_retained_rss_kib                                        61228 /        78712  ratio  0.7779 change  -22.21%  seeds [42:0.7814 43:0.7817 44:0.7731]
+  proof_payload_bytes                                            276320 /       276320  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        136652 /       140456  ratio  0.9729 change   -2.71%  seeds []
+  process_peak_maximum_kib                                       137604 /       140844  ratio  0.9770 change   -2.30%  seeds []
+
+accepted1 N512 batch1024 security128 workers8 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                30.144 /       30.851  ratio  0.9771 change   -2.29%  seeds [42:0.9619 43:0.9760 44:0.9802]
+  commit_prove_verify_ms                                         39.382 /       39.050  ratio  1.0085 change    0.85%  seeds [42:0.9962 43:1.0113 44:1.0132]
+  prove_ms                                                       27.065 /       27.842  ratio  0.9721 change   -2.79%  seeds [42:0.9612 43:0.9727 44:0.9739]
+  witness_commit_ms                                               2.922 /        3.018  ratio  0.9684 change   -3.16%  seeds [42:0.9726 43:0.9744 44:0.9812]
+  verify_ms                                                       9.202 /        8.215  ratio  1.1202 change   12.02%  seeds [42:1.1137 43:1.1269 44:1.1206]
+  process_retained_rss_kib                                        34760 /        73772  ratio  0.4712 change  -52.88%  seeds [42:0.4700 43:0.4713 44:0.4713]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         75152 /        81880  ratio  0.9178 change   -8.22%  seeds []
+  process_peak_maximum_kib                                        75776 /        82576  ratio  0.9177 change   -8.23%  seeds []
+
+accepted1 N512 batch1024 security128 workers8 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                27.905 /       28.268  ratio  0.9872 change   -1.28%  seeds [42:0.9870 43:0.9831 44:0.9835]
+  commit_prove_verify_ms                                         37.108 /       37.567  ratio  0.9878 change   -1.22%  seeds [42:0.9898 43:0.9892 44:0.9847]
+  prove_ms                                                       26.001 /       26.435  ratio  0.9836 change   -1.64%  seeds [42:0.9829 43:0.9869 44:0.9826]
+  witness_commit_ms                                               1.894 /        1.992  ratio  0.9511 change   -4.89%  seeds [42:1.0099 43:0.9170 44:0.9781]
+  verify_ms                                                       9.241 /        9.266  ratio  0.9973 change   -0.27%  seeds [42:0.9949 43:1.0054 44:0.9896]
+  process_retained_rss_kib                                        41868 /        41880  ratio  0.9997 change   -0.03%  seeds [42:1.0026 43:0.9938 44:1.0061]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         85564 /        85628  ratio  0.9993 change   -0.07%  seeds []
+  process_peak_maximum_kib                                        85788 /        85752  ratio  1.0004 change    0.04%  seeds []
+
+accepted1 N512 batch1024 security128 workers12 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                34.284 /       34.044  ratio  1.0071 change    0.71%  seeds [42:0.9996 43:1.0023 44:1.0116]
+  commit_prove_verify_ms                                         42.253 /       42.048  ratio  1.0049 change    0.49%  seeds [42:0.9983 43:1.0006 44:1.0096]
+  prove_ms                                                       31.225 /       30.945  ratio  1.0090 change    0.90%  seeds [42:1.0045 43:0.9989 44:1.0094]
+  witness_commit_ms                                               3.220 /        3.152  ratio  1.0216 change    2.16%  seeds [42:1.0315 43:1.0233 44:1.0182]
+  verify_ms                                                       8.001 /        8.004  ratio  0.9996 change   -0.04%  seeds [42:0.9966 43:0.9980 44:1.0007]
+  process_retained_rss_kib                                        74796 /        74728  ratio  1.0009 change    0.09%  seeds [42:1.0007 43:1.0006 44:1.0024]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         82344 /        82084  ratio  1.0032 change    0.32%  seeds []
+  process_peak_maximum_kib                                        82708 /        82748  ratio  0.9995 change   -0.05%  seeds []
+
+accepted1 N512 batch1024 security128 workers12 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                32.008 /       31.927  ratio  1.0025 change    0.25%  seeds [42:0.9966 43:1.0048 44:1.0061]
+  commit_prove_verify_ms                                         41.058 /       41.013  ratio  1.0011 change    0.11%  seeds [42:0.9924 43:1.0021 44:1.0085]
+  prove_ms                                                       29.742 /       29.619  ratio  1.0042 change    0.42%  seeds [42:0.9999 43:1.0041 44:1.0103]
+  witness_commit_ms                                               2.285 /        2.351  ratio  0.9717 change   -2.83%  seeds [42:0.9674 43:0.9781 44:0.9718]
+  verify_ms                                                       8.956 /        9.020  ratio  0.9929 change   -0.71%  seeds [42:0.9783 43:0.9959 44:1.0263]
+  process_retained_rss_kib                                        45056 /        44904  ratio  1.0034 change    0.34%  seeds [42:1.0026 43:0.9994 44:1.0115]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         88676 /        88056  ratio  1.0070 change    0.70%  seeds []
+  process_peak_maximum_kib                                        88684 /        88364  ratio  1.0036 change    0.36%  seeds []
+
+accepted1 N1024 batch1024 security128 workers8 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                56.291 /       56.284  ratio  1.0001 change    0.01%  seeds [42:0.9980 43:0.9911 44:1.0059]
+  commit_prove_verify_ms                                         71.629 /       71.776  ratio  0.9980 change   -0.20%  seeds [42:0.9962 43:0.9958 44:1.0025]
+  prove_ms                                                       50.780 /       51.002  ratio  0.9956 change   -0.44%  seeds [42:0.9975 43:0.9925 44:1.0045]
+  witness_commit_ms                                               5.427 /        5.422  ratio  1.0009 change    0.09%  seeds [42:0.9332 43:0.9626 44:1.0132]
+  verify_ms                                                      15.465 /       15.541  ratio  0.9951 change   -0.49%  seeds [42:0.9931 43:1.0002 44:0.9947]
+  process_retained_rss_kib                                        77776 /        77676  ratio  1.0013 change    0.13%  seeds [42:1.0042 43:1.0019 44:0.9986]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        140784 /       140800  ratio  0.9999 change   -0.01%  seeds []
+  process_peak_maximum_kib                                       141308 /       141572  ratio  0.9981 change   -0.19%  seeds []
+
+accepted1 N1024 batch1024 security128 workers8 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                50.908 /       51.234  ratio  0.9936 change   -0.64%  seeds [42:0.9915 43:1.0018 44:0.9881]
+  commit_prove_verify_ms                                         67.313 /       67.772  ratio  0.9932 change   -0.68%  seeds [42:0.9936 43:0.9984 44:0.9858]
+  prove_ms                                                       47.239 /       47.592  ratio  0.9926 change   -0.74%  seeds [42:0.9911 43:1.0027 44:0.9883]
+  witness_commit_ms                                               3.628 /        3.626  ratio  1.0006 change    0.06%  seeds [42:0.9966 43:1.0029 44:0.9913]
+  verify_ms                                                      16.345 /       16.570  ratio  0.9864 change   -1.36%  seeds [42:0.9974 43:0.9858 44:0.9795]
+  process_retained_rss_kib                                        78724 /        78944  ratio  0.9972 change   -0.28%  seeds [42:1.0033 43:0.9996 44:0.9934]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        176192 /       175884  ratio  1.0018 change    0.18%  seeds []
+  process_peak_maximum_kib                                       176364 /       176160  ratio  1.0012 change    0.12%  seeds []
+
+accepted1 N1024 batch1024 security128 workers12 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                57.745 /       59.419  ratio  0.9718 change   -2.82%  seeds [42:0.9822 43:0.9682 44:0.9733]
+  commit_prove_verify_ms                                         72.950 /       74.135  ratio  0.9840 change   -1.60%  seeds [42:0.9938 43:0.9784 44:0.9880]
+  prove_ms                                                       52.268 /       54.034  ratio  0.9673 change   -3.27%  seeds [42:0.9773 43:0.9615 44:0.9726]
+  witness_commit_ms                                               5.453 /        5.386  ratio  1.0125 change    1.25%  seeds [42:1.0163 43:1.0316 44:0.9784]
+  verify_ms                                                      15.181 /       14.630  ratio  1.0377 change    3.77%  seeds [42:1.0470 43:1.0318 44:1.0487]
+  process_retained_rss_kib                                        61324 /        78892  ratio  0.7773 change  -22.27%  seeds [42:0.7805 43:0.7746 44:0.7777]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        136840 /       140804  ratio  0.9718 change   -2.82%  seeds []
+  process_peak_maximum_kib                                       137432 /       141804  ratio  0.9692 change   -3.08%  seeds []
+
+accepted1 N1024 batch1024 security128 workers12 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                55.512 /       56.962  ratio  0.9745 change   -2.55%  seeds [42:0.9658 43:0.9682 44:0.9897]
+  commit_prove_verify_ms                                         71.383 /       72.963  ratio  0.9783 change   -2.17%  seeds [42:0.9719 43:0.9671 44:0.9861]
+  prove_ms                                                       51.456 /       53.171  ratio  0.9677 change   -3.23%  seeds [42:0.9592 43:0.9578 44:0.9830]
+  witness_commit_ms                                               4.206 /        3.848  ratio  1.0930 change    9.30%  seeds [42:1.0904 43:1.0886 44:1.1139]
+  verify_ms                                                      15.634 /       16.031  ratio  0.9752 change   -2.48%  seeds [42:0.9901 43:0.9753 44:0.9757]
+  process_retained_rss_kib                                        63100 /        80300  ratio  0.7858 change  -21.42%  seeds [42:0.7858 43:0.8102 44:0.7835]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        209680 /       176840  ratio  1.1857 change   18.57%  seeds []
+  process_peak_maximum_kib                                       209720 /       177052  ratio  1.1845 change   18.45%  seeds []
+
+accepted2 N512 batch1024 security128 workers8 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                29.973 /       30.837  ratio  0.9720 change   -2.80%  seeds [42:0.9767 43:0.9575 44:0.9724]
+  commit_prove_verify_ms                                         39.192 /       39.030  ratio  1.0041 change    0.41%  seeds [42:1.0069 43:0.9914 44:1.0038]
+  prove_ms                                                       27.067 /       27.779  ratio  0.9744 change   -2.56%  seeds [42:0.9724 43:0.9634 44:0.9734]
+  witness_commit_ms                                               2.930 /        3.059  ratio  0.9580 change   -4.20%  seeds [42:0.9823 43:0.8950 44:0.9852]
+  verify_ms                                                       9.181 /        8.209  ratio  1.1185 change   11.85%  seeds [42:1.1220 43:1.1215 44:1.1171]
+  process_retained_rss_kib                                        34732 /        73748  ratio  0.4710 change  -52.90%  seeds [42:0.4707 43:0.4704 44:0.4717]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         75232 /        81900  ratio  0.9186 change   -8.14%  seeds []
+  process_peak_maximum_kib                                        76044 /        82660  ratio  0.9200 change   -8.00%  seeds []
+
+accepted2 N512 batch1024 security128 workers8 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                27.949 /       28.330  ratio  0.9865 change   -1.35%  seeds [42:0.9918 43:0.9767 44:0.9832]
+  commit_prove_verify_ms                                         37.182 /       37.554  ratio  0.9901 change   -0.99%  seeds [42:0.9974 43:0.9752 44:0.9825]
+  prove_ms                                                       26.078 /       26.442  ratio  0.9862 change   -1.38%  seeds [42:0.9905 43:0.9750 44:0.9793]
+  witness_commit_ms                                               1.915 /        1.919  ratio  0.9982 change   -0.18%  seeds [42:0.9980 43:0.9767 44:1.0083]
+  verify_ms                                                       9.213 /        9.248  ratio  0.9962 change   -0.38%  seeds [42:1.0063 43:0.9734 44:0.9876]
+  process_retained_rss_kib                                        42068 /        42072  ratio  0.9999 change   -0.01%  seeds [42:0.9991 43:1.0058 44:0.9923]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         85904 /        85748  ratio  1.0018 change    0.18%  seeds []
+  process_peak_maximum_kib                                        86392 /        85864  ratio  1.0061 change    0.61%  seeds []
+
+accepted2 N512 batch1024 security128 workers12 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                34.090 /       33.981  ratio  1.0032 change    0.32%  seeds [42:0.9996 43:0.9939 44:1.0022]
+  commit_prove_verify_ms                                         42.071 /       42.088  ratio  0.9996 change   -0.04%  seeds [42:0.9976 43:0.9978 44:1.0021]
+  prove_ms                                                       30.956 /       30.978  ratio  0.9993 change   -0.07%  seeds [42:0.9988 43:0.9933 44:1.0043]
+  witness_commit_ms                                               3.133 /        3.123  ratio  1.0032 change    0.32%  seeds [42:1.0140 43:0.9981 44:0.9802]
+  verify_ms                                                       7.993 /        8.028  ratio  0.9956 change   -0.44%  seeds [42:0.9854 43:0.9968 44:0.9967]
+  process_retained_rss_kib                                        74672 /        74660  ratio  1.0002 change    0.02%  seeds [42:0.9995 43:0.9997 44:1.0016]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         82148 /        82152  ratio  1.0000 change   -0.00%  seeds []
+  process_peak_maximum_kib                                        82824 /        82532  ratio  1.0035 change    0.35%  seeds []
+
+accepted2 N512 batch1024 security128 workers12 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                31.609 /       31.777  ratio  0.9947 change   -0.53%  seeds [42:0.9667 43:1.0082 44:1.0102]
+  commit_prove_verify_ms                                         40.767 /       40.883  ratio  0.9971 change   -0.29%  seeds [42:0.9623 43:1.0089 44:1.0073]
+  prove_ms                                                       29.290 /       29.501  ratio  0.9929 change   -0.71%  seeds [42:0.9654 43:1.0070 44:1.0067]
+  witness_commit_ms                                               2.348 /        2.339  ratio  1.0038 change    0.38%  seeds [42:0.9621 43:1.0113 44:0.9976]
+  verify_ms                                                       9.081 /        9.101  ratio  0.9977 change   -0.23%  seeds [42:0.9610 43:1.0141 44:1.0087]
+  process_retained_rss_kib                                        45060 /        45068  ratio  0.9998 change   -0.02%  seeds [42:1.0012 43:1.0000 44:1.0018]
+  proof_payload_bytes                                            256368 /       256368  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                         88440 /        88520  ratio  0.9991 change   -0.09%  seeds []
+  process_peak_maximum_kib                                        88772 /        88636  ratio  1.0015 change    0.15%  seeds []
+
+accepted2 N1024 batch1024 security128 workers8 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                56.054 /       56.180  ratio  0.9978 change   -0.22%  seeds [42:1.0031 43:0.9951 44:0.9936]
+  commit_prove_verify_ms                                         71.566 /       71.759  ratio  0.9973 change   -0.27%  seeds [42:1.0002 43:0.9959 44:0.9920]
+  prove_ms                                                       50.812 /       50.903  ratio  0.9982 change   -0.18%  seeds [42:0.9995 43:0.9944 44:0.9947]
+  witness_commit_ms                                               5.348 /        5.299  ratio  1.0092 change    0.92%  seeds [42:1.0138 43:0.9939 44:1.0311]
+  verify_ms                                                      15.439 /       15.579  ratio  0.9910 change   -0.90%  seeds [42:0.9941 43:0.9935 44:0.9922]
+  process_retained_rss_kib                                        77696 /        77808  ratio  0.9986 change   -0.14%  seeds [42:0.9993 43:0.9979 44:1.0010]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        140812 /       140692  ratio  1.0009 change    0.09%  seeds []
+  process_peak_maximum_kib                                       141056 /       141592  ratio  0.9962 change   -0.38%  seeds []
+
+accepted2 N1024 batch1024 security128 workers8 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                51.086 /       51.243  ratio  0.9969 change   -0.31%  seeds [42:0.9940 43:0.9931 44:0.9964]
+  commit_prove_verify_ms                                         67.430 /       67.801  ratio  0.9945 change   -0.55%  seeds [42:0.9984 43:0.9900 44:0.9883]
+  prove_ms                                                       47.437 /       47.692  ratio  0.9947 change   -0.53%  seeds [42:0.9962 43:0.9886 44:0.9934]
+  witness_commit_ms                                               3.579 /        3.551  ratio  1.0080 change    0.80%  seeds [42:0.9660 43:1.0269 44:0.9743]
+  verify_ms                                                      16.368 /       16.553  ratio  0.9888 change   -1.12%  seeds [42:0.9935 43:0.9837 44:0.9780]
+  process_retained_rss_kib                                        78696 /        78856  ratio  0.9980 change   -0.20%  seeds [42:0.9980 43:1.0008 44:0.9978]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        175740 /       175824  ratio  0.9995 change   -0.05%  seeds []
+  process_peak_maximum_kib                                       176164 /       175892  ratio  1.0015 change    0.15%  seeds []
+
+accepted2 N1024 batch1024 security128 workers12 cold samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                57.768 /       59.645  ratio  0.9685 change   -3.15%  seeds [42:0.9683 43:0.9681 44:0.9623]
+  commit_prove_verify_ms                                         72.673 /       74.489  ratio  0.9756 change   -2.44%  seeds [42:0.9823 43:0.9796 44:0.9712]
+  prove_ms                                                       52.427 /       54.340  ratio  0.9648 change   -3.52%  seeds [42:0.9657 43:0.9643 44:0.9580]
+  witness_commit_ms                                               5.329 /        5.428  ratio  0.9818 change   -1.82%  seeds [42:0.9751 43:0.9802 44:1.0142]
+  verify_ms                                                      15.231 /       14.755  ratio  1.0323 change    3.23%  seeds [42:1.0543 43:1.0257 44:1.0266]
+  process_retained_rss_kib                                        61236 /        78776  ratio  0.7773 change  -22.27%  seeds [42:0.7773 43:0.7735 44:0.7789]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        136944 /       140888  ratio  0.9720 change   -2.80%  seeds []
+  process_peak_maximum_kib                                       137548 /       141612  ratio  0.9713 change   -2.87%  seeds []
+
+accepted2 N1024 batch1024 security128 workers12 repeated samples{'candidate': 21, 'reference': 21}
+  total_prover_ms                                                55.651 /       56.707  ratio  0.9814 change   -1.86%  seeds [42:0.9789 43:0.9656 44:0.9958]
+  commit_prove_verify_ms                                         71.364 /       72.481  ratio  0.9846 change   -1.54%  seeds [42:0.9854 43:0.9649 44:1.0039]
+  prove_ms                                                       51.440 /       52.986  ratio  0.9708 change   -2.92%  seeds [42:0.9692 43:0.9555 44:0.9902]
+  witness_commit_ms                                               4.163 /        3.825  ratio  1.0884 change    8.84%  seeds [42:1.0739 43:1.1107 44:1.0653]
+  verify_ms                                                      15.713 /       15.648  ratio  1.0041 change    0.41%  seeds [42:1.0034 43:0.9763 44:1.0036]
+  process_retained_rss_kib                                        64924 /        80620  ratio  0.8053 change  -19.47%  seeds [42:0.7978 43:0.8084 44:0.8081]
+  proof_payload_bytes                                            321304 /       321304  ratio  1.0000 change    0.00%  seeds [42:1.0000 43:1.0000 44:1.0000]
+  process_peak_median_kib                                        209684 /       177272  ratio  1.1828 change   18.28%  seeds []
+  process_peak_maximum_kib                                       209912 /       177336  ratio  1.1837 change   18.37%  seeds []
+
+LIGHTWEIGHT STAGES — TRACED DIAGNOSTICS ONLY
+Nested wall spans overlap; do not sum parents with children or treat these
+timings as untraced latency. Both binaries use the original LIGHT stage set.
+
+N512 workers12
+  falcon_algebraic:integer_outer                                  2.125 /        2.146  ratio  0.9906 change   -0.94%  seeds [42:0.9958 43:0.9843 44:1.0042]
+  falcon_algebraic:binding                                        4.697 /        4.816  ratio  0.9753 change   -2.47%  seeds [42:0.9526 43:0.9753 44:1.0089]
+  falcon_algebraic:binding_construction                           0.549 /        0.550  ratio  0.9981 change   -0.19%  seeds [42:0.9971 43:1.0070 44:0.9977]
+  falcon_algebraic:word_first_fold                                1.049 /        1.066  ratio  0.9839 change   -1.61%  seeds [42:0.9839 43:1.0054 44:1.0066]
+  falcon_bridge:wfbitz_forest                                    14.508 /       14.491  ratio  1.0012 change    0.12%  seeds [42:0.9709 43:1.0448 44:0.9965]
+  falcon_algebraic:ring                                           2.853 /        2.806  ratio  1.0167 change    1.67%  seeds [42:1.0144 43:1.0313 44:1.0089]
+  falcon_algebraic_ring:coordinates                               0.728 /        0.722  ratio  1.0084 change    0.84%  seeds [42:1.0010 43:1.0108 44:1.0284]
+  falcon_algebraic_ring:collapse                                  1.385 /        1.381  ratio  1.0033 change    0.33%  seeds [42:0.9820 43:1.0078 44:1.0153]
+  falcon_algebraic:pcs                                            3.072 /        3.070  ratio  1.0007 change    0.07%  seeds [42:1.0004 43:0.9943 44:1.0007]
+
+N1024 workers12
+  falcon_algebraic:integer_outer                                  2.247 /        3.350  ratio  0.6707 change  -32.93%  seeds [42:0.6844 43:0.6741 44:0.6707]
+  falcon_algebraic:binding                                        6.557 /        7.972  ratio  0.8225 change  -17.75%  seeds [42:0.8033 43:0.8233 44:0.8298]
+  falcon_algebraic:binding_construction                           1.075 /        1.077  ratio  0.9981 change   -0.19%  seeds [42:1.0026 43:0.9948 44:0.9988]
+  falcon_algebraic:word_first_fold                                1.941 /        1.958  ratio  0.9914 change   -0.86%  seeds [42:0.9446 43:1.0056 44:0.9914]
+  falcon_bridge:wfbitz_forest                                    27.023 /       27.421  ratio  0.9855 change   -1.45%  seeds [42:0.9927 43:0.9751 44:0.9856]
+  falcon_algebraic:ring                                           5.460 /        5.581  ratio  0.9784 change   -2.16%  seeds [42:0.9853 43:0.9921 44:0.9623]
+  falcon_algebraic_ring:coordinates                               1.381 /        1.468  ratio  0.9412 change   -5.88%  seeds [42:0.9565 43:0.9790 44:0.9217]
+  falcon_algebraic_ring:collapse                                  2.722 /        2.787  ratio  0.9766 change   -2.34%  seeds [42:0.9705 43:1.0079 44:0.9638]
+  falcon_algebraic:pcs                                            4.037 /        4.055  ratio  0.9955 change   -0.45%  seeds [42:1.0069 43:0.9922 44:1.0000]
+
+LIMITS / PROVENANCE
+Pooled median changes and two-pass sign consistency do not establish
+statistical significance. Repeated samples within each process correlate.
+Cold is a fresh process/Prepared, not flushed CPU caches. Peak RSS includes
+warmups; retained RSS includes allocator, inputs and Prepared after verifying.
+A peak reduction does not establish an allocation-related timing cause.
+Padding/security checks have only one sample per seed; their timings do not
+qualify a default. The selector uses padded capacity, not exact live batch.
+The normalizer attests proof identity/verification and raw provenance before
+writing summaries. This helper checks final candidate hash, cell coverage,
+same-placement comparisons, payload medians and per-result verified metadata.
+It does not rerun the global validator during active phases.
+No builds, tests, provers or benchmarks were launched for this analysis.
+accepted-padding: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+accepted-padding8: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+accepted-profile: {"measured_proofs": 36, "processes": 12, "proofs_including_warmups": 48}
+accepted-regress: {"measured_proofs": 168, "processes": 24, "proofs_including_warmups": 216}
+accepted-security100: {"measured_proofs": 12, "processes": 12, "proofs_including_warmups": 12}
+accepted1: {"measured_proofs": 336, "processes": 192, "proofs_including_warmups": 384}
+accepted2: {"measured_proofs": 336, "processes": 192, "proofs_including_warmups": 384}

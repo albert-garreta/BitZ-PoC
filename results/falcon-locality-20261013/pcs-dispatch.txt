@@ -1,0 +1,97 @@
+PCS induced-basis dispatch assessment, 2026-10-13
+
+Scope: read-only source inspection of the canonical Falcon algebraic path,
+batch 1024 / security 128, using the existing baseline-profiles diagnostics.
+No source changes, builds, tests, or prover/benchmark executions were performed
+for this assessment. Source line references below are repository-relative.
+
+Established dispatch (derived from source, not an instrumented branch counter)
+
+                                           Falcon512     Falcon1024
+Compact source packed-word logarithms      [16,15,9]     [17,16,10]
+Shared packed polynomial logarithm         17            18
+Initial message-column logarithm           13            14
+Initial inverse-rate exponent              1             1
+Initial query count                        309           309
+Sparse-NTT dispatch query threshold         112           120
+Initial selected implementation            sparse NTT    sparse NTT
+Recursive message-column logarithms        [10,7,5]      [11,8,5]
+Recursive query counts                     [190,156,143] [190,156,143]
+Recursive implementation                   dense         dense
+
+Derivation and source references:
+- src/piop/spartan/falcon1024_algebraic/source.rs:73 sets capacity to the
+  next power of two of batch; batch 1024 therefore has capacity 1024.
+- src/piop/spartan/falcon1024_algebraic/compact.rs:26 defines tail stride;
+  :40 defines the three source logarithms. The strides are 64/128 bits for
+  Falcon512/1024, giving the arrays above.
+- src/hybrid/opening.rs:88 starts the common position logarithm at maximum
+  source logarithm minus3. The three source slices need 8+4+1 lanes, so no
+  enlargement occurs. :155 adds the four virtual lane variables, giving 17/18.
+- src/piop/spartan/falcon1024_algebraic/protocol.rs:445 resolves MATCHED_UDR
+  for this packed geometry and the requested 128-bit target.
+- src/ligerito_flock/configuration.rs:28 fixes inverse-rate exponent 1 and
+  initial fold arity 4. src/ligerito_flock.rs:757 constructs the level ladder;
+  :791 searches the smallest query count with predicted query bits + 0.001
+  at least 128. vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:763
+  defines gamma = (1-2^-rate)/2 - 3/((1-2^-rate)*2^(columns+rate)), and :772
+  defines per-query bits as log2(1/(1-gamma)). Evaluating that source formula
+  gives 309 initial queries for both geometries and the recursive counts above.
+- src/piop/spartan/falcon1024_algebraic/protocol.rs:1469 constructs the PCS
+  grinding plan; :1512 adjusts its block difficulties. It does not change
+  the resolved query counts or geometry.
+- vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:2368 selects NTT
+  exactly when columns>=12 and queries>4*2^rate*(columns+rate). Thus 309 exceeds
+  both 112 and 120. The streamed initial opening calls this dispatcher at:4097;
+  recursion calls the dense implementation directly at:4278.
+
+What the existing measurements establish
+
+baseline-profiles/assessment.txt and pcs-summary.json report median induced-
+basis time 0.46 ms / 0.61 ms for Falcon512/1024. These are nine measured diagnostic
+proofs per degree at 12 physical workers, three seeds, with one excluded warmup
+and three measured proofs per seed. The six processes used the frozen baseline
+binary bf303cb59a2e6830f0beb97670bd693aaef0d22fd5ad54bb7304696e0c850511.
+All 24 proofs, including warmups, were validated by the profiling campaign.
+
+The timer aggregates initial sparse NTT and all recursive dense calls. It does
+not establish which level, allocation, arithmetic loop, or reduction dominates.
+The text values are rounded to 0.01 ms, tracing perturbs latency, and nested
+timings must not be added as independent costs. The 0.59 ms / 0.56 ms unattributed
+Ligerito residual is separate unscoped work, not evidence of NTT overhead.
+
+Concrete follow-up hypothesis; not implemented in this campaign
+
+At vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:2422, the sparse
+transpose uses a HashMap and one 256-element Vec per active window; :2432
+collects and processes those windows, and :2458 allocates a full-domain buffer
+and copies the processed windows into it before the dense sweeps at:2465.
+
+A bounded proof-preserving experiment is to allocate that full-domain buffer
+once, scatter the query weights while marking active windows, and process
+active disjoint 256-element chunks directly in parallel. Keep the same window
+index/twiddle calculation and within-window butterfly order. This removes the
+HashMap, per-window allocations, and densification copy while retaining sparse
+arithmetic for inactive windows. It changes neither query order and weights,
+enforced sum, resulting basis, nor transcript/grinding operations.
+
+Concrete bounds: the initial domains have 2^14 / 2^15 field elements, so the full
+buffers are 256 KiB / 512 KiB and there are 64/128 possible 256-element windows. For
+309 distinct query positions the number of active windows is at least 2 and
+at most 64/128. Actual occupancy was not recorded; many active windows are a
+plausible expectation, not an observed fact. Existing sparse-window storage can
+occupy up to one additional full domain alongside the eventual output buffer.
+The proposed active-window metadata would be only 64/128 flags plus any task
+index list. Its latency benefit remains unmeasured and may be small.
+
+Dense recursion is a secondary possible target: :2140 builds worker-local
+accumulators and temporary bases and then reduces accumulators serially. The
+largest recursive accumulator is 16 KiB / 32 KiB per worker, or 192 KiB / 384 KiB across
+12 workers. Parallel coefficient reduction or direct accumulation could save
+traffic, but the aggregate timer cannot justify prioritizing this over the
+initial NTT path. Introducing sparse NTT itself would not be a new optimization.
+
+Recommendation: retain the existing PCS code in the current locality campaign.
+Consider the direct full-buffer sparse transpose as a separate small experiment
+with per-level diagnostics and unchanged-proof validation before qualification.
+No PCS speedup is established by this assessment.

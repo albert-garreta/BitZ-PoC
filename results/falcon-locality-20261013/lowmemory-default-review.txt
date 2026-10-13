@@ -1,0 +1,52 @@
+Falcon-512 / twelve-worker width-two candidate review, 2026-10-13
+
+Conclusion: no actionable scope, correctness, or transcript findings in this
+delta. Read-only source review; no builds, tests, benchmarks, proofs, profiling,
+or source edits. Width-two lifecycle/memory qualification is still pending;
+this review does not establish a performance win or recommend promotion before
+that evidence is available.
+
+Scope
+- falcon_integer.rs:151 retains instance_vars==10 and modulus>=2^125. The
+  serial return at :154 is unchanged (K1 width4 / K4 width3). At :160-165, K1
+  now selects width2 only for row_vars10/workers12; row_vars10/workers8 and
+  row_vars11/workers12 retain width4. Every other parallel case returns1.
+- The caller at falcon1024_algebraic/arithmetic.rs:587 passes
+  COEFFICIENT_LOG+1 and a one-element reader. As established in the v2 review,
+  those are K1/row_vars10 for Falcon-512 and K1/row_vars11 for Falcon-1024.
+  Therefore only Falcon-512 at twelve workers changes relative to v2.
+- Selection depends only on public geometry and worker count. The no-parallel
+  worker guard, bench-only explicit overrides, small-field/smaller-capacity
+  fallback, all sixteen-worker cases, and parallel K4 behavior stay unchanged.
+  instance_vars10 continues to mean capacity1024, including padded partial
+  batches513..1023; no claim of separate performance qualification for partial
+  batches is made here.
+
+Mathematical equivalence and bounds
+- Width2 is already supported and validated by prove_with_prefix (:187-203).
+  Its native tensor grid has 3^2=9 values, and each native input difference is
+  bounded by 2^2*2^15. The existing sum bound is at most 2^52 at row_vars20,
+  below the general width<=4 bound 2^54 and the signed-i64 limit.
+- Existing prefix construction/folding is unchanged. The second ordinary
+  challenge ends the width2 prefix, then fold_tables uses its existing four-
+  weight specialization (native_prefix.rs:215). This materializes the same
+  multilinear witness after two challenges. Later ordinary field rounds use
+  the existing path; no challenge, round polynomial, or relation is removed.
+- falcon_integer.rs:393-398 still absorbs each ordinary coefficient vector,
+  runs its grinding boundary, then samples its challenge. Prefix width changes
+  the prover representation and transition point, not transcript ordering,
+  security parameters, proof format, or verifier behavior.
+- The existing independent dense-reference tests explicitly iterate widths
+  1..4 (:808,860), including width2, signed limits, degenerate challenges,
+  grinding nonces, complete proof/terminal/transcript equality, verification,
+  and rejection of an invalid initial claim. They were not rerun here.
+
+Performance caveat
+The label lowmemory identifies the experiment's objective. Grid size, the
+number/size of materialized field tables, and allocation lifetime change in
+different directions with prefix width. Peak RSS, retained RSS, cold verify,
+and full lifecycle results must determine whether this candidate is acceptable;
+source inspection alone does not establish lower process memory or latency.
+
+Reviewed SHA-256
+4991d766f94af9d1bbc9a8d5a0e8afb45735eac6b157a3c4ddde722f87b84b07  src/piop/spartan/falcon_integer.rs

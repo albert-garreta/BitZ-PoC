@@ -1,0 +1,76 @@
+Final working-diff scope audit, 2026-10-13
+Baseline HEAD: 80e141a1ae415b3bc9805c5be0b13aa0c89f646b
+Candidate under timing: candidate-lowmemory
+
+Actionable findings: none. No unresolved arithmetic, ownership, initialization,
+transcript, or experimental-default escape was found in the current source.
+This is read-only source review, including self-review of the forest changes;
+no builds, tests, proofs, benchmarks, profiling, or Rust/source edits were run.
+Prior frozen evidence and review files were not modified.
+
+Production-scope confirmation
+- Forest: row_dispatch.rs:22 returns requested grain1 outside bench-internals
+  and defaults to1 inside it. fallback_grain(:49) exits immediately for1. JIT
+  and dense fold adapters therefore keep the original row arithmetic and
+  granularity. CyclicRows ownership eligibility/transfer remains unchanged.
+- Binding: word_binding.rs:429 returns None outside bench-internals and when
+  the selector is unset/off. The production WordOptions field at :478 therefore
+  disables compaction. dense_fold_with_compaction(:1061) computes the same fold
+  and doubles stride in the same order as baseline; compaction cannot run with
+  None. Forward compaction, retained capacity and terminal indexing remain
+  sound when explicitly enabled, as detailed in binding-norm-review.txt.
+- Ring: ring.rs:892 returns batch1 outside bench-internals and by default within
+  it. Both prove and verify use this selector; collapse_claim_with_batch(:975)
+  selects the original par_iter scalar dot for1. The experimental chunk helper
+  preserves lane order and tails using indexed collection and safe flattening.
+  The projection challenge still follows absorbed carries and its original
+  transcript domain; no coordinate/carry/security definition is changed.
+- Field helper: prepared_linear.rs:241 adds independent accumulators per lane,
+  not a combined larger reduction. Private construction (:149) still restricts
+  TERMS<=16 and positive weights to prepared residues. Each unsigned lane obeys
+  S<16*p*2^64<p*R for L>=2; L1 uses the existing general remainder path. The
+  1..8 lane assertion and bounded-term invariant cover the helper's public API.
+  Existing scalar prepared arithmetic is unchanged. Production ring batch1
+  does not call this new helper.
+- Tracing: new binding/integer scopes are observational. Production LIGHT's
+  admitted span set matches baseline because additional names require
+  bench-internals at falcon_stage_timings.rs:52. The benchmark attaches
+  StageTimings only with --trace; untraced qualification has no such subscriber.
+  Full tracing intentionally exposes more events. No proof or verifier behavior
+  depends on tracing. The duplicate native-prefix span was already removed.
+- The only intended arithmetic default change is the reviewed norm selection:
+  under capacity1024/modulus>=2^125, K1 chooses width2 for Falcon-512/12workers,
+  width4 for Falcon-512/8workers and Falcon-1024/12workers; other parallel cases
+  retain1. Serial policies remain unchanged. See lowmemory-default-review.txt.
+
+Caveats relevant to the final user answer
+- Final claims must use the actual selected production binary and its completed
+  cold/repeated confirmation, including verification and full lifecycle costs.
+  Earlier broad norm4 qualification is superseded for default selection. The
+  current width2 Falcon-512/12 case is still under measurement at review time.
+- Do not describe forest grain, dense compaction, or batched collapse as shipped
+  performance wins: their implementations remain available only as explicit
+  benchmark experiments and have not been enabled by default.
+- No new source correctness issue was found, but unchanged default semantics do
+  not prove identical code generation or zero timing regression. Added wrappers,
+  adapters and disabled spans still require the frozen production comparison.
+- Report measured peak RSS separately from retained RSS, and prover latency
+  separately from verification/lifecycle. A prover improvement alone did not
+  qualify the discarded broader policies. Detailed traced timings are for
+  attribution; they overlap and include instrumentation overhead.
+- Public capacity1024 includes padded live batches513..1023. Performance data
+  for batch1024 does not establish independent gains for every partial batch,
+  security target, field size, CPU topology, or other machine.
+- Protocol/proof equality and passed tests justify the scoped correctness
+  statement recorded by the campaign; they do not justify an unrestricted
+  claim of no regressions in every execution environment.
+
+Reviewed SHA-256
+ac4ad1d642e7be9bcfb2ed09d62e258d023dd2165101901bfa9ad904e4744299  src/bitz/row_dispatch.rs
+af47b6e4964658736f143da3da27e32f19c67729e7f0a952e3edaefea56cf97b  src/bitz/kernels.rs
+039b234a5ed9e14ed8fb16f466ba3f58349d9aacb87ee31189d4c98e095510ce  src/bitz/forest.rs
+5ab732f4e09e6909e3b9f190fa4cccc5acb286fadc0a2753473caa3db53ee71c  src/piop/spartan/falcon1024_algebraic/word_binding.rs
+bfbab32c50a5b15a67376d3e9b4c7a9ebd2058853087f7bd523e3392a61308b3  src/piop/spartan/falcon1024_algebraic/ring.rs
+4991d766f94af9d1bbc9a8d5a0e8afb45735eac6b157a3c4ddde722f87b84b07  src/piop/spartan/falcon_integer.rs
+62302a2a3e2dfca219b89d9c4d3242d188b9710a3660a31b32c5af0260f7c118  vendor/field/src/prime/prepared_linear.rs
+94c591930f43cae67ea69850405ac1a229531924ea1d183942c0602cf1239926  benches/common/falcon_stage_timings.rs
