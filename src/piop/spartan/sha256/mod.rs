@@ -26,8 +26,8 @@ pub use constraints::{
 };
 #[cfg(feature = "bitz-parity")]
 pub use proof::{
-    Sha256WfbitzProof, commit_sha256_compression_witness_wfbitz, prove_sha256_compressions_wfbitz,
-    verify_sha256_compressions_wfbitz,
+    Sha256WfbitzProof, commit_sha256_compression_witness_wfbitz, prove_sha256_compressions_wfbitz, prove_sha256_compressions_wfbitz_log, sha256_wfbitz_log_opener, sha256_wfbitz_log_opener_with,
+    verify_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz_log,
 };
 pub use prime::{
     SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,

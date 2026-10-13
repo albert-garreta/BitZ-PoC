@@ -38,6 +38,7 @@ pub mod fold;
 pub mod forest;
 pub mod gkr;
 pub(crate) mod kernels;
+pub mod logarithmic;
 pub mod params;
 pub mod pcs;
 pub mod reduce;
@@ -281,7 +282,8 @@ pub(crate) fn trace_elapsed(label: &str, elapsed: std::time::Duration) {
     }
 }
 
-fn record_phase(label: &str, elapsed: std::time::Duration) {
+/// Records a phase the caller timed itself, as [`trace`] records its own.
+pub(crate) fn record_phase(label: &str, elapsed: std::time::Duration) {
     if let Ok(mut phases) = PHASES.lock() {
         if let Some(recorded) = phases.as_mut() {
             recorded.push((label.trim().to_string(), elapsed));

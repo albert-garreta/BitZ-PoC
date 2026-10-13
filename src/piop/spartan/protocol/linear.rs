@@ -1416,3 +1416,162 @@ impl<S: LinearRelationSpec> LinearVerifierOpener<S> for WfbitzBlockOpener<'_, Li
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ verify: {e:?}")))
     }
 }
+
+/// The session tag of a logarithmic block-layout BitZ opening's forked
+/// transcript.
+#[cfg(feature = "bitz-parity")]
+const WFBITZ_LOG_SESSION: &[u8] = b"bitz/linear/wfbitz-log/v1";
+
+/// Step 5 as [`WfbitzBlockOpener`], the column folds committed instead of
+/// sent (`crate::wfbitz::logarithmic`): the same claim, fork and Round 0,
+/// the folds' bits in a second commitment under their own ladder, opened in
+/// a second Ligerito run.
+#[cfg(feature = "bitz-parity")]
+pub(crate) struct WfbitzLogOpener<'a, C> {
+    pub config: &'a C,
+    pub pcs: &'a crate::wfbitz::Pcs,
+    pub map: &'a crate::wfbitz::BlockRepeatedMap,
+    /// The folds' bits' opener (the recursion's geometry, their ladder).
+    pub log: &'a crate::wfbitz::logarithmic::LogOpener,
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<C> WfbitzLogOpener<'_, C> {
+    fn bind_opener<T: Transcript, S: LinearRelationSpec>(
+        &self,
+        spec: &S,
+        transcript: &mut T,
+    ) -> Result<(), ProtocolError> {
+        spec.ligerito()?.bind(transcript);
+        absorb_frames(
+            transcript,
+            &[
+                frame(b"opener", WFBITZ_LOG_SESSION),
+                frame(b"wfbitz-block-map", self.map.digest()),
+                frame(b"wfbitz-log-opener", self.log.digest()),
+            ],
+        );
+        Ok(())
+    }
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<S: LinearRelationSpec> LinearProverOpener<S> for WfbitzLogOpener<'_, LigProverConfig> {
+    type Opening = super::wfbitz_opener::WfbitzOpeningProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.config
+    }
+
+    fn validate(
+        &self,
+        spec: &S,
+        statement: &S::Statement,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+    ) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.config)?;
+        spec.validate_witness(statement, witness, hint)
+    }
+
+    fn validate_commitment(&self, hint: &FlockCommitHint) -> Result<(), ProtocolError> {
+        crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, self.config)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        self.bind_opener(spec, transcript)
+    }
+
+    fn open<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: ProverOod,
+    ) -> Result<Self::Opening, ProtocolError> {
+        let (params, committed, linear) =
+            WfbitzBlockOpener::<LigProverConfig>::statement(spec, claim, rows, prime)?;
+        let statement = crate::wfbitz::BlockStatement::new(params, committed, self.map, &linear)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ block statement: {e:?}")))?;
+        let ood = ood.into_bound_claim();
+        let tag = super::wfbitz_opener::fork_tag(transcript);
+        let mut state = crate::wfbitz::build_prover(WFBITZ_LOG_SESSION, &tag);
+        crate::wfbitz::logarithmic::prove_block_log(
+            self.log,
+            &statement,
+            self.pcs,
+            hint,
+            spec.opened_rows(witness)?,
+            &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ log prove: {e:?}")))?;
+        let crate::wfbitz::Proof { narg_string, hints } = state.finish();
+        Ok(super::wfbitz_opener::WfbitzOpeningProof {
+            narg: narg_string,
+            hints,
+            ood: ood.map(|claim| claim.round),
+        })
+    }
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<S: LinearRelationSpec> LinearVerifierOpener<S> for WfbitzLogOpener<'_, LigVerifierConfig> {
+    type Opening = super::wfbitz_opener::WfbitzOpeningProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.config
+    }
+
+    fn validate(&self, spec: &S, commitment: &Commitment) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.config)?;
+        crate::ligerito_flock::validate_ligerito_commitment(commitment, self.config)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        self.bind_opener(spec, transcript)
+    }
+
+    fn ood_round<'p>(&self, opening: &'p Self::Opening) -> Option<&'p OodRound> {
+        opening.ood.as_ref()
+    }
+
+    fn verify<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        commitment: &Commitment,
+        opening: &Self::Opening,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: VerifierOod,
+    ) -> Result<(), ProtocolError> {
+        let (params, committed, linear) =
+            WfbitzBlockOpener::<LigVerifierConfig>::statement(spec, claim, rows, prime)?;
+        let statement = crate::wfbitz::BlockStatement::new(params, committed, self.map, &linear)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ block statement: {e:?}")))?;
+        let ood = ood.into_bound_claim();
+        let tag = super::wfbitz_opener::fork_tag(transcript);
+        let proof = crate::wfbitz::Proof {
+            narg_string: opening.narg.clone(),
+            hints: opening.hints.clone(),
+        };
+        let state = crate::wfbitz::build_verifier(WFBITZ_LOG_SESSION, &tag, &proof);
+        crate::wfbitz::logarithmic::verify_block_log(
+            self.log,
+            &statement,
+            self.pcs,
+            crate::wfbitz::Root(commitment.root),
+            state,
+            ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ log verify: {e:?}")))
+    }
+}

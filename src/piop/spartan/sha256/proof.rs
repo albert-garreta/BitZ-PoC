@@ -87,7 +87,7 @@ use super::{
 };
 #[cfg(feature = "bitz-parity")]
 use super::super::protocol::{
-    linear::{WfbitzBlockOpener, prove_linear_with, verify_linear_with},
+    linear::{WfbitzBlockOpener, WfbitzLogOpener, prove_linear_with, verify_linear_with},
     wfbitz_opener::WfbitzOpeningProof,
 };
 
@@ -931,6 +931,112 @@ pub fn verify_sha256_compressions_wfbitz<T: Transcript + Send>(
             config: resolved.verifier(),
             pcs: &pcs,
             map: &block.map,
+        },
+    )
+}
+
+#[cfg(feature = "bitz-parity")]
+/// The folds' bits' opener of the logarithmic scheme for this batch: the
+/// claim grid is the product layout's, the second commitment's ladder is
+/// `BITZ_SHA_LOG_MU_LADDER` (default `lad:5:3:3:7`, rate 1/32), the
+/// recursive split `BITZ_SHA_LOG_A` (default: the scheme's own), at the
+/// batch's Ligerito target.
+pub fn sha256_wfbitz_log_opener(
+    prepared: &PreparedSha256CompressionBatch,
+) -> Result<crate::wfbitz::logarithmic::LogOpener, ProtocolError> {
+    // `BITZ_SHA_LOG_RUNS=2` opens the two commitments in two Ligerito runs;
+    // the default is the one merged run.
+    let single_run = !std::env::var("BITZ_SHA_LOG_RUNS").is_ok_and(|v| v.trim() == "2");
+    sha256_wfbitz_log_opener_with(prepared, single_run)
+}
+
+#[cfg(feature = "bitz-parity")]
+/// [`sha256_wfbitz_log_opener`] with the opening mode explicit: one merged
+/// Ligerito run for both commitments (`single_run`) or two runs.
+pub fn sha256_wfbitz_log_opener_with(
+    prepared: &PreparedSha256CompressionBatch,
+    single_run: bool,
+) -> Result<crate::wfbitz::logarithmic::LogOpener, ProtocolError> {
+    use crate::wfbitz::logarithmic::{LogOpener, MuLadder};
+    let (spec, _) = wfbitz_spec(prepared)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let target = resolved.security().target_security_bits;
+    let opened = spec.opened_layout();
+    let derived = crate::wfbitz::Shape::new(opened.row_vars, opened.col_vars)
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ derived shape: {e:?}")))?;
+    let ladder = std::env::var("BITZ_SHA_LOG_MU_LADDER").unwrap_or_else(|_| "lad:5:3:3:7".to_owned());
+    let mu_ladder = MuLadder::parse(&ladder, target)
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ log ladder: {e}")))?;
+    let a = match std::env::var("BITZ_SHA_LOG_A") {
+        Ok(value) => Some(
+            value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| ProtocolError::LigeritoConfig(format!("BITZ_SHA_LOG_A={value:?}")))?,
+        ),
+        Err(_) => None,
+    };
+    LogOpener::new(derived, mu_ladder, a, None, single_run.then_some(resolved.security()), target)
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ log opener: {e:?}")))
+}
+
+#[cfg(feature = "bitz-parity")]
+/// [`prove_sha256_compressions_wfbitz`] with the column folds committed
+/// instead of sent (`crate::wfbitz::logarithmic`): the same statement,
+/// prime and PIOP, the rank-one claim discharged by the logarithmic scheme
+/// over the product tensor and opened on the block-layout commitment and
+/// on the folds' bits' own commitment.
+pub fn prove_sha256_compressions_wfbitz_log<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    witness: &Sha256CompressionWitnessBatch,
+    hint: &FlockCommitHint,
+    log: &crate::wfbitz::logarithmic::LogOpener,
+) -> Result<Sha256WfbitzProof, ProtocolError> {
+    let (spec, block) = wfbitz_spec(prepared)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let pcs = wfbitz_pcs(block, resolved)?;
+    prove_linear_with(
+        transcript,
+        &spec,
+        public_statement,
+        witness,
+        hint,
+        LinearProveOptions::default(),
+        &WfbitzLogOpener {
+            config: resolved.prover(),
+            pcs: &pcs,
+            map: &block.map,
+            log,
+        },
+    )
+}
+
+#[cfg(feature = "bitz-parity")]
+/// Verifies a [`prove_sha256_compressions_wfbitz_log`] proof.
+pub fn verify_sha256_compressions_wfbitz_log<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    commitment: &Commitment,
+    proof: &Sha256WfbitzProof,
+    log: &crate::wfbitz::logarithmic::LogOpener,
+) -> Result<(), ProtocolError> {
+    let (spec, block) = wfbitz_spec(prepared)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let pcs = wfbitz_pcs(block, resolved)?;
+    verify_linear_with(
+        transcript,
+        &spec,
+        public_statement,
+        commitment,
+        proof,
+        &WfbitzLogOpener {
+            config: resolved.verifier(),
+            pcs: &pcs,
+            map: &block.map,
+            log,
         },
     )
 }
@@ -4206,6 +4312,116 @@ mod tests {
                 );
                 if let Ok(proof) = prove(&bad) {
                     assert!(verify(&statements, &bad.commitment, &proof).is_err());
+                }
+            }
+        }
+
+        /// The logarithmic opener (the column folds committed, a second
+        /// tree and one recursive instance) round-trips on both batches and
+        /// is smaller than the block opener's proof; a wrong output, a
+        /// changed opening stream, a two-run proof fed to the log verifier,
+        /// and the three cheating provers (a fold congruent mod `q`, a fold
+        /// off by one, a claimed `e₀` off by one) are rejected.
+        #[test]
+        fn logarithmic_opener_roundtrips_and_rejects_cheating() {
+            use crate::piop::spartan::sha256::{
+                prove_sha256_compressions_wfbitz_log, sha256_wfbitz_log_opener_with,
+                verify_sha256_compressions_wfbitz_log,
+            };
+            use crate::wfbitz::logarithmic::{CHEAT, LogOpener};
+            for prepared in batches() {
+                let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+                let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+                let statements = public_statements(&inputs, witness.outputs());
+                let hint = commit_sha256_compression_witness_wfbitz(&prepared, &witness).unwrap();
+                let block_proof = prove_sha256_compressions_wfbitz(
+                    &mut Blake3Transcript::new(),
+                    &prepared,
+                    &statements,
+                    &witness,
+                    &hint,
+                )
+                .unwrap();
+                let bytes = |opening: &WfbitzOpeningProof| opening.narg.len() + opening.hints.len();
+                // Both modes: one merged Ligerito run, two runs.
+                let one = sha256_wfbitz_log_opener_with(&prepared, true).unwrap();
+                let two = sha256_wfbitz_log_opener_with(&prepared, false).unwrap();
+                assert!(one.merge_plan().is_some() && two.merge_plan().is_none());
+                let prove = |log: &LogOpener, cheat: u8| {
+                    CHEAT.set(cheat);
+                    let proof = prove_sha256_compressions_wfbitz_log(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        &statements,
+                        &witness,
+                        &hint,
+                        log,
+                    );
+                    CHEAT.set(0);
+                    proof
+                };
+                let verify = |log: &LogOpener, statements: &[Sha256CompressionStatement], proof: &Sha256WfbitzProof| {
+                    verify_sha256_compressions_wfbitz_log(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        statements,
+                        &hint.commitment,
+                        proof,
+                        log,
+                    )
+                };
+                let proof_one = prove(&one, 0).unwrap();
+                let proof_two = prove(&two, 0).unwrap();
+                verify(&one, &statements, &proof_one).unwrap();
+                verify(&two, &statements, &proof_two).unwrap();
+                // The modes are bound: neither verifier takes the other's proof.
+                assert!(verify(&one, &statements, &proof_two).is_err());
+                assert!(verify(&two, &statements, &proof_one).is_err());
+                assert!(
+                    bytes(proof_one.bitz()) < bytes(proof_two.bitz()),
+                    "one run {} B, two runs {} B",
+                    bytes(proof_one.bitz()),
+                    bytes(proof_two.bitz())
+                );
+                for (log, proof) in [(&one, &proof_one), (&two, &proof_two)] {
+                    assert_eq!(proof.bitz().ood.is_some(), prepared.security().ood.is_some());
+                    let (log_bytes, block_bytes) = (bytes(proof.bitz()), bytes(block_proof.bitz()));
+                    let folds = 16 << prepared.opening_params().col_vars;
+                    assert!(
+                        log_bytes + folds > block_bytes,
+                        "the log opening ({log_bytes} B) should cost less than the {folds} B of folds it removes ({block_bytes} B)"
+                    );
+                    assert!(verify(log, &statements, &block_proof).is_err(), "a block proof is not a log proof");
+                }
+
+                // Tampering and cheating, in the single-run mode.
+                let (log, proof) = (&one, proof_one);
+                let prove = |cheat: u8| prove(log, cheat);
+                let verify = |statements: &[Sha256CompressionStatement], proof: &Sha256WfbitzProof| {
+                    verify(log, statements, proof)
+                };
+                let mut wrong = statements.clone();
+                let mut output = witness.outputs()[3];
+                output[0] ^= 1;
+                wrong[3] = Sha256CompressionStatement::new(inputs[3], output);
+                assert!(verify(&wrong, &proof).is_err());
+                let narg = proof.bitz().narg.len();
+                for at in [7usize, narg / 3, narg / 2, narg - 20] {
+                    let mut tampered = proof.clone();
+                    tampered.bitz_mut().narg[at] ^= 1;
+                    assert!(verify(&statements, &tampered).is_err(), "narg byte {at}");
+                }
+                let hints = proof.bitz().hints.len();
+                for at in [9usize, hints / 2, hints - 1] {
+                    let mut tampered = proof.clone();
+                    tampered.bitz_mut().hints[at] ^= 1;
+                    assert!(verify(&statements, &tampered).is_err(), "hint byte {at}");
+                }
+                for cheat in 1..=3u8 {
+                    match prove(cheat) {
+                        Ok(proof) => assert!(verify(&statements, &proof).is_err(), "cheat {cheat}"),
+                        Err(_) => {}
+                    }
                 }
             }
         }

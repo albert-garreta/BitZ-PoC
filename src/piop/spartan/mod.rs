@@ -107,7 +107,7 @@ pub use sha256::{
 pub use sha256::{
     Sha256WfbitzProof, commit_sha256_compression_witness_wfbitz,
     prepare_sha256_compression_batch_wfbitz_at, prepare_sha256_compression_batch_wfbitz_with_profile,
-    prove_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz,
+    prove_sha256_compressions_wfbitz, prove_sha256_compressions_wfbitz_log, sha256_wfbitz_log_opener, sha256_wfbitz_log_opener_with, verify_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz_log,
 };
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
