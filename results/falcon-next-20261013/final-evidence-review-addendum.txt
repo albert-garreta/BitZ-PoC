@@ -1,0 +1,57 @@
+Evidence-review addendum — 2026-10-13
+
+The diagnostic completeness finding in final-evidence-review.txt is resolved
+in the reviewed forest-profile.py v2. No remaining actionable parser finding.
+
+Source checks:
+- expected_labels rejects unsupported geometry and independently specifies the
+  required timer set for canonical Falcon512/1024, batch1024, security128.
+  The set matches the current t=14/depth=13 forest trace structure: nibble rows,
+  construction and upper-level parents, levels0..12, L4 rebuild/retained,
+  L2's bit round, L1/L0 one-pass rounds, and L0..3 tables/JIT/fold/dense tails.
+- parse_complete_trace retains the existing duplicate/root/trial checks and
+  validates the exact label set at every forest span, including warmups. Missing
+  internal timers can no longer be converted silently to zero derived cost.
+- Retain/rebuild requires the selected alternative; unexpected/new labels and
+  unsupported batch/security/protocol/degree fail closed. Output schema is v2.
+- Synthetic fixtures construct the source's execution sequence independently
+  of expected_labels. Tests remove an L2 JIT fold, other required categories,
+  a warmup timer and all but level0; they also exercise wrong geometry,
+  unexpected/duplicate labels, policy alternatives and proof-root mismatch.
+  check-forest-profile.log records all eight tests passing. Reviewer inspected
+  code/tests/log only and did not execute tests or the parser.
+
+Completed acceptance evidence sanity check:
+- Read summary.json, accepted1/2 manifests and their comparison text. Each phase
+  has 16 cells with 21 timed samples, both degrees, 8/12 workers, cold/repeated;
+  both configurations use production defaults with empty selector dictionaries.
+  Both use the previously reviewed frozen baseline and production binary.
+- Twelve-worker pooled total-prover changes (negative is faster):
+                         accepted1   accepted2
+  N512 cold                 -8.42%      -7.98%
+  N512 repeated             -8.27%      -8.37%
+  N1024 cold                -8.47%      -8.78%
+  N1024 repeated            -9.89%      -8.73%
+  Every seed improves for every listed cell in both phases. Per-proof
+  commit+prove+verify medians also improve in all eight cells (5.97–8.53%).
+- Eight-worker pooled prover changes range from -0.58% to +0.83%. This is
+  a pooled-median statement, not a per-seed bound: N512 cold accepted2 seed43
+  is +1.51%. Mixed directions and tiny pooled changes support a neutral overall
+  characterization, not a universal claim of zero regression.
+- Verification remains separate: N512/12 repeated is +2.30%/+0.92%; N1024/12
+  repeated +0.77%/+0.95%. Combined lifecycle still improves as above.
+- The saved validation snapshot now records 2,934 proofs: previous 2,166 plus
+  768 proofs across accepted1/2 (672 timed and 96 warmup). This is a receipt
+  inspection, not independent raw/binary revalidation. The active 1/16-worker
+  regression phase is absent from the saved summary and is not certified here.
+
+Remaining limits: exact-label support intentionally covers only the stated
+full-batch 128-bit geometry; concurrent proof traces remain unsupported. Profile
+traces are diagnostic and must stay separate from untraced acceptance latency.
+No builds, prover runs, benchmark runs, global validation, summary regeneration,
+or source edits were performed for this addendum.
+
+Reviewed hashes:
+1b059a7404bedb949abc193d3a816a560d7de6a672d9873e87e5ff494210a117 forest-profile.py
+42307ff9da5f82cb689d64d389760b7450cd3a690257579c6713063f63ce939f test-forest-profile.py
+cfc5f20785ac52e58ed367dbe7d3b7a2e7022bc8cdfd11bb066a27701965cb62 check-forest-profile.log

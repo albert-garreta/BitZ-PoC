@@ -9,7 +9,6 @@
 //! products are XOR-combined and reduced once per accumulator, and
 //! reduction is `F₂`-linear — so every transcript byte is unchanged.
 
-#[cfg(test)]
 use std::mem::MaybeUninit;
 
 #[cfg(feature = "parallel")]
@@ -59,6 +58,18 @@ use neon as backend;
     target_feature = "vpclmulqdq"
 ))]
 use x86 as backend;
+
+/// Whether the selected backend evaluates compact nibble tables directly.
+/// Keep this gate identical to the x86 backend and factored-fold dispatch.
+#[cfg(feature = "parallel")]
+pub(super) const HAS_NATIVE_FACTORED_LOOKUP: bool = cfg!(all(
+    target_arch = "x86_64",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+));
 
 /// The longest run one task handles when a round has a single row (the
 /// flat rounds and the `s = 0` layers).
@@ -180,7 +191,7 @@ pub(crate) fn round_sums(
         };
     }
     #[cfg(feature = "parallel")]
-    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 4 * size_of::<Gf>())
+    if let Some(dispatch) = super::row_dispatch::RowDispatch::new(w.rows(), h * 4 * size_of::<Gf>())
     {
         return total(dispatch.map_indices(tasks, |rows| {
             rows.map(sum_row!())
@@ -263,7 +274,7 @@ pub(crate) fn fused_fold_round(
         };
     }
     #[cfg(feature = "parallel")]
-    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 8 * size_of::<Gf>())
+    if let Some(dispatch) = super::row_dispatch::RowDispatch::new(w.rows(), h * 8 * size_of::<Gf>())
     {
         let jobs = q0_l
             .chunks_mut(task)
@@ -341,6 +352,59 @@ pub(crate) use backend::jit_bucket_finish;
 /// With `WEIGH`, `out_l` gets `eq_t[m]·E'` instead (the slot's two
 /// multiplies, moved; see [`Left::Weigh`]).
 pub(crate) use backend::jit_fold_group;
+
+/// The same fold with additive nibble tables (32 stored entries for 256
+/// logical values). Native x86 reads those directly. Other backends expand
+/// group-local scratch and retain their existing arithmetic kernel.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn jit_fold_factored_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+    tab: [&[Gf]; 8],
+    pat: &[[u8; 64]; 8],
+    rho: &Gf,
+    eq_t: &[Gf],
+    send_one: bool,
+    out_l: [&mut [MaybeUninit<Gf>]; 2],
+    out_r: [&mut [MaybeUninit<Gf>]; 2],
+    sums: &mut Sums,
+) {
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1",
+        target_feature = "avx512f",
+        target_feature = "avx512bw",
+        target_feature = "vpclmulqdq"
+    ))]
+    x86::jit_fold_factored_group::<PRE_SCALED, WEIGH_LEFT>(
+        tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+    );
+    #[cfg(not(all(
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1",
+        target_feature = "avx512f",
+        target_feature = "avx512bw",
+        target_feature = "vpclmulqdq"
+    )))]
+    {
+        assert!(tab.iter().all(|table| table.len() >= 32));
+        let expanded: [[Gf; 256]; 8] = std::array::from_fn(|corner| {
+            std::array::from_fn(|pattern| {
+                tab[corner][pattern & 15] + tab[corner][16 + (pattern >> 4)]
+            })
+        });
+        backend::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
+            std::array::from_fn(|corner| expanded[corner].as_slice()),
+            pat,
+            rho,
+            eq_t,
+            send_one,
+            out_l,
+            out_r,
+            sums,
+        );
+    }
+}
 
 /// Multiply every value by the same scalar.
 pub(crate) use backend::scale_in_place;
@@ -1520,6 +1584,14 @@ mod tests {
 
     #[cfg(feature = "parallel")]
     #[test]
+    fn virtual_shard_dense_rows_match_scalar_folds_and_sums_with_tails() {
+        // Both kernels exceed 4 MiB at 64 rows. The odd column width also
+        // exercises SIMD tails while the twelve-worker default owns shards.
+        check_dense_row_grains(64, 1025, &[1]);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
     fn fallback_dense_row_grains_match_scalar_folds_and_sums_with_tails() {
         // Above the matrix threshold, with neither row count divisible by
         // the worker count nor column width divisible by the SIMD width.
@@ -2164,6 +2236,87 @@ mod tests {
             }
         };
         (sums, init(&out))
+    }
+
+    #[test]
+    fn factored_jit_fold_matches_scalar_expansion_with_tails_and_weights() {
+        fn check<const PRE: bool, const WEIGH: bool>(
+            compact: [&[Gf]; 8],
+            expanded: [&[Gf]; 8],
+            patterns: &[[u8; 64]; 8],
+            rho: Gf,
+            weights: &[Gf],
+            width: usize,
+            send_one: bool,
+        ) {
+            let expected = run_jit_fold::<PRE, WEIGH>(
+                expanded, patterns, &rho, weights, send_one, width, true,
+            );
+            let guard = Gf::from_polynomial_words([0xdead_beef, 0x1234_5678]);
+            let mut out = vec![vec![MaybeUninit::new(guard); width + 2]; 4];
+            let mut sums = Sums::zero();
+            {
+                let (l, r) = out.split_at_mut(2);
+                let (l0, l1) = l.split_at_mut(1);
+                let (r0, r1) = r.split_at_mut(1);
+                jit_fold_factored_group::<PRE, WEIGH>(
+                    compact,
+                    patterns,
+                    &rho,
+                    weights,
+                    send_one,
+                    [&mut l0[0][1..1 + width], &mut l1[0][1..1 + width]],
+                    [&mut r0[0][1..1 + width], &mut r1[0][1..1 + width]],
+                    &mut sums,
+                );
+            }
+            assert_eq!(
+                sums.finish(),
+                expected.0,
+                "width={width}, pre={PRE}, weigh={WEIGH}"
+            );
+            for (actual, expected) in init(&out).iter().zip(&expected.1) {
+                assert_eq!(actual[0], guard);
+                assert_eq!(actual[width + 1], guard);
+                assert_eq!(&actual[1..1 + width], expected);
+            }
+        }
+        let compact: [Vec<Gf>; 8] = std::array::from_fn(|corner| elements(32, 500 + corner as u64));
+        let expanded: [Vec<Gf>; 8] = std::array::from_fn(|corner| {
+            (0..256)
+                .map(|pattern| compact[corner][pattern & 15] + compact[corner][16 + (pattern >> 4)])
+                .collect()
+        });
+        let compact = std::array::from_fn(|corner| compact[corner].as_slice());
+        let expanded = std::array::from_fn(|corner| expanded[corner].as_slice());
+        let mut weights = elements(64, 550);
+        weights[0] = Gf::zero();
+        weights[1] = Gf::one();
+        // The four full blocks cover every byte at every corner. Partial
+        // widths also cover every SIMD/scalar tail without changing guards.
+        for base in [0, 64, 128, 192] {
+            let patterns = std::array::from_fn(|corner| {
+                std::array::from_fn(|m| (base + m + 31 * corner) as u8)
+            });
+            for rho in [Gf::zero(), Gf::one(), elements(1, 551)[0]] {
+                for width in [0, 1, 2, 3, 31, 63, 64] {
+                    for send_one in [false, true] {
+                        check::<false, false>(
+                            compact, expanded, &patterns, rho, &weights, width, send_one,
+                        );
+                        check::<false, true>(
+                            compact, expanded, &patterns, rho, &weights, width, send_one,
+                        );
+                        check::<true, false>(
+                            compact, expanded, &patterns, rho, &weights, width, send_one,
+                        );
+                        check::<true, true>(
+                            compact, expanded, &patterns, rho, &weights, width, send_one,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// The JIT fold that weighs its left half gives the plain fold's sums

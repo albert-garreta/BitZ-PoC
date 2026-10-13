@@ -1,0 +1,94 @@
+Forest experiments and benchmark qualification review
+2026-10-13; baseline 23c182868e94ff044d5e67a03baed056c4335c16
+
+Scope and status
+- Reviewed the frozen forest implementation and scripts/falcon_next_optimization.py,
+  its tests, configs.json, compare.py and scope.txt. No builds, tests, proofs or
+  benchmarks were run as part of this review. Root owns central validation.
+- Independent review by arithmetic_binding_plan found no actionable correctness
+  or safety issue in the four forest files. This is source review, not a claim
+  that the experiments improve performance or have passed runtime validation.
+
+Factored lookup tables: BITZ_FOREST_TABLES=expanded|factored
+- Default is expanded. Runtime selection is limited to bench-internals.
+- src/bitz/forest.rs:930 folds exactly the last bit-index tables for ell=0..2
+  (k=3-ell) into two 16-entry halves. Earlier bit rounds and ell=3 stay expanded.
+  Each table value is low[byte&15] + high[byte>>4] in the binary field. Factors
+  involve 1, 2 or 4 contiguous bits and never cross the nibble boundary; each
+  half retains the constant terms for its factors.
+- Both halves receive the same scale_fold weight. The existing cost heuristic
+  cols>=4*tables.len now prescales factored tables at 128 columns, versus 1024
+  for expanded tables; the changed arithmetic order is exact and covered by
+  proof and scalar-oracle tests.
+- JIT round sums expand four tables into row-local scratch and use the existing
+  bucket path. Native x86 JIT folds read the compact halves directly; pointer
+  accesses are bounded by table-length checks and nibble indices 0..31. The
+  existing output-initialization and disjoint-row invariants are preserved.
+- The portable fallback expands eight tables per group before calling the
+  existing backend. Correctness is preserved; a portable speedup is unproven.
+- Live table values can fall from 8 MiB to 1 MiB, and eight active lookup tables
+  from 32 KiB to 4 KiB. spare_tables intentionally retains its previous capacity,
+  including an 8 MiB allocation inherited from L3. Do not claim an 8-to-1 MiB
+  allocation or RSS reduction. Native lookups also double the number of loads.
+- Tests cover every byte pattern, zero/one/random challenges, independent leaf
+  evaluation, prescaling, scalar tails, output guards and complete forest proofs.
+
+Persistent virtual ownership: BITZ_FOREST_ROW_OWNERSHIP=legacy|shards64
+- Default is legacy. Runtime selection is limited to bench-internals.
+- src/bitz/row_dispatch.rs:175 selects 64 fixed shards only for a 12-worker pool,
+  at least 64 rows divisible by 64, and at least 4 MiB of the supplied arena.
+  Other pool sizes and small shapes retain existing dispatch behavior.
+- Owner(row)=(row%64)%12. Fold offsets divisible by 64 preserve ownership; the
+  shard count does not change per round. Four workers receive six shards and
+  eight receive five. This remaining imbalance is intentional and measurable.
+- Broadcast executes the stable worker assignment. Mutable jobs originate from
+  disjoint slices and are transferred once to their assigned worker; no new
+  aliasing or raw pointer invariant is introduced by the dispatcher.
+- For the primary Falcon-512 shape, 256 JIT rows and 128/64 dense rows preserve
+  ownership. Later 32/16-row rounds fall back even though their arrays can still
+  be large. This does not eliminate every cache migration. It also preserves
+  worker identity, not physical affinity by itself; the runner pins workers.
+- Tests cover worker identity, coverage, disjoint tails, threshold fallbacks,
+  restoration of test overrides, and complete proof equality with both new
+  forest flags enabled together. The two flags are independently selectable.
+
+Runner and qualification interpretation
+- Current configs isolate one selector at a time against explicit candidate
+  controls, retain a separate frozen baseline executable, sanitize inherited
+  runtime flags, record pinned CPUs and freeze binary/parser/manifest identity.
+  Result validation reconstructs commands and trials, checks raw-file hashes,
+  rejects missing/extra jobs, and compares complete Debug proof digests.
+- The digest is a whole-proof regression check; it is not a canonical wire-codec
+  claim. Verification and existing negative tests remain required.
+- Jobs are randomized in matched blocks. Cold and Prepared-reuse repeated modes
+  remain separate. Warmups are excluded. Repeated trials within one process are
+  correlated; seed medians and repeated campaign confirmation matter more than
+  treating the pooled samples as independent confidence evidence.
+- Only trace=false rows establish latency. Trace medians diagnose stages and
+  must not be mixed with untraced totals. Summed worker_ns is CPU time rather
+  than elapsed time. Granular BITZ_TRACE forest data needs the separate forest
+  analyzer; the runner's stage JSON parser does not provide those internal
+  round/fold/table measurements by itself.
+- No-op gates: ownership is intentionally configured only at 12 workers. The
+  native norm Prefix is created only when prefix_rounds>1
+  (src/piop/spartan/falcon_integer.rs:205); N512/12 with automatic width 1 does
+  not exercise batching. Compare norm4-control with norm4-batched to isolate it,
+  then compare the resulting complete configuration against the automatic
+  production control. PCS direct uses legacy behavior below log_d=12
+  (vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs:2493).
+- compare.py is suitable for the current fixed batch/security/affinity per
+  phase. Its reference lookup omits those dimensions, and its lifecycle scan
+  similarly assumes fixed phase dimensions. Do not reuse it to attribute CPU
+  placement changes or mixed batch/security jobs to a code change.
+- The current configs do not combine incompatible arithmetic compaction
+  selectors. Custom configs can still reach the source assertion if both
+  dense-output=compact and old dense-compaction!=off are selected.
+- Candidate config named production is an env-empty run of the bench-internals
+  executable. It checks default dispatch and compiler overhead against the
+  frozen baseline, but does not replace a feature-free production build after
+  any defaults are promoted. Do not infer portable performance from native
+  tests or promote based solely on an isolated stage improvement.
+- No blocker was identified in the current qualification plan. Require total
+  prover, verification/lifecycle, process peak and retained-memory results;
+  inspect per-seed consistency and regressions across N512/N1024 and 8/12 workers,
+  then validate selected combinations and the final production defaults.

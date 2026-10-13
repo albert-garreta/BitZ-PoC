@@ -123,6 +123,7 @@ pub(super) fn prove<const K: usize>(
         read,
         boundary,
         prefix_rounds,
+        native_prefix::batched_norm_enabled(),
     )
 }
 
@@ -179,6 +180,7 @@ fn prove_with_prefix<const K: usize>(
     read: impl Fn(usize) -> [i16; K] + Sync,
     boundary: &mut impl RoundBoundaryPolicy,
     prefix_rounds: usize,
+    batched_norm: bool,
 ) -> Result<Output<K>, SumcheckError> {
     let rounds = row_vars + rho.len();
     // row_vars <= 20 and prefix_rounds <= 4 bound native sums by 2^54
@@ -210,6 +212,7 @@ fn prove_with_prefix<const K: usize>(
                 rejection_instances.as_deref(),
                 prefix_rounds,
                 &read,
+                batched_norm,
             )
         })
         .transpose()?;
@@ -804,7 +807,9 @@ mod tests {
                     );
                     let expected_nonces = expected_boundary.into_nonces();
                     let expected_challenge = expected_transcript.get_challenge::<field::Gf128>();
-                    for width in 1..=4 {
+                    for (width, batched_norm) in
+                        (1..=4).flat_map(|width| [(width, false), (width, true)])
+                    {
                         let mut transcript = Blake3Transcript::new();
                         let mut boundary =
                             ProverGrindingRoundBoundary::<IntegerTestDomain>::with_round_offset(
@@ -821,6 +826,7 @@ mod tests {
                             |i| rows[i],
                             &mut boundary,
                             width,
+                            batched_norm,
                         )
                         .unwrap();
                         let nonces = boundary.into_nonces();
@@ -856,7 +862,9 @@ mod tests {
                         assert_eq!(verifier.get_challenge::<field::Gf128>(), expected_challenge);
                     }
                 }
-                for width in 1..=4 {
+                for (width, batched_norm) in
+                    (1..=4).flat_map(|width| [(width, false), (width, true)])
+                {
                     let mut transcript = Blake3Transcript::new();
                     let wrong = field.add(&initial, &field.one());
                     let result = prove_with_prefix(
@@ -870,6 +878,7 @@ mod tests {
                         |i| rows[i],
                         &mut UngrindedRoundBoundary,
                         width,
+                        batched_norm,
                     );
                     assert!(matches!(
                         result,
@@ -910,6 +919,7 @@ mod tests {
                 |_| panic!("invalid dimensions must be rejected before reading"),
                 &mut UngrindedRoundBoundary,
                 width,
+                true,
             );
             assert!(matches!(
                 result,

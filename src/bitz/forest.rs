@@ -35,7 +35,7 @@ use std::mem::MaybeUninit;
 use std::sync::OnceLock;
 
 #[cfg(feature = "parallel")]
-use super::row_dispatch::CyclicRows;
+use super::row_dispatch::RowDispatch;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -85,16 +85,67 @@ fn retain_l4_selected() -> bool {
     })
 }
 
+fn factored_tables_selected() -> bool {
+    #[cfg(feature = "bench-internals")]
+    {
+        // Cache only an explicit override: the default follows the pool of
+        // each proof, which may change between calls in the same process.
+        static SELECTED: OnceLock<Option<bool>> = OnceLock::new();
+        if let Some(selected) =
+            *SELECTED.get_or_init(|| match std::env::var("BITZ_FOREST_TABLES") {
+                Err(std::env::VarError::NotPresent) => None,
+                Ok(value) => Some(match value.as_str() {
+                    "expanded" => false,
+                    "factored" => true,
+                    _ => panic!("BITZ_FOREST_TABLES must be expanded or factored"),
+                }),
+                Err(std::env::VarError::NotUnicode(_)) => {
+                    panic!("BITZ_FOREST_TABLES must be valid Unicode")
+                }
+            })
+        {
+            return selected;
+        }
+    }
+    factored_tables_default()
+}
+
+/// Compact lookups are enabled where the native twelve-worker path was
+/// measured; other pools and portable backends retain expanded tables.
+fn factored_tables_default() -> bool {
+    #[cfg(feature = "parallel")]
+    return kernels::HAS_NATIVE_FACTORED_LOOKUP && rayon::current_num_threads() == 12;
+    #[cfg(not(feature = "parallel"))]
+    false
+}
+
 /// The per-position value tables of one level after some folds, flat:
 /// position `q` owns `data[q·len..(q+1)·len]`.
 pub(crate) struct Tables {
     data: Vec<Gf>,
     len: usize,
+    /// The 32 stored entries are two additive nibble tables, representing
+    /// all 256 values. This form occurs only after k=3-ell folds at ell<3.
+    factored: bool,
 }
 
 impl Tables {
+    fn is_factored(&self) -> bool {
+        self.factored
+    }
+
     fn at(&self, q: usize) -> &[Gf] {
         &self.data[q * self.len..(q + 1) * self.len]
+    }
+
+    /// The bucket round keeps its existing kernel: expand four position
+    /// tables into row-local scratch, then discard it before the next row.
+    fn expand_at(&self, q: usize, out: &mut [Gf; 256]) {
+        assert!(self.is_factored());
+        let table = self.at(q);
+        for (pattern, value) in out.iter_mut().enumerate() {
+            *value = table[pattern & 15] + table[16 + (pattern >> 4)];
+        }
     }
 
     /// Absorb the next fold into each position table once, so columns can
@@ -165,6 +216,7 @@ pub(crate) struct Forest<'a> {
     nibble_rows: OnceLock<NibbleRows>,
     #[cfg(any(test, feature = "bench-internals"))]
     retain_l4: bool,
+    factored_tables: bool,
 }
 
 impl<'a> Forest<'a> {
@@ -189,6 +241,7 @@ impl<'a> Forest<'a> {
             retain_l4: retain_l4_selected(),
             #[cfg(all(test, not(feature = "bench-internals")))]
             retain_l4: false,
+            factored_tables: factored_tables_selected(),
         }
     }
 
@@ -666,7 +719,7 @@ impl<'a> Forest<'a> {
         let started = std::time::Instant::now();
         let mut tables = match tables {
             Some(tables) if k == 0 => tables,
-            _ => self.fold_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
+            _ => self.fold_jit_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
         };
         let eq_c = eq_table(&external[..s]);
         super::trace(&format!("    L{ell} tables"), started);
@@ -874,7 +927,71 @@ impl<'a> Forest<'a> {
             });
         // SAFETY: every one of the `positions · len` slots was written above.
         unsafe { buf.set_len(positions * len) };
-        Tables { data: buf, len }
+        Tables {
+            data: buf,
+            len,
+            factored: false,
+        }
+    }
+
+    /// For ell<3, the k=3-ell folded table is the sum of independent
+    /// products on 1, 2 or 4 pattern bits. No product crosses a nibble,
+    /// so T(byte)=low[byte&15]+high[byte>>4], including constant terms.
+    /// The two tables are built directly; no expanded 256-entry vector is
+    /// allocated. L3 and every earlier bit round keep their original form.
+    fn fold_jit_table_in(&self, ell: usize, k: usize, r: &[Gf], buf: Vec<Gf>) -> Tables {
+        if self.factored_tables && ell < MATERIALISED_LEVEL && ell + k == MATERIALISED_LEVEL {
+            return self.fold_nibble_table_in(ell, k, r, buf);
+        }
+        self.fold_table_in(ell, k, r, buf)
+    }
+
+    fn fold_nibble_table_in(&self, ell: usize, k: usize, r: &[Gf], mut buf: Vec<Gf>) -> Tables {
+        assert!(ell < MATERIALISED_LEVEL && ell + k == MATERIALISED_LEVEL);
+        let low_bits = self.t - ell - 1 - k;
+        let positions = 1usize << (self.t - ell - k);
+        let bits = 1usize << ell;
+        let sub_entries = 1usize << bits;
+        let reversed: Vec<Gf> = r[..k].iter().rev().copied().collect();
+        let eq_v = eq_table(&reversed);
+        buf.clear();
+        buf.reserve(positions * 32);
+        cfg_chunks_mut!(buf.spare_capacity_mut()[..positions * 32], 32)
+            .enumerate()
+            .for_each(|(q, out)| {
+                let p = q >> low_bits;
+                let y = q & ((1usize << low_bits) - 1);
+                let mut table = [Gf::zero(); 32];
+                for (v, &weight) in eq_v.iter().enumerate() {
+                    let base = y | (v << low_bits) | (p << (self.t - ell - 1));
+                    let mut products = [Gf::zero(); 16];
+                    products[0] = weight;
+                    for u in 0..bits {
+                        let image = self.images[base | (u << (self.t - ell))];
+                        let limit = 1usize << u;
+                        for pattern in 0..limit {
+                            products[pattern | limit] = products[pattern] * image;
+                        }
+                    }
+                    let first_bit = v * bits;
+                    let half = first_bit / 4;
+                    let offset = first_bit % 4;
+                    for pattern in 0..16 {
+                        table[half * 16 + pattern] +=
+                            products[(pattern >> offset) & (sub_entries - 1)];
+                    }
+                }
+                for (slot, value) in out.iter_mut().zip(table) {
+                    slot.write(value);
+                }
+            });
+        // SAFETY: every disjoint position wrote its complete 32-entry table.
+        unsafe { buf.set_len(positions * 32) };
+        Tables {
+            data: buf,
+            len: 32,
+            factored: true,
+        }
     }
 
     /// Level `ell` in full: index `y·2^s + c`.
@@ -959,7 +1076,7 @@ impl<'a> Forest<'a> {
             };
         }
         #[cfg(feature = "parallel")]
-        if let Some(dispatch) = CyclicRows::new(rows, len * std::mem::size_of::<Gf>()) {
+        if let Some(dispatch) = RowDispatch::new(rows, len * std::mem::size_of::<Gf>()) {
             dispatch.map_jobs(spare.chunks_mut(cols), |jobs| {
                 jobs.into_iter().for_each(fill_row!());
             });
@@ -1085,7 +1202,7 @@ impl<'a> Forest<'a> {
             };
         }
         #[cfg(feature = "parallel")]
-        if let Some(dispatch) = CyclicRows::new(sub, total * std::mem::size_of::<Gf>()) {
+        if let Some(dispatch) = RowDispatch::new(sub, total * std::mem::size_of::<Gf>()) {
             dispatch.map_indices(sub, |indices| indices.for_each(fill_subtree!()));
         } else {
             (0..sub)
@@ -1127,6 +1244,22 @@ impl<'a> Forest<'a> {
         eq_y: &[Gf],
         send_one: bool,
     ) -> (Gf, Gf) {
+        if tables.is_factored() {
+            return self.jit_round_sums_with::<true>(tables, ell, k, eq_c, eq_y, send_one);
+        }
+        self.jit_round_sums_with::<false>(tables, ell, k, eq_c, eq_y, send_one)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn jit_round_sums_with<const FACTORED: bool>(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+    ) -> (Gf, Gf) {
         debug_assert_eq!(ell + k, MATERIALISED_LEVEL);
         let low_bits = self.t - ell - 1 - k;
         let cols = 1usize << self.s;
@@ -1139,10 +1272,19 @@ impl<'a> Forest<'a> {
         let row = |y1: usize, bk: &mut kernels::SumBuckets| {
             bk.clear();
             let mut pats = [[0u8; 64]; 4];
-            let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
+            let position = |corner| {
                 let (p, b1) = (corner >> 1, corner & 1);
-                tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
-            });
+                (p << low_bits) | (b1 << (low_bits - 1)) | y1
+            };
+            let mut expanded = [[Gf::zero(); 256]; 4];
+            let tab: [&[Gf]; 4] = if FACTORED {
+                for (corner, out) in expanded.iter_mut().enumerate() {
+                    tables.expand_at(position(corner), out);
+                }
+                std::array::from_fn(|corner| expanded[corner].as_slice())
+            } else {
+                std::array::from_fn(|corner| tables.at(position(corner)))
+            };
             for g in 0..groups {
                 // Corner `(p, b1)` is `2p + b1`; this task owns rows `y1`
                 // and `y1 + 2^{low_bits−1}`.
@@ -1192,6 +1334,32 @@ impl<'a> Forest<'a> {
         send_one: bool,
         arena: &mut Vec<Gf>,
     ) -> (Gf, Gf) {
+        if tables.is_factored() {
+            return self.jit_fold_round_inner::<PRE_SCALED, WEIGH_LEFT, true>(
+                tables, ell, k, rho, eq_c, eq_y, send_one, arena,
+            );
+        }
+        self.jit_fold_round_inner::<PRE_SCALED, WEIGH_LEFT, false>(
+            tables, ell, k, rho, eq_c, eq_y, send_one, arena,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn jit_fold_round_inner<
+        const PRE_SCALED: bool,
+        const WEIGH_LEFT: bool,
+        const FACTORED: bool,
+    >(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        rho: Gf,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        arena: &mut Vec<Gf>,
+    ) -> (Gf, Gf) {
         let low_bits = self.t - ell - 1 - k;
         let cols = 1usize << self.s;
         let rows = 1usize << (low_bits - 2);
@@ -1203,7 +1371,7 @@ impl<'a> Forest<'a> {
             // First fill: through the spare capacity, no memset.
             arena.clear();
             let spare = &mut arena.spare_capacity_mut()[..len];
-            let sums = self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(
+            let sums = self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT, FACTORED>(
                 tables, ell, k, rho, eq_c, eq_y, send_one, spare,
             );
             // SAFETY: `jit_fold_into` writes every slot of both halves.
@@ -1216,14 +1384,14 @@ impl<'a> Forest<'a> {
             let view = unsafe {
                 std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
             };
-            self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(
+            self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT, FACTORED>(
                 tables, ell, k, rho, eq_c, eq_y, send_one, view,
             )
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn jit_fold_into<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+    fn jit_fold_into<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const FACTORED: bool>(
         &self,
         tables: &Tables,
         ell: usize,
@@ -1272,6 +1440,19 @@ impl<'a> Forest<'a> {
                         let base_c = g << 6;
                         let width = 64.min(cols - base_c);
                         let range = base_c..base_c + width;
+                        if FACTORED {
+                            kernels::jit_fold_factored_group::<PRE_SCALED, WEIGH_LEFT>(
+                                tab,
+                                &pats,
+                                &rho,
+                                &eq_t[g << 6..(g + 1) << 6],
+                                send_one,
+                                [&mut el[range.clone()], &mut eh[range.clone()]],
+                                [&mut ol[range.clone()], &mut oh[range]],
+                                &mut sums,
+                            );
+                            continue;
+                        }
                         kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
                             tab,
                             &pats,
@@ -1291,7 +1472,7 @@ impl<'a> Forest<'a> {
         }
         let add = |(a, b), (x, y)| (a + x, b + y);
         #[cfg(feature = "parallel")]
-        if let Some(dispatch) = CyclicRows::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
+        if let Some(dispatch) = RowDispatch::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
             let jobs = e_lo
                 .chunks_mut(cols)
                 .zip(e_hi.chunks_mut(cols))
@@ -1816,7 +1997,8 @@ fn level_up_into(lower: &[Gf], out: &mut [MaybeUninit<Gf>], columns: Option<usiz
     let (l, r) = lower.split_at(half);
     #[cfg(feature = "parallel")]
     if let Some(cols) = columns {
-        if let Some(dispatch) = CyclicRows::new(half / cols, 3 * half * std::mem::size_of::<Gf>()) {
+        if let Some(dispatch) = RowDispatch::new(half / cols, 3 * half * std::mem::size_of::<Gf>())
+        {
             dispatch.map_jobs(out.chunks_mut(cols), |jobs| {
                 for (row, chunk) in jobs {
                     let start = row * cols;
@@ -2461,6 +2643,199 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn factored_tables_match_all_patterns_and_prescaling() {
+        let t = 6;
+        let (packed, mut images) = random_grid(t, 7, 0x4641_4354_4f52);
+        images[0] = Gf::zero();
+        images[1] = Gf::one();
+        let mut forest = Forest::new(t, 7, &packed, &images);
+        forest.factored_tables = true;
+        let mut state = 0x4641_4354_4f52_4544;
+        for ell in 0..3 {
+            let k = 3 - ell;
+            let low_bits = t - ell - 1 - k;
+            let random: Vec<_> = (0..k).map(|_| random_gf(&mut state)).collect();
+            for challenges in [vec![Gf::zero(); k], vec![Gf::one(); k], random] {
+                let expanded = forest.fold_table(ell, k, &challenges);
+                let factored = forest.fold_jit_table_in(ell, k, &challenges, Vec::new());
+                assert!(factored.is_factored());
+                assert_eq!(factored.data.len() * 8, expanded.data.len());
+                let eq = eq_table(&challenges.iter().rev().copied().collect::<Vec<_>>());
+                for q in 0..1usize << (t - 3) {
+                    let mut values = [Gf::zero(); 256];
+                    factored.expand_at(q, &mut values);
+                    assert_eq!(values.as_slice(), expanded.at(q));
+                    let (p, y) = (q >> low_bits, q & ((1 << low_bits) - 1));
+                    for pattern in 0..256 {
+                        // Independent direct evaluation of the folded leaf
+                        // products, without a table-construction recurrence.
+                        let expected =
+                            eq.iter().enumerate().fold(Gf::zero(), |sum, (v, &weight)| {
+                                let product = (0..1usize << ell).fold(Gf::one(), |product, u| {
+                                    let row = y
+                                        | (v << low_bits)
+                                        | (p << (t - ell - 1))
+                                        | (u << (t - ell));
+                                    if pattern >> ((v << ell) | u) & 1 == 0 {
+                                        product
+                                    } else {
+                                        product * images[row]
+                                    }
+                                });
+                                sum + weight * product
+                            });
+                        assert_eq!(
+                            values[pattern], expected,
+                            "ell={ell}, q={q}, pattern={pattern}"
+                        );
+                    }
+                }
+                for rho in [Gf::zero(), Gf::one(), random_gf(&mut state)] {
+                    let mut scaled = forest.fold_jit_table_in(ell, k, &challenges, Vec::new());
+                    scaled.scale_fold(low_bits, rho);
+                    for q in 0..1usize << (t - 3) {
+                        let weight = if q >> (low_bits - 1) & 1 == 0 {
+                            Gf::one() + rho
+                        } else {
+                            rho
+                        };
+                        let mut values = [Gf::zero(); 256];
+                        scaled.expand_at(q, &mut values);
+                        for pattern in 0..256 {
+                            assert_eq!(values[pattern], expanded.at(q)[pattern] * weight);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            !forest
+                .fold_jit_table_in(3, 0, &[], Vec::new())
+                .is_factored()
+        );
+    }
+
+    #[test]
+    fn factored_tables_preserve_complete_forest_proofs() {
+        use crate::bitz::transcript::build_kernel_prover;
+        // Tiny fallback, scalar output tails, factored-only prescaling at
+        // 128 columns, and both representations prescaled at 1024 columns.
+        for (t, s, depth) in [(4, 3, 4), (6, 0, 6), (7, 3, 5), (8, 7, 7), (8, 10, 8)] {
+            let (packed, images) = random_grid(t, s, (t * 7919 + s) as u64);
+            let mut state = 0x4e49_4242_4c45;
+            let random: Vec<Gf> = (0..s + t - depth).map(|_| random_gf(&mut state)).collect();
+            for special in [None, Some(Gf::zero()), Some(Gf::one())] {
+                let mut zeta = random.clone();
+                if let (Some(value), Some(first)) = (special, zeta.first_mut()) {
+                    *first = value;
+                }
+                for nibble in [false, true] {
+                    for weighing in [Weighing::Off, Weighing::On] {
+                        let prove = |factored| {
+                            let mut forest = Forest::new(t, s, &packed, &images)
+                                .with_patterns(PatternMode {
+                                    nibble,
+                                    nibble_from: 0,
+                                })
+                                .with_weighing(weighing);
+                            forest.factored_tables = factored;
+                            let mut ps = build_kernel_prover(b"forest-factored/v1", b"instance");
+                            let terminal = forest.prove_depth(&mut ps, &zeta, depth);
+                            (terminal, ps.finish())
+                        };
+                        assert_eq!(
+                            prove(false),
+                            prove(true),
+                            "t={t}, s={s}, depth={depth}, nibble={nibble}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[cfg(not(feature = "bench-internals"))]
+    #[test]
+    fn production_factored_default_follows_each_proving_pool() {
+        let (t, s) = (6, 3);
+        let (packed, images) = random_grid(t, s, 0x4445_4641_554c_54);
+        // Revisit pools after different worker counts in the same process:
+        // a cached choice from the first proof must not become the default.
+        for workers in [8, 12, 16, 1, 12, 8] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                let forest = Forest::new(t, s, &packed, &images);
+                assert_eq!(
+                    forest.factored_tables,
+                    kernels::HAS_NATIVE_FACTORED_LOOKUP && workers == 12
+                );
+            });
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn factored_tables_and_virtual_shards_preserve_complete_forest_proof() {
+        use crate::bitz::row_dispatch::with_shards64;
+        use crate::bitz::transcript::build_kernel_prover;
+        // 256 JIT rows, then 128/64 dense rows: both large folds preserve
+        // virtual owners. Later rounds cross the 64-row fallback boundary.
+        let (t, s) = (14, 9);
+        let (packed, images) = random_grid(t, s, 0x5649_5254_5541_4c);
+        let mut state = 0x5348_4152_4453;
+        let zeta: Vec<Gf> = (0..s + 1).map(|_| random_gf(&mut state)).collect();
+        let prove = |factored, shards| {
+            with_shards64(shards, || {
+                let mut forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
+                    nibble: true,
+                    nibble_from: 0,
+                });
+                forest.factored_tables = factored;
+                let mut ps = build_kernel_prover(b"forest-factored-shards/v1", b"instance");
+                let terminal = forest.prove_depth(&mut ps, &zeta, t - 1);
+                (terminal, ps.finish())
+            })
+        };
+        let pool8 = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        let expected = pool8.install(|| prove(false, false));
+        assert_eq!(pool8.install(|| prove(true, true)), expected);
+        let pool12 = rayon::ThreadPoolBuilder::new()
+            .num_threads(12)
+            .build()
+            .unwrap();
+        for factored in [false, true] {
+            for shards in [false, true] {
+                assert_eq!(
+                    pool12.install(|| prove(factored, shards)),
+                    expected,
+                    "factored={factored}, shards={shards}"
+                );
+            }
+        }
+        #[cfg(not(feature = "bench-internals"))]
+        assert_eq!(
+            pool12.install(|| {
+                let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
+                    nibble: true,
+                    nibble_from: 0,
+                });
+                let mut ps = build_kernel_prover(b"forest-factored-shards/v1", b"instance");
+                let terminal = forest.prove_depth(&mut ps, &zeta, t - 1);
+                (terminal, ps.finish())
+            }),
+            expected,
+            "production defaults"
+        );
     }
 
     #[test]

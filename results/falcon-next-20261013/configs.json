@@ -1,0 +1,296 @@
+{
+  "baseline": {
+    "binary": "baseline",
+    "env": {}
+  },
+  "production": {
+    "binary": "candidate",
+    "env": {}
+  },
+  "control": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "legacy": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy"
+    }
+  },
+  "optimized": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized"
+    }
+  },
+  "tables": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "ownership": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "threads": [
+      12
+    ]
+  },
+  "native-norm": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "dense-output": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "compact",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "pcs-transpose": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "direct"
+    }
+  },
+  "norm4-control": {
+    "binary": "candidate",
+    "threads": [
+      12
+    ],
+    "degrees": [
+      512
+    ],
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy",
+      "BITZ_ARITHMETIC_NORM_PREFIX": "4"
+    }
+  },
+  "norm4-batched": {
+    "binary": "candidate",
+    "threads": [
+      12
+    ],
+    "degrees": [
+      512
+    ],
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy",
+      "BITZ_ARITHMETIC_NORM_PREFIX": "4"
+    }
+  },
+  "dense512": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "compact",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      512
+    ],
+    "threads": [
+      8
+    ]
+  },
+  "dense1024": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "compact",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "tables1024": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "norm1024": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "pcs1024": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "direct"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "own-tables": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "own-norm": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "expanded",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "own-tables-norm": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    },
+    "degrees": [
+      1024
+    ],
+    "threads": [
+      12
+    ]
+  },
+  "all": {
+    "binary": "candidate",
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "batched",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "compact",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "direct"
+    }
+  },
+  "own-tables-both": {
+    "binary": "candidate",
+    "threads": [
+      12
+    ],
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "own-tables-dense": {
+    "binary": "candidate",
+    "threads": [
+      12
+    ],
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "compact",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "legacy"
+    }
+  },
+  "own-tables-pcs": {
+    "binary": "candidate",
+    "threads": [
+      12
+    ],
+    "env": {
+      "BITZ_FOREST_TABLES": "factored",
+      "BITZ_FOREST_ROW_OWNERSHIP": "shards64",
+      "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+      "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+      "BITZ_PCS_SPARSE_TRANSPOSE": "direct"
+    }
+  }
+}

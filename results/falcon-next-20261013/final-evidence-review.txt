@@ -1,0 +1,79 @@
+Production evidence and diagnostic-parser review — 2026-10-13
+
+Scope: read-only source/receipt review while accepted1 was active. No Cargo,
+prover, benchmark, global validation/summarization, or diagnostic-parser execution.
+The active acceptance campaign is not certified by this note.
+
+Production provenance: no discrepancy found.
+- candidate-production-source.json records base 23c182868e94ff044d5e67a03baed056c4335c16.
+  Independently recomputed SHA-256 for all 13 listed source/manifest/runner/test
+  files; all match. Recomputed the saved patch hash; it matches
+  4db5a484af5353a1edda6db1c112e12d55df8cf01afa17f52c261fbc9407eb8d.
+- Production build command is --locked, --features falcon-hybrid, native target,
+  with no bench-internals. Cargo JSON reports build success and fresh=false for
+  changed flock-core/flock-prover/bitz and the Falcon benchmark. Field is fresh=true
+  (unchanged dependency), so do not describe every crate as freshly compiled.
+- Cargo artifact executable path matches the binary receipt. The recorded frozen
+  production SHA-256 is df580cfbeefa695d3195effe6297fd3cb508f909e1aa37378731f2aca090443b;
+  accepted1 points to the same path/hash. Its baseline points to the previous
+  accepted binary c768431de56893effcb985e0bbfb380b6f0dbdb1714319772297eb0cfdc37b4b.
+  Binary files were not independently rehashed during the active timing run.
+- Build helper captures the patch/source hashes before building, checks Rust files
+  and the tracked patch again before freezing, refuses reused names, and copies
+  the Cargo-reported executable. Encoded Rust flags are cleared and native flags
+  are explicit. No evidence of a stale shared-target artifact in these receipts.
+
+Production test receipts inspected (not rerun): native Falcon 371 passed/3 ignored;
+native BitZ 103 passed/1 ignored; portable x86-64 BitZ 92 passed; no-default-features
+hybrid library check finished successfully. Ignored tests are not counted as passed.
+
+Acceptance design: no discrepancy found in the active manifest.
+- Exactly baseline and production with empty experiment overrides, untraced,
+  both degrees, batch 1024/security 128, 8/12 workers and seeds 42/43/44.
+- 192 planned processes: seven fresh-process cold proofs per seed, and one
+  repeated process per seed with two warmups plus seven samples. This gives 21
+  timed proofs per cell/mode when complete. No partial timing conclusion made.
+- Runner randomizes matched geometry/seed/mode/repetition blocks and variant order,
+  records exact ordered affinities and applies the per-job topology to normalization.
+  Runtime selector/trace prefixes are removed before the explicit command env.
+- Resume requires exact manifests/runner/helper provenance. Result validation
+  binds exact jobs, commands, raw stdout/stderr/process hashes, successful process
+  exit, normalized trial labels/security/affinity and proof verification. Final
+  global validation additionally requires complete job lists, no extra results,
+  frozen binary hashes, source/proof/payload identity and matching baseline cases.
+- Current saved validation.json is a prior completed snapshot of 2,166 proofs;
+  summary.json covers screen, confirm, lifecycle and four experiment correctness
+  phases. Neither includes/certifies accepted1. Its phases_complete=true must not
+  be represented as covering a subsequently created active phase.
+- Complete proof equality means complete Debug-representation digest plus payload
+  equality, not a direct comparison of serialized proof bytes. Within-process
+  repeated samples are correlated. Cold means first proof after setup, not flushed
+  hardware caches. Final regression claims need their own completed worker cells.
+
+Diagnostic parser: one actionable strictness gap in the reviewed version.
+Location: forest-profile.py:109-118; reused analyze-forest.py:41-60 and 85-99.
+The whitelist checks labels that are present, while a block is considered complete
+as soon as 'level 0' occurs. Missing internal timing lines are not rejected and
+derived categories silently sum/get missing values as zero. For example, a block
+with a removed 'L2 jit fold' line still has its valid closing level0/forest/prover
+events and would underreport JIT folds. This follows directly from the parser code;
+no synthetic execution was run. Raw hash checks protect saved files but do not
+prove that the original logger emitted every expected category.
+Recommendation: require the expected label set/presence for supported public forest
+geometries before deriving totals, with a synthetic dropped-internal-line test.
+At minimum, narrow the claim that incomplete blocks fail. This affects diagnostic
+stage attribution only, not untraced timings or proof correctness. Root notified.
+
+Other parser coverage is sound by inspection: only explicitly selected completed
+traced phases are read; each selected case requires a frozen baseline; all phase
+jobs are validated before selection; extra results are rejected; parser/input
+hashes are recorded; warmups follow manifest/trial labels; roots join one forest
+block; duplicate/unknown labels fail; parent/child categories are not summed twice;
+forest wall is separate; rounded durations and possible negative rounded L4
+remainder are documented. Fixed-16KiB fault-MB text is ignored. Output creation
+is exclusive. The sequential one-forest-per-proof assumption is explicit.
+
+Reviewed helper hashes:
+5397a6cbdebcbf06b7ca4acc78c96392c45f566432caedd3fe3ac506989bec20 build-candidate.py
+a0083958a3b6cbd98844d949dc4c59378a87a9947eeb02f92d41ed97df101972 forest-profile.py
+3e03c47676816d00a05e139d2179fc7b650034f2f74ff28e65783e59f85c7441 ../falcon-forest-pcs-binding-20261013/analyze-forest.py

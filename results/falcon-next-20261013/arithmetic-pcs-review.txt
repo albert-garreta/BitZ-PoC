@@ -1,0 +1,78 @@
+Arithmetic, PCS and runner source review — 2026-10-13
+Baseline: 23c182868
+
+No remaining actionable correctness, initialization, transcript, or evidence-
+provenance issue found in the reviewed changes. This is source review only:
+I ran no Cargo builds, Rust/Python tests, provers, benchmarks, or profiling.
+Execution and performance qualification belong to the root's coordinated runs.
+
+Independent arithmetic review
+- src/piop/spartan/falcon_integer/native_prefix.rs: norm-only batching keeps
+  the same per-instance integer sum bound, at most 2^54 for width<=4 and
+  row_vars<=20. It reduces each instance with its own field weight before
+  combining instances; task size does not enlarge the signed accumulator.
+  Fixed 81-slot task accumulators cover all grids, and the final partial task
+  uses min(start+8, instance_count). Empty rejection storage is skipped before
+  indexing in coefficients and safely does no work in fold. K4/rejection
+  retains the existing implementation. Production defaults remain legacy.
+- src/piop/spartan/falcon_integer.rs: the new selection changes prefix setup
+  only. Ordinary round polynomials, boundaries/grinding, challenges, terminal
+  read-off and field-table transition retain their existing order. Tests
+  compare legacy/batched with an independent dense prover, including K4,
+  wrong initial claims, signed extrema, zero/one weights and challenges,
+  grinding/nonces, verifier replay, and subsequent transcript challenge.
+- One test-coverage issue was corrected by the arithmetic author before the
+  coordinated build: both partial-task fixtures originally had zero tails.
+  Weights now cycle [1,-1,97,0], and only instances 13..15 are inactive, so the
+  final instance contributes for counts 9 and 17. Count 9 exercises a serial
+  partial task; count 17 exceeds the 4096-entry cutoff and exercises a nonzero
+  parallel partial task. The fixture still covers inactive rows/zero weights.
+- src/piop/spartan/falcon1024_algebraic/word_binding.rs: compact dense output
+  reads one vector and writes another, so parallel output chunks cannot
+  overwrite live inputs. The generalized initializer enforces even output
+  length/chunk size, writes every exposed slot, and changes Vec length only
+  after all workers finish. On panic the direct output length stays zero;
+  field slots are Copy with no drop resources. The 512-output chunk matches
+  the existing 1024-input fold work and does not increase accumulator bounds.
+  Each folded survivor and next-round sum agrees with the existing formula.
+  The terminal is copied before restoring the larger allocation to the sole
+  Prepared cache; the extra half-sized allocation is local to the proof.
+  Production defaults remain inplace, with no persistent second scratch Vec.
+- word_binding_tests.rs covers independent dense references through terminal,
+  pre-strides 1/2/4, 8192 live entries, 61/127-bit fields, zero/one/random
+  challenges, full proof/transcript equality, partial batches, reused scratch
+  across fields/shapes, and initialization panic/even-tail coverage for both
+  512/1024 output chunk sizes. This review inspected these tests, not execution.
+
+PCS implementation/self-review and independent review
+- vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs: direct scatter keeps
+  query order, including duplicates/cancellation. Active windows are disjoint;
+  their window/global twiddle indices and butterfly order are unchanged, and
+  the suffix begins after all workers join. Below log_d 12, the previous direct
+  scatter/dense path is reused. No transcript, query, sum or security change.
+  BITZ_PCS_SPARSE_TRANSPOSE=legacy|direct is bench-internals-only, defaults
+  legacy, and rejects invalid values. Root forwards the new vendor feature.
+  New tests compare explicit direct/legacy paths with the independent full
+  dense transpose and forward-NTT induced-basis dot identity; they cover empty,
+  cancelling, boundary, single/all-window and 309-query inputs, gate 11/12,
+  Falcon domains 14/15, and 1/3/12 workers without process-env mutation.
+- The arithmetic agent independently reviewed the PCS diff and reported no
+  actionable finding; it also performed no execution for that review.
+
+Runner delta review
+- scripts/falcon_next_optimization.py differs from the frozen locality runner
+  by schema, five whitelisted selectors and explicit one-variable controls.
+  Baseline keeps env{}, production keeps current defaults, and inherited BITZ
+  and dependency control/trace flags are stripped before explicit overrides.
+  Exact commands, raw/process hashes, parser/helper hashes, binaries, affinity,
+  security/protocol, trial order, input/source roots, proof Debug digests and
+  payload lengths remain checked. Missing baseline cases and stale extra
+  results remain rejected. Phases/topologies/cold/repeated/traced groups stay
+  separate. The new synthetic test inspects one-selector differences.
+- Interpretation caveat: native-norm is effective only for prefix>1. At current
+  defaults 12-worker N512 is a no-op and N1024 is active. A kernel comparison
+  at other shapes needs the same explicit prefix in candidate and control.
+  Proof Debug digests are not a direct serialized-proof byte comparison.
+
+No speedup, zero-regression guarantee, or statistical conclusion follows from
+this source review. All default changes require the separate measured campaign.

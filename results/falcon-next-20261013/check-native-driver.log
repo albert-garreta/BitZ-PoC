@@ -1,0 +1,14 @@
+RUN ['cargo', 'test', '--locked', '--features', 'falcon-hybrid,bench-internals', '--lib', 'falcon', '--', '--test-threads=1']
+EXIT 0 /home/john-wu/code/BitZ-pcs/results/falcon-next-20261013/check-native-0.log
+test piop::spartan::falcon_profiles::n512_k9::verify::workspace_tests::reused_workspace_matches_schoolbook_trace ... ok
+test sumcheck::inner::packed::streaming::tests::fused_streaming_transition_matches_separate_fold_at_falcon_field_widths ... ok
+
+test result: ok. 369 passed; 0 failed; 3 ignored; 0 measured; 619 filtered out; finished in 78.57s
+
+RUN ['cargo', 'test', '--locked', '--features', 'falcon-hybrid,bench-internals', '--lib', 'bitz::', '--', '--test-threads=1']
+EXIT 0 /home/john-wu/code/BitZ-pcs/results/falcon-next-20261013/check-native-1.log
+test piop::spartan::u64_bitz::tests::u64_paper_path_rejects_a_wrong_product ... ok
+test piop::spartan::u64_bitz::tests::u64_paper_path_roundtrips_and_is_deterministic ... ok
+
+test result: ok. 100 passed; 0 failed; 1 ignored; 0 measured; 890 filtered out; finished in 1.67s
+

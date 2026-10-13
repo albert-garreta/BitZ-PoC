@@ -2392,10 +2392,39 @@ pub(crate) fn induce_sumcheck_poly_auto(
 /// has only `positions.len()` nonzeros and that the first `k` transpose steps
 /// (forward layers `log_d-1 .. log_d-k`, pairing distances `1 .. 2^(k-1)`) mix
 /// only **within** `2^k`-aligned windows. We process just the windows that
-/// contain a nonzero (a dense `2^k` transpose each), densify, then run the
-/// remaining steps as full dense sweeps. Output is identical to
+/// contain a nonzero (a dense `2^k` transpose each), then run the remaining
+/// steps as full dense sweeps. Output is identical to
 /// `transpose_forward_ntt` applied to the scattered input.
 fn transpose_forward_ntt_sparse(
+    ntt: &AdditiveNttF128,
+    positions: &[usize],
+    values: &[Gf128],
+    log_d: usize,
+) -> Vec<Gf128> {
+    #[cfg(feature = "bench-internals")]
+    if direct_sparse_transpose_enabled() {
+        return transpose_forward_ntt_sparse_direct(ntt, positions, values, log_d);
+    }
+    transpose_forward_ntt_sparse_legacy(ntt, positions, values, log_d)
+}
+
+#[cfg(feature = "bench-internals")]
+fn direct_sparse_transpose_enabled() -> bool {
+    static DIRECT: OnceLock<bool> = OnceLock::new();
+    *DIRECT.get_or_init(|| match std::env::var("BITZ_PCS_SPARSE_TRANSPOSE") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "legacy" => false,
+            "direct" => true,
+            _ => panic!("BITZ_PCS_SPARSE_TRANSPOSE must be legacy or direct"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_PCS_SPARSE_TRANSPOSE must be valid Unicode")
+        }
+    })
+}
+
+fn transpose_forward_ntt_sparse_legacy(
     ntt: &AdditiveNttF128,
     positions: &[usize],
     values: &[Gf128],
@@ -2433,24 +2462,7 @@ fn transpose_forward_ntt_sparse(
     let processed: Vec<(usize, Vec<Gf128>)> = win_vec
         .into_par_iter()
         .map(|(w, mut buf)| {
-            for s in 0..k {
-                let layer = log_d - 1 - s;
-                let bsh = 1usize << s; // pairing distance
-                let block_size = bsh << 1;
-                let nblocks = (1usize << k) / block_size;
-                for jb in 0..nblocks {
-                    // global block index = ((w<<k) + jb*block_size) >> (s+1).
-                    let t = ntt.twiddle(layer, (w << (k - s - 1)) + jb);
-                    let base = jb * block_size;
-                    for r in 0..bsh {
-                        let a = buf[base + r];
-                        let b = buf[base + r + bsh];
-                        let sab = a + b;
-                        buf[base + r] = sab;
-                        buf[base + r + bsh] = t * sab + b;
-                    }
-                }
-            }
+            transpose_sparse_window(ntt, &mut buf, w, log_d, k);
             (w, buf)
         })
         .collect();
@@ -2461,6 +2473,80 @@ fn transpose_forward_ntt_sparse(
     for (w, buf) in processed {
         data[(w << k)..((w + 1) << k)].copy_from_slice(&buf);
     }
+
+    transpose_sparse_suffix(ntt, &mut data, log_d, k);
+    data
+}
+
+/// Scatter into the final allocation and transform each active window there.
+/// Query order (including duplicate/cancelling entries), window coordinates,
+/// twiddles and butterfly order match the legacy implementation. Only disjoint
+/// windows run concurrently; the suffix starts after every window is complete.
+#[cfg(any(test, feature = "bench-internals"))]
+fn transpose_forward_ntt_sparse_direct(
+    ntt: &AdditiveNttF128,
+    positions: &[usize],
+    values: &[Gf128],
+    log_d: usize,
+) -> Vec<Gf128> {
+    use rayon::prelude::*;
+    if log_d < 12 {
+        // Below the sparse-prefix gate the existing path already scatters
+        // directly into one allocation and applies the dense transpose.
+        return transpose_forward_ntt_sparse_legacy(ntt, positions, values, log_d);
+    }
+    let n = 1usize << log_d;
+    let k = 8;
+    let window_len = 1usize << k;
+    let mut data = vec![Gf128::ZERO; n];
+    let mut active = vec![false; n / window_len];
+    for (&p, &v) in positions.iter().zip(values) {
+        data[p] += v;
+        // Preserve the legacy active set even when values are zero or cancel.
+        active[p >> k] = true;
+    }
+    data.par_chunks_mut(window_len)
+        .zip(active.par_iter())
+        .enumerate()
+        .for_each(|(w, (buf, &is_active))| {
+            if is_active {
+                transpose_sparse_window(ntt, buf, w, log_d, k);
+            }
+        });
+    transpose_sparse_suffix(ntt, &mut data, log_d, k);
+    data
+}
+
+#[inline]
+fn transpose_sparse_window(
+    ntt: &AdditiveNttF128,
+    buf: &mut [Gf128],
+    window: usize,
+    log_d: usize,
+    k: usize,
+) {
+    for s in 0..k {
+        let layer = log_d - 1 - s;
+        let bsh = 1usize << s;
+        let block_size = bsh << 1;
+        let nblocks = (1usize << k) / block_size;
+        for jb in 0..nblocks {
+            // Global block index = ((window<<k) + jb*block_size) >> (s+1).
+            let t = ntt.twiddle(layer, (window << (k - s - 1)) + jb);
+            let base = jb * block_size;
+            for r in 0..bsh {
+                let a = buf[base + r];
+                let b = buf[base + r + bsh];
+                let sab = a + b;
+                buf[base + r] = sab;
+                buf[base + r + bsh] = t * sab + b;
+            }
+        }
+    }
+}
+
+fn transpose_sparse_suffix(ntt: &AdditiveNttF128, data: &mut [Gf128], log_d: usize, k: usize) {
+    use rayon::prelude::*;
 
     // Remaining steps s = k..log_d-1 = forward layers (log_d-1-k) .. 0, dense.
     let n_threads = rayon::current_num_threads().max(1);
@@ -2499,7 +2585,6 @@ fn transpose_forward_ntt_sparse(
             }
         }
     }
-    data
 }
 
 // ===================================================================
@@ -7547,6 +7632,124 @@ mod tests {
                 assert_eq!(sparse, dense, "log_d={log_d}, nq={nq}");
             }
         }
+    }
+
+    #[test]
+    fn transpose_sparse_direct_matches_legacy_and_dense() {
+        use crate::challenger::Challenger;
+        for workers in [1, 3, 12] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                // Include the prefix gate, both Falcon domains, and the
+                // one-element domain where no butterfly is executed.
+                for log_d in [0usize, 1, 6, 11, 12, 14, 15] {
+                    let n = 1usize << log_d;
+                    let ntt = AdditiveNttF128::standard(log_d);
+                    let mut ch = crate::challenger::RandomChallenger::new(0xD1EC7 ^ log_d as u64);
+                    let boundary_positions =
+                        vec![n - 1, 0, 255.min(n - 1), 256.min(n - 1), n / 2, 0, n - 1];
+                    let boundary_values = ch.sample_f128_vec(boundary_positions.len());
+                    let one_window: Vec<_> = (0..43.min(n))
+                        .map(|i| n - n.min(256) + (17 * i) % n.min(256))
+                        .collect();
+                    let all_windows: Vec<_> = (0..n.div_ceil(256))
+                        .map(|w| (256 * w + 255).min(n - 1))
+                        .collect();
+                    // Odd multiplication permutes a power-of-two domain;
+                    // these are distinct, unsorted queries at the live count.
+                    let falcon_queries: Vec<_> =
+                        (0..309.min(n)).map(|i| (i * 4051 + 13) & (n - 1)).collect();
+                    let cancellation = ch.sample_f128();
+                    let cases = [
+                        (Vec::new(), Vec::new()),
+                        (
+                            vec![n - 1, n - 1, 0, 0, n / 2],
+                            vec![
+                                cancellation,
+                                cancellation,
+                                Gf128::ONE,
+                                Gf128::ONE,
+                                Gf128::ZERO,
+                            ],
+                        ),
+                        (boundary_positions, boundary_values),
+                        (one_window.clone(), ch.sample_f128_vec(one_window.len())),
+                        (all_windows.clone(), ch.sample_f128_vec(all_windows.len())),
+                        (
+                            falcon_queries.clone(),
+                            ch.sample_f128_vec(falcon_queries.len()),
+                        ),
+                    ];
+                    for (case, (positions, values)) in cases.iter().enumerate() {
+                        let mut dense = vec![Gf128::ZERO; n];
+                        for (&position, &value) in positions.iter().zip(values) {
+                            dense[position] += value;
+                        }
+                        // Independent oracle: the original full dense
+                        // transpose does not call either sparse helper.
+                        transpose_forward_ntt(&ntt, &mut dense, log_d);
+                        let legacy =
+                            transpose_forward_ntt_sparse_legacy(&ntt, positions, values, log_d);
+                        let direct =
+                            transpose_forward_ntt_sparse_direct(&ntt, positions, values, log_d);
+                        assert_eq!(
+                            legacy, dense,
+                            "legacy workers={workers} log={log_d} case={case}"
+                        );
+                        assert_eq!(
+                            direct, dense,
+                            "direct workers={workers} log={log_d} case={case}"
+                        );
+                    }
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn transpose_sparse_direct_preserves_induced_basis_identity() {
+        use crate::challenger::Challenger;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(3)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            for log_msg in [13usize, 14] {
+                let log_d = log_msg + 1;
+                let msg_len = 1usize << log_msg;
+                let block_len = 1usize << log_d;
+                let ntt = AdditiveNttF128::standard(log_d);
+                let mut ch = crate::challenger::RandomChallenger::new(0xBA515 ^ log_msg as u64);
+                let message = ch.sample_f128_vec(msg_len);
+                let mut codeword = message.clone();
+                codeword.resize(block_len, Gf128::ZERO);
+                ntt.forward_transform(&mut codeword);
+                let queries: Vec<_> = (0..309)
+                    .map(|i| (i * 4051 + 13) & (block_len - 1))
+                    .collect();
+                let alpha = ch.sample_f128_vec(ceil_log2(queries.len()));
+                let mut weights = build_eq_table(&alpha);
+                weights.truncate(queries.len());
+                let mut basis =
+                    transpose_forward_ntt_sparse_direct(&ntt, &queries, &weights, log_d);
+                assert_eq!(basis.len(), block_len);
+                basis.truncate(msg_len);
+                let expected: Gf128 = queries
+                    .iter()
+                    .zip(&weights)
+                    .map(|(&q, &weight)| codeword[q] * weight)
+                    .fold(Gf128::ZERO, |sum, value| sum + value);
+                let actual: Gf128 = message
+                    .iter()
+                    .zip(&basis)
+                    .map(|(&value, &weight)| value * weight)
+                    .fold(Gf128::ZERO, |sum, value| sum + value);
+                assert_eq!(actual, expected, "induced claim, log_msg={log_msg}");
+            }
+        });
     }
 
     /// As above, with num_interleaved > 1 and non-empty v_challenges (the

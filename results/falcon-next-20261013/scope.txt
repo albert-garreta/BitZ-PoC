@@ -1,0 +1,8 @@
+Baseline: falcon-poc commit23c182868e94ff044d5e67a03baed056c4335c16.
+Baseline executable: .tmp/falcon-locality-20261013/candidate-accepted.
+Five independent proof-preserving experiments: forest nibble tables, persistent64-shard row ownership at12 workers, K1 native norm aggregation, direct compact binding output, and in-place PCS sparse transpose preparation.
+No protocol/security/encoding change intended. Production defaults remain unchanged until qualification.
+Primary workload: canonical arithmetic Falcon512/1024, batch1024,128-bit target,8/12 workers. Regression workers1/16; partial batches and100-bit security checked separately.
+Timing: pinned physical cores in existing order, three seeds42/43/44,21 untraced measured proofs per cell, randomized matched configurations. Cold is a first proof in a fresh process, not cache flushing. Repeated proofs share Prepared. Tracing is separate from latency evidence.
+Compare complete proof Debug digests and payload breakdowns as well as inputs/source roots; this is full in-build proof-value equality, not direct serialized-byte comparison.
+Do not overlap builds/tests/other proving processes with timing runs. Preserve previous result sets and frozen scripts.

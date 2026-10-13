@@ -1,0 +1,197 @@
+RUN screen/control-repeated-n512-b1024-s128-t8-seed44-r0
+OK control-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t8-seed44-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t8-seed44-r0
+OK native-norm-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/tables-repeated-n512-b1024-s128-t8-seed44-r0
+OK tables-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t8-seed44-r0
+OK dense-output-repeated-n512-b1024-s128-t8-seed44-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t12-seed43-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t12-seed43-r0
+OK dense-output-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t12-seed43-r0
+OK native-norm-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/norm4-control-repeated-n512-b1024-s128-t12-seed43-r0
+OK norm4-control-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/norm4-batched-repeated-n512-b1024-s128-t12-seed43-r0
+OK norm4-batched-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/ownership-repeated-n512-b1024-s128-t12-seed43-r0
+OK ownership-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/control-repeated-n512-b1024-s128-t12-seed43-r0
+OK control-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/tables-repeated-n512-b1024-s128-t12-seed43-r0
+OK tables-repeated-n512-b1024-s128-t12-seed43-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t8-seed42-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/control-repeated-n512-b1024-s128-t8-seed42-r0
+OK control-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/tables-repeated-n512-b1024-s128-t8-seed42-r0
+OK tables-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t8-seed42-r0
+OK dense-output-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t8-seed42-r0
+OK native-norm-repeated-n512-b1024-s128-t8-seed42-r0
+RUN screen/control-repeated-n1024-b1024-s128-t8-seed42-r0
+OK control-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t8-seed42-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t8-seed42-r0
+OK native-norm-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t8-seed42-r0
+OK tables-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t8-seed42-r0
+OK dense-output-repeated-n1024-b1024-s128-t8-seed42-r0
+RUN screen/norm4-control-repeated-n512-b1024-s128-t12-seed44-r0
+OK norm4-control-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t12-seed44-r0
+OK dense-output-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/norm4-batched-repeated-n512-b1024-s128-t12-seed44-r0
+OK norm4-batched-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t12-seed44-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t12-seed44-r0
+OK native-norm-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/ownership-repeated-n512-b1024-s128-t12-seed44-r0
+OK ownership-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/tables-repeated-n512-b1024-s128-t12-seed44-r0
+OK tables-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/control-repeated-n512-b1024-s128-t12-seed44-r0
+OK control-repeated-n512-b1024-s128-t12-seed44-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t12-seed42-r0
+OK native-norm-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/norm4-control-repeated-n512-b1024-s128-t12-seed42-r0
+OK norm4-control-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/control-repeated-n512-b1024-s128-t12-seed42-r0
+OK control-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t12-seed42-r0
+OK dense-output-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/norm4-batched-repeated-n512-b1024-s128-t12-seed42-r0
+OK norm4-batched-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t12-seed42-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/tables-repeated-n512-b1024-s128-t12-seed42-r0
+OK tables-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/ownership-repeated-n512-b1024-s128-t12-seed42-r0
+OK ownership-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n512-b1024-s128-t12-seed42-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t8-seed43-r0
+OK tables-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t8-seed43-r0
+OK dense-output-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t8-seed43-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t8-seed43-r0
+OK native-norm-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/control-repeated-n1024-b1024-s128-t8-seed43-r0
+OK control-repeated-n1024-b1024-s128-t8-seed43-r0
+RUN screen/baseline-repeated-n512-b1024-s128-t8-seed43-r0
+OK baseline-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/pcs-transpose-repeated-n512-b1024-s128-t8-seed43-r0
+OK pcs-transpose-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/dense-output-repeated-n512-b1024-s128-t8-seed43-r0
+OK dense-output-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/control-repeated-n512-b1024-s128-t8-seed43-r0
+OK control-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/native-norm-repeated-n512-b1024-s128-t8-seed43-r0
+OK native-norm-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/tables-repeated-n512-b1024-s128-t8-seed43-r0
+OK tables-repeated-n512-b1024-s128-t8-seed43-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t12-seed42-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/control-repeated-n1024-b1024-s128-t12-seed42-r0
+OK control-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t12-seed42-r0
+OK dense-output-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t12-seed42-r0
+OK native-norm-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/ownership-repeated-n1024-b1024-s128-t12-seed42-r0
+OK ownership-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t12-seed42-r0
+OK tables-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed42-r0
+RUN screen/control-repeated-n1024-b1024-s128-t8-seed44-r0
+OK control-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t8-seed44-r0
+OK tables-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t8-seed44-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t8-seed44-r0
+OK dense-output-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t8-seed44-r0
+OK native-norm-repeated-n1024-b1024-s128-t8-seed44-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t12-seed43-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t12-seed43-r0
+OK tables-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/ownership-repeated-n1024-b1024-s128-t12-seed43-r0
+OK ownership-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/control-repeated-n1024-b1024-s128-t12-seed43-r0
+OK control-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t12-seed43-r0
+OK dense-output-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t12-seed43-r0
+OK native-norm-repeated-n1024-b1024-s128-t12-seed43-r0
+RUN screen/pcs-transpose-repeated-n1024-b1024-s128-t12-seed44-r0
+OK pcs-transpose-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/native-norm-repeated-n1024-b1024-s128-t12-seed44-r0
+OK native-norm-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+OK baseline-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/dense-output-repeated-n1024-b1024-s128-t12-seed44-r0
+OK dense-output-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/ownership-repeated-n1024-b1024-s128-t12-seed44-r0
+OK ownership-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/tables-repeated-n1024-b1024-s128-t12-seed44-r0
+OK tables-repeated-n1024-b1024-s128-t12-seed44-r0
+RUN screen/control-repeated-n1024-b1024-s128-t12-seed44-r0
+OK control-repeated-n1024-b1024-s128-t12-seed44-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_and_payload_equality": true, "frozen_baseline_cases": 6, "frozen_binary_hashes_verified": true, "input_source_equality": true, "parser_hashes_verified": true, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v9": 351, "bitz/falcon512-algebraic/non-zk/v9": 405}, "schema": "bitz/falcon-next-optimization/v1", "verified_proofs": 756}
+screen       baseline           N=512 t=8 repeated n=21 total=27.921 verify=9.256 traced=False
+screen       baseline           N=512 t=12 repeated n=21 total=31.940 verify=8.949 traced=False
+screen       baseline           N=1024 t=8 repeated n=21 total=51.055 verify=16.469 traced=False
+screen       baseline           N=1024 t=12 repeated n=21 total=55.321 verify=15.562 traced=False
+screen       control            N=512 t=8 repeated n=21 total=28.174 verify=9.312 traced=False
+screen       control            N=512 t=12 repeated n=21 total=31.725 verify=9.274 traced=False
+screen       control            N=1024 t=8 repeated n=21 total=50.971 verify=16.387 traced=False
+screen       control            N=1024 t=12 repeated n=21 total=55.547 verify=15.615 traced=False
+screen       dense-output       N=512 t=8 repeated n=21 total=27.791 verify=9.273 traced=False
+screen       dense-output       N=512 t=12 repeated n=21 total=31.852 verify=9.424 traced=False
+screen       dense-output       N=1024 t=8 repeated n=21 total=52.179 verify=16.414 traced=False
+screen       dense-output       N=1024 t=12 repeated n=21 total=54.941 verify=15.809 traced=False
+screen       native-norm        N=512 t=8 repeated n=21 total=27.954 verify=9.338 traced=False
+screen       native-norm        N=512 t=12 repeated n=21 total=31.981 verify=9.337 traced=False
+screen       native-norm        N=1024 t=8 repeated n=21 total=51.181 verify=16.461 traced=False
+screen       native-norm        N=1024 t=12 repeated n=21 total=55.270 verify=15.413 traced=False
+screen       norm4-batched      N=512 t=12 repeated n=21 total=31.445 verify=9.378 traced=False
+screen       norm4-control      N=512 t=12 repeated n=21 total=31.362 verify=9.419 traced=False
+screen       ownership          N=512 t=12 repeated n=21 total=30.140 verify=9.641 traced=False
+screen       ownership          N=1024 t=12 repeated n=21 total=50.160 verify=15.557 traced=False
+screen       pcs-transpose      N=512 t=8 repeated n=21 total=27.903 verify=9.291 traced=False
+screen       pcs-transpose      N=512 t=12 repeated n=21 total=32.064 verify=9.822 traced=False
+screen       pcs-transpose      N=1024 t=8 repeated n=21 total=51.136 verify=16.470 traced=False
+screen       pcs-transpose      N=1024 t=12 repeated n=21 total=54.934 verify=15.541 traced=False
+screen       tables             N=512 t=8 repeated n=21 total=28.316 verify=9.349 traced=False
+screen       tables             N=512 t=12 repeated n=21 total=31.551 verify=9.565 traced=False
+screen       tables             N=1024 t=8 repeated n=21 total=51.612 verify=16.451 traced=False
+screen       tables             N=1024 t=12 repeated n=21 total=54.739 verify=15.688 traced=False

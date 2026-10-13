@@ -1,0 +1,187 @@
+Falcon forest, binding, norm and PCS optimization qualification
+2026-10-13 — falcon-poc
+
+Outcome
+All five proposed experiments are implemented and independently tested.
+Qualified defaults improve full-batch arithmetic Falcon proving at 12 workers
+by approximately 8-9% in the confirmation run. Eight-worker medians are flat.
+There is a small unresolved Falcon-1024/16 performance regression: 1.25% and
+1.60% slower in two untraced runs. Verification at 12 workers is also slightly
+slower. These results support the selected 12-worker paths, not a claim of zero
+performance regressions. No correctness/proof-content regression was found.
+
+Production defaults
+1. Persistent 64-shard forest ownership at exactly 12 workers, at least 64 rows
+   divisible by 64 and a matrix of at least 4 MiB. Ownership remains stable for
+   compatible high-bit folds. Smaller shapes retain the previous dispatcher.
+2. Factored L0-L2 forest lookup tables at 12 workers on the native x86 backend
+   (pclmulqdq, sse4.1, avx512f, avx512bw, vpclmulqdq). Each byte lookup is the
+   sum of two 16-entry nibble lookups. Portable/other worker pools retain the
+   expanded table default. Selection follows the current pool on every proof.
+3. Direct compact binding-fold output only for Falcon-512, live batch exactly
+   1024, 12 workers, and field modulus >=2^125. The extra half-sized allocation
+   is local to the proof. Production drops both binding buffers after the proof;
+   only when experimental scratch reuse is enabled does the original larger
+   allocation return to the sole Prepared cache. Other cases keep the strided fold.
+4. K=1 native norm-prefix aggregation is implemented but remains experimental.
+5. PCS sparse transpose directly into the final allocation is implemented but
+   remains experimental.
+
+The forest guards apply to eligible BitZ forests generally, not just Falcon.
+Performance qualification is limited to the Falcon workload/host below; these
+measurements do not establish gains for other forests or portable CPUs.
+No protocol, security ledger, transcript order, grinding rule or proof format
+was changed. The production default remains canonical arithmetic Falcon v9.
+
+Primary result: accepted2, matched medians in milliseconds
+Batch1024, 128-bit security, total prover = witness commitment + proving.
+Each before/after cell uses the same workload/seed/CPU placement in one phase.
+
+                     Repeated proofs             Cold process/Prepared
+Degree workers       baseline -> production       baseline -> production
+512       8          27.898 ->27.905 (+0.02%)       30.222 ->30.045 (-0.58%)
+512      12          32.056 ->29.371 (-8.37%)       34.150 ->31.423 (-7.98%)
+1024      8          51.152 ->51.138 (-0.03%)       56.231 ->56.144 (-0.15%)
+1024     12          55.447 ->50.606 (-8.73%)       57.868 ->52.790 (-8.78%)
+
+All three seed medians improve in every 12-worker cell in both accepted runs.
+Independent accepted1 repeated results are32.050 ->29.401ms for 512 and
+56.002 ->50.462ms for 1024; cold gains are8.42%/8.47%. Eight-worker pooled changes
+stay within1% across both runs, but individual seeds can exceed1%; these are
+descriptive medians, not confidence intervals. The22ms target is not reached.
+
+Regression workers, repeated 21 samples per cell
+Phase        Degree workers      baseline ->production ms
+regression    512      1          139.324 ->139.115 (-0.15%)
+regression   1024      1          270.403 ->271.042 (+0.24%)
+regression    512     16           29.128 ->29.373 (+0.84%)
+regression2   512     16           28.278 ->28.188 (-0.32%)
+regression   1024     16           48.701 ->49.309 (+1.25%)
+regression2  1024     16           48.506 ->49.284 (+1.60%)
+
+N1024/16 is slower in every seed in both untraced phases; the worst per-seed
+median change is+7.83%. The new defaults are off at 16. Source review found the
+same expanded lookup arithmetic/cyclic ownership, plus representation/dispatch
+checks. A separate traced follow-up did not reproduce the slowdown: forest
+21.393 ->21.006ms, binding6.918 ->6.908ms, prove45.854 ->45.064ms. That diagnostic
+cannot erase the two untraced results or establish a cause. No speculative
+source change was made after qualification.
+
+Verification and memory tradeoffs
+At12 workers in accepted2:
+Degree mode       verify ms              commit+prove+verify ms
+512    cold        8.001 ->8.091          42.210 ->39.446 (-6.55%)
+512    repeated    9.197 ->9.282          41.136 ->38.682 (-5.97%)
+1024   cold       15.126 ->15.304         73.031 ->68.099 (-6.75%)
+1024   repeated   15.604 ->15.751         71.069 ->66.360 (-6.63%)
+Lifecycle is the median per-proof sum, not the sum of separate medians.
+Accepted1 also has small repeated verification increases at 12 workers.
+
+At12 workers, median process peaks in accepted2 (MiB):
+512 cold 80.172 ->80.797; repeated 86.211 ->86.215.
+1024 cold 133.426 ->133.871; repeated 205.234 ->205.422.
+Retained RSS medians rise0.176-0.707MiB. Process peak includes all phases and
+warmups; retained RSS includes allocator, inputs and Prepared. Compact binding
+can add an8MiB temporary vector without increasing the process-wide high-water
+mark by 8MiB, because other phases dominate. Factored lookup live values shrink
+8MiB ->1MiB, but spare vector capacity can retain the previous8MiB allocation.
+These are not evidence of a large RSS reduction. Full per-seed and memory data
+are in production-report-section.txt and summary.json.
+
+Separate diagnostic profiles: nine samples per cell, with tracing
+At12 workers, baseline ->production in milliseconds:
+Degree forest          binding       integer outer   ring          PCS
+512    14.235 ->12.037  4.789 ->4.469  2.118 ->2.106   2.809 ->2.755 3.053 ->3.023
+1024   27.160 ->21.578  6.522 ->6.375  2.254 ->2.270   5.464 ->5.419 4.052 ->4.089
+Forest internals support the locality explanation:512 JIT folds2.390 ->1.500ms
+and dense tails2.619 ->2.048ms;1024 folds4.398 ->2.620ms and tails4.800 ->3.215ms.
+These aggregate internal categories do not overlap one another, but they must
+not be added to the enclosing forest wall timer. Rounded timers and tracing
+make these diagnostic values distinct from untraced end-to-end measurements.
+The strict forest parser checks all expected labels, warmups, roots and hashes;
+its missing-label validation was strengthened after independent review.
+
+Why two experiments remain off
+The screen/confirm/lifecycle phases used a separate frozen bench-internals
+binary and explicit per-experiment controls. They are not production timings.
+Norm batching did not add a reliable gain on top of forest improvements:
+N1024/12 ownership+tables49.684 ->50.335ms with batching, all seeds slower.
+At512/12 automatic width 1 bypasses native-prefix batching; forced width 4 is
+31.362ms legacy versus31.445ms batched. Width selection is a different change.
+PCS direct output also failed the complete-workload test: after forest changes,
+N1024/12 repeated 49.488 ->50.097ms, all seeds slower;512 repeated gain was only
+0.16% with mixed seeds. Direct compact binding output was not promoted for 1024
+or8 workers because combined/confirmation gains did not hold there.
+
+Benchmark overrides (only with bench-internals):
+BITZ_FOREST_TABLES=expanded|factored
+BITZ_FOREST_ROW_OWNERSHIP=legacy|shards64
+BITZ_ARITHMETIC_NATIVE_NORM=legacy|batched
+BITZ_ARITHMETIC_DENSE_OUTPUT=inplace|compact
+BITZ_PCS_SPARSE_TRANSPOSE=legacy|direct
+The old dense-compaction override suppresses the new implicit compact default;
+explicit compact output plus an explicit old compaction threshold is rejected.
+
+Correctness and review
+All 16 campaign phases completed with 3414 verified proofs, including warmups:
+1641 Falcon-512 and1773 Falcon-1024. Input/source roots, complete in-build Debug
+proof digests, payload totals, binary hashes, raw/command/process hashes
+and frozen parser provenance match; each raw payload breakdown sums to its
+reported total. Digest equality checks whole proof values;
+it is not a direct comparison of a canonical serialized wire format.
+Full-batch 128-bit payload medians remain 256368 bytes for 512 and 321304 bytes
+for 1024. Across the three seeds, payload sizes range 256112-256848 bytes for 512
+and 321272-321432 bytes for 1024, with exact equality per matched input.
+Experimental all-options checks cover degrees 512/1024, workers 8/12/16,
+(batch,security)=(3,128),(513,128),(513,100),(1024,100). Final production checks
+cover both degrees at 12 workers with(513,128),(513,100),(1024,100), in addition
+to 128-bit full-batch performance campaigns at 1/8/12/16. These small correctness
+campaigns use one fresh proof per seed/configuration, not21 latency samples.
+
+Final production tests:371 Falcon passed (3 existing ignored);103 BitZ passed
+(1 existing ignored);92 portable BitZ passed. No-default-features hybrid check
+passed. Earlier experiment tests:369 Falcon+100 BitZ,42 portable factored tests,
+and8 PCS sparse tests passed. The changed default-policy tests are included in
+final production checks. Twelve runner tests and8 offline forest-parser tests
+passed. Targeted rustfmt and git diff --check passed. Independent source and
+promotion reviews found no actionable correctness issue. Existing ignored
+large-batch tests are supplemented by the end-to-end campaigns above. No Miri,
+formal timing-side-channel proof, or general non-Falcon performance claim is made.
+Vendor PCS tests used an offline-resolved temporary vendor lock; the tracked
+lock was restored. Failed workspace/locked setup attempts remain in logs, with
+the successful check-pcs-resolved.log and resolution recorded separately.
+
+Methodology and reproduction
+AMD Ryzen 9 9950X3D; Linux 6.17.0-41; rustc 1.98.1, LLVM 22.1.8; native target.
+Worker CPU order[6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9], truncated to workers;
+main/auxiliary CPU6. Eight workers fit the96MiB-cache CCD;12 spans two CCDs.
+Cold means fresh process/Prepared, not flushed OS/CPU caches. Repeated cells
+use2 warmups+7 measured samples per seed42/43/44 (21 samples). Cold cells use
+7 fresh processes per seed (21 samples). Jobs use randomized matched blocks;
+accepted2 changes the ordering seed. No builds/tests/other prover processes
+were run concurrently with timed campaigns. Input generation, preparation,
+verification and resource sampling are outside total-prover time.
+
+Baseline commit 23c182868e94ff044d5e67a03baed056c4335c16.
+Baseline binary SHA256:
+c768431de56893effcb985e0bbfb380b6f0dbdb1714319772297eb0cfdc37b4b
+Production binary SHA256:
+df580cfbeefa695d3195effe6297fd3cb508f909e1aa37378731f2aca090443b
+Build: RUSTFLAGS='-C target-cpu=native' cargo bench --locked \
+  --features falcon-hybrid --bench falcon_algebraic --no-run
+Source patch/build/binary receipts are candidate-production-*; experiments use
+candidate-screen-* with bench-internals. Binaries are kept locally in .tmp and
+not committed. Phase manifests freeze all commands/configurations and hashes.
+
+Example repeat, using a new results directory and preserved binaries:
+python3 scripts/falcon_next_optimization.py \
+  --output results/falcon-next-reproduction \
+  --baseline .tmp/falcon-locality-20261013/candidate-accepted \
+  --binary .tmp/falcon-next-20261013/candidate-production \
+  --configs results/falcon-next-20261013/configs.json --phase accepted \
+  --variants baseline production --threads 8 12 --modes cold repeated
+Detailed evidence: summary.json, validation.json, profile-summary.json,
+final-forest-profile.json, regression-forest-profile.json, phase manifests,
+raw runs, test logs and review notes. This report's benchmark before/after
+source is frozen by the build receipts; the saved Git commit contains code and
+evidence together. No pull request or deployment was created.

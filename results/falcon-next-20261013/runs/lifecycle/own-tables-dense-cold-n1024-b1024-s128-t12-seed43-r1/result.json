@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-next-optimization/v1",
+  "job": {
+    "id": "own-tables-dense-cold-n1024-b1024-s128-t12-seed43-r1",
+    "variant": "arithmetic",
+    "config": "own-tables-dense",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 43,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 1,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "978b817b860c7786669010eb532d5fb3e6c9c3f37192e3247a81899fa20298c7",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 53.374024,
+      "prove_ms": 47.790777999999996,
+      "witness_commit_ms": 5.583185,
+      "verify_ms": 15.710531,
+      "process_peak_rss_kib": 137132,
+      "proof_payload_bytes": 321304,
+      "iteration": 0,
+      "prepare_ms": 0.16891899999999999,
+      "external_input_ms": 1776.0977360000002,
+      "prover_minor_faults": 56379,
+      "process_rss_before_prover_kib": 23088,
+      "process_rss_after_prover_kib": 73860,
+      "process_retained_rss_kib": 61508,
+      "prepared_scratch_bytes_before_prover": 0,
+      "prepared_retained_scratch_bytes": 0
+    }
+  ],
+  "command_sha256": "bbfacf5e358048cbcbba8d6467fe0715140e50362c6ab0ce6a48fb5929fb0c47",
+  "stdout_sha256": "be72a0af38b698a4e08d26623eae6f16cb9a847d733dd59020d37b3d8e872b61",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "f0699d45e8f5e1010558d94ee4ea3cbba3762a5dd6e8966bdd34c4cd0a2b933d"
+}

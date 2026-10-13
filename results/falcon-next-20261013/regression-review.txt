@@ -1,0 +1,42 @@
+Sixteen-worker regression review
+2026-10-13; baseline 23c182868e94ff044d5e67a03baed056c4335c16
+
+Observed results supplied by the coordinated campaign
+- Falcon-1024, batch 1024, security 128, sixteen workers, repeated untraced
+  proving: 48.701 -> 49.309 ms (+1.25%). The independent repeat measured
+  48.506 -> 49.284 ms (+1.60%). All seed medians were slower in both comparisons,
+  although measurements were noisy. This remains an observed limitation.
+- The traced follow-up did not reproduce the slowdown. Forest elapsed time
+  improved 21.393 -> 21.006 ms and traced proving 45.854 -> 45.064 ms; binding
+  was 6.918 -> 6.908 ms and PCS 3.795 -> 3.834 ms.
+- Traced results are diagnostic only. They neither invalidate the untraced
+  measurements nor establish the cause of their roughly 0.6-0.8 ms difference.
+- Evidence: regression-comparison.txt, regression2-comparison.txt,
+  phases/regression-profile.json, runs/regression-profile/, and
+  regression-forest-profile.json in this directory.
+
+Source inspection
+- Compared the changed forest, kernels, x86 kernels and row dispatcher with
+  HEAD 23c182868. No clear actionable cause for the slowdown was identified.
+- At sixteen workers, factored_tables_default() is false. The forest builds
+  the original expanded tables through fold_table_in, retaining their lengths
+  and prescaling thresholds. The x86 fold specialization uses FACTORED=false
+  with the original direct table lookups and arithmetic.
+- RowDispatch selects the existing CyclicRows implementation. Its row ownership,
+  map_jobs ownership transfer, allocations and synchronization are unchanged.
+- New source-level dispatch work consists of a selector per Forest, per-level
+  representation branches, and a twelve-worker eligibility check before cyclic
+  dispatch. RowIndices additionally wraps StepBy for the upper-level construction
+  and dense round-sum map_indices consumers. Upper construction writes disjoint
+  output subtrees; it is not a read-only stage.
+- These observations do not quantify generated-code overhead. No assembly
+  inspection or isolated experiment established that the extra dispatch affects
+  measured latency. No added large allocation, table expansion or factored lookup
+  is selected by the sixteen-worker default path in the source.
+
+Conclusion and limits
+- Preserve the repeated untraced slowdown in the reported results. The traced
+  follow-up and source inspection provide no attributable cause and do not
+  justify a speculative implementation change.
+- This was a read-only source review using existing campaign evidence. No source
+  edits, builds, tests, proofs or benchmarks were performed for the review.

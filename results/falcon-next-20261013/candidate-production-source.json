@@ -1,0 +1,19 @@
+{
+  "base": "23c182868e94ff044d5e67a03baed056c4335c16",
+  "patch_sha256": "4db5a484af5353a1edda6db1c112e12d55df8cf01afa17f52c261fbc9407eb8d",
+  "files": {
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "0953e680f8b693d38bdebdee373450368af1756fadd6e9d3d945f83140c73410",
+    "src/bitz/kernels.rs": "11e738a9c4cd9e706c3f7eeefb616e5f68ac693d868e2cb0b5b30fbd742b9a8b",
+    "src/bitz/forest.rs": "52fdb0021f048bbd2287b5bea9d818112c624bc89070a86f24248658f14f58f8",
+    "vendor/flock-mod/crates/flock-core/Cargo.toml": "3300769f1806eb9d5e5d4f8482796180d900ba9b88203b94ea1fd3518659d4ee",
+    "Cargo.toml": "b81607facc3d6515988a35a7413fc50bc32eb514c9df317f7a71343e7dda7f0b",
+    "src/piop/spartan/falcon_integer/native_prefix.rs": "85d876f7b11d647e0111205364656267e5a71b98adfced5abc7adad0fcfd187d",
+    "vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs": "0b6b11ec2404c1d9d9c0f39d62d476733a7c2f7cd2722cc670864ab35fa7dc63",
+    "src/bitz/row_dispatch.rs": "81c7cd664af4dd96d7474226cca6ed106f5901df813e1220e5577ad5212dce3b",
+    "scripts/test_falcon_next_optimization.py": "6a5c7b6b90b92ee89aa55db59e05a34531c59bb75b7c506da1c92df12b126a2b",
+    "src/bitz/kernels/x86.rs": "5876479e4a6e71e844bc446a72cdf16cf03b41f2d5d42322ec9530ed4c67e2e7",
+    "src/piop/spartan/falcon_integer.rs": "cefda5af92f5c105365206b7202bd7e260b77473ec936f51bfd4cf3a575ecffa",
+    "scripts/falcon_next_optimization.py": "47e52b858d6d5a2b95a5fe0dd5d95391fdb339bad1dca0c355c54ef1ccfee8c3",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "992bdbf0325457a5efdf0ac332827dc1af35956ea93785521b9d537936b4b798"
+  }
+}

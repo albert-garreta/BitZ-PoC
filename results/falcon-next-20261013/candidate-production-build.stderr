@@ -1,0 +1,4 @@
+   Compiling flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-core)
+   Compiling flock-prover v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-prover)
+   Compiling bitz v0.1.0 (/home/john-wu/code/BitZ-pcs)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 4m 33s

@@ -1,0 +1,9 @@
+phase accepted2 comparison baseline
+N=512 t=8 cold     production      total 30.222->30.045 (-0.58%) seeds -0.51,+1.51,-0.68 verify 9.284->9.237 (-0.51%) peakMiB 73.36->73.59 lifecycle 39.473->39.317 (-0.39%)
+N=512 t=8 repeated production      total 27.898->27.905 (+0.02%) seeds +0.07,+0.41,-0.18 verify 9.228->9.198 (-0.33%) peakMiB 83.86->83.82 lifecycle 37.167->37.116 (-0.14%)
+N=512 t=12 cold     production      total 34.150->31.423 (-7.98%) seeds -6.86,-8.27,-7.98 verify 8.001->8.091 (+1.11%) peakMiB 80.17->80.80 lifecycle 42.210->39.446 (-6.55%)
+N=512 t=12 repeated production      total 32.056->29.371 (-8.37%) seeds -7.45,-8.51,-9.28 verify 9.197->9.282 (+0.92%) peakMiB 86.21->86.21 lifecycle 41.136->38.682 (-5.97%)
+N=1024 t=8 cold     production      total 56.231->56.144 (-0.15%) seeds -0.70,+0.92,-1.16 verify 15.517->15.457 (-0.39%) peakMiB 137.55->137.62 lifecycle 71.774->71.553 (-0.31%)
+N=1024 t=8 repeated production      total 51.152->51.138 (-0.03%) seeds -0.09,+0.13,-0.80 verify 16.424->16.352 (-0.43%) peakMiB 171.86->171.86 lifecycle 67.532->67.374 (-0.23%)
+N=1024 t=12 cold     production      total 57.868->52.790 (-8.78%) seeds -8.11,-9.88,-8.07 verify 15.126->15.304 (+1.17%) peakMiB 133.43->133.87 lifecycle 73.031->68.099 (-6.75%)
+N=1024 t=12 repeated production      total 55.447->50.606 (-8.73%) seeds -9.46,-9.63,-8.14 verify 15.604->15.751 (+0.95%) peakMiB 205.23->205.42 lifecycle 71.069->66.360 (-6.63%)

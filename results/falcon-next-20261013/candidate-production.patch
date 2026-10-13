@@ -1,0 +1,2254 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 423f5f18c..44d49ed97 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -325,7 +325,7 @@ unchecked = []
+ # omits this feature so allocation accounting cannot bias the timing gate.
+ bench-peak-memory = []
+ # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
+-bench-internals = []
++bench-internals = ["flock-core/bench-internals"]
+ # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
+ ecdsa = ["circuit/full"]
+ # Falcon-1024 native verification and arithmetic/reference helpers.
+diff --git a/src/bitz/forest.rs b/src/bitz/forest.rs
+index bc9bdcfe7..1e43381ba 100644
+--- a/src/bitz/forest.rs
++++ b/src/bitz/forest.rs
+@@ -35,7 +35,7 @@ use std::mem::MaybeUninit;
+ use std::sync::OnceLock;
+ 
+ #[cfg(feature = "parallel")]
+-use super::row_dispatch::CyclicRows;
++use super::row_dispatch::RowDispatch;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -85,18 +85,69 @@ fn retain_l4_selected() -> bool {
+     })
+ }
+ 
++fn factored_tables_selected() -> bool {
++    #[cfg(feature = "bench-internals")]
++    {
++        // Cache only an explicit override: the default follows the pool of
++        // each proof, which may change between calls in the same process.
++        static SELECTED: OnceLock<Option<bool>> = OnceLock::new();
++        if let Some(selected) =
++            *SELECTED.get_or_init(|| match std::env::var("BITZ_FOREST_TABLES") {
++                Err(std::env::VarError::NotPresent) => None,
++                Ok(value) => Some(match value.as_str() {
++                    "expanded" => false,
++                    "factored" => true,
++                    _ => panic!("BITZ_FOREST_TABLES must be expanded or factored"),
++                }),
++                Err(std::env::VarError::NotUnicode(_)) => {
++                    panic!("BITZ_FOREST_TABLES must be valid Unicode")
++                }
++            })
++        {
++            return selected;
++        }
++    }
++    factored_tables_default()
++}
++
++/// Compact lookups are enabled where the native twelve-worker path was
++/// measured; other pools and portable backends retain expanded tables.
++fn factored_tables_default() -> bool {
++    #[cfg(feature = "parallel")]
++    return kernels::HAS_NATIVE_FACTORED_LOOKUP && rayon::current_num_threads() == 12;
++    #[cfg(not(feature = "parallel"))]
++    false
++}
++
+ /// The per-position value tables of one level after some folds, flat:
+ /// position `q` owns `data[q·len..(q+1)·len]`.
+ pub(crate) struct Tables {
+     data: Vec<Gf>,
+     len: usize,
++    /// The 32 stored entries are two additive nibble tables, representing
++    /// all 256 values. This form occurs only after k=3-ell folds at ell<3.
++    factored: bool,
+ }
+ 
+ impl Tables {
++    fn is_factored(&self) -> bool {
++        self.factored
++    }
++
+     fn at(&self, q: usize) -> &[Gf] {
+         &self.data[q * self.len..(q + 1) * self.len]
+     }
+ 
++    /// The bucket round keeps its existing kernel: expand four position
++    /// tables into row-local scratch, then discard it before the next row.
++    fn expand_at(&self, q: usize, out: &mut [Gf; 256]) {
++        assert!(self.is_factored());
++        let table = self.at(q);
++        for (pattern, value) in out.iter_mut().enumerate() {
++            *value = table[pattern & 15] + table[16 + (pattern >> 4)];
++        }
++    }
++
+     /// Absorb the next fold into each position table once, so columns can
+     /// evaluate `(1-rho)·T0[a] + rho·T1[b]` with two lookups and an XOR.
+     fn scale_fold(&mut self, low_bits: usize, rho: Gf) {
+@@ -165,6 +216,7 @@ pub(crate) struct Forest<'a> {
+     nibble_rows: OnceLock<NibbleRows>,
+     #[cfg(any(test, feature = "bench-internals"))]
+     retain_l4: bool,
++    factored_tables: bool,
+ }
+ 
+ impl<'a> Forest<'a> {
+@@ -189,6 +241,7 @@ impl<'a> Forest<'a> {
+             retain_l4: retain_l4_selected(),
+             #[cfg(all(test, not(feature = "bench-internals")))]
+             retain_l4: false,
++            factored_tables: factored_tables_selected(),
+         }
+     }
+ 
+@@ -666,7 +719,7 @@ impl<'a> Forest<'a> {
+         let started = std::time::Instant::now();
+         let mut tables = match tables {
+             Some(tables) if k == 0 => tables,
+-            _ => self.fold_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
++            _ => self.fold_jit_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
+         };
+         let eq_c = eq_table(&external[..s]);
+         super::trace(&format!("    L{ell} tables"), started);
+@@ -874,7 +927,71 @@ impl<'a> Forest<'a> {
+             });
+         // SAFETY: every one of the `positions · len` slots was written above.
+         unsafe { buf.set_len(positions * len) };
+-        Tables { data: buf, len }
++        Tables {
++            data: buf,
++            len,
++            factored: false,
++        }
++    }
++
++    /// For ell<3, the k=3-ell folded table is the sum of independent
++    /// products on 1, 2 or 4 pattern bits. No product crosses a nibble,
++    /// so T(byte)=low[byte&15]+high[byte>>4], including constant terms.
++    /// The two tables are built directly; no expanded 256-entry vector is
++    /// allocated. L3 and every earlier bit round keep their original form.
++    fn fold_jit_table_in(&self, ell: usize, k: usize, r: &[Gf], buf: Vec<Gf>) -> Tables {
++        if self.factored_tables && ell < MATERIALISED_LEVEL && ell + k == MATERIALISED_LEVEL {
++            return self.fold_nibble_table_in(ell, k, r, buf);
++        }
++        self.fold_table_in(ell, k, r, buf)
++    }
++
++    fn fold_nibble_table_in(&self, ell: usize, k: usize, r: &[Gf], mut buf: Vec<Gf>) -> Tables {
++        assert!(ell < MATERIALISED_LEVEL && ell + k == MATERIALISED_LEVEL);
++        let low_bits = self.t - ell - 1 - k;
++        let positions = 1usize << (self.t - ell - k);
++        let bits = 1usize << ell;
++        let sub_entries = 1usize << bits;
++        let reversed: Vec<Gf> = r[..k].iter().rev().copied().collect();
++        let eq_v = eq_table(&reversed);
++        buf.clear();
++        buf.reserve(positions * 32);
++        cfg_chunks_mut!(buf.spare_capacity_mut()[..positions * 32], 32)
++            .enumerate()
++            .for_each(|(q, out)| {
++                let p = q >> low_bits;
++                let y = q & ((1usize << low_bits) - 1);
++                let mut table = [Gf::zero(); 32];
++                for (v, &weight) in eq_v.iter().enumerate() {
++                    let base = y | (v << low_bits) | (p << (self.t - ell - 1));
++                    let mut products = [Gf::zero(); 16];
++                    products[0] = weight;
++                    for u in 0..bits {
++                        let image = self.images[base | (u << (self.t - ell))];
++                        let limit = 1usize << u;
++                        for pattern in 0..limit {
++                            products[pattern | limit] = products[pattern] * image;
++                        }
++                    }
++                    let first_bit = v * bits;
++                    let half = first_bit / 4;
++                    let offset = first_bit % 4;
++                    for pattern in 0..16 {
++                        table[half * 16 + pattern] +=
++                            products[(pattern >> offset) & (sub_entries - 1)];
++                    }
++                }
++                for (slot, value) in out.iter_mut().zip(table) {
++                    slot.write(value);
++                }
++            });
++        // SAFETY: every disjoint position wrote its complete 32-entry table.
++        unsafe { buf.set_len(positions * 32) };
++        Tables {
++            data: buf,
++            len: 32,
++            factored: true,
++        }
+     }
+ 
+     /// Level `ell` in full: index `y·2^s + c`.
+@@ -959,7 +1076,7 @@ impl<'a> Forest<'a> {
+             };
+         }
+         #[cfg(feature = "parallel")]
+-        if let Some(dispatch) = CyclicRows::new(rows, len * std::mem::size_of::<Gf>()) {
++        if let Some(dispatch) = RowDispatch::new(rows, len * std::mem::size_of::<Gf>()) {
+             dispatch.map_jobs(spare.chunks_mut(cols), |jobs| {
+                 jobs.into_iter().for_each(fill_row!());
+             });
+@@ -1085,7 +1202,7 @@ impl<'a> Forest<'a> {
+             };
+         }
+         #[cfg(feature = "parallel")]
+-        if let Some(dispatch) = CyclicRows::new(sub, total * std::mem::size_of::<Gf>()) {
++        if let Some(dispatch) = RowDispatch::new(sub, total * std::mem::size_of::<Gf>()) {
+             dispatch.map_indices(sub, |indices| indices.for_each(fill_subtree!()));
+         } else {
+             (0..sub)
+@@ -1126,6 +1243,22 @@ impl<'a> Forest<'a> {
+         eq_c: &[Gf],
+         eq_y: &[Gf],
+         send_one: bool,
++    ) -> (Gf, Gf) {
++        if tables.is_factored() {
++            return self.jit_round_sums_with::<true>(tables, ell, k, eq_c, eq_y, send_one);
++        }
++        self.jit_round_sums_with::<false>(tables, ell, k, eq_c, eq_y, send_one)
++    }
++
++    #[allow(clippy::too_many_arguments)]
++    fn jit_round_sums_with<const FACTORED: bool>(
++        &self,
++        tables: &Tables,
++        ell: usize,
++        k: usize,
++        eq_c: &[Gf],
++        eq_y: &[Gf],
++        send_one: bool,
+     ) -> (Gf, Gf) {
+         debug_assert_eq!(ell + k, MATERIALISED_LEVEL);
+         let low_bits = self.t - ell - 1 - k;
+@@ -1139,10 +1272,19 @@ impl<'a> Forest<'a> {
+         let row = |y1: usize, bk: &mut kernels::SumBuckets| {
+             bk.clear();
+             let mut pats = [[0u8; 64]; 4];
+-            let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
++            let position = |corner| {
+                 let (p, b1) = (corner >> 1, corner & 1);
+-                tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
+-            });
++                (p << low_bits) | (b1 << (low_bits - 1)) | y1
++            };
++            let mut expanded = [[Gf::zero(); 256]; 4];
++            let tab: [&[Gf]; 4] = if FACTORED {
++                for (corner, out) in expanded.iter_mut().enumerate() {
++                    tables.expand_at(position(corner), out);
++                }
++                std::array::from_fn(|corner| expanded[corner].as_slice())
++            } else {
++                std::array::from_fn(|corner| tables.at(position(corner)))
++            };
+             for g in 0..groups {
+                 // Corner `(p, b1)` is `2p + b1`; this task owns rows `y1`
+                 // and `y1 + 2^{low_bits−1}`.
+@@ -1191,6 +1333,32 @@ impl<'a> Forest<'a> {
+         eq_y: &[Gf],
+         send_one: bool,
+         arena: &mut Vec<Gf>,
++    ) -> (Gf, Gf) {
++        if tables.is_factored() {
++            return self.jit_fold_round_inner::<PRE_SCALED, WEIGH_LEFT, true>(
++                tables, ell, k, rho, eq_c, eq_y, send_one, arena,
++            );
++        }
++        self.jit_fold_round_inner::<PRE_SCALED, WEIGH_LEFT, false>(
++            tables, ell, k, rho, eq_c, eq_y, send_one, arena,
++        )
++    }
++
++    #[allow(clippy::too_many_arguments)]
++    fn jit_fold_round_inner<
++        const PRE_SCALED: bool,
++        const WEIGH_LEFT: bool,
++        const FACTORED: bool,
++    >(
++        &self,
++        tables: &Tables,
++        ell: usize,
++        k: usize,
++        rho: Gf,
++        eq_c: &[Gf],
++        eq_y: &[Gf],
++        send_one: bool,
++        arena: &mut Vec<Gf>,
+     ) -> (Gf, Gf) {
+         let low_bits = self.t - ell - 1 - k;
+         let cols = 1usize << self.s;
+@@ -1203,7 +1371,7 @@ impl<'a> Forest<'a> {
+             // First fill: through the spare capacity, no memset.
+             arena.clear();
+             let spare = &mut arena.spare_capacity_mut()[..len];
+-            let sums = self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(
++            let sums = self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT, FACTORED>(
+                 tables, ell, k, rho, eq_c, eq_y, send_one, spare,
+             );
+             // SAFETY: `jit_fold_into` writes every slot of both halves.
+@@ -1216,14 +1384,14 @@ impl<'a> Forest<'a> {
+             let view = unsafe {
+                 std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
+             };
+-            self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(
++            self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT, FACTORED>(
+                 tables, ell, k, rho, eq_c, eq_y, send_one, view,
+             )
+         }
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+-    fn jit_fold_into<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
++    fn jit_fold_into<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const FACTORED: bool>(
+         &self,
+         tables: &Tables,
+         ell: usize,
+@@ -1272,6 +1440,19 @@ impl<'a> Forest<'a> {
+                         let base_c = g << 6;
+                         let width = 64.min(cols - base_c);
+                         let range = base_c..base_c + width;
++                        if FACTORED {
++                            kernels::jit_fold_factored_group::<PRE_SCALED, WEIGH_LEFT>(
++                                tab,
++                                &pats,
++                                &rho,
++                                &eq_t[g << 6..(g + 1) << 6],
++                                send_one,
++                                [&mut el[range.clone()], &mut eh[range.clone()]],
++                                [&mut ol[range.clone()], &mut oh[range]],
++                                &mut sums,
++                            );
++                            continue;
++                        }
+                         kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
+                             tab,
+                             &pats,
+@@ -1291,7 +1472,7 @@ impl<'a> Forest<'a> {
+         }
+         let add = |(a, b), (x, y)| (a + x, b + y);
+         #[cfg(feature = "parallel")]
+-        if let Some(dispatch) = CyclicRows::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
++        if let Some(dispatch) = RowDispatch::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
+             let jobs = e_lo
+                 .chunks_mut(cols)
+                 .zip(e_hi.chunks_mut(cols))
+@@ -1816,7 +1997,8 @@ fn level_up_into(lower: &[Gf], out: &mut [MaybeUninit<Gf>], columns: Option<usiz
+     let (l, r) = lower.split_at(half);
+     #[cfg(feature = "parallel")]
+     if let Some(cols) = columns {
+-        if let Some(dispatch) = CyclicRows::new(half / cols, 3 * half * std::mem::size_of::<Gf>()) {
++        if let Some(dispatch) = RowDispatch::new(half / cols, 3 * half * std::mem::size_of::<Gf>())
++        {
+             dispatch.map_jobs(out.chunks_mut(cols), |jobs| {
+                 for (row, chunk) in jobs {
+                     let start = row * cols;
+@@ -2463,6 +2645,199 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn factored_tables_match_all_patterns_and_prescaling() {
++        let t = 6;
++        let (packed, mut images) = random_grid(t, 7, 0x4641_4354_4f52);
++        images[0] = Gf::zero();
++        images[1] = Gf::one();
++        let mut forest = Forest::new(t, 7, &packed, &images);
++        forest.factored_tables = true;
++        let mut state = 0x4641_4354_4f52_4544;
++        for ell in 0..3 {
++            let k = 3 - ell;
++            let low_bits = t - ell - 1 - k;
++            let random: Vec<_> = (0..k).map(|_| random_gf(&mut state)).collect();
++            for challenges in [vec![Gf::zero(); k], vec![Gf::one(); k], random] {
++                let expanded = forest.fold_table(ell, k, &challenges);
++                let factored = forest.fold_jit_table_in(ell, k, &challenges, Vec::new());
++                assert!(factored.is_factored());
++                assert_eq!(factored.data.len() * 8, expanded.data.len());
++                let eq = eq_table(&challenges.iter().rev().copied().collect::<Vec<_>>());
++                for q in 0..1usize << (t - 3) {
++                    let mut values = [Gf::zero(); 256];
++                    factored.expand_at(q, &mut values);
++                    assert_eq!(values.as_slice(), expanded.at(q));
++                    let (p, y) = (q >> low_bits, q & ((1 << low_bits) - 1));
++                    for pattern in 0..256 {
++                        // Independent direct evaluation of the folded leaf
++                        // products, without a table-construction recurrence.
++                        let expected =
++                            eq.iter().enumerate().fold(Gf::zero(), |sum, (v, &weight)| {
++                                let product = (0..1usize << ell).fold(Gf::one(), |product, u| {
++                                    let row = y
++                                        | (v << low_bits)
++                                        | (p << (t - ell - 1))
++                                        | (u << (t - ell));
++                                    if pattern >> ((v << ell) | u) & 1 == 0 {
++                                        product
++                                    } else {
++                                        product * images[row]
++                                    }
++                                });
++                                sum + weight * product
++                            });
++                        assert_eq!(
++                            values[pattern], expected,
++                            "ell={ell}, q={q}, pattern={pattern}"
++                        );
++                    }
++                }
++                for rho in [Gf::zero(), Gf::one(), random_gf(&mut state)] {
++                    let mut scaled = forest.fold_jit_table_in(ell, k, &challenges, Vec::new());
++                    scaled.scale_fold(low_bits, rho);
++                    for q in 0..1usize << (t - 3) {
++                        let weight = if q >> (low_bits - 1) & 1 == 0 {
++                            Gf::one() + rho
++                        } else {
++                            rho
++                        };
++                        let mut values = [Gf::zero(); 256];
++                        scaled.expand_at(q, &mut values);
++                        for pattern in 0..256 {
++                            assert_eq!(values[pattern], expanded.at(q)[pattern] * weight);
++                        }
++                    }
++                }
++            }
++        }
++        assert!(
++            !forest
++                .fold_jit_table_in(3, 0, &[], Vec::new())
++                .is_factored()
++        );
++    }
++
++    #[test]
++    fn factored_tables_preserve_complete_forest_proofs() {
++        use crate::bitz::transcript::build_kernel_prover;
++        // Tiny fallback, scalar output tails, factored-only prescaling at
++        // 128 columns, and both representations prescaled at 1024 columns.
++        for (t, s, depth) in [(4, 3, 4), (6, 0, 6), (7, 3, 5), (8, 7, 7), (8, 10, 8)] {
++            let (packed, images) = random_grid(t, s, (t * 7919 + s) as u64);
++            let mut state = 0x4e49_4242_4c45;
++            let random: Vec<Gf> = (0..s + t - depth).map(|_| random_gf(&mut state)).collect();
++            for special in [None, Some(Gf::zero()), Some(Gf::one())] {
++                let mut zeta = random.clone();
++                if let (Some(value), Some(first)) = (special, zeta.first_mut()) {
++                    *first = value;
++                }
++                for nibble in [false, true] {
++                    for weighing in [Weighing::Off, Weighing::On] {
++                        let prove = |factored| {
++                            let mut forest = Forest::new(t, s, &packed, &images)
++                                .with_patterns(PatternMode {
++                                    nibble,
++                                    nibble_from: 0,
++                                })
++                                .with_weighing(weighing);
++                            forest.factored_tables = factored;
++                            let mut ps = build_kernel_prover(b"forest-factored/v1", b"instance");
++                            let terminal = forest.prove_depth(&mut ps, &zeta, depth);
++                            (terminal, ps.finish())
++                        };
++                        assert_eq!(
++                            prove(false),
++                            prove(true),
++                            "t={t}, s={s}, depth={depth}, nibble={nibble}"
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[cfg(feature = "parallel")]
++    #[cfg(not(feature = "bench-internals"))]
++    #[test]
++    fn production_factored_default_follows_each_proving_pool() {
++        let (t, s) = (6, 3);
++        let (packed, images) = random_grid(t, s, 0x4445_4641_554c_54);
++        // Revisit pools after different worker counts in the same process:
++        // a cached choice from the first proof must not become the default.
++        for workers in [8, 12, 16, 1, 12, 8] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                let forest = Forest::new(t, s, &packed, &images);
++                assert_eq!(
++                    forest.factored_tables,
++                    kernels::HAS_NATIVE_FACTORED_LOOKUP && workers == 12
++                );
++            });
++        }
++    }
++
++    #[cfg(feature = "parallel")]
++    #[test]
++    fn factored_tables_and_virtual_shards_preserve_complete_forest_proof() {
++        use crate::bitz::row_dispatch::with_shards64;
++        use crate::bitz::transcript::build_kernel_prover;
++        // 256 JIT rows, then 128/64 dense rows: both large folds preserve
++        // virtual owners. Later rounds cross the 64-row fallback boundary.
++        let (t, s) = (14, 9);
++        let (packed, images) = random_grid(t, s, 0x5649_5254_5541_4c);
++        let mut state = 0x5348_4152_4453;
++        let zeta: Vec<Gf> = (0..s + 1).map(|_| random_gf(&mut state)).collect();
++        let prove = |factored, shards| {
++            with_shards64(shards, || {
++                let mut forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
++                    nibble: true,
++                    nibble_from: 0,
++                });
++                forest.factored_tables = factored;
++                let mut ps = build_kernel_prover(b"forest-factored-shards/v1", b"instance");
++                let terminal = forest.prove_depth(&mut ps, &zeta, t - 1);
++                (terminal, ps.finish())
++            })
++        };
++        let pool8 = rayon::ThreadPoolBuilder::new()
++            .num_threads(8)
++            .build()
++            .unwrap();
++        let expected = pool8.install(|| prove(false, false));
++        assert_eq!(pool8.install(|| prove(true, true)), expected);
++        let pool12 = rayon::ThreadPoolBuilder::new()
++            .num_threads(12)
++            .build()
++            .unwrap();
++        for factored in [false, true] {
++            for shards in [false, true] {
++                assert_eq!(
++                    pool12.install(|| prove(factored, shards)),
++                    expected,
++                    "factored={factored}, shards={shards}"
++                );
++            }
++        }
++        #[cfg(not(feature = "bench-internals"))]
++        assert_eq!(
++            pool12.install(|| {
++                let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode {
++                    nibble: true,
++                    nibble_from: 0,
++                });
++                let mut ps = build_kernel_prover(b"forest-factored-shards/v1", b"instance");
++                let terminal = forest.prove_depth(&mut ps, &zeta, t - 1);
++                (terminal, ps.finish())
++            }),
++            expected,
++            "production defaults"
++        );
++    }
++
+     #[test]
+     fn retained_level_four_matches_leaf_products() {
+         for (t, s) in [(6, 0), (6, 3), (8, 7)] {
+diff --git a/src/bitz/kernels.rs b/src/bitz/kernels.rs
+index 56a91e305..a7c97ef32 100644
+--- a/src/bitz/kernels.rs
++++ b/src/bitz/kernels.rs
+@@ -9,7 +9,6 @@
+ //! products are XOR-combined and reduced once per accumulator, and
+ //! reduction is `F₂`-linear — so every transcript byte is unchanged.
+ 
+-#[cfg(test)]
+ use std::mem::MaybeUninit;
+ 
+ #[cfg(feature = "parallel")]
+@@ -60,6 +59,18 @@ use neon as backend;
+ ))]
+ use x86 as backend;
+ 
++/// Whether the selected backend evaluates compact nibble tables directly.
++/// Keep this gate identical to the x86 backend and factored-fold dispatch.
++#[cfg(feature = "parallel")]
++pub(super) const HAS_NATIVE_FACTORED_LOOKUP: bool = cfg!(all(
++    target_arch = "x86_64",
++    target_feature = "pclmulqdq",
++    target_feature = "sse4.1",
++    target_feature = "avx512f",
++    target_feature = "avx512bw",
++    target_feature = "vpclmulqdq"
++));
++
+ /// The longest run one task handles when a round has a single row (the
+ /// flat rounds and the `s = 0` layers).
+ const MAX_TASK: usize = 1 << 12;
+@@ -180,7 +191,7 @@ pub(crate) fn round_sums(
+         };
+     }
+     #[cfg(feature = "parallel")]
+-    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 4 * size_of::<Gf>())
++    if let Some(dispatch) = super::row_dispatch::RowDispatch::new(w.rows(), h * 4 * size_of::<Gf>())
+     {
+         return total(dispatch.map_indices(tasks, |rows| {
+             rows.map(sum_row!())
+@@ -263,7 +274,7 @@ pub(crate) fn fused_fold_round(
+         };
+     }
+     #[cfg(feature = "parallel")]
+-    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 8 * size_of::<Gf>())
++    if let Some(dispatch) = super::row_dispatch::RowDispatch::new(w.rows(), h * 8 * size_of::<Gf>())
+     {
+         let jobs = q0_l
+             .chunks_mut(task)
+@@ -342,6 +353,59 @@ pub(crate) use backend::jit_bucket_finish;
+ /// multiplies, moved; see [`Left::Weigh`]).
+ pub(crate) use backend::jit_fold_group;
+ 
++/// The same fold with additive nibble tables (32 stored entries for 256
++/// logical values). Native x86 reads those directly. Other backends expand
++/// group-local scratch and retain their existing arithmetic kernel.
++#[allow(clippy::too_many_arguments)]
++pub(crate) fn jit_fold_factored_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
++    tab: [&[Gf]; 8],
++    pat: &[[u8; 64]; 8],
++    rho: &Gf,
++    eq_t: &[Gf],
++    send_one: bool,
++    out_l: [&mut [MaybeUninit<Gf>]; 2],
++    out_r: [&mut [MaybeUninit<Gf>]; 2],
++    sums: &mut Sums,
++) {
++    #[cfg(all(
++        target_arch = "x86_64",
++        target_feature = "pclmulqdq",
++        target_feature = "sse4.1",
++        target_feature = "avx512f",
++        target_feature = "avx512bw",
++        target_feature = "vpclmulqdq"
++    ))]
++    x86::jit_fold_factored_group::<PRE_SCALED, WEIGH_LEFT>(
++        tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
++    );
++    #[cfg(not(all(
++        target_arch = "x86_64",
++        target_feature = "pclmulqdq",
++        target_feature = "sse4.1",
++        target_feature = "avx512f",
++        target_feature = "avx512bw",
++        target_feature = "vpclmulqdq"
++    )))]
++    {
++        assert!(tab.iter().all(|table| table.len() >= 32));
++        let expanded: [[Gf; 256]; 8] = std::array::from_fn(|corner| {
++            std::array::from_fn(|pattern| {
++                tab[corner][pattern & 15] + tab[corner][16 + (pattern >> 4)]
++            })
++        });
++        backend::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
++            std::array::from_fn(|corner| expanded[corner].as_slice()),
++            pat,
++            rho,
++            eq_t,
++            send_one,
++            out_l,
++            out_r,
++            sums,
++        );
++    }
++}
++
+ /// Multiply every value by the same scalar.
+ pub(crate) use backend::scale_in_place;
+ 
+@@ -1518,6 +1582,14 @@ mod tests {
+         check_dense_row_grains(32, 2048, &[1, 16]);
+     }
+ 
++    #[cfg(feature = "parallel")]
++    #[test]
++    fn virtual_shard_dense_rows_match_scalar_folds_and_sums_with_tails() {
++        // Both kernels exceed 4 MiB at 64 rows. The odd column width also
++        // exercises SIMD tails while the twelve-worker default owns shards.
++        check_dense_row_grains(64, 1025, &[1]);
++    }
++
+     #[cfg(feature = "parallel")]
+     #[test]
+     fn fallback_dense_row_grains_match_scalar_folds_and_sums_with_tails() {
+@@ -2166,6 +2238,87 @@ mod tests {
+         (sums, init(&out))
+     }
+ 
++    #[test]
++    fn factored_jit_fold_matches_scalar_expansion_with_tails_and_weights() {
++        fn check<const PRE: bool, const WEIGH: bool>(
++            compact: [&[Gf]; 8],
++            expanded: [&[Gf]; 8],
++            patterns: &[[u8; 64]; 8],
++            rho: Gf,
++            weights: &[Gf],
++            width: usize,
++            send_one: bool,
++        ) {
++            let expected = run_jit_fold::<PRE, WEIGH>(
++                expanded, patterns, &rho, weights, send_one, width, true,
++            );
++            let guard = Gf::from_polynomial_words([0xdead_beef, 0x1234_5678]);
++            let mut out = vec![vec![MaybeUninit::new(guard); width + 2]; 4];
++            let mut sums = Sums::zero();
++            {
++                let (l, r) = out.split_at_mut(2);
++                let (l0, l1) = l.split_at_mut(1);
++                let (r0, r1) = r.split_at_mut(1);
++                jit_fold_factored_group::<PRE, WEIGH>(
++                    compact,
++                    patterns,
++                    &rho,
++                    weights,
++                    send_one,
++                    [&mut l0[0][1..1 + width], &mut l1[0][1..1 + width]],
++                    [&mut r0[0][1..1 + width], &mut r1[0][1..1 + width]],
++                    &mut sums,
++                );
++            }
++            assert_eq!(
++                sums.finish(),
++                expected.0,
++                "width={width}, pre={PRE}, weigh={WEIGH}"
++            );
++            for (actual, expected) in init(&out).iter().zip(&expected.1) {
++                assert_eq!(actual[0], guard);
++                assert_eq!(actual[width + 1], guard);
++                assert_eq!(&actual[1..1 + width], expected);
++            }
++        }
++        let compact: [Vec<Gf>; 8] = std::array::from_fn(|corner| elements(32, 500 + corner as u64));
++        let expanded: [Vec<Gf>; 8] = std::array::from_fn(|corner| {
++            (0..256)
++                .map(|pattern| compact[corner][pattern & 15] + compact[corner][16 + (pattern >> 4)])
++                .collect()
++        });
++        let compact = std::array::from_fn(|corner| compact[corner].as_slice());
++        let expanded = std::array::from_fn(|corner| expanded[corner].as_slice());
++        let mut weights = elements(64, 550);
++        weights[0] = Gf::zero();
++        weights[1] = Gf::one();
++        // The four full blocks cover every byte at every corner. Partial
++        // widths also cover every SIMD/scalar tail without changing guards.
++        for base in [0, 64, 128, 192] {
++            let patterns = std::array::from_fn(|corner| {
++                std::array::from_fn(|m| (base + m + 31 * corner) as u8)
++            });
++            for rho in [Gf::zero(), Gf::one(), elements(1, 551)[0]] {
++                for width in [0, 1, 2, 3, 31, 63, 64] {
++                    for send_one in [false, true] {
++                        check::<false, false>(
++                            compact, expanded, &patterns, rho, &weights, width, send_one,
++                        );
++                        check::<false, true>(
++                            compact, expanded, &patterns, rho, &weights, width, send_one,
++                        );
++                        check::<true, false>(
++                            compact, expanded, &patterns, rho, &weights, width, send_one,
++                        );
++                        check::<true, true>(
++                            compact, expanded, &patterns, rho, &weights, width, send_one,
++                        );
++                    }
++                }
++            }
++        }
++    }
++
+     /// The JIT fold that weighs its left half gives the plain fold's sums
+     /// and stores `w·E'`, with and without pre-scaled tables.
+     #[test]
+diff --git a/src/bitz/kernels/x86.rs b/src/bitz/kernels/x86.rs
+index b0a7ea31f..39a41b6f6 100644
+--- a/src/bitz/kernels/x86.rs
++++ b/src/bitz/kernels/x86.rs
+@@ -395,6 +395,25 @@ unsafe fn lookup_complete(table: &[Gf], patterns: &[u8; 64], positions: [usize;
+     }
+ }
+ 
++/// Reconstruct four entries of an additive pair of 16-entry nibble tables.
++#[inline]
++unsafe fn lookup_factored(table: &[Gf], patterns: &[u8; 64], positions: [usize; 4]) -> __m512i {
++    // SAFETY: the caller checks at least 32 entries. Both byte-derived
++    // nibble indexes address complete initialized 128-bit field elements.
++    unsafe {
++        let values: [__m128i; 4] = positions.map(|position| {
++            let pattern = patterns[position] as usize;
++            let low = _mm_loadu_si128(table.as_ptr().add(pattern & 15).cast());
++            let high = _mm_loadu_si128(table.as_ptr().add(16 + (pattern >> 4)).cast());
++            _mm_xor_si128(low, high)
++        });
++        let lanes = _mm512_castsi128_si512(values[0]);
++        let lanes = _mm512_inserti32x4::<1>(lanes, values[1]);
++        let lanes = _mm512_inserti32x4::<2>(lanes, values[2]);
++        _mm512_inserti32x4::<3>(lanes, values[3])
++    }
++}
++
+ #[inline(always)]
+ pub(crate) fn round_sums_task(
+     lo_l: &[Gf],
+@@ -538,14 +557,36 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+     out_r: [&mut [MaybeUninit<Gf>]; 2],
+     sums: &mut Sums,
+ ) {
+-    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, true>(
++    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, true, false>(
++        tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
++    );
++}
++
++#[allow(clippy::too_many_arguments)]
++#[inline]
++pub(crate) fn jit_fold_factored_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
++    tab: [&[Gf]; 8],
++    pat: &[[u8; 64]; 8],
++    rho: &Gf,
++    eq_t: &[Gf],
++    send_one: bool,
++    out_l: [&mut [MaybeUninit<Gf>]; 2],
++    out_r: [&mut [MaybeUninit<Gf>]; 2],
++    sums: &mut Sums,
++) {
++    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false, true>(
+         tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+     );
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+ #[inline(always)]
+-fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIRECT: bool>(
++fn jit_fold_group_impl<
++    const PRE_SCALED: bool,
++    const WEIGH_LEFT: bool,
++    const DIRECT: bool,
++    const FACTORED: bool,
++>(
+     tab: [&[Gf]; 8],
+     pat: &[[u8; 64]; 8],
+     rho: &Gf,
+@@ -557,8 +598,10 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
+ ) {
+     // Keep checked lookup semantics for shorter tables, including empty
+     // tables when n=0. The direct path needs no bounds checks per lookup.
+-    if DIRECT && tab.iter().any(|table| table.len() < 256) {
+-        return jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false>(
++    if FACTORED {
++        assert!(tab.iter().all(|table| table.len() >= 32));
++    } else if DIRECT && tab.iter().any(|table| table.len() < 256) {
++        return jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false, false>(
+             tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+         );
+     }
+@@ -579,7 +622,9 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
+         for c in (0..end).step_by(4) {
+             let positions = std::array::from_fn(|j| col_of(c + j));
+             let v: [__m512i; 8] = std::array::from_fn(|j| {
+-                if DIRECT {
++                if FACTORED {
++                    lookup_factored(tab[j], &pat[j], positions)
++                } else if DIRECT {
+                     lookup_complete(tab[j], &pat[j], positions)
+                 } else {
+                     lookup(tab[j], &pat[j], positions)
+@@ -615,7 +660,14 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
+     }
+     for c in end..n {
+         let m = col_of(c);
+-        let v = |j: usize| tab[j][pat[j][m] as usize];
++        let v = |j: usize| {
++            let pattern = pat[j][m] as usize;
++            if FACTORED {
++                tab[j][pattern & 15] + tab[j][16 + (pattern >> 4)]
++            } else {
++                tab[j][pattern]
++            }
++        };
+         let combine = |lo, hi| {
+             if PRE_SCALED {
+                 lo + hi
+diff --git a/src/bitz/row_dispatch.rs b/src/bitz/row_dispatch.rs
+index 12771c1d4..a5ed957c2 100644
+--- a/src/bitz/row_dispatch.rs
++++ b/src/bitz/row_dispatch.rs
+@@ -128,10 +128,250 @@ impl CyclicRows {
+     }
+ }
+ 
++/// Cyclic ownership or a fixed set of 64 virtual shards for twelve workers.
++/// Shards are assigned to twelve workers once by `shard % 12`. A fold whose
++/// row offset is a multiple of 64 preserves that assignment. Below 64 rows
++/// we return to the ordinary iterator; we never silently change shard count.
++pub(super) enum RowDispatch {
++    Cyclic(CyclicRows),
++    Shards64,
++}
++
++pub(super) enum RowIndices {
++    Cyclic(StepBy<Range<usize>>),
++    Shards64 {
++        next: usize,
++        end: usize,
++        worker: usize,
++    },
++}
++
++impl Iterator for RowIndices {
++    type Item = usize;
++
++    fn next(&mut self) -> Option<usize> {
++        match self {
++            Self::Cyclic(indices) => indices.next(),
++            Self::Shards64 { next, end, worker } => {
++                if *next >= *end {
++                    return None;
++                }
++                let row = *next;
++                *next = if row % 64 + 12 < 64 {
++                    row + 12
++                } else {
++                    (row / 64 + 1) * 64 + *worker
++                };
++                Some(row)
++            }
++        }
++    }
++}
++
++impl RowDispatch {
++    pub(super) fn new(rows: usize, matrix_bytes: usize) -> Option<Self> {
++        if shards64_selected()
++            && rayon::current_num_threads() == 12
++            && rows >= 64
++            && rows % 64 == 0
++            && matrix_bytes >= 4 << 20
++        {
++            return Some(Self::Shards64);
++        }
++        CyclicRows::new(rows, matrix_bytes).map(Self::Cyclic)
++    }
++
++    pub(super) fn map_indices<R: Send>(
++        self,
++        rows: usize,
++        f: impl Fn(RowIndices) -> R + Sync,
++    ) -> Vec<R> {
++        match self {
++            Self::Cyclic(dispatch) => {
++                dispatch.map_indices(rows, |rows| f(RowIndices::Cyclic(rows)))
++            }
++            Self::Shards64 => rayon::broadcast(|worker| {
++                debug_assert_eq!(worker.num_threads(), 12);
++                f(RowIndices::Shards64 {
++                    next: worker.index(),
++                    end: rows,
++                    worker: worker.index(),
++                })
++            }),
++        }
++    }
++
++    pub(super) fn map_jobs<J: Send, R: Send>(
++        self,
++        jobs: impl ExactSizeIterator<Item = J>,
++        f: impl Fn(Vec<(usize, J)>) -> R + Sync,
++    ) -> Vec<R> {
++        match self {
++            Self::Cyclic(dispatch) => dispatch.map_jobs(jobs, f),
++            Self::Shards64 => {
++                let mut owned: Vec<Vec<(usize, J)>> = (0..12)
++                    .map(|_| Vec::with_capacity(jobs.len().div_ceil(12)))
++                    .collect();
++                for (row, job) in jobs.enumerate() {
++                    owned[(row % 64) % 12].push((row, job));
++                }
++                let owned: Vec<_> = owned.into_iter().map(Mutex::new).collect();
++                rayon::broadcast(|worker| {
++                    debug_assert_eq!(worker.num_threads(), 12);
++                    let jobs = std::mem::take(&mut *owned[worker.index()].lock().unwrap());
++                    f(jobs)
++                })
++            }
++        }
++    }
++}
++
++fn shards64_selected() -> bool {
++    #[cfg(test)]
++    if let Some(selected) = TEST_SHARDS64.get() {
++        return selected;
++    }
++    #[cfg(feature = "bench-internals")]
++    {
++        static SELECTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        *SELECTED.get_or_init(|| match std::env::var("BITZ_FOREST_ROW_OWNERSHIP") {
++            Err(std::env::VarError::NotPresent) => true,
++            Ok(value) => match value.as_str() {
++                "legacy" => false,
++                "shards64" => true,
++                _ => panic!("BITZ_FOREST_ROW_OWNERSHIP must be legacy or shards64"),
++            },
++            Err(std::env::VarError::NotUnicode(_)) => {
++                panic!("BITZ_FOREST_ROW_OWNERSHIP must be valid Unicode")
++            }
++        })
++    }
++    #[cfg(not(feature = "bench-internals"))]
++    true
++}
++
++#[cfg(test)]
++thread_local! {
++    static TEST_SHARDS64: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
++}
++
++/// Scope the selector to the proving thread, before it dispatches worker jobs.
++#[cfg(test)]
++pub(super) fn with_shards64<R>(selected: bool, run: impl FnOnce() -> R) -> R {
++    struct Restore(Option<bool>);
++    impl Drop for Restore {
++        fn drop(&mut self) {
++            TEST_SHARDS64.set(self.0);
++        }
++    }
++    let _restore = Restore(TEST_SHARDS64.replace(Some(selected)));
++    run()
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
++    #[cfg(not(feature = "bench-internals"))]
++    #[test]
++    fn production_row_dispatch_preserves_worker_and_size_gates() {
++        for workers in [1, 8, 12, 16] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                assert_eq!(TEST_SHARDS64.get(), None);
++                for rows in [32, 64, 128, 259] {
++                    let dispatch = RowDispatch::new(rows, 4 << 20);
++                    let shards = workers == 12 && rows >= 64 && rows % 64 == 0;
++                    let cyclic = workers == 16 && rows % 16 == 0;
++                    assert_eq!(matches!(dispatch, Some(RowDispatch::Shards64)), shards);
++                    assert_eq!(matches!(dispatch, Some(RowDispatch::Cyclic(_))), cyclic);
++                    assert!(RowDispatch::new(rows, (4 << 20) - 1).is_none());
++                }
++            });
++        }
++    }
++
++    #[test]
++    fn virtual_shards_preserve_owners_and_disjoint_tail_rows() {
++        let pool = rayon::ThreadPoolBuilder::new()
++            .num_threads(12)
++            .build()
++            .unwrap();
++        pool.install(|| {
++            with_shards64(true, || {
++                for rows in [64, 128, 256, 1024] {
++                    let dispatch = RowDispatch::new(rows, 4 << 20).unwrap();
++                    let assigned = dispatch.map_indices(rows, |indices| {
++                        let worker = rayon::current_thread_index().unwrap();
++                        indices.map(|row| (row, worker)).collect::<Vec<_>>()
++                    });
++                    let mut owners = vec![usize::MAX; rows];
++                    for (worker, jobs) in assigned.iter().enumerate() {
++                        assert_eq!(jobs.len(), (rows / 64) * if worker < 4 { 6 } else { 5 });
++                        for &(row, owner) in jobs {
++                            assert_eq!(owners[row], usize::MAX, "duplicate row");
++                            assert_eq!(owner, (row % 64) % 12);
++                            owners[row] = owner;
++                        }
++                    }
++                    assert!(owners.iter().all(|&owner| owner < 12));
++                    // Every compatible high-bit fold reads quarters from the
++                    // same owner as its output, including two successive folds.
++                    for offset in [64, 128, 256] {
++                        for row in 0..rows.saturating_sub(offset) {
++                            assert_eq!(owners[row], owners[row + offset]);
++                        }
++                    }
++                    let mut values = vec![usize::MAX; rows * 3 - 1];
++                    let dispatch = RowDispatch::new(rows, 4 << 20).unwrap();
++                    dispatch.map_jobs(values.chunks_mut(3), |jobs| {
++                        let worker = rayon::current_thread_index().unwrap();
++                        for (row, chunk) in jobs {
++                            assert_eq!(worker, owners[row]);
++                            chunk.fill(row);
++                        }
++                    });
++                    assert!(
++                        values
++                            .iter()
++                            .enumerate()
++                            .all(|(index, &row)| row == index / 3)
++                    );
++                }
++                for rows in [0, 1, 32, 63, 65, 127] {
++                    assert!(RowDispatch::new(rows, 64 << 20).is_none());
++                }
++                assert!(RowDispatch::new(128, (4 << 20) - 1).is_none());
++                with_shards64(false, || assert!(RowDispatch::new(128, 4 << 20).is_none()));
++                assert!(RowDispatch::new(128, 4 << 20).is_some());
++            })
++        });
++        assert_eq!(TEST_SHARDS64.get(), None);
++        for workers in [1, 8, 16] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                with_shards64(true, || {
++                    assert_eq!(RowDispatch::new(128, 4 << 20).is_some(), workers == 16);
++                })
++            });
++        }
++    }
++
++    #[test]
++    fn virtual_shard_override_restores_after_panic() {
++        with_shards64(false, || {
++            assert!(std::panic::catch_unwind(|| with_shards64(true, || panic!("test"))).is_err());
++            assert!(!shards64_selected());
++        });
++        assert_eq!(TEST_SHARDS64.get(), None);
++    }
++
+     #[test]
+     fn fallback_grain_preserves_small_passes_and_parallelism() {
+         for requested in [1, 2, 4, 8, 16] {
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding.rs b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+index 32a0e13f1..f001abe8e 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding.rs
+@@ -445,6 +445,46 @@ fn dense_compaction_threshold() -> Option<usize> {
+     None
+ }
+ 
++fn compact_dense_output_override() -> Option<bool> {
++    #[cfg(feature = "bench-internals")]
++    return match std::env::var("BITZ_ARITHMETIC_DENSE_OUTPUT") {
++        Err(std::env::VarError::NotPresent) => None,
++        Ok(value) => match value.as_str() {
++            "inplace" => Some(false),
++            "compact" => Some(true),
++            _ => panic!("BITZ_ARITHMETIC_DENSE_OUTPUT must be inplace or compact"),
++        },
++        Err(std::env::VarError::NotUnicode(_)) => {
++            panic!("BITZ_ARITHMETIC_DENSE_OUTPUT must be valid Unicode")
++        }
++    };
++    #[cfg(not(feature = "bench-internals"))]
++    None
++}
++
++fn select_compact_dense_output(
++    batch: usize,
++    workers: usize,
++    modulus: u128,
++    compaction_threshold: Option<usize>,
++    explicit: Option<bool>,
++) -> bool {
++    assert!(
++        explicit != Some(true) || compaction_threshold.is_none(),
++        "BITZ_ARITHMETIC_DENSE_COMPACTION must be off when BITZ_ARITHMETIC_DENSE_OUTPUT=compact"
++    );
++    // Cold/repeated qualification selected only this full-batch geometry.
++    // An explicitly selected older compaction experiment suppresses the
++    // production default, so its strided kernel remains independently usable.
++    explicit.unwrap_or(
++        compaction_threshold.is_none()
++            && N == 512
++            && batch == 1024
++            && workers == 12
++            && modulus >= 1u128 << 125,
++    )
++}
++
+ #[derive(Clone, Copy, Debug, Default)]
+ struct WordOptions {
+     reuse_initial: bool,
+@@ -454,10 +494,23 @@ struct WordOptions {
+     factored_initial_fused: bool,
+     factored_fold_reduction: bool,
+     dense_compaction: Option<usize>,
++    compact_dense_output: bool,
+ }
+ 
+ impl WordOptions {
+-    fn configured() -> Self {
++    fn configured(layout: &Layout, f: &Cfg) -> Self {
++        let dense_compaction = dense_compaction_threshold();
++        #[cfg(feature = "parallel")]
++        let workers = rayon::current_num_threads();
++        #[cfg(not(feature = "parallel"))]
++        let workers = 1;
++        let compact_dense_output = select_compact_dense_output(
++            layout.batch(),
++            workers,
++            f.modulus_u128(),
++            dense_compaction,
++            compact_dense_output_override(),
++        );
+         Self {
+             reuse_initial: arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
+             fused_fold: arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
+@@ -475,7 +528,8 @@ impl WordOptions {
+                 "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION",
+                 false,
+             ),
+-            dense_compaction: dense_compaction_threshold(),
++            dense_compaction,
++            compact_dense_output,
+         }
+     }
+ }
+@@ -936,10 +990,22 @@ fn initialize_dense(
+     direct: bool,
+     fused: bool,
+     slot: impl Fn(usize) -> [F; 2] + Sync,
++) -> [F; 2] {
++    initialize_dense_chunks::<1024>(values, len, f, direct, fused, slot)
++}
++
++fn initialize_dense_chunks<const CHUNK: usize>(
++    values: &mut Vec<[F; 2]>,
++    len: usize,
++    f: &Cfg,
++    direct: bool,
++    fused: bool,
++    slot: impl Fn(usize) -> [F; 2] + Sync,
+ ) -> [F; 2] {
+     // The fused initializer writes pairs; reject an odd tail before exposing
+     // any initialized slice or changing the Vec length.
+     assert_eq!(len % 2, 0);
++    assert!(CHUNK > 0 && CHUNK % 2 == 0);
+     let parts: Vec<[F; 2]> = if direct {
+         // Every output is overwritten. Keep length zero until all worker writes
+         // finish so unwinding can never expose an uninitialized field element.
+@@ -948,14 +1014,14 @@ fn initialize_dense(
+             values.reserve_exact(len);
+         }
+         let spare = &mut values.spare_capacity_mut()[..len];
+-        let parts = crate::cfg_chunks_mut!(spare, 1024)
++        let parts = crate::cfg_chunks_mut!(spare, CHUNK)
+             .enumerate()
+             .map(|(chunk, out)| {
+                 if fused {
+                     let mut sums = [FpProductAcc::<2>::default(); 2];
+                     for (j, pair) in out.chunks_exact_mut(2).enumerate() {
+-                        let a = slot(chunk * 1024 + 2 * j);
+-                        let b = slot(chunk * 1024 + 2 * j + 1);
++                        let a = slot(chunk * CHUNK + 2 * j);
++                        let b = slot(chunk * CHUNK + 2 * j + 1);
+                         pair[0].write(a);
+                         pair[1].write(b);
+                         f.mul_acc(&mut sums[0], &a[0], &a[1]);
+@@ -964,7 +1030,7 @@ fn initialize_dense(
+                     sums.map(|s| f.reduce(s))
+                 } else {
+                     for (j, out) in out.iter_mut().enumerate() {
+-                        out.write(slot(chunk * 1024 + j));
++                        out.write(slot(chunk * CHUNK + j));
+                     }
+                     // SAFETY: this worker initialized every element of its disjoint
+                     // chunk above. Only a shared slice is exposed, after all writes;
+@@ -978,7 +1044,7 @@ fn initialize_dense(
+             .collect();
+         // SAFETY: chunks cover exactly len slots, and each slot is initialized
+         // before the parallel iterator returns. The checked length and chunk
+-        // size 1024 are even, so the fused pair loop has no unwritten tail.
++        // size CHUNK are even, so the fused pair loop has no unwritten tail.
+         // On panic length stays zero; [F;2] is Copy and owns no drop resources.
+         unsafe {
+             values.set_len(len);
+@@ -992,14 +1058,14 @@ fn initialize_dense(
+             // initialize a new tail if this lease previously held fewer slots.
+             values.resize(len, [f.zero(); 2]);
+         }
+-        crate::cfg_chunks_mut!(values, 1024)
++        crate::cfg_chunks_mut!(values, CHUNK)
+             .enumerate()
+             .map(|(chunk, out)| {
+                 if fused {
+                     let mut sums = [FpProductAcc::<2>::default(); 2];
+                     for (j, pair) in out.chunks_exact_mut(2).enumerate() {
+-                        let a = slot(chunk * 1024 + 2 * j);
+-                        let b = slot(chunk * 1024 + 2 * j + 1);
++                        let a = slot(chunk * CHUNK + 2 * j);
++                        let b = slot(chunk * CHUNK + 2 * j + 1);
+                         pair[0] = a;
+                         pair[1] = b;
+                         f.mul_acc(&mut sums[0], &a[0], &a[1]);
+@@ -1008,7 +1074,7 @@ fn initialize_dense(
+                     sums.map(|s| f.reduce(s))
+                 } else {
+                     for (j, out) in out.iter_mut().enumerate() {
+-                        *out = slot(chunk * 1024 + j);
++                        *out = slot(chunk * CHUNK + j);
+                     }
+                     dense_sums(out, 1, f)
+                 }
+@@ -1042,6 +1108,54 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
+     fold(values)
+ }
+ 
++/// Write folded survivors consecutively, without a second compaction pass.
++/// The alternate allocation is local to this proof: at most half the initial
++/// dense allocation, in addition to that allocation. It is not cached in Prepared.
++fn dense_fold_compact_output(
++    values: &mut Vec<[F; 2]>,
++    output: &mut Vec<[F; 2]>,
++    stride: &mut usize,
++    r: F,
++    f: &Cfg,
++) -> [F; 2] {
++    let _span = tracing::info_span!(
++        "falcon_algebraic:word_dense_fold",
++        stride = *stride,
++        compact = true
++    )
++    .entered();
++    assert!(*stride > 0 && values.len() % *stride == 0);
++    let live = values.len() / *stride;
++    assert!(live >= 2 && live.is_power_of_two());
++    if live == 2 {
++        values[0] = std::array::from_fn(|k| lerp(values[0][k], values[*stride][k], r, f));
++        values.truncate(1);
++        *stride = 1;
++        return [f.zero(); 2];
++    }
++    let slot = |i: usize| {
++        let left = values[2 * i * *stride];
++        let right = values[(2 * i + 1) * *stride];
++        std::array::from_fn(|k| lerp(left[k], right[k], r, f))
++    };
++    // Match dense_fold's 1024 live input entries per task and its parallel
++    // cutoff. Existing initialization writes each output before exposing it.
++    #[cfg(feature = "parallel")]
++    let parallel = live >= 4096 && rayon::current_num_threads() > 1;
++    #[cfg(not(feature = "parallel"))]
++    let parallel = false;
++    let sums = if parallel {
++        initialize_dense_chunks::<512>(output, live / 2, f, true, false, slot)
++    } else {
++        output.clear();
++        output.extend((0..live / 2).map(slot));
++        dense_sums(output, 1, f)
++    };
++    std::mem::swap(values, output);
++    *stride = 1;
++    sums
++}
++
+ /// Move the live strided entries to the front without allocating or changing
+ /// the retained capacity. The forward write cursor never overtakes an unread
+ /// entry. This extra serial copy is experimental: saved sparse accesses in
+@@ -1245,7 +1359,7 @@ pub(super) fn prove_with_initial(
+         schedule,
+         f,
+         workspace,
+-        WordOptions::configured(),
++        WordOptions::configured(layout, f),
+         initial,
+     )
+ }
+@@ -1333,6 +1447,7 @@ fn prove_with_options_and_initial(
+         &mut local_workspace.dense
+     };
+     let mut stride = 1;
++    let mut compact_output = Vec::new();
+     let mut count = None;
+     let with_padding = layout.batch() < layout.capacity();
+     let mut point = Vec::with_capacity(rounds(layout));
+@@ -1370,6 +1485,8 @@ fn prove_with_options_and_initial(
+         if round == 0 {
+             let initial_form = form.take().unwrap();
+             next = first_fold_into(&initial_form, source, r, &factors, f, options, dense);
++        } else if options.compact_dense_output {
++            next = dense_fold_compact_output(dense, &mut compact_output, &mut stride, r, f);
+         } else {
+             next = dense_fold_with_compaction(dense, &mut stride, r, f, options.dense_compaction);
+         }
+@@ -1390,9 +1507,15 @@ fn prove_with_options_and_initial(
+             weights.fold(round, r, f);
+         }
+     }
+-    let mut values = vec![dense[0][1], spare.terminal(f)];
++    let dense_terminal = dense[0];
++    // A lease retains only the original (largest) allocation. Its contents are
++    // overwritten by the next first fold; the terminal was copied above.
++    if compact_output.capacity() > dense.capacity() {
++        std::mem::swap(dense, &mut compact_output);
++    }
++    let mut values = vec![dense_terminal[1], spare.terminal(f)];
+     let mut terminal = f.add(
+-        &f.mul(&dense[0][0], &values[0]),
++        &f.mul(&dense_terminal[0], &values[0]),
+         &f.mul(&weights.spare(0, rounds(layout), f), &values[1]),
+     );
+     if let Some(c) = count {
+diff --git a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+index 23a6c6ceb..e2f7e850f 100644
+--- a/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
++++ b/src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+@@ -854,33 +854,38 @@ fn factored_word_proofs_preserve_transcript_and_reject_tampering() {
+ 
+ #[test]
+ fn direct_dense_initialization_reuses_and_recovers_from_panics() {
+-    let f = test_field();
+-    let mut values = Vec::new();
+-    for fused in [false, true] {
+-        for len in [2050, 512, 3072, 1024] {
+-            let slot = |i| [value(i as i64 * 3 - 19, &f), value(7 - i as i64, &f)];
+-            let expected: Vec<_> = (0..len).map(slot).collect();
+-            let actual = initialize_dense(&mut values, len, &f, true, fused, slot);
+-            assert_eq!(values, expected);
+-            assert_eq!(actual, dense_sums(&expected, 1, &f));
++    fn check<const CHUNK: usize>() {
++        let f = test_field();
++        let mut values = Vec::new();
++        for fused in [false, true] {
++            for len in [2050, 512, 3072, 1024] {
++                let slot = |i| [value(i as i64 * 3 - 19, &f), value(7 - i as i64, &f)];
++                let expected: Vec<_> = (0..len).map(slot).collect();
++                let actual =
++                    initialize_dense_chunks::<CHUNK>(&mut values, len, &f, true, fused, slot);
++                assert_eq!(values, expected);
++                assert_eq!(actual, dense_sums(&expected, 1, &f));
++            }
++            let capacity = values.capacity();
++            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++                initialize_dense_chunks::<CHUNK>(&mut values, 2048, &f, true, fused, |i| {
++                    assert_ne!(i, 777, "injected worker failure");
++                    [f.one(); 2]
++                });
++            }));
++            assert!(panicked.is_err());
++            assert!(values.is_empty());
++            assert_eq!(values.capacity(), capacity);
++            initialize_dense_chunks::<CHUNK>(&mut values, 1024, &f, true, fused, |_| [f.zero(); 2]);
++            assert_eq!(values, vec![[f.zero(); 2]; 1024]);
++            let odd_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++                initialize_dense_chunks::<CHUNK>(&mut values, 3, &f, true, fused, |_| [f.one(); 2]);
++            }));
++            assert!(odd_length.is_err());
+         }
+-        let capacity = values.capacity();
+-        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+-            initialize_dense(&mut values, 2048, &f, true, fused, |i| {
+-                assert_ne!(i, 777, "injected worker failure");
+-                [f.one(); 2]
+-            });
+-        }));
+-        assert!(panicked.is_err());
+-        assert!(values.is_empty());
+-        assert_eq!(values.capacity(), capacity);
+-        initialize_dense(&mut values, 1024, &f, true, fused, |_| [f.zero(); 2]);
+-        assert_eq!(values, vec![[f.zero(); 2]; 1024]);
+-        let odd_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+-            initialize_dense(&mut values, 3, &f, true, fused, |_| [f.one(); 2]);
+-        }));
+-        assert!(odd_length.is_err());
+     }
++    check::<512>();
++    check::<1024>();
+ }
+ 
+ #[test]
+@@ -890,10 +895,17 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
+     let source = source_fixture(&layout);
+     for mode in [0, 3] {
+         for challenges in 0..3 {
+-            for compaction in [None, Some(2), Some(4), Some(8)] {
++            for (compaction, compact_output) in [
++                (None, false),
++                (Some(2), false),
++                (Some(4), false),
++                (Some(8), false),
++                (None, true),
++            ] {
+                 let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
+                 let mut reference = Reference::new(&dense_form, &source, &f);
+                 let mut values = Vec::new();
++                let mut output = Vec::new();
+                 let mut stride = 1;
+                 let mut transcript = Blake3Transcript::new();
+                 transcript.absorb_slice(b"word-dense-reference-challenges");
+@@ -918,6 +930,8 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
+                             },
+                             &mut values,
+                         )
++                    } else if compact_output {
++                        dense_fold_compact_output(&mut values, &mut output, &mut stride, r, &f)
+                     } else {
+                         dense_fold_with_compaction(&mut values, &mut stride, r, &f, compaction)
+                     };
+@@ -930,7 +944,7 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
+                         .collect();
+                     assert_eq!(
+                         active, expected,
+-                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?}"
++                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?} compact_output={compact_output}"
+                     );
+                     assert_eq!(sums, dense_sums(&expected, 1, &f));
+                 }
+@@ -939,6 +953,120 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
+     }
+ }
+ 
++#[test]
++fn compact_dense_output_policy_preserves_boundaries_and_explicit_experiments() {
++    let floor = 1u128 << 125;
++    assert_eq!(
++        select_compact_dense_output(1024, 12, floor, None, None),
++        N == 512
++    );
++    assert_eq!(
++        select_compact_dense_output(1024, 12, (1u128 << 127) - 1, None, None),
++        N == 512
++    );
++    // Partial batches sharing the same padded capacity stay on the old path.
++    for (batch, workers, modulus) in [
++        (513, 12, floor),
++        (1023, 12, floor),
++        (1025, 12, floor),
++        (1024, 1, floor),
++        (1024, 8, floor),
++        (1024, 16, floor),
++        (1024, 12, floor - 1),
++    ] {
++        assert!(!select_compact_dense_output(
++            batch, workers, modulus, None, None
++        ));
++    }
++    assert!(!select_compact_dense_output(
++        1024,
++        12,
++        floor,
++        None,
++        Some(false)
++    ));
++    // Explicit benchmark selection still permits unqualified geometries.
++    assert!(select_compact_dense_output(
++        3,
++        1,
++        (1u128 << 61) - 1,
++        None,
++        Some(true)
++    ));
++    for threshold in [2, 4, 8] {
++        assert!(!select_compact_dense_output(
++            1024,
++            12,
++            floor,
++            Some(threshold),
++            None
++        ));
++        assert!(!select_compact_dense_output(
++            1024,
++            12,
++            floor,
++            Some(threshold),
++            Some(false)
++        ));
++        assert!(
++            std::panic::catch_unwind(|| {
++                select_compact_dense_output(1024, 12, floor, Some(threshold), Some(true))
++            })
++            .is_err()
++        );
++    }
++}
++
++#[test]
++fn compact_dense_output_matches_reference_across_parallel_and_strided_rounds() {
++    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
++        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
++        for initial_stride in [1, 2, 4] {
++            for challenge in [f.zero(), f.one(), value(-97, &f)] {
++                let mut reference = Reference {
++                    weights: [
++                        (0..8192).map(|i| value(i * 29 - 100_000, &f)).collect(),
++                        Vec::new(),
++                        Vec::new(),
++                    ],
++                    tables: [
++                        (0..8192)
++                            .map(|i| value([-16384, 16383, 0, -1, 1][i % 5], &f))
++                            .collect(),
++                        Vec::new(),
++                        Vec::new(),
++                    ],
++                };
++                let mut values = vec![[f.one(); 2]; 8192 * initial_stride];
++                for i in 0..8192 {
++                    values[i * initial_stride] = [reference.weights[0][i], reference.tables[0][i]];
++                }
++                let mut output = Vec::new();
++                let mut stride = initial_stride;
++                while reference.weights[0].len() > 1 {
++                    let sums = dense_fold_compact_output(
++                        &mut values,
++                        &mut output,
++                        &mut stride,
++                        challenge,
++                        &f,
++                    );
++                    reference.fold(challenge, &f);
++                    let expected: Vec<_> = reference.weights[0]
++                        .iter()
++                        .zip(&reference.tables[0])
++                        .map(|(&w, &x)| [w, x])
++                        .collect();
++                    assert_eq!(stride, 1);
++                    assert_eq!(values, expected);
++                    let polynomial = reference.polynomial(&f);
++                    assert_eq!(sums, [polynomial[0], polynomial[2]]);
++                }
++            }
++        }
++    }
++}
++
+ #[test]
+ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+     let mut workspace = WordWorkspace::default();
+@@ -1009,6 +1137,16 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+                     scratch: true,
+                     ..WordOptions::default()
+                 },
++                WordOptions {
++                    compact_dense_output: true,
++                    ..WordOptions::default()
++                },
++                WordOptions {
++                    compact_dense_output: true,
++                    direct_init: true,
++                    scratch: true,
++                    ..WordOptions::default()
++                },
+                 WordOptions {
+                     reuse_initial: true,
+                     fused_fold: true,
+@@ -1017,6 +1155,7 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+                     factored_initial_fused: true,
+                     factored_fold_reduction: true,
+                     dense_compaction: None,
++                    compact_dense_output: true,
+                 },
+                 WordOptions {
+                     reuse_initial: true,
+@@ -1026,6 +1165,7 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
+                     factored_initial_fused: true,
+                     factored_fold_reduction: true,
+                     dense_compaction: Some(2),
++                    compact_dense_output: false,
+                 },
+             ] {
+                 let (form, factors, _) = factored_fixture(&layout, &f, mode);
+diff --git a/src/piop/spartan/falcon_integer.rs b/src/piop/spartan/falcon_integer.rs
+index 6ab828086..552a6cbdb 100644
+--- a/src/piop/spartan/falcon_integer.rs
++++ b/src/piop/spartan/falcon_integer.rs
+@@ -123,6 +123,7 @@ pub(super) fn prove<const K: usize>(
+         read,
+         boundary,
+         prefix_rounds,
++        native_prefix::batched_norm_enabled(),
+     )
+ }
+ 
+@@ -179,6 +180,7 @@ fn prove_with_prefix<const K: usize>(
+     read: impl Fn(usize) -> [i16; K] + Sync,
+     boundary: &mut impl RoundBoundaryPolicy,
+     prefix_rounds: usize,
++    batched_norm: bool,
+ ) -> Result<Output<K>, SumcheckError> {
+     let rounds = row_vars + rho.len();
+     // row_vars <= 20 and prefix_rounds <= 4 bound native sums by 2^54
+@@ -210,6 +212,7 @@ fn prove_with_prefix<const K: usize>(
+                 rejection_instances.as_deref(),
+                 prefix_rounds,
+                 &read,
++                batched_norm,
+             )
+         })
+         .transpose()?;
+@@ -804,7 +807,9 @@ mod tests {
+                     );
+                     let expected_nonces = expected_boundary.into_nonces();
+                     let expected_challenge = expected_transcript.get_challenge::<field::Gf128>();
+-                    for width in 1..=4 {
++                    for (width, batched_norm) in
++                        (1..=4).flat_map(|width| [(width, false), (width, true)])
++                    {
+                         let mut transcript = Blake3Transcript::new();
+                         let mut boundary =
+                             ProverGrindingRoundBoundary::<IntegerTestDomain>::with_round_offset(
+@@ -821,6 +826,7 @@ mod tests {
+                             |i| rows[i],
+                             &mut boundary,
+                             width,
++                            batched_norm,
+                         )
+                         .unwrap();
+                         let nonces = boundary.into_nonces();
+@@ -856,7 +862,9 @@ mod tests {
+                         assert_eq!(verifier.get_challenge::<field::Gf128>(), expected_challenge);
+                     }
+                 }
+-                for width in 1..=4 {
++                for (width, batched_norm) in
++                    (1..=4).flat_map(|width| [(width, false), (width, true)])
++                {
+                     let mut transcript = Blake3Transcript::new();
+                     let wrong = field.add(&initial, &field.one());
+                     let result = prove_with_prefix(
+@@ -870,6 +878,7 @@ mod tests {
+                         |i| rows[i],
+                         &mut UngrindedRoundBoundary,
+                         width,
++                        batched_norm,
+                     );
+                     assert!(matches!(
+                         result,
+@@ -910,6 +919,7 @@ mod tests {
+                 |_| panic!("invalid dimensions must be rejected before reading"),
+                 &mut UngrindedRoundBoundary,
+                 width,
++                true,
+             );
+             assert!(matches!(
+                 result,
+diff --git a/src/piop/spartan/falcon_integer/native_prefix.rs b/src/piop/spartan/falcon_integer/native_prefix.rs
+index b707b3b5c..2797d5ed5 100644
+--- a/src/piop/spartan/falcon_integer/native_prefix.rs
++++ b/src/piop/spartan/falcon_integer/native_prefix.rs
+@@ -6,6 +6,23 @@
+ 
+ use super::*;
+ 
++pub(super) fn batched_norm_enabled() -> bool {
++    #[cfg(feature = "bench-internals")]
++    return match std::env::var("BITZ_ARITHMETIC_NATIVE_NORM") {
++        Err(std::env::VarError::NotPresent) => false,
++        Ok(value) => match value.as_str() {
++            "legacy" => false,
++            "batched" => true,
++            _ => panic!("BITZ_ARITHMETIC_NATIVE_NORM must be legacy or batched"),
++        },
++        Err(std::env::VarError::NotUnicode(_)) => {
++            panic!("BITZ_ARITHMETIC_NATIVE_NORM must be valid Unicode")
++        }
++    };
++    #[cfg(not(feature = "bench-internals"))]
++    false
++}
++
+ pub(super) struct Prefix {
+     norm: Vec<F>,
+     rejection: Vec<F>,
+@@ -45,6 +62,7 @@ impl Prefix {
+         rejection_instances: Option<&[F]>,
+         width: usize,
+         read: &(impl Fn(usize) -> [i16; K] + Sync),
++        batched_norm: bool,
+     ) -> Result<Self, SumcheckError> {
+         let _span = tracing::info_span!(
+             "falcon_integer:native_prefix",
+@@ -54,6 +72,15 @@ impl Prefix {
+             prefix_rounds = width as u64
+         )
+         .entered();
++        if batched_norm && K == 1 && tau.is_none() && rejection_instances.is_none() {
++            return Ok(Self::norm_only(
++                field,
++                row_vars,
++                norm_instances,
++                width,
++                read,
++            ));
++        }
+         let grid_len = 3usize.pow(width as u32);
+         let block_len = 1 << width;
+         let blocks = 1 << (row_vars - width);
+@@ -142,6 +169,74 @@ impl Prefix {
+         Ok(result)
+     }
+ 
++    /// Keep one fixed-size field accumulator per task, rather than allocating
++    /// norm and zero rejection vectors for every instance. Each native sum is
++    /// still reduced with its own instance weight before combining instances.
++    fn norm_only<const K: usize>(
++        field: &Cfg,
++        row_vars: usize,
++        norm_instances: &[F],
++        width: usize,
++        read: &(impl Fn(usize) -> [i16; K] + Sync),
++    ) -> Self {
++        const INSTANCES_PER_TASK: usize = 8;
++        let grid_len = 3usize.pow(width as u32);
++        let block_len = 1 << width;
++        let blocks = 1 << (row_vars - width);
++        let zero = field.zero();
++        let task = |chunk: usize| {
++            let mut totals = [zero; 81];
++            let start = chunk * INSTANCES_PER_TASK;
++            let end = (start + INSTANCES_PER_TASK).min(norm_instances.len());
++            for instance in start..end {
++                let mut native = [0i64; 81];
++                let mut grid = [[0i64; K]; 81];
++                for block in 0..blocks {
++                    extend(
++                        read,
++                        (instance * blocks + block) * block_len,
++                        width,
++                        &mut grid[..grid_len],
++                    );
++                    for j in 0..grid_len {
++                        let x = grid[j][0];
++                        // The same per-instance 2^54 bound as the legacy path;
++                        // neither task size nor batch size enters this sum.
++                        native[j] += x * x;
++                    }
++                }
++                for j in 0..grid_len {
++                    let weighted =
++                        field.reduce(field.mul_wide(&norm_instances[instance], &native[j]));
++                    totals[j] = field.add(&totals[j], &weighted);
++                }
++            }
++            totals
++        };
++        let combine = |mut a: [F; 81], b: [F; 81]| {
++            for j in 0..grid_len {
++                a[j] = field.add(&a[j], &b[j]);
++            }
++            a
++        };
++        let tasks = norm_instances.len().div_ceil(INSTANCES_PER_TASK);
++        #[cfg(feature = "parallel")]
++        let norm = if norm_instances.len() * (1 << row_vars) >= 4096 && tasks > 1 {
++            (0..tasks)
++                .into_par_iter()
++                .map(task)
++                .reduce(|| [zero; 81], combine)
++        } else {
++            (0..tasks).map(task).fold([zero; 81], combine)
++        };
++        #[cfg(not(feature = "parallel"))]
++        let norm = (0..tasks).map(task).fold([zero; 81], combine);
++        Self {
++            norm: norm[..grid_len].to_vec(),
++            rejection: Vec::new(),
++        }
++    }
++
+     pub(super) fn coefficients(
+         &self,
+         field: &Cfg,
+@@ -288,6 +383,85 @@ fn fold_tables_with<const K: usize, const N: usize>(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn batched_norm_matches_legacy_grids_and_all_prefix_rounds() {
++        for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
++            let field = Cfg::from_prime_u128(modulus);
++            for instances in [1, 8, 9, 17] {
++                let weights: Vec<_> = (0..instances)
++                    .map(|i| signed([1, -1, 97, 0][i % 4], &field))
++                    .collect();
++                let read = |i: usize| {
++                    // Include zero instances and both signed endpoints. Keep
++                    // instance16 nonzero so the parallel partial task matters.
++                    if (13..16).contains(&(i / 256)) {
++                        [0]
++                    } else {
++                        [[i16::MIN, i16::MAX, -1, 0, 1, 211][(i ^ (i >> 4)) % 6]]
++                    }
++                };
++                for width in 2..=4 {
++                    for challenge in [field.zero(), field.one(), signed(-239, &field)] {
++                        let mut baseline =
++                            Prefix::new(&field, 8, &weights, None, None, width, &read, false)
++                                .unwrap();
++                        let mut candidate =
++                            Prefix::new(&field, 8, &weights, None, None, width, &read, true)
++                                .unwrap();
++                        assert!(candidate.rejection.is_empty());
++                        assert!(baseline.rejection.iter().all(|x| *x == field.zero()));
++                        for _ in 0..width {
++                            assert_eq!(candidate.norm, baseline.norm);
++                            assert_eq!(
++                                candidate.coefficients(&field, None).unwrap(),
++                                baseline.coefficients(&field, None).unwrap()
++                            );
++                            baseline.fold(&field, challenge);
++                            candidate.fold(&field, challenge);
++                        }
++                        assert_eq!(candidate.norm, baseline.norm);
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn signed_native_grid_matches_independent_differences_at_maximum_bound() {
++        for width in 1..=4 {
++            let read = |i: usize| {
++                [if i.count_ones() % 2 == 0 {
++                    i16::MIN
++                } else {
++                    i16::MAX
++                }]
++            };
++            let mut grid = [[0i64; 1]; 81];
++            let len = 3usize.pow(width as u32);
++            extend(&read, 0, width, &mut grid[..len]);
++            for (index, actual) in grid[..len].iter().enumerate() {
++                let mut expected = 0i64;
++                for bits in 0usize..1 << width {
++                    let mut trits = index;
++                    let mut sign = 1;
++                    for bit in 0..width {
++                        match (trits % 3, (bits >> bit) & 1) {
++                            (0, 1) | (1, 0) => sign = 0,
++                            (2, 0) => sign = -sign,
++                            _ => {}
++                        }
++                        trits /= 3;
++                    }
++                    expected += sign * i64::from(read(bits)[0]);
++                }
++                assert_eq!(actual[0], expected);
++                // Repeat the worst block through the maximum accepted row_vars.
++                let squared_sum = i128::from(expected).pow(2) * (1i128 << (20 - width));
++                assert!(squared_sum <= 1i128 << 54);
++            }
++        }
++    }
++
+     fn check_boolean_folds<const N: usize>() {
+         let field = Cfg::from_prime_u128((1u128 << 127) - 1);
+         let width = N.ilog2() as usize;
+diff --git a/vendor/flock-mod/crates/flock-core/Cargo.toml b/vendor/flock-mod/crates/flock-core/Cargo.toml
+index 14f1091ee..36c9ab23e 100644
+--- a/vendor/flock-mod/crates/flock-core/Cargo.toml
++++ b/vendor/flock-mod/crates/flock-core/Cargo.toml
+@@ -7,6 +7,10 @@ authors.workspace = true
+ description = "Protocol library and verifier for the Flock R1CS-over-GF(2) PIOP."
+ 
+ [features]
++# Exact-arithmetic implementation selectors for controlled benchmark builds.
++# Production builds do not read these selectors.
++bench-internals = []
++
+ # Count hash invocations (Merkle leaf/pair compressions, FS transcript
+ # absorption and squeezes, PoW evaluations) via global relaxed atomics. Counts
+ # whichever hash each component is configured with — see `hash::HashKind`. Off
+diff --git a/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs b/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
+index 37c506ccc..2e0318c4f 100644
+--- a/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
++++ b/vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
+@@ -2392,14 +2392,43 @@ pub(crate) fn induce_sumcheck_poly_auto(
+ /// has only `positions.len()` nonzeros and that the first `k` transpose steps
+ /// (forward layers `log_d-1 .. log_d-k`, pairing distances `1 .. 2^(k-1)`) mix
+ /// only **within** `2^k`-aligned windows. We process just the windows that
+-/// contain a nonzero (a dense `2^k` transpose each), densify, then run the
+-/// remaining steps as full dense sweeps. Output is identical to
++/// contain a nonzero (a dense `2^k` transpose each), then run the remaining
++/// steps as full dense sweeps. Output is identical to
+ /// `transpose_forward_ntt` applied to the scattered input.
+ fn transpose_forward_ntt_sparse(
+     ntt: &AdditiveNttF128,
+     positions: &[usize],
+     values: &[Gf128],
+     log_d: usize,
++) -> Vec<Gf128> {
++    #[cfg(feature = "bench-internals")]
++    if direct_sparse_transpose_enabled() {
++        return transpose_forward_ntt_sparse_direct(ntt, positions, values, log_d);
++    }
++    transpose_forward_ntt_sparse_legacy(ntt, positions, values, log_d)
++}
++
++#[cfg(feature = "bench-internals")]
++fn direct_sparse_transpose_enabled() -> bool {
++    static DIRECT: OnceLock<bool> = OnceLock::new();
++    *DIRECT.get_or_init(|| match std::env::var("BITZ_PCS_SPARSE_TRANSPOSE") {
++        Err(std::env::VarError::NotPresent) => false,
++        Ok(value) => match value.as_str() {
++            "legacy" => false,
++            "direct" => true,
++            _ => panic!("BITZ_PCS_SPARSE_TRANSPOSE must be legacy or direct"),
++        },
++        Err(std::env::VarError::NotUnicode(_)) => {
++            panic!("BITZ_PCS_SPARSE_TRANSPOSE must be valid Unicode")
++        }
++    })
++}
++
++fn transpose_forward_ntt_sparse_legacy(
++    ntt: &AdditiveNttF128,
++    positions: &[usize],
++    values: &[Gf128],
++    log_d: usize,
+ ) -> Vec<Gf128> {
+     use rayon::prelude::*;
+     use std::collections::HashMap;
+@@ -2433,24 +2462,7 @@ fn transpose_forward_ntt_sparse(
+     let processed: Vec<(usize, Vec<Gf128>)> = win_vec
+         .into_par_iter()
+         .map(|(w, mut buf)| {
+-            for s in 0..k {
+-                let layer = log_d - 1 - s;
+-                let bsh = 1usize << s; // pairing distance
+-                let block_size = bsh << 1;
+-                let nblocks = (1usize << k) / block_size;
+-                for jb in 0..nblocks {
+-                    // global block index = ((w<<k) + jb*block_size) >> (s+1).
+-                    let t = ntt.twiddle(layer, (w << (k - s - 1)) + jb);
+-                    let base = jb * block_size;
+-                    for r in 0..bsh {
+-                        let a = buf[base + r];
+-                        let b = buf[base + r + bsh];
+-                        let sab = a + b;
+-                        buf[base + r] = sab;
+-                        buf[base + r + bsh] = t * sab + b;
+-                    }
+-                }
+-            }
++            transpose_sparse_window(ntt, &mut buf, w, log_d, k);
+             (w, buf)
+         })
+         .collect();
+@@ -2462,6 +2474,80 @@ fn transpose_forward_ntt_sparse(
+         data[(w << k)..((w + 1) << k)].copy_from_slice(&buf);
+     }
+ 
++    transpose_sparse_suffix(ntt, &mut data, log_d, k);
++    data
++}
++
++/// Scatter into the final allocation and transform each active window there.
++/// Query order (including duplicate/cancelling entries), window coordinates,
++/// twiddles and butterfly order match the legacy implementation. Only disjoint
++/// windows run concurrently; the suffix starts after every window is complete.
++#[cfg(any(test, feature = "bench-internals"))]
++fn transpose_forward_ntt_sparse_direct(
++    ntt: &AdditiveNttF128,
++    positions: &[usize],
++    values: &[Gf128],
++    log_d: usize,
++) -> Vec<Gf128> {
++    use rayon::prelude::*;
++    if log_d < 12 {
++        // Below the sparse-prefix gate the existing path already scatters
++        // directly into one allocation and applies the dense transpose.
++        return transpose_forward_ntt_sparse_legacy(ntt, positions, values, log_d);
++    }
++    let n = 1usize << log_d;
++    let k = 8;
++    let window_len = 1usize << k;
++    let mut data = vec![Gf128::ZERO; n];
++    let mut active = vec![false; n / window_len];
++    for (&p, &v) in positions.iter().zip(values) {
++        data[p] += v;
++        // Preserve the legacy active set even when values are zero or cancel.
++        active[p >> k] = true;
++    }
++    data.par_chunks_mut(window_len)
++        .zip(active.par_iter())
++        .enumerate()
++        .for_each(|(w, (buf, &is_active))| {
++            if is_active {
++                transpose_sparse_window(ntt, buf, w, log_d, k);
++            }
++        });
++    transpose_sparse_suffix(ntt, &mut data, log_d, k);
++    data
++}
++
++#[inline]
++fn transpose_sparse_window(
++    ntt: &AdditiveNttF128,
++    buf: &mut [Gf128],
++    window: usize,
++    log_d: usize,
++    k: usize,
++) {
++    for s in 0..k {
++        let layer = log_d - 1 - s;
++        let bsh = 1usize << s;
++        let block_size = bsh << 1;
++        let nblocks = (1usize << k) / block_size;
++        for jb in 0..nblocks {
++            // Global block index = ((window<<k) + jb*block_size) >> (s+1).
++            let t = ntt.twiddle(layer, (window << (k - s - 1)) + jb);
++            let base = jb * block_size;
++            for r in 0..bsh {
++                let a = buf[base + r];
++                let b = buf[base + r + bsh];
++                let sab = a + b;
++                buf[base + r] = sab;
++                buf[base + r + bsh] = t * sab + b;
++            }
++        }
++    }
++}
++
++fn transpose_sparse_suffix(ntt: &AdditiveNttF128, data: &mut [Gf128], log_d: usize, k: usize) {
++    use rayon::prelude::*;
++
+     // Remaining steps s = k..log_d-1 = forward layers (log_d-1-k) .. 0, dense.
+     let n_threads = rayon::current_num_threads().max(1);
+     for layer in (0..(log_d - k)).rev() {
+@@ -2499,7 +2585,6 @@ fn transpose_forward_ntt_sparse(
+             }
+         }
+     }
+-    data
+ }
+ 
+ // ===================================================================
+@@ -7549,6 +7634,124 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn transpose_sparse_direct_matches_legacy_and_dense() {
++        use crate::challenger::Challenger;
++        for workers in [1, 3, 12] {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .build()
++                .unwrap();
++            pool.install(|| {
++                // Include the prefix gate, both Falcon domains, and the
++                // one-element domain where no butterfly is executed.
++                for log_d in [0usize, 1, 6, 11, 12, 14, 15] {
++                    let n = 1usize << log_d;
++                    let ntt = AdditiveNttF128::standard(log_d);
++                    let mut ch = crate::challenger::RandomChallenger::new(0xD1EC7 ^ log_d as u64);
++                    let boundary_positions =
++                        vec![n - 1, 0, 255.min(n - 1), 256.min(n - 1), n / 2, 0, n - 1];
++                    let boundary_values = ch.sample_f128_vec(boundary_positions.len());
++                    let one_window: Vec<_> = (0..43.min(n))
++                        .map(|i| n - n.min(256) + (17 * i) % n.min(256))
++                        .collect();
++                    let all_windows: Vec<_> = (0..n.div_ceil(256))
++                        .map(|w| (256 * w + 255).min(n - 1))
++                        .collect();
++                    // Odd multiplication permutes a power-of-two domain;
++                    // these are distinct, unsorted queries at the live count.
++                    let falcon_queries: Vec<_> =
++                        (0..309.min(n)).map(|i| (i * 4051 + 13) & (n - 1)).collect();
++                    let cancellation = ch.sample_f128();
++                    let cases = [
++                        (Vec::new(), Vec::new()),
++                        (
++                            vec![n - 1, n - 1, 0, 0, n / 2],
++                            vec![
++                                cancellation,
++                                cancellation,
++                                Gf128::ONE,
++                                Gf128::ONE,
++                                Gf128::ZERO,
++                            ],
++                        ),
++                        (boundary_positions, boundary_values),
++                        (one_window.clone(), ch.sample_f128_vec(one_window.len())),
++                        (all_windows.clone(), ch.sample_f128_vec(all_windows.len())),
++                        (
++                            falcon_queries.clone(),
++                            ch.sample_f128_vec(falcon_queries.len()),
++                        ),
++                    ];
++                    for (case, (positions, values)) in cases.iter().enumerate() {
++                        let mut dense = vec![Gf128::ZERO; n];
++                        for (&position, &value) in positions.iter().zip(values) {
++                            dense[position] += value;
++                        }
++                        // Independent oracle: the original full dense
++                        // transpose does not call either sparse helper.
++                        transpose_forward_ntt(&ntt, &mut dense, log_d);
++                        let legacy =
++                            transpose_forward_ntt_sparse_legacy(&ntt, positions, values, log_d);
++                        let direct =
++                            transpose_forward_ntt_sparse_direct(&ntt, positions, values, log_d);
++                        assert_eq!(
++                            legacy, dense,
++                            "legacy workers={workers} log={log_d} case={case}"
++                        );
++                        assert_eq!(
++                            direct, dense,
++                            "direct workers={workers} log={log_d} case={case}"
++                        );
++                    }
++                }
++            });
++        }
++    }
++
++    #[test]
++    fn transpose_sparse_direct_preserves_induced_basis_identity() {
++        use crate::challenger::Challenger;
++        let pool = rayon::ThreadPoolBuilder::new()
++            .num_threads(3)
++            .build()
++            .unwrap();
++        pool.install(|| {
++            for log_msg in [13usize, 14] {
++                let log_d = log_msg + 1;
++                let msg_len = 1usize << log_msg;
++                let block_len = 1usize << log_d;
++                let ntt = AdditiveNttF128::standard(log_d);
++                let mut ch = crate::challenger::RandomChallenger::new(0xBA515 ^ log_msg as u64);
++                let message = ch.sample_f128_vec(msg_len);
++                let mut codeword = message.clone();
++                codeword.resize(block_len, Gf128::ZERO);
++                ntt.forward_transform(&mut codeword);
++                let queries: Vec<_> = (0..309)
++                    .map(|i| (i * 4051 + 13) & (block_len - 1))
++                    .collect();
++                let alpha = ch.sample_f128_vec(ceil_log2(queries.len()));
++                let mut weights = build_eq_table(&alpha);
++                weights.truncate(queries.len());
++                let mut basis =
++                    transpose_forward_ntt_sparse_direct(&ntt, &queries, &weights, log_d);
++                assert_eq!(basis.len(), block_len);
++                basis.truncate(msg_len);
++                let expected: Gf128 = queries
++                    .iter()
++                    .zip(&weights)
++                    .map(|(&q, &weight)| codeword[q] * weight)
++                    .fold(Gf128::ZERO, |sum, value| sum + value);
++                let actual: Gf128 = message
++                    .iter()
++                    .zip(&basis)
++                    .map(|(&value, &weight)| value * weight)
++                    .fold(Gf128::ZERO, |sum, value| sum + value);
++                assert_eq!(actual, expected, "induced claim, log_msg={log_msg}");
++            }
++        });
++    }
++
+     /// As above, with num_interleaved > 1 and non-empty v_challenges (the
+     /// partial-eval challenges used to fold lanes).
+     #[test]

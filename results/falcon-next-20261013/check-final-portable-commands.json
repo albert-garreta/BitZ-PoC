@@ -1,0 +1,32 @@
+{
+  "commands": [
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--features",
+      "falcon-hybrid",
+      "--lib",
+      "bitz::",
+      "--",
+      "--test-threads=1"
+    ],
+    [
+      "cargo",
+      "check",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "hybrid",
+      "--lib"
+    ]
+  ],
+  "overrides": {
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-ring-portable-target",
+    "RUSTFLAGS": "-C target-cpu=x86-64",
+    "CARGO_PROFILE_TEST_OPT_LEVEL": "2",
+    "RAYON_NUM_THREADS": "8",
+    "CARGO_BUILD_JOBS": "12",
+    "TMPDIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-next-20261013/build-tmp"
+  }
+}

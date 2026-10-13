@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-next-20261013/candidate-production",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "8",
+    "--seed",
+    "43",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--trace"
+  ],
+  "overrides": {
+    "RAYON_NUM_THREADS": "8",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012",
+    "BITZ_FALCON_LIGHT_PROFILE": "1",
+    "BITZ_TRACE": "1",
+    "LIG_PROVE_TRACE": "1"
+  },
+  "binary_sha256": "df580cfbeefa695d3195effe6297fd3cb508f909e1aa37378731f2aca090443b",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

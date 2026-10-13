@@ -1,0 +1,14 @@
+RUN ['cargo', 'test', '--locked', '--features', 'falcon-hybrid,bench-internals', '--lib', 'factored_', '--', '--test-threads=1']
+EXIT 0 /home/john-wu/code/BitZ-pcs/results/falcon-next-20261013/check-portable-0.log
+test sumcheck::inner::packed::tests::sha_width_factored_fold_handles_divisible_by_eight_not_sixteen_boundaries ... ok
+test sumcheck::inner::reference::tests::eq_factored_outer_is_direct_cubic_exact_at_tau_edges ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 937 filtered out; finished in 3.66s
+
+RUN ['cargo', 'check', '--locked', '--no-default-features', '--features', 'hybrid', '--lib']
+EXIT 0 /home/john-wu/code/BitZ-pcs/results/falcon-next-20261013/check-portable-1.log
+    |
+    = note: `RowFunctional` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `bitz` (lib) generated 133 warnings (run `cargo fix --lib -p bitz` to apply 7 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.53s

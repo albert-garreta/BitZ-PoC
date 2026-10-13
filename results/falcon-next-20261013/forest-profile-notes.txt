@@ -1,0 +1,89 @@
+Forest plaintext parser handoff, 2026-10-13
+
+Added forest-profile.py for completed future diagnostic phases. No prover,
+build, test, or parser execution was performed by this agent. Current campaign
+results were not summarized. Only older completed log format and source/analyzers
+were read. The completeness fix and offline tests below are now ready for the
+root to execute during the agreed pause between timing phases.
+
+Usage after a final traced phase completes:
+  python3 results/falcon-next-20261013/forest-profile.py \
+    --phase final-profile \
+    --output results/falcon-next-20261013/final-forest-profile.json
+
+Use the actual phase name; --phase can repeat. Configurations default to
+baseline and production; --config can repeat to select differently named
+variants. Each selected case requires a selected frozen-baseline case. Output
+uses exclusive creation, so an existing evidence file is never overwritten.
+
+Reused logic
+- results/falcon-forest-pcs-binding-20261013/analyze-forest.py parse_trace:
+  parse Rust duration suffixes; gather a complete forest plaintext block ending
+  at level0; join its following JSON forest span to the ancestor prover root;
+  require one forest per proof; exclude job-counted warmups using trial labels.
+- scripts/falcon_next_optimization.py validate_result and parser_provenance:
+  validate exact manifest/job/command, raw stderr/stdout/process hashes, process
+  success, normalized verified proof data, security, topology and trial counts.
+- The wrapper additionally checks selected-phase completeness/extra results,
+  frozen binaries and current parser/helper provenance, source/proof identity
+  across selected cases, and selected baseline coverage. Other phases are not
+  read or certified, so incomplete unrelated work does not become a partial
+  summary. Hashes of this parser and its reused helpers are recorded.
+
+Nonoverlapping report categories
+nibble rows; public value-table construction; upper-level build; upper-level
+proofs (levels>=5); L4 rebuild/retained and L4 remainder; bit rounds; JIT first
+rounds; JIT folds; JIT dense tails. The levels>=4 initialization parent and
+level0..3 proof parents are not added to their own children. The forest JSON
+wall timer is reported separately. No overall sum or unmeasured residual is
+inferred. Raw labels remain available for inspection.
+
+Limits
+- This is diagnostic wall-time attribution, not untraced latency. Timers include
+  tracing overhead. Printed Rust durations round larger values to 0.1ms, so
+  derived L4 remainder can be slightly negative from independent rounding.
+- Supported geometry is explicitly canonical Falcon512/1024, batch1024,
+  security128. Other degrees, protocols, batch sizes or security targets fail
+  rather than deriving geometry from an incomplete trace. See completeness fix.
+- Text has no span ID itself. The join is valid for this benchmark's sequential
+  one-forest-per-proof execution, as confirmed by saved logs and source. Unknown,
+  duplicate, incomplete or interleaved-looking blocks fail instead of guessing.
+  Concurrent proofs in one stderr stream would require a different trace format.
+- Fault-MB suffixes are ignored: src/bitz/mod.rs currently formats faults with
+  a fixed 16-KiB conversion, which is not evidence of actual page size or RSS.
+- Warmup exclusion and grouping use manifest metadata, not a fixed assumption
+  of one warmup. Results retain degree, workers, mode, configuration, topology,
+  binary hash, per-seed medians and individual sampled proof components.
+- The new wrapper has been source-reviewed but not executed/tested under the
+  coordination restriction. The reused parser has pre-existing offline tests
+  in the earlier campaign directory; this task did not rerun them.
+
+Completeness fix (schema v2)
+The previous wrapper checked only labels that happened to be present. The reused
+parser intentionally zero-fills missing families, so a block ending at level0
+could hide a missing timer. The wrapper now requires an exact expected label
+set for every complete forest, INCLUDING warmups before excluding their data.
+The expectation is independent of labels in the log:
+- source Layout fixes row_vars13; the128-bit two-limb bridge creates t14 and
+  proves depth13 (src/hybrid/integer_bridge.rs:387-388).
+- Full-batch512/1024 both cross NIBBLE_FROM23, and the bridge supplies no prebuilt
+  nibble rows; therefore nibble rows, L3 value tables, levels5..13 build and
+  levels>=4 parent must all be present.
+- All thirteen level parents0..12 are mandatory, together with tables, jit round,
+  jit fold and dense tail for each level0..3.
+- L2 bit round1 and the L1/L0 one-pass bit-round labels are mandatory.
+- Exactly the L4 rebuild or retained label selected by the recorded override
+  is mandatory. Absence of the inactive alternative is the only permitted
+  structural zero in these categories.
+Unknown, missing, duplicate or wrong-geometry labels fail; zero-valued printed
+timers remain valid if their required label is present. Frozen runner/helper
+scripts are unchanged.
+
+Eight lightweight offline tests are in test-forest-profile.py. They construct
+independent synthetic logs, launch no subprocess, and cover complete degrees,
+warmup/verifier exclusion, dropped L2 jit fold, missing warmup timers, missing
+setup/parent/bit-round labels, level0-only blocks, wrong L4 alternatives,
+unsupported geometry/new labels, duplicates and incomplete proof counts.
+Run only during the coordinated pause:
+  python3 results/falcon-next-20261013/test-forest-profile.py -v
+Execution status remains PENDING in this note until the root records its run.

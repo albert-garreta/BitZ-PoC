@@ -1,0 +1,5 @@
+phase regression comparison baseline
+N=512 t=1 repeated production      total 139.324->139.115 (-0.15%) seeds +0.40,-0.50,-0.25 verify 30.364->30.281 (-0.27%) peakMiB 81.46->81.47 lifecycle 169.810->169.326 (-0.29%)
+N=512 t=16 repeated production      total 29.128->29.373 (+0.84%) seeds +1.75,+0.98,+0.21 verify 9.576->9.722 (+1.53%) peakMiB 87.41->87.98 lifecycle 38.766->38.790 (+0.06%)
+N=1024 t=1 repeated production      total 270.403->271.042 (+0.24%) seeds +0.44,-0.06,+0.49 verify 59.706->59.544 (-0.27%) peakMiB 202.18->201.95 lifecycle 330.619->330.541 (-0.02%)
+N=1024 t=16 repeated production      total 48.701->49.309 (+1.25%) seeds +1.07,+4.63,+0.44 verify 15.031->15.079 (+0.32%) peakMiB 175.54->175.39 lifecycle 63.663->64.394 (+1.15%)

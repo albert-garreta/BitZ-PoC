@@ -1,0 +1,19 @@
+{
+  "base": "23c182868e94ff044d5e67a03baed056c4335c16",
+  "patch_sha256": "b3adb1bd3c390821495d602dcadd4b3c0d142bad05711ae2cc29f54ea1d62cc5",
+  "files": {
+    "src/bitz/kernels.rs": "908c52a326f97dc040de3dbb2ba8bc1bf0b72de1b2ab2e8d9264f4f3417744f1",
+    "src/bitz/kernels/x86.rs": "4cd27c9b0ef70244312bade5744bfb1f022411ebabf53e752b5f37cafa8511ba",
+    "vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs": "0b6b11ec2404c1d9d9c0f39d62d476733a7c2f7cd2722cc670864ab35fa7dc63",
+    "src/bitz/row_dispatch.rs": "0387def2b65ebea68277ead8589d278ffdbe3f4ce12c558f14c3364a28399919",
+    "scripts/test_falcon_next_optimization.py": "6a5c7b6b90b92ee89aa55db59e05a34531c59bb75b7c506da1c92df12b126a2b",
+    "src/piop/spartan/falcon_integer.rs": "cefda5af92f5c105365206b7202bd7e260b77473ec936f51bfd4cf3a575ecffa",
+    "src/bitz/forest.rs": "37a90ea7cf227c6fd74fac093feef2069c740eaedfa649603ff2d651026a1104",
+    "src/piop/spartan/falcon_integer/native_prefix.rs": "85d876f7b11d647e0111205364656267e5a71b98adfced5abc7adad0fcfd187d",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "a18eba66907c918d95f410f461569f94c1dda09643e189bfa981b2a6f6c2add5",
+    "vendor/flock-mod/crates/flock-core/Cargo.toml": "3300769f1806eb9d5e5d4f8482796180d900ba9b88203b94ea1fd3518659d4ee",
+    "scripts/falcon_next_optimization.py": "47e52b858d6d5a2b95a5fe0dd5d95391fdb339bad1dca0c355c54ef1ccfee8c3",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "0d6ff98e4bcbce383c26825bae2ebfaeeb40b0725cd31764976fe5eae4b57dc4",
+    "Cargo.toml": "b81607facc3d6515988a35a7413fc50bc32eb514c9df317f7a71343e7dda7f0b"
+  }
+}

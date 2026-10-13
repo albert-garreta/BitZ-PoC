@@ -1,0 +1,13 @@
+test_complete_degrees_exclude_warmup_and_verifier (__main__.ForestProfileTests.test_complete_degrees_exclude_warmup_and_verifier) ... ok
+test_dropped_l2_jit_fold_is_rejected (__main__.ForestProfileTests.test_dropped_l2_jit_fold_is_rejected) ... ok
+test_dropped_required_labels_never_become_zero (__main__.ForestProfileTests.test_dropped_required_labels_never_become_zero) ... ok
+test_dropped_warmup_timer_is_also_rejected (__main__.ForestProfileTests.test_dropped_warmup_timer_is_also_rejected) ... ok
+test_legacy_duplicate_and_missing_root_checks_are_retained (__main__.ForestProfileTests.test_legacy_duplicate_and_missing_root_checks_are_retained) ... ok
+test_level_zero_alone_is_not_a_complete_profile (__main__.ForestProfileTests.test_level_zero_alone_is_not_a_complete_profile) ... ok
+test_retained_policy_requires_exact_alternative (__main__.ForestProfileTests.test_retained_policy_requires_exact_alternative) ... ok
+test_wrong_geometry_or_new_label_fails_closed (__main__.ForestProfileTests.test_wrong_geometry_or_new_label_fails_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.007s
+
+OK

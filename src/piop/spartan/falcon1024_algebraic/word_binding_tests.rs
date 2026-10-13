@@ -854,33 +854,38 @@ fn factored_word_proofs_preserve_transcript_and_reject_tampering() {
 
 #[test]
 fn direct_dense_initialization_reuses_and_recovers_from_panics() {
-    let f = test_field();
-    let mut values = Vec::new();
-    for fused in [false, true] {
-        for len in [2050, 512, 3072, 1024] {
-            let slot = |i| [value(i as i64 * 3 - 19, &f), value(7 - i as i64, &f)];
-            let expected: Vec<_> = (0..len).map(slot).collect();
-            let actual = initialize_dense(&mut values, len, &f, true, fused, slot);
-            assert_eq!(values, expected);
-            assert_eq!(actual, dense_sums(&expected, 1, &f));
+    fn check<const CHUNK: usize>() {
+        let f = test_field();
+        let mut values = Vec::new();
+        for fused in [false, true] {
+            for len in [2050, 512, 3072, 1024] {
+                let slot = |i| [value(i as i64 * 3 - 19, &f), value(7 - i as i64, &f)];
+                let expected: Vec<_> = (0..len).map(slot).collect();
+                let actual =
+                    initialize_dense_chunks::<CHUNK>(&mut values, len, &f, true, fused, slot);
+                assert_eq!(values, expected);
+                assert_eq!(actual, dense_sums(&expected, 1, &f));
+            }
+            let capacity = values.capacity();
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                initialize_dense_chunks::<CHUNK>(&mut values, 2048, &f, true, fused, |i| {
+                    assert_ne!(i, 777, "injected worker failure");
+                    [f.one(); 2]
+                });
+            }));
+            assert!(panicked.is_err());
+            assert!(values.is_empty());
+            assert_eq!(values.capacity(), capacity);
+            initialize_dense_chunks::<CHUNK>(&mut values, 1024, &f, true, fused, |_| [f.zero(); 2]);
+            assert_eq!(values, vec![[f.zero(); 2]; 1024]);
+            let odd_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                initialize_dense_chunks::<CHUNK>(&mut values, 3, &f, true, fused, |_| [f.one(); 2]);
+            }));
+            assert!(odd_length.is_err());
         }
-        let capacity = values.capacity();
-        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            initialize_dense(&mut values, 2048, &f, true, fused, |i| {
-                assert_ne!(i, 777, "injected worker failure");
-                [f.one(); 2]
-            });
-        }));
-        assert!(panicked.is_err());
-        assert!(values.is_empty());
-        assert_eq!(values.capacity(), capacity);
-        initialize_dense(&mut values, 1024, &f, true, fused, |_| [f.zero(); 2]);
-        assert_eq!(values, vec![[f.zero(); 2]; 1024]);
-        let odd_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            initialize_dense(&mut values, 3, &f, true, fused, |_| [f.one(); 2]);
-        }));
-        assert!(odd_length.is_err());
     }
+    check::<512>();
+    check::<1024>();
 }
 
 #[test]
@@ -890,10 +895,17 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
     let source = source_fixture(&layout);
     for mode in [0, 3] {
         for challenges in 0..3 {
-            for compaction in [None, Some(2), Some(4), Some(8)] {
+            for (compaction, compact_output) in [
+                (None, false),
+                (Some(2), false),
+                (Some(4), false),
+                (Some(8), false),
+                (None, true),
+            ] {
                 let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
                 let mut reference = Reference::new(&dense_form, &source, &f);
                 let mut values = Vec::new();
+                let mut output = Vec::new();
                 let mut stride = 1;
                 let mut transcript = Blake3Transcript::new();
                 transcript.absorb_slice(b"word-dense-reference-challenges");
@@ -918,6 +930,8 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
                             },
                             &mut values,
                         )
+                    } else if compact_output {
+                        dense_fold_compact_output(&mut values, &mut output, &mut stride, r, &f)
                     } else {
                         dense_fold_with_compaction(&mut values, &mut stride, r, &f, compaction)
                     };
@@ -930,9 +944,123 @@ fn optimized_dense_folds_match_independent_reference_through_terminal() {
                         .collect();
                     assert_eq!(
                         active, expected,
-                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?}"
+                        "mode={mode} challenge={challenges} round={round} compaction={compaction:?} compact_output={compact_output}"
                     );
                     assert_eq!(sums, dense_sums(&expected, 1, &f));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn compact_dense_output_policy_preserves_boundaries_and_explicit_experiments() {
+    let floor = 1u128 << 125;
+    assert_eq!(
+        select_compact_dense_output(1024, 12, floor, None, None),
+        N == 512
+    );
+    assert_eq!(
+        select_compact_dense_output(1024, 12, (1u128 << 127) - 1, None, None),
+        N == 512
+    );
+    // Partial batches sharing the same padded capacity stay on the old path.
+    for (batch, workers, modulus) in [
+        (513, 12, floor),
+        (1023, 12, floor),
+        (1025, 12, floor),
+        (1024, 1, floor),
+        (1024, 8, floor),
+        (1024, 16, floor),
+        (1024, 12, floor - 1),
+    ] {
+        assert!(!select_compact_dense_output(
+            batch, workers, modulus, None, None
+        ));
+    }
+    assert!(!select_compact_dense_output(
+        1024,
+        12,
+        floor,
+        None,
+        Some(false)
+    ));
+    // Explicit benchmark selection still permits unqualified geometries.
+    assert!(select_compact_dense_output(
+        3,
+        1,
+        (1u128 << 61) - 1,
+        None,
+        Some(true)
+    ));
+    for threshold in [2, 4, 8] {
+        assert!(!select_compact_dense_output(
+            1024,
+            12,
+            floor,
+            Some(threshold),
+            None
+        ));
+        assert!(!select_compact_dense_output(
+            1024,
+            12,
+            floor,
+            Some(threshold),
+            Some(false)
+        ));
+        assert!(
+            std::panic::catch_unwind(|| {
+                select_compact_dense_output(1024, 12, floor, Some(threshold), Some(true))
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn compact_dense_output_matches_reference_across_parallel_and_strided_rounds() {
+    for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        for initial_stride in [1, 2, 4] {
+            for challenge in [f.zero(), f.one(), value(-97, &f)] {
+                let mut reference = Reference {
+                    weights: [
+                        (0..8192).map(|i| value(i * 29 - 100_000, &f)).collect(),
+                        Vec::new(),
+                        Vec::new(),
+                    ],
+                    tables: [
+                        (0..8192)
+                            .map(|i| value([-16384, 16383, 0, -1, 1][i % 5], &f))
+                            .collect(),
+                        Vec::new(),
+                        Vec::new(),
+                    ],
+                };
+                let mut values = vec![[f.one(); 2]; 8192 * initial_stride];
+                for i in 0..8192 {
+                    values[i * initial_stride] = [reference.weights[0][i], reference.tables[0][i]];
+                }
+                let mut output = Vec::new();
+                let mut stride = initial_stride;
+                while reference.weights[0].len() > 1 {
+                    let sums = dense_fold_compact_output(
+                        &mut values,
+                        &mut output,
+                        &mut stride,
+                        challenge,
+                        &f,
+                    );
+                    reference.fold(challenge, &f);
+                    let expected: Vec<_> = reference.weights[0]
+                        .iter()
+                        .zip(&reference.tables[0])
+                        .map(|(&w, &x)| [w, x])
+                        .collect();
+                    assert_eq!(stride, 1);
+                    assert_eq!(values, expected);
+                    let polynomial = reference.polynomial(&f);
+                    assert_eq!(sums, [polynomial[0], polynomial[2]]);
                 }
             }
         }
@@ -1010,6 +1138,16 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
                     ..WordOptions::default()
                 },
                 WordOptions {
+                    compact_dense_output: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    compact_dense_output: true,
+                    direct_init: true,
+                    scratch: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
                     reuse_initial: true,
                     fused_fold: true,
                     direct_init: true,
@@ -1017,6 +1155,7 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
                     factored_initial_fused: true,
                     factored_fold_reduction: true,
                     dense_compaction: None,
+                    compact_dense_output: true,
                 },
                 WordOptions {
                     reuse_initial: true,
@@ -1026,6 +1165,7 @@ fn workspace_and_factored_options_preserve_complete_word_proofs() {
                     factored_initial_fused: true,
                     factored_fold_reduction: true,
                     dense_compaction: Some(2),
+                    compact_dense_output: false,
                 },
             ] {
                 let (form, factors, _) = factored_fixture(&layout, &f, mode);

@@ -1,0 +1,80 @@
+Final production-promotion source review — 2026-10-13
+
+Result: no actionable correctness, initialization, transcript, feature-gating,
+or policy-boundary finding in the reviewed snapshot. Read-only review; no Rust
+builds, tests, prover runs, benchmark runs, or source edits performed by reviewer.
+This is source-level coverage, not an independent execution or performance claim.
+
+Compact binding output (word_binding.rs:448-532, 1109-1155, 1336-1530):
+- Production reads no dense-output/old-compaction environment selectors.
+- Implicit selection requires N=512, live Layout::batch()==1024, exactly 12
+  parallel workers, and modulus >=2^125. Layout::batch() returns the stored live
+  count (source.rs:81), so padded partial batches cannot accidentally qualify.
+  Nonparallel selection uses one worker; N1024 and smaller fields stay inplace.
+- Explicit benchmark inplace overrides the default. Explicit old compaction
+  suppresses the implicit compact path. Explicit compact plus old compaction is
+  rejected, preserving both independent experiment meanings.
+- The selector is evaluated for each proof's current pool/geometry. It feeds
+  the existing tested compact kernel; no kernel arithmetic changed on promotion.
+- The first fold is unchanged; subsequent folds compute identical paired lerps
+  and next-round sums while writing survivors contiguously. The terminal is
+  copied before restoring the larger allocation to the sole optional workspace.
+  The alternating local vector does not become another Prepared cache.
+- Parallel initialization writes all disjoint slots before setting Vec length;
+  checked even lengths/chunks avoid unwritten pair tails. On panic length stays
+  zero and the field pair has no owned drop resources. Dense/sparse/count terms,
+  field reduction, round absorption, challenge order and terminal merge agree.
+- Inspected policy tests cover both instantiated Falcon degrees, live-batch and
+  worker boundaries, exact modulus threshold, explicit overrides/conflicts.
+  Kernel/reference tests cover 61/127-bit fields, strides 1/2/4, zero/one/random
+  challenges, parallel sizes, full proofs, padding and scratch reuse.
+
+Factored forest tables (forest.rs:88-118, 940-995; kernels.rs:63-74, 358-405):
+- The default requires parallel plus exactly 12 current workers plus the same
+  compile-time x86 ISA gate as the direct factored lookup kernel. Portable and
+  nonparallel defaults retain expanded tables. The ISA gate is consistent with
+  the selected x86 module; no new runtime target-feature assumption is added.
+- Benchmark OnceLock caches only an explicit override, not the default pool
+  decision. Repeated proofs in different Rayon pools recompute the default.
+- Representation changes only for ell<3 and ell+k==3: the byte table is the
+  exact additive combination of its low/high nibble tables. Prescaling multiplies
+  both components linearly; bucket rounds expand scratch and fold rounds use the
+  matching lookup. Tables' logical position order, equality weights, reductions
+  and proof messages remain unchanged. Every spare-capacity table slot is written.
+- Inspected tests compare all 256 patterns, zero/one/random weights and challenges,
+  prescaled/ordinary folds, guarded SIMD/scalar tails, small geometries, complete
+  forest transcripts and current-pool production defaults.
+
+Row ownership (row_dispatch.rs:150-254; forest.rs:1469; kernels callers):
+- Only exactly 12 workers, >=64 rows divisible by 64, and >=4 MiB matrices use
+  the new shard assignment. Existing power-of-two cyclic dispatch remains the
+  fallback, including its 16-worker behavior. The module/callers are parallel-gated.
+- Each row has one owner (row %64)%12. map_indices and map_jobs use the same
+  mapping; compatible high-bit folds preserve ownership. Disjoint mutable jobs
+  are moved, not aliased. Mutex guards end before arithmetic callbacks run.
+  Rayon broadcast joins before consumers expose/read initialized storage.
+- Local partials and their merge reorder only exact finite-field addition; no
+  transcript or serialized-message order is changed. Inspected tests cover exact
+  row visitation, partial final chunks, owner preservation across folds, size and
+  worker boundaries, and full forest proof equality for all table/shard settings.
+
+Scope and limits:
+- These forest defaults are shared BitZ policies, not Falcon-only/batch-only
+  gates. In particular, factored tables cover other native 12-worker forest
+  geometries, and shards also cover eligible portable parallel matrices. Their
+  correctness coverage includes varied geometries; latency evidence should be
+  stated only for the measured Falcon workloads and pinned machine topology.
+- Native norm batching and direct PCS transpose remain bench-only/off in
+  production. Root bench-internals forwards the dependency selector feature;
+  falcon-hybrid does not enable it. No protocol/security/encoding policy changed.
+- Final production binaries and default-path proof/timing qualification are the
+  root agent's execution responsibility. This review does not claim universal
+  performance non-regression or reuse experimental-build timings as production.
+
+Reviewed source SHA-256:
+52fdb0021f048bbd2287b5bea9d818112c624bc89070a86f24248658f14f58f8 src/bitz/forest.rs
+81c7cd664af4dd96d7474226cca6ed106f5901df813e1220e5577ad5212dce3b src/bitz/row_dispatch.rs
+11e738a9c4cd9e706c3f7eeefb616e5f68ac693d868e2cb0b5b30fbd742b9a8b src/bitz/kernels.rs
+5876479e4a6e71e844bc446a72cdf16cf03b41f2d5d42322ec9530ed4c67e2e7 src/bitz/kernels/x86.rs
+0953e680f8b693d38bdebdee373450368af1756fadd6e9d3d945f83140c73410 src/piop/spartan/falcon1024_algebraic/word_binding.rs
+992bdbf0325457a5efdf0ac332827dc1af35956ea93785521b9d537936b4b798 src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs

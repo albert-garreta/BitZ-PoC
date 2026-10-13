@@ -445,6 +445,46 @@ fn dense_compaction_threshold() -> Option<usize> {
     None
 }
 
+fn compact_dense_output_override() -> Option<bool> {
+    #[cfg(feature = "bench-internals")]
+    return match std::env::var("BITZ_ARITHMETIC_DENSE_OUTPUT") {
+        Err(std::env::VarError::NotPresent) => None,
+        Ok(value) => match value.as_str() {
+            "inplace" => Some(false),
+            "compact" => Some(true),
+            _ => panic!("BITZ_ARITHMETIC_DENSE_OUTPUT must be inplace or compact"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_DENSE_OUTPUT must be valid Unicode")
+        }
+    };
+    #[cfg(not(feature = "bench-internals"))]
+    None
+}
+
+fn select_compact_dense_output(
+    batch: usize,
+    workers: usize,
+    modulus: u128,
+    compaction_threshold: Option<usize>,
+    explicit: Option<bool>,
+) -> bool {
+    assert!(
+        explicit != Some(true) || compaction_threshold.is_none(),
+        "BITZ_ARITHMETIC_DENSE_COMPACTION must be off when BITZ_ARITHMETIC_DENSE_OUTPUT=compact"
+    );
+    // Cold/repeated qualification selected only this full-batch geometry.
+    // An explicitly selected older compaction experiment suppresses the
+    // production default, so its strided kernel remains independently usable.
+    explicit.unwrap_or(
+        compaction_threshold.is_none()
+            && N == 512
+            && batch == 1024
+            && workers == 12
+            && modulus >= 1u128 << 125,
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct WordOptions {
     reuse_initial: bool,
@@ -454,10 +494,23 @@ struct WordOptions {
     factored_initial_fused: bool,
     factored_fold_reduction: bool,
     dense_compaction: Option<usize>,
+    compact_dense_output: bool,
 }
 
 impl WordOptions {
-    fn configured() -> Self {
+    fn configured(layout: &Layout, f: &Cfg) -> Self {
+        let dense_compaction = dense_compaction_threshold();
+        #[cfg(feature = "parallel")]
+        let workers = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let workers = 1;
+        let compact_dense_output = select_compact_dense_output(
+            layout.batch(),
+            workers,
+            f.modulus_u128(),
+            dense_compaction,
+            compact_dense_output_override(),
+        );
         Self {
             reuse_initial: arithmetic_experiment("BITZ_ARITHMETIC_WORD_INITIAL", false),
             fused_fold: arithmetic_experiment("BITZ_ARITHMETIC_WORD_FUSION", false),
@@ -475,7 +528,8 @@ impl WordOptions {
                 "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION",
                 false,
             ),
-            dense_compaction: dense_compaction_threshold(),
+            dense_compaction,
+            compact_dense_output,
         }
     }
 }
@@ -937,9 +991,21 @@ fn initialize_dense(
     fused: bool,
     slot: impl Fn(usize) -> [F; 2] + Sync,
 ) -> [F; 2] {
+    initialize_dense_chunks::<1024>(values, len, f, direct, fused, slot)
+}
+
+fn initialize_dense_chunks<const CHUNK: usize>(
+    values: &mut Vec<[F; 2]>,
+    len: usize,
+    f: &Cfg,
+    direct: bool,
+    fused: bool,
+    slot: impl Fn(usize) -> [F; 2] + Sync,
+) -> [F; 2] {
     // The fused initializer writes pairs; reject an odd tail before exposing
     // any initialized slice or changing the Vec length.
     assert_eq!(len % 2, 0);
+    assert!(CHUNK > 0 && CHUNK % 2 == 0);
     let parts: Vec<[F; 2]> = if direct {
         // Every output is overwritten. Keep length zero until all worker writes
         // finish so unwinding can never expose an uninitialized field element.
@@ -948,14 +1014,14 @@ fn initialize_dense(
             values.reserve_exact(len);
         }
         let spare = &mut values.spare_capacity_mut()[..len];
-        let parts = crate::cfg_chunks_mut!(spare, 1024)
+        let parts = crate::cfg_chunks_mut!(spare, CHUNK)
             .enumerate()
             .map(|(chunk, out)| {
                 if fused {
                     let mut sums = [FpProductAcc::<2>::default(); 2];
                     for (j, pair) in out.chunks_exact_mut(2).enumerate() {
-                        let a = slot(chunk * 1024 + 2 * j);
-                        let b = slot(chunk * 1024 + 2 * j + 1);
+                        let a = slot(chunk * CHUNK + 2 * j);
+                        let b = slot(chunk * CHUNK + 2 * j + 1);
                         pair[0].write(a);
                         pair[1].write(b);
                         f.mul_acc(&mut sums[0], &a[0], &a[1]);
@@ -964,7 +1030,7 @@ fn initialize_dense(
                     sums.map(|s| f.reduce(s))
                 } else {
                     for (j, out) in out.iter_mut().enumerate() {
-                        out.write(slot(chunk * 1024 + j));
+                        out.write(slot(chunk * CHUNK + j));
                     }
                     // SAFETY: this worker initialized every element of its disjoint
                     // chunk above. Only a shared slice is exposed, after all writes;
@@ -978,7 +1044,7 @@ fn initialize_dense(
             .collect();
         // SAFETY: chunks cover exactly len slots, and each slot is initialized
         // before the parallel iterator returns. The checked length and chunk
-        // size 1024 are even, so the fused pair loop has no unwritten tail.
+        // size CHUNK are even, so the fused pair loop has no unwritten tail.
         // On panic length stays zero; [F;2] is Copy and owns no drop resources.
         unsafe {
             values.set_len(len);
@@ -992,14 +1058,14 @@ fn initialize_dense(
             // initialize a new tail if this lease previously held fewer slots.
             values.resize(len, [f.zero(); 2]);
         }
-        crate::cfg_chunks_mut!(values, 1024)
+        crate::cfg_chunks_mut!(values, CHUNK)
             .enumerate()
             .map(|(chunk, out)| {
                 if fused {
                     let mut sums = [FpProductAcc::<2>::default(); 2];
                     for (j, pair) in out.chunks_exact_mut(2).enumerate() {
-                        let a = slot(chunk * 1024 + 2 * j);
-                        let b = slot(chunk * 1024 + 2 * j + 1);
+                        let a = slot(chunk * CHUNK + 2 * j);
+                        let b = slot(chunk * CHUNK + 2 * j + 1);
                         pair[0] = a;
                         pair[1] = b;
                         f.mul_acc(&mut sums[0], &a[0], &a[1]);
@@ -1008,7 +1074,7 @@ fn initialize_dense(
                     sums.map(|s| f.reduce(s))
                 } else {
                     for (j, out) in out.iter_mut().enumerate() {
-                        *out = slot(chunk * 1024 + j);
+                        *out = slot(chunk * CHUNK + j);
                     }
                     dense_sums(out, 1, f)
                 }
@@ -1040,6 +1106,54 @@ fn dense_fold(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) -> [F; 2] {
             .reduce(|| [f.zero(); 2], |a, b| add_pair(a, b, f));
     }
     fold(values)
+}
+
+/// Write folded survivors consecutively, without a second compaction pass.
+/// The alternate allocation is local to this proof: at most half the initial
+/// dense allocation, in addition to that allocation. It is not cached in Prepared.
+fn dense_fold_compact_output(
+    values: &mut Vec<[F; 2]>,
+    output: &mut Vec<[F; 2]>,
+    stride: &mut usize,
+    r: F,
+    f: &Cfg,
+) -> [F; 2] {
+    let _span = tracing::info_span!(
+        "falcon_algebraic:word_dense_fold",
+        stride = *stride,
+        compact = true
+    )
+    .entered();
+    assert!(*stride > 0 && values.len() % *stride == 0);
+    let live = values.len() / *stride;
+    assert!(live >= 2 && live.is_power_of_two());
+    if live == 2 {
+        values[0] = std::array::from_fn(|k| lerp(values[0][k], values[*stride][k], r, f));
+        values.truncate(1);
+        *stride = 1;
+        return [f.zero(); 2];
+    }
+    let slot = |i: usize| {
+        let left = values[2 * i * *stride];
+        let right = values[(2 * i + 1) * *stride];
+        std::array::from_fn(|k| lerp(left[k], right[k], r, f))
+    };
+    // Match dense_fold's 1024 live input entries per task and its parallel
+    // cutoff. Existing initialization writes each output before exposing it.
+    #[cfg(feature = "parallel")]
+    let parallel = live >= 4096 && rayon::current_num_threads() > 1;
+    #[cfg(not(feature = "parallel"))]
+    let parallel = false;
+    let sums = if parallel {
+        initialize_dense_chunks::<512>(output, live / 2, f, true, false, slot)
+    } else {
+        output.clear();
+        output.extend((0..live / 2).map(slot));
+        dense_sums(output, 1, f)
+    };
+    std::mem::swap(values, output);
+    *stride = 1;
+    sums
 }
 
 /// Move the live strided entries to the front without allocating or changing
@@ -1245,7 +1359,7 @@ pub(super) fn prove_with_initial(
         schedule,
         f,
         workspace,
-        WordOptions::configured(),
+        WordOptions::configured(layout, f),
         initial,
     )
 }
@@ -1333,6 +1447,7 @@ fn prove_with_options_and_initial(
         &mut local_workspace.dense
     };
     let mut stride = 1;
+    let mut compact_output = Vec::new();
     let mut count = None;
     let with_padding = layout.batch() < layout.capacity();
     let mut point = Vec::with_capacity(rounds(layout));
@@ -1370,6 +1485,8 @@ fn prove_with_options_and_initial(
         if round == 0 {
             let initial_form = form.take().unwrap();
             next = first_fold_into(&initial_form, source, r, &factors, f, options, dense);
+        } else if options.compact_dense_output {
+            next = dense_fold_compact_output(dense, &mut compact_output, &mut stride, r, f);
         } else {
             next = dense_fold_with_compaction(dense, &mut stride, r, f, options.dense_compaction);
         }
@@ -1390,9 +1507,15 @@ fn prove_with_options_and_initial(
             weights.fold(round, r, f);
         }
     }
-    let mut values = vec![dense[0][1], spare.terminal(f)];
+    let dense_terminal = dense[0];
+    // A lease retains only the original (largest) allocation. Its contents are
+    // overwritten by the next first fold; the terminal was copied above.
+    if compact_output.capacity() > dense.capacity() {
+        std::mem::swap(dense, &mut compact_output);
+    }
+    let mut values = vec![dense_terminal[1], spare.terminal(f)];
     let mut terminal = f.add(
-        &f.mul(&dense[0][0], &values[0]),
+        &f.mul(&dense_terminal[0], &values[0]),
         &f.mul(&weights.spare(0, rounds(layout), f), &values[1]),
     );
     if let Some(c) = count {

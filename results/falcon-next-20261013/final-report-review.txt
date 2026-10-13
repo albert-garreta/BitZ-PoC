@@ -1,0 +1,35 @@
+Final report factual review — 2026-10-13
+
+Reviewed report.txt against completed summary.json, validation.json, phase
+manifests, acceptance/regression comparisons, production-report-section.txt,
+final and regression profiles, test/build receipts, and the previously reviewed
+source policies. No remaining factual issue found within this scope.
+
+Three findings were reported and are now resolved in the saved report:
+1. Proof payload values are explicitly medians, with seed ranges: N512
+   256112–256848 bytes (median256368); N1024 321272–321432 (median321304).
+2. Compact output's two binding buffers are proof-local in production. Only
+   experimental scratch reuse returns the larger allocation to Prepared.
+3. Equality checks are described as complete Debug proof digests and payload
+   totals; each raw breakdown is checked to sum to its total. This is not
+   represented as direct canonical serialized-byte comparison.
+
+Confirmed the report accurately discloses the unresolved N1024/16 untraced
+slowdowns (+1.25%/+1.60%), all-seed directionality and maximum +7.83% seed change.
+The favorable traced follow-up is kept separate and does not override those
+results or establish their cause. Small verification increases and combined
+commit+prove+verify outcomes are reported separately. Eight-worker neutrality
+is limited to pooled medians; zero performance regression is not claimed.
+
+Accepted1/2 tables, process-peak versus retained RSS distinctions, traced stage
+values, experimental versus production build separation, and exact promotion
+scopes agree with the evidence/source. The general BitZ scope of forest defaults
+and the limited workload/host scope of performance qualification are explicit.
+Sixteen phase manifests sum to 3,414 proofs, matching validation.json (1,641
+N512, 1,773 N1024). Test counts and ignored-test distinctions match saved logs.
+
+Review only: no Rust builds, tests, prover/benchmark runs, global validation,
+raw-evidence regeneration, or runtime source edits. Earlier receipt and parser
+reviews remain available in final-evidence-review*.txt; the parser completeness
+finding was resolved as documented in the addendum. This final check confirmed
+the corrected report paragraphs without re-running completed verification.

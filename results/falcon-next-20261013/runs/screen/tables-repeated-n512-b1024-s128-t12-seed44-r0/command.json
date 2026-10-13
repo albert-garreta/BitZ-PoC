@@ -1,0 +1,32 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-next-20261013/candidate-screen",
+    "--degree",
+    "512",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "12",
+    "--seed",
+    "44",
+    "--warmup",
+    "2",
+    "--iterations",
+    "7"
+  ],
+  "overrides": {
+    "BITZ_FOREST_TABLES": "factored",
+    "BITZ_FOREST_ROW_OWNERSHIP": "legacy",
+    "BITZ_ARITHMETIC_NATIVE_NORM": "legacy",
+    "BITZ_ARITHMETIC_DENSE_OUTPUT": "inplace",
+    "BITZ_PCS_SPARSE_TRANSPOSE": "legacy",
+    "RAYON_NUM_THREADS": "12",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "ef14bf75efe889085d968188d95adb60f75291ee9da7e5b6d107919650a44928",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

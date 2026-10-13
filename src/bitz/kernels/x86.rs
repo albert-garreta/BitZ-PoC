@@ -395,6 +395,25 @@ unsafe fn lookup_complete(table: &[Gf], patterns: &[u8; 64], positions: [usize; 
     }
 }
 
+/// Reconstruct four entries of an additive pair of 16-entry nibble tables.
+#[inline]
+unsafe fn lookup_factored(table: &[Gf], patterns: &[u8; 64], positions: [usize; 4]) -> __m512i {
+    // SAFETY: the caller checks at least 32 entries. Both byte-derived
+    // nibble indexes address complete initialized 128-bit field elements.
+    unsafe {
+        let values: [__m128i; 4] = positions.map(|position| {
+            let pattern = patterns[position] as usize;
+            let low = _mm_loadu_si128(table.as_ptr().add(pattern & 15).cast());
+            let high = _mm_loadu_si128(table.as_ptr().add(16 + (pattern >> 4)).cast());
+            _mm_xor_si128(low, high)
+        });
+        let lanes = _mm512_castsi128_si512(values[0]);
+        let lanes = _mm512_inserti32x4::<1>(lanes, values[1]);
+        let lanes = _mm512_inserti32x4::<2>(lanes, values[2]);
+        _mm512_inserti32x4::<3>(lanes, values[3])
+    }
+}
+
 #[inline(always)]
 pub(crate) fn round_sums_task(
     lo_l: &[Gf],
@@ -538,14 +557,36 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     out_r: [&mut [MaybeUninit<Gf>]; 2],
     sums: &mut Sums,
 ) {
-    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, true>(
+    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, true, false>(
+        tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline]
+pub(crate) fn jit_fold_factored_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+    tab: [&[Gf]; 8],
+    pat: &[[u8; 64]; 8],
+    rho: &Gf,
+    eq_t: &[Gf],
+    send_one: bool,
+    out_l: [&mut [MaybeUninit<Gf>]; 2],
+    out_r: [&mut [MaybeUninit<Gf>]; 2],
+    sums: &mut Sums,
+) {
+    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false, true>(
         tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
     );
 }
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIRECT: bool>(
+fn jit_fold_group_impl<
+    const PRE_SCALED: bool,
+    const WEIGH_LEFT: bool,
+    const DIRECT: bool,
+    const FACTORED: bool,
+>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
     rho: &Gf,
@@ -557,8 +598,10 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
 ) {
     // Keep checked lookup semantics for shorter tables, including empty
     // tables when n=0. The direct path needs no bounds checks per lookup.
-    if DIRECT && tab.iter().any(|table| table.len() < 256) {
-        return jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false>(
+    if FACTORED {
+        assert!(tab.iter().all(|table| table.len() >= 32));
+    } else if DIRECT && tab.iter().any(|table| table.len() < 256) {
+        return jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false, false>(
             tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
         );
     }
@@ -579,7 +622,9 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
         for c in (0..end).step_by(4) {
             let positions = std::array::from_fn(|j| col_of(c + j));
             let v: [__m512i; 8] = std::array::from_fn(|j| {
-                if DIRECT {
+                if FACTORED {
+                    lookup_factored(tab[j], &pat[j], positions)
+                } else if DIRECT {
                     lookup_complete(tab[j], &pat[j], positions)
                 } else {
                     lookup(tab[j], &pat[j], positions)
@@ -615,7 +660,14 @@ fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIR
     }
     for c in end..n {
         let m = col_of(c);
-        let v = |j: usize| tab[j][pat[j][m] as usize];
+        let v = |j: usize| {
+            let pattern = pat[j][m] as usize;
+            if FACTORED {
+                tab[j][pattern & 15] + tab[j][16 + (pattern >> 4)]
+            } else {
+                tab[j][pattern]
+            }
+        };
         let combine = |lo, hi| {
             if PRE_SCALED {
                 lo + hi

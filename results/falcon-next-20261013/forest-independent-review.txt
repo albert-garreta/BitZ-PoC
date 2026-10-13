@@ -1,0 +1,56 @@
+Independent forest implementation review — 2026-10-13
+
+Scope
+Read-only review of the working-tree changes in:
+  src/bitz/forest.rs
+  src/bitz/row_dispatch.rs
+  src/bitz/kernels.rs
+  src/bitz/kernels/x86.rs
+Reviewed factored lookup tables, twelve-worker virtual row ownership, their
+callers and the associated reference, boundary and complete-proof tests.
+
+Conclusion
+No actionable correctness or safety findings in the reviewed changes.
+
+Invariants checked
+- Factored tables are selected only for ell=0,1,2 at k=3-ell. Each product
+  depends on 1, 2 or 4 adjacent bits and stays within one nibble. The sum of
+  the two sixteen-entry tables preserves constant terms and all 256 patterns.
+- scale_fold multiplies both stored nibble halves by the original position's
+  fold-side weight. This preserves both ordinary and pre-scaled fold results.
+- Bucket-round expansion is row-local initialized scratch; all references
+  remain valid through the unchanged bucket kernel. Native fold kernels read
+  compact tables directly; other backends expand local scratch.
+- Native x86 lookup checks at least 32 field entries before pointer loads.
+  Byte-derived low/high nibble indices remain in 0..16 and 16..32. The existing
+  n<=64, output-length and equality-weight checks bound permuted pattern
+  positions and complete four-lane stores; remaining outputs use scalar tails.
+- Factored table construction writes every slot of each disjoint 32-entry
+  MaybeUninit chunk before setting Vec length. Panic before completion leaves
+  length zero. Gf owns no drop resources. Arena write coverage remains intact.
+- Virtual shard owner((row%64)%12) enumerates each selected row exactly once.
+  Mutable row jobs are transferred as disjoint safe slices. The upper-builder
+  pointer invariant remains y=y0+b*sub with distinct y0 values; its dependencies
+  are written by the same task before being read.
+- Shards require twelve workers, row counts divisible by 64 and at least 4 MiB.
+  Smaller or unsupported shapes fall back, and the previous sixteen-worker
+  cyclic path remains available. Test selector overrides restore after panic.
+- Experimental selectors default to expanded tables and legacy row ownership;
+  production behavior remains gated independently of explicit test selection.
+
+Test coverage inspected
+All 256 patterns against independent folded leaf products; zero, one and random
+challenges; pre-scaling; scalar-oracle kernel comparisons with output guards,
+SIMD/scalar tails and both weighing modes; complete forest proof equality;
+eight/twelve-worker shard transitions, exhaustive row ownership and fallback
+boundaries. Tests were inspected, not executed by this reviewer.
+
+Performance limits
+No speedup is established by this review. Virtual 64-shard assignment gives
+six shards per block to four workers and five to eight workers, a 20% workload
+imbalance to weigh against locality in the benchmark campaign. Compact-table
+expansion adds row-local work and requires separate performance qualification.
+
+Execution limits
+No builds, tests, provers or benchmarks were run for this review. No source
+files were edited. Centralized execution and qualification are owned by root.

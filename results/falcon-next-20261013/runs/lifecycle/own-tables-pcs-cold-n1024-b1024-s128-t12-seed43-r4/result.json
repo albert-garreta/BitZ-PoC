@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-next-optimization/v1",
+  "job": {
+    "id": "own-tables-pcs-cold-n1024-b1024-s128-t12-seed43-r4",
+    "variant": "arithmetic",
+    "config": "own-tables-pcs",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 43,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 4,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "978b817b860c7786669010eb532d5fb3e6c9c3f37192e3247a81899fa20298c7",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f",
+      "source_root": "5d9ad374fbdfffb4672f4fb7f0be206826e721a1b9113048a097aea15a80471e",
+      "proof_debug_digest": "5aa077647f685e10e042900fdedd1beca1b3ea13a6577e9f47969df1b35c29c2",
+      "total_prover_ms": 52.393777,
+      "prove_ms": 47.182784999999996,
+      "witness_commit_ms": 5.210941999999999,
+      "verify_ms": 15.028874,
+      "process_peak_rss_kib": 137320,
+      "proof_payload_bytes": 321304,
+      "iteration": 0,
+      "prepare_ms": 0.15448299999999998,
+      "external_input_ms": 1767.367905,
+      "prover_minor_faults": 56537,
+      "process_rss_before_prover_kib": 23060,
+      "process_rss_after_prover_kib": 74540,
+      "process_retained_rss_kib": 62188,
+      "prepared_scratch_bytes_before_prover": 0,
+      "prepared_retained_scratch_bytes": 0
+    }
+  ],
+  "command_sha256": "eab2587e6587bc4aaf276c28d6cbb7b53f790a79ee3b3f608298b1a45911787b",
+  "stdout_sha256": "33c9f4048f954cdeffd34d977562972aaf10cd09edc2f112efa7705566d683a0",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "d605de49b83303c08b343195a426b943a65d475c30ad4c19a264422d474d7551"
+}

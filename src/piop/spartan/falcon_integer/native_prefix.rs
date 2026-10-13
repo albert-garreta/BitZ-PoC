@@ -6,6 +6,23 @@
 
 use super::*;
 
+pub(super) fn batched_norm_enabled() -> bool {
+    #[cfg(feature = "bench-internals")]
+    return match std::env::var("BITZ_ARITHMETIC_NATIVE_NORM") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "legacy" => false,
+            "batched" => true,
+            _ => panic!("BITZ_ARITHMETIC_NATIVE_NORM must be legacy or batched"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_NATIVE_NORM must be valid Unicode")
+        }
+    };
+    #[cfg(not(feature = "bench-internals"))]
+    false
+}
+
 pub(super) struct Prefix {
     norm: Vec<F>,
     rejection: Vec<F>,
@@ -45,6 +62,7 @@ impl Prefix {
         rejection_instances: Option<&[F]>,
         width: usize,
         read: &(impl Fn(usize) -> [i16; K] + Sync),
+        batched_norm: bool,
     ) -> Result<Self, SumcheckError> {
         let _span = tracing::info_span!(
             "falcon_integer:native_prefix",
@@ -54,6 +72,15 @@ impl Prefix {
             prefix_rounds = width as u64
         )
         .entered();
+        if batched_norm && K == 1 && tau.is_none() && rejection_instances.is_none() {
+            return Ok(Self::norm_only(
+                field,
+                row_vars,
+                norm_instances,
+                width,
+                read,
+            ));
+        }
         let grid_len = 3usize.pow(width as u32);
         let block_len = 1 << width;
         let blocks = 1 << (row_vars - width);
@@ -140,6 +167,74 @@ impl Prefix {
         #[cfg(not(feature = "parallel"))]
         let result = (0..norm_instances.len()).map(group).fold(empty(), combine);
         Ok(result)
+    }
+
+    /// Keep one fixed-size field accumulator per task, rather than allocating
+    /// norm and zero rejection vectors for every instance. Each native sum is
+    /// still reduced with its own instance weight before combining instances.
+    fn norm_only<const K: usize>(
+        field: &Cfg,
+        row_vars: usize,
+        norm_instances: &[F],
+        width: usize,
+        read: &(impl Fn(usize) -> [i16; K] + Sync),
+    ) -> Self {
+        const INSTANCES_PER_TASK: usize = 8;
+        let grid_len = 3usize.pow(width as u32);
+        let block_len = 1 << width;
+        let blocks = 1 << (row_vars - width);
+        let zero = field.zero();
+        let task = |chunk: usize| {
+            let mut totals = [zero; 81];
+            let start = chunk * INSTANCES_PER_TASK;
+            let end = (start + INSTANCES_PER_TASK).min(norm_instances.len());
+            for instance in start..end {
+                let mut native = [0i64; 81];
+                let mut grid = [[0i64; K]; 81];
+                for block in 0..blocks {
+                    extend(
+                        read,
+                        (instance * blocks + block) * block_len,
+                        width,
+                        &mut grid[..grid_len],
+                    );
+                    for j in 0..grid_len {
+                        let x = grid[j][0];
+                        // The same per-instance 2^54 bound as the legacy path;
+                        // neither task size nor batch size enters this sum.
+                        native[j] += x * x;
+                    }
+                }
+                for j in 0..grid_len {
+                    let weighted =
+                        field.reduce(field.mul_wide(&norm_instances[instance], &native[j]));
+                    totals[j] = field.add(&totals[j], &weighted);
+                }
+            }
+            totals
+        };
+        let combine = |mut a: [F; 81], b: [F; 81]| {
+            for j in 0..grid_len {
+                a[j] = field.add(&a[j], &b[j]);
+            }
+            a
+        };
+        let tasks = norm_instances.len().div_ceil(INSTANCES_PER_TASK);
+        #[cfg(feature = "parallel")]
+        let norm = if norm_instances.len() * (1 << row_vars) >= 4096 && tasks > 1 {
+            (0..tasks)
+                .into_par_iter()
+                .map(task)
+                .reduce(|| [zero; 81], combine)
+        } else {
+            (0..tasks).map(task).fold([zero; 81], combine)
+        };
+        #[cfg(not(feature = "parallel"))]
+        let norm = (0..tasks).map(task).fold([zero; 81], combine);
+        Self {
+            norm: norm[..grid_len].to_vec(),
+            rejection: Vec::new(),
+        }
     }
 
     pub(super) fn coefficients(
@@ -287,6 +382,85 @@ fn fold_tables_with<const K: usize, const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batched_norm_matches_legacy_grids_and_all_prefix_rounds() {
+        for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+            let field = Cfg::from_prime_u128(modulus);
+            for instances in [1, 8, 9, 17] {
+                let weights: Vec<_> = (0..instances)
+                    .map(|i| signed([1, -1, 97, 0][i % 4], &field))
+                    .collect();
+                let read = |i: usize| {
+                    // Include zero instances and both signed endpoints. Keep
+                    // instance16 nonzero so the parallel partial task matters.
+                    if (13..16).contains(&(i / 256)) {
+                        [0]
+                    } else {
+                        [[i16::MIN, i16::MAX, -1, 0, 1, 211][(i ^ (i >> 4)) % 6]]
+                    }
+                };
+                for width in 2..=4 {
+                    for challenge in [field.zero(), field.one(), signed(-239, &field)] {
+                        let mut baseline =
+                            Prefix::new(&field, 8, &weights, None, None, width, &read, false)
+                                .unwrap();
+                        let mut candidate =
+                            Prefix::new(&field, 8, &weights, None, None, width, &read, true)
+                                .unwrap();
+                        assert!(candidate.rejection.is_empty());
+                        assert!(baseline.rejection.iter().all(|x| *x == field.zero()));
+                        for _ in 0..width {
+                            assert_eq!(candidate.norm, baseline.norm);
+                            assert_eq!(
+                                candidate.coefficients(&field, None).unwrap(),
+                                baseline.coefficients(&field, None).unwrap()
+                            );
+                            baseline.fold(&field, challenge);
+                            candidate.fold(&field, challenge);
+                        }
+                        assert_eq!(candidate.norm, baseline.norm);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn signed_native_grid_matches_independent_differences_at_maximum_bound() {
+        for width in 1..=4 {
+            let read = |i: usize| {
+                [if i.count_ones() % 2 == 0 {
+                    i16::MIN
+                } else {
+                    i16::MAX
+                }]
+            };
+            let mut grid = [[0i64; 1]; 81];
+            let len = 3usize.pow(width as u32);
+            extend(&read, 0, width, &mut grid[..len]);
+            for (index, actual) in grid[..len].iter().enumerate() {
+                let mut expected = 0i64;
+                for bits in 0usize..1 << width {
+                    let mut trits = index;
+                    let mut sign = 1;
+                    for bit in 0..width {
+                        match (trits % 3, (bits >> bit) & 1) {
+                            (0, 1) | (1, 0) => sign = 0,
+                            (2, 0) => sign = -sign,
+                            _ => {}
+                        }
+                        trits /= 3;
+                    }
+                    expected += sign * i64::from(read(bits)[0]);
+                }
+                assert_eq!(actual[0], expected);
+                // Repeat the worst block through the maximum accepted row_vars.
+                let squared_sum = i128::from(expected).pow(2) * (1i128 << (20 - width));
+                assert!(squared_sum <= 1i128 << 54);
+            }
+        }
+    }
 
     fn check_boolean_folds<const N: usize>() {
         let field = Cfg::from_prime_u128((1u128 << 127) - 1);

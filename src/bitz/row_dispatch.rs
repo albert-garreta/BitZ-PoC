@@ -128,9 +128,249 @@ impl CyclicRows {
     }
 }
 
+/// Cyclic ownership or a fixed set of 64 virtual shards for twelve workers.
+/// Shards are assigned to twelve workers once by `shard % 12`. A fold whose
+/// row offset is a multiple of 64 preserves that assignment. Below 64 rows
+/// we return to the ordinary iterator; we never silently change shard count.
+pub(super) enum RowDispatch {
+    Cyclic(CyclicRows),
+    Shards64,
+}
+
+pub(super) enum RowIndices {
+    Cyclic(StepBy<Range<usize>>),
+    Shards64 {
+        next: usize,
+        end: usize,
+        worker: usize,
+    },
+}
+
+impl Iterator for RowIndices {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        match self {
+            Self::Cyclic(indices) => indices.next(),
+            Self::Shards64 { next, end, worker } => {
+                if *next >= *end {
+                    return None;
+                }
+                let row = *next;
+                *next = if row % 64 + 12 < 64 {
+                    row + 12
+                } else {
+                    (row / 64 + 1) * 64 + *worker
+                };
+                Some(row)
+            }
+        }
+    }
+}
+
+impl RowDispatch {
+    pub(super) fn new(rows: usize, matrix_bytes: usize) -> Option<Self> {
+        if shards64_selected()
+            && rayon::current_num_threads() == 12
+            && rows >= 64
+            && rows % 64 == 0
+            && matrix_bytes >= 4 << 20
+        {
+            return Some(Self::Shards64);
+        }
+        CyclicRows::new(rows, matrix_bytes).map(Self::Cyclic)
+    }
+
+    pub(super) fn map_indices<R: Send>(
+        self,
+        rows: usize,
+        f: impl Fn(RowIndices) -> R + Sync,
+    ) -> Vec<R> {
+        match self {
+            Self::Cyclic(dispatch) => {
+                dispatch.map_indices(rows, |rows| f(RowIndices::Cyclic(rows)))
+            }
+            Self::Shards64 => rayon::broadcast(|worker| {
+                debug_assert_eq!(worker.num_threads(), 12);
+                f(RowIndices::Shards64 {
+                    next: worker.index(),
+                    end: rows,
+                    worker: worker.index(),
+                })
+            }),
+        }
+    }
+
+    pub(super) fn map_jobs<J: Send, R: Send>(
+        self,
+        jobs: impl ExactSizeIterator<Item = J>,
+        f: impl Fn(Vec<(usize, J)>) -> R + Sync,
+    ) -> Vec<R> {
+        match self {
+            Self::Cyclic(dispatch) => dispatch.map_jobs(jobs, f),
+            Self::Shards64 => {
+                let mut owned: Vec<Vec<(usize, J)>> = (0..12)
+                    .map(|_| Vec::with_capacity(jobs.len().div_ceil(12)))
+                    .collect();
+                for (row, job) in jobs.enumerate() {
+                    owned[(row % 64) % 12].push((row, job));
+                }
+                let owned: Vec<_> = owned.into_iter().map(Mutex::new).collect();
+                rayon::broadcast(|worker| {
+                    debug_assert_eq!(worker.num_threads(), 12);
+                    let jobs = std::mem::take(&mut *owned[worker.index()].lock().unwrap());
+                    f(jobs)
+                })
+            }
+        }
+    }
+}
+
+fn shards64_selected() -> bool {
+    #[cfg(test)]
+    if let Some(selected) = TEST_SHARDS64.get() {
+        return selected;
+    }
+    #[cfg(feature = "bench-internals")]
+    {
+        static SELECTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *SELECTED.get_or_init(|| match std::env::var("BITZ_FOREST_ROW_OWNERSHIP") {
+            Err(std::env::VarError::NotPresent) => true,
+            Ok(value) => match value.as_str() {
+                "legacy" => false,
+                "shards64" => true,
+                _ => panic!("BITZ_FOREST_ROW_OWNERSHIP must be legacy or shards64"),
+            },
+            Err(std::env::VarError::NotUnicode(_)) => {
+                panic!("BITZ_FOREST_ROW_OWNERSHIP must be valid Unicode")
+            }
+        })
+    }
+    #[cfg(not(feature = "bench-internals"))]
+    true
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SHARDS64: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Scope the selector to the proving thread, before it dispatches worker jobs.
+#[cfg(test)]
+pub(super) fn with_shards64<R>(selected: bool, run: impl FnOnce() -> R) -> R {
+    struct Restore(Option<bool>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_SHARDS64.set(self.0);
+        }
+    }
+    let _restore = Restore(TEST_SHARDS64.replace(Some(selected)));
+    run()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "bench-internals"))]
+    #[test]
+    fn production_row_dispatch_preserves_worker_and_size_gates() {
+        for workers in [1, 8, 12, 16] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                assert_eq!(TEST_SHARDS64.get(), None);
+                for rows in [32, 64, 128, 259] {
+                    let dispatch = RowDispatch::new(rows, 4 << 20);
+                    let shards = workers == 12 && rows >= 64 && rows % 64 == 0;
+                    let cyclic = workers == 16 && rows % 16 == 0;
+                    assert_eq!(matches!(dispatch, Some(RowDispatch::Shards64)), shards);
+                    assert_eq!(matches!(dispatch, Some(RowDispatch::Cyclic(_))), cyclic);
+                    assert!(RowDispatch::new(rows, (4 << 20) - 1).is_none());
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn virtual_shards_preserve_owners_and_disjoint_tail_rows() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(12)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            with_shards64(true, || {
+                for rows in [64, 128, 256, 1024] {
+                    let dispatch = RowDispatch::new(rows, 4 << 20).unwrap();
+                    let assigned = dispatch.map_indices(rows, |indices| {
+                        let worker = rayon::current_thread_index().unwrap();
+                        indices.map(|row| (row, worker)).collect::<Vec<_>>()
+                    });
+                    let mut owners = vec![usize::MAX; rows];
+                    for (worker, jobs) in assigned.iter().enumerate() {
+                        assert_eq!(jobs.len(), (rows / 64) * if worker < 4 { 6 } else { 5 });
+                        for &(row, owner) in jobs {
+                            assert_eq!(owners[row], usize::MAX, "duplicate row");
+                            assert_eq!(owner, (row % 64) % 12);
+                            owners[row] = owner;
+                        }
+                    }
+                    assert!(owners.iter().all(|&owner| owner < 12));
+                    // Every compatible high-bit fold reads quarters from the
+                    // same owner as its output, including two successive folds.
+                    for offset in [64, 128, 256] {
+                        for row in 0..rows.saturating_sub(offset) {
+                            assert_eq!(owners[row], owners[row + offset]);
+                        }
+                    }
+                    let mut values = vec![usize::MAX; rows * 3 - 1];
+                    let dispatch = RowDispatch::new(rows, 4 << 20).unwrap();
+                    dispatch.map_jobs(values.chunks_mut(3), |jobs| {
+                        let worker = rayon::current_thread_index().unwrap();
+                        for (row, chunk) in jobs {
+                            assert_eq!(worker, owners[row]);
+                            chunk.fill(row);
+                        }
+                    });
+                    assert!(
+                        values
+                            .iter()
+                            .enumerate()
+                            .all(|(index, &row)| row == index / 3)
+                    );
+                }
+                for rows in [0, 1, 32, 63, 65, 127] {
+                    assert!(RowDispatch::new(rows, 64 << 20).is_none());
+                }
+                assert!(RowDispatch::new(128, (4 << 20) - 1).is_none());
+                with_shards64(false, || assert!(RowDispatch::new(128, 4 << 20).is_none()));
+                assert!(RowDispatch::new(128, 4 << 20).is_some());
+            })
+        });
+        assert_eq!(TEST_SHARDS64.get(), None);
+        for workers in [1, 8, 16] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                with_shards64(true, || {
+                    assert_eq!(RowDispatch::new(128, 4 << 20).is_some(), workers == 16);
+                })
+            });
+        }
+    }
+
+    #[test]
+    fn virtual_shard_override_restores_after_panic() {
+        with_shards64(false, || {
+            assert!(std::panic::catch_unwind(|| with_shards64(true, || panic!("test"))).is_err());
+            assert!(!shards64_selected());
+        });
+        assert_eq!(TEST_SHARDS64.get(), None);
+    }
 
     #[test]
     fn fallback_grain_preserves_small_passes_and_parallelism() {

@@ -1,0 +1,93 @@
+Completed screen/confirmation evidence review — 2026-10-13
+
+Scope: read summary.json, screen-comparison.txt, confirm-comparison.txt,
+configs.json, completed phase manifests, saved validation.json and build metadata.
+Recomputed selected incremental ratios from summary.json. No prover, build, test,
+raw-file validation, or summary regeneration was run. Lifecycle was active and is
+excluded from this review. Conclusions are provisional until its cold/repeated
+comparisons and final production qualification complete.
+
+Evidence: canonical v9, batch 1024, target 128 bits, fixed physical-core affinity,
+8/12 workers. Each cell has seeds 42/43/44, one process per seed, two warmups and
+seven measured proofs: 21 repeated samples, with correlation within each process.
+Both phases are untraced and are compared separately. Screen has 28 cells/84
+processes; confirmation has 22 cells/66 processes: 1,050 timed proofs plus 300
+warmups. The saved validation snapshot reports 1,350 verified proofs (729 N1024,
+621 N512), input/source equality, complete proof Debug-digest/payload equality,
+and command/raw/binary/parser hashes checked. This snapshot covers those completed
+phases only; its phases_complete=true is not a claim about the active lifecycle.
+It is not a new independent revalidation, nor direct serialized-byte comparison.
+
+The frozen candidate is the bench-internals build ef14bf75efe889085d968188d95adb60f75291ee9da7e5b6d107919650a44928,
+with explicit selectors. Baseline is the previous accepted production binary
+c768431de56893effcb985e0bbfb380b6f0dbdb1714319772297eb0cfdc37b4b. The manifest's
+candidate_production=true does not change the recorded candidate build features:
+falcon-hybrid,bench-internals. These are experimental-build results, not final
+production-default measurements.
+
+Strongest promotion candidate: 12-worker row ownership.
+- N512: control -> ownership 31.725 -> 30.140 ms (-5.00%) in screen;
+  31.977 -> 30.161 ms (-5.68%) in confirmation. All three seeds improve in both.
+- N1024: 55.547 -> 50.160 ms (-9.70%); 55.652 -> 50.494 ms (-9.27%).
+  Again all three seeds improve in both phases.
+- Commit+prove+verify medians also improve in both phases: N512 -3.28%/-4.33%,
+  N1024 -6.80%/-6.09%. Verification should still be reported separately.
+- Ownership dispatch is active only at 12 workers. Eight-worker `all` measurements
+  do not measure ownership, and these data do not authorize a general worker-count
+  or topology promotion.
+
+Tables: plausible addition at N1024/12, pending lifecycle.
+- Tables alone improve N1024/12 by 1.46%/1.26%, all seeds in both phases.
+- Confirmation ownership -> own-tables: 50.494 -> 49.684 ms (-1.60%);
+  seed changes -2.12%, -2.32%, -0.52%. This is the clean incremental comparison.
+- N512/12 tables alone are mixed by seed. The `all` combination beats ownership
+  there by 2.30% in confirmation, but that does not isolate tables from dense/PCS.
+  Lifecycle's own-tables-both cell supplies the missing comparison.
+- Tables alone regress all seeds at eight workers: N512 +0.50%, N1024 +1.26%.
+  Do not promote tables globally based on the 12-worker measurements.
+
+Native norm: no evidence to add it to the selected forest changes.
+- N1024/12 standalone gains are small (-0.50%/-0.96%), with mixed confirmation
+  seeds. Ownership -> own-norm is +0.40%, with mixed seed directions.
+- Own-tables -> own-tables-norm is +1.31%; every seed is slower
+  (+2.05%, +0.83%, +1.35%).
+- N512/12 forced prefix-4 legacy -> batched is +0.26%, with mixed seeds. Both
+  prefix-4 variants use about 19.2-19.4 MiB more median process peak RSS than
+  the default prefix-1 control. Comparing either only against control would
+  conflate prefix selection with the new batching kernel.
+- Native-norm at N512/12 and N1024/8 is inactive under the current prefix-1
+  policy; timing movement in those cells is not a kernel speedup/regression.
+
+Dense output: promising only as a separate N1024/12 experiment so far.
+- Standalone N1024/12 improves 1.09%/1.15%, all three seeds both phases.
+  Screen commit+prove+verify is +0.13%, while confirmation is -0.84%.
+- N512/8's initial 1.36% gain disappears on confirmation (-0.05%, mixed seeds).
+- N1024/8 regresses 2.37%, every seed, despite about 20.2 MiB lower median
+  process peak RSS. A lower peak alone is not a latency win.
+- Compare own-tables-dense against own-tables-both in lifecycle before promotion.
+
+PCS transpose: no reliable standalone gain yet.
+- N1024/12 is -1.10%/-0.73% but has mixed seed directions in both phases;
+  confirmation seed changes are +2.90%, -2.37%, -0.47%.
+- Other cells are neutral/mixed or slower; N512/12 screen is +1.07%, all seeds.
+  Compare own-tables-pcs against own-tables-both; do not infer additive savings.
+
+Bundle warning: N1024/12 `all` is 49.660 ms versus own-tables 49.684 ms: only
+0.05% faster, with mixed seeds (+0.27%, +0.33%, -0.94%). Median verification is
+15.924 versus 15.351 ms (+3.74%); commit+prove+verify is 65.552 versus 65.314 ms
+(+0.36%). Thus the large `all` gain versus control is not evidence to promote
+norm, dense and PCS together. At eight workers `all` is +0.46% N512 and +3.13%
+N1024; the latter is slower in every seed.
+
+Limits for final reporting: cold proofs are not covered yet; samples within a
+seed/process are correlated; per-seed agreement is not a significance test.
+Comparison-file lifecycle is median(per-proof total_prover_ms + verify_ms), not
+the sum of their medians and not input generation/preparation/resource sampling.
+Peak figures are medians of process maxima including warmups, not allocation
+counts or necessarily the active phase's live memory. Retained RSS includes
+inputs/allocator/Prepared and differs from cached-vector capacity. For example,
+confirmation N1024/12 own-tables retains 66.16 MiB versus ownership 64.52 MiB,
+despite similar process peaks (205.35 versus 205.03 MiB). Minor faults are counts.
+Use same-binary control for experimental causality, and retain matched frozen
+baseline comparisons for final production claims; neither zero regressions nor
+an across-worker improvement has been established here.

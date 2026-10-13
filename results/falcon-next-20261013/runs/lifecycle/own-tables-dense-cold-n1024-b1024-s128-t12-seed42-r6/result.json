@@ -1,0 +1,62 @@
+{
+  "schema": "bitz/falcon-next-optimization/v1",
+  "job": {
+    "id": "own-tables-dense-cold-n1024-b1024-s128-t12-seed42-r6",
+    "variant": "arithmetic",
+    "config": "own-tables-dense",
+    "binary": "candidate",
+    "protocol": "canonical",
+    "degree": 1024,
+    "threads": 12,
+    "seed": 42,
+    "mode": "cold",
+    "worker_cpus": [
+      6,
+      7,
+      4,
+      5,
+      2,
+      3,
+      0,
+      1,
+      14,
+      15,
+      12,
+      13
+    ],
+    "main_cpu": 6,
+    "repetition": 6,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "verified": true,
+  "manifest_sha256": "978b817b860c7786669010eb532d5fb3e6c9c3f37192e3247a81899fa20298c7",
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "d0b9cd07e55160700ece3d78f5ea1668e1e992d696a4af7ddce11c3c4e39e18f",
+      "total_prover_ms": 53.067173000000004,
+      "prove_ms": 47.847235000000005,
+      "witness_commit_ms": 5.219858,
+      "verify_ms": 15.467621000000001,
+      "process_peak_rss_kib": 136908,
+      "proof_payload_bytes": 321272,
+      "iteration": 0,
+      "prepare_ms": 0.16907,
+      "external_input_ms": 1774.102274,
+      "prover_minor_faults": 56449,
+      "process_rss_before_prover_kib": 22972,
+      "process_rss_after_prover_kib": 73964,
+      "process_retained_rss_kib": 61612,
+      "prepared_scratch_bytes_before_prover": 0,
+      "prepared_retained_scratch_bytes": 0
+    }
+  ],
+  "command_sha256": "d49e9af8915f4de9a9fbe8ae504856fc94003c191753cf8871312e681f95f89f",
+  "stdout_sha256": "d4bb4b3c8c400efa14d50bc7f16959162f60cb0f599ca7152885dec792822de5",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "43558d34f180c2f06df644c2150923ea3f8ec8b1edd365374413b3e277b285e1"
+}
