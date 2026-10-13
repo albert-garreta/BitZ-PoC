@@ -1,0 +1,13 @@
+{
+  "benches/common/falcon_metrics.rs": "db7767265cc0ed8f3b63d157f7bf0f777e331228402bb6efb7bb89583cc9e90a",
+  "benches/falcon_algebraic.rs": "73aca1b57eb8c613e55e0d38c064f58797c213f778d558ada9deac356c46e7cd",
+  "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "620bdb98d66cc9890f73f037704fd63a38a5c0cdb1be6079f9f424456356ed47",
+  "src/piop/spartan/falcon1024_algebraic/factored_ring.rs": "8773e98fbc8f33f940302f6aea54b70ca4ad12e617220115c040c60f160395f4",
+  "src/piop/spartan/falcon1024_algebraic/protocol.rs": "12b941ba9a11f2fed60bebaf96469d9ff67a9919f81ba15502aebfec2e1f4280",
+  "src/piop/spartan/falcon1024_algebraic/ring.rs": "0f8458fcd5088443814c4578097e0041f3a0665a863131e188df3f1a2f9d8fdc",
+  "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "4f04b1962a4e50de84775faf2e69c0c359be493cd786e1b893705fb527cec897",
+  "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs": "8dd75e0a94f59272c8f3ac4fadecad0dc8d1361a48dbaa2af468a01e07c44c44",
+  "vendor/field/src/q12289.rs": "c56ee58bfbf1b14363a5b1e0dc2a623078b0d06b8b4a8a359d51b66eb640b3f4",
+  "vendor/field/src/q12289/avx512.rs": "c3dfbd914d3920775fede4644ab77f7d6be23ea3e6fb1d3b80e7cd1c9829402c",
+  "scripts/falcon_buffer_optimization.py": "260d7405a37c94fd073a7bd54fef99c81ca12df50d1a479df34ae3c55332b737"
+}

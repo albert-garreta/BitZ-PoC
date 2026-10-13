@@ -4,6 +4,8 @@
 //! Ordinary elements use this fixed Z-basis; [`PowerCoordinates`] use a
 //! runtime generator's basis. Their encodings must not be interchanged.
 
+use std::mem::MaybeUninit;
+
 pub const Q: u64 = 12_289;
 
 #[cfg(all(
@@ -151,6 +153,113 @@ impl<const K: usize> Q12289Extension<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zeroed_coordinate_allocations_are_canonical() {
+        fn check<const K: usize>() {
+            for len in [0, 1, 3, 17, 1024] {
+                let values = PowerCoordinates::<K>::zeroed_vec(len);
+                assert_eq!(values.len(), len);
+                assert!(values.iter().all(|value| *value == PowerCoordinates::ZERO));
+            }
+        }
+        check::<9>();
+        check::<10>();
+        check::<11>();
+    }
+
+    #[test]
+    fn uninitialized_coordinate_writers_fill_empty_tails_and_overwrite() {
+        fn check<const K: usize, const PAIRS: usize>() {
+            let mut alpha = Q12289Extension::<K>::ZERO;
+            alpha.0[1] = 1;
+            let basis = PowerBasis::try_new(alpha).unwrap();
+            let starts: [[PowerCoordinates<K>; 2]; PAIRS] = std::array::from_fn(|pair| {
+                std::array::from_fn(|side| {
+                    basis.encode(Q12289Extension::new(std::array::from_fn(|k| {
+                        ((Q - 1 + pair as u64 * 197 + side as u64 * 17 + k as u64 * 71) % Q) as u16
+                    })))
+                })
+            });
+            let subtract = basis.encode(Q12289Extension::new([(Q - 1) as u16; K]));
+            let sentinel = PowerCoordinates([u16::MAX; K]);
+            for len in [0, 1, 2, 3, 7, 17, 31, 33, 129, 1024] {
+                let polynomials: [[Vec<u16>; 2]; PAIRS] = std::array::from_fn(|pair| {
+                    std::array::from_fn(|side| {
+                        (0..len)
+                            .map(|j| [0, 1, (Q - 1) as u16][(j + pair + side) % 3])
+                            .collect()
+                    })
+                });
+                let mut actual: [[Box<[MaybeUninit<PowerCoordinates<K>>]>; 2]; PAIRS] =
+                    std::array::from_fn(|_| {
+                        std::array::from_fn(|_| {
+                            let mut output =
+                                Box::<[PowerCoordinates<K>]>::new_uninit_slice(len + 2);
+                            output[0].write(sentinel);
+                            output[len + 1].write(sentinel);
+                            output
+                        })
+                    });
+                for adjoints_only in [false, true] {
+                    let mut pairs = actual.iter_mut();
+                    let outputs = std::array::from_fn(|_| {
+                        let [a, b] = pairs.next().unwrap();
+                        [&mut a[1..len + 1], &mut b[1..len + 1]]
+                    });
+                    if adjoints_only {
+                        basis.fill_adjoint_pairs_uninit(
+                            starts,
+                            subtract,
+                            std::array::from_fn(|p| {
+                                std::array::from_fn(|side| polynomials[p][side].as_slice())
+                            }),
+                            outputs,
+                        );
+                    } else {
+                        basis.fill_powers_adjoint_pairs_uninit(
+                            starts,
+                            [subtract; PAIRS],
+                            std::array::from_fn(|p| polynomials[p][1].as_slice()),
+                            outputs,
+                        );
+                    }
+                    for pair in 0..PAIRS {
+                        for side in 0..2 {
+                            let output = &actual[pair][side];
+                            // SAFETY: guards were initialized before the call;
+                            // the writer initialized every interior slot.
+                            assert_eq!(unsafe { output[0].assume_init() }, sentinel);
+                            assert_eq!(unsafe { output[len + 1].assume_init() }, sentinel);
+                            let mut expected = basis.decode(starts[pair][side]);
+                            for j in 0..len {
+                                let value = unsafe { output[j + 1].assume_init() };
+                                assert_eq!(value, basis.encode(expected));
+                                assert!(
+                                    value.0.iter().all(|&coordinate| u64::from(coordinate) < Q)
+                                );
+                                expected = expected.mul(alpha);
+                                if adjoints_only || side == 1 {
+                                    let scalar = u64::from(polynomials[pair][side][len - 1 - j]);
+                                    expected = expected.sub(Q12289Extension::new(
+                                        basis
+                                            .decode(subtract)
+                                            .0
+                                            .map(|v| (u64::from(v) * scalar % Q) as u16),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        check::<9, 2>();
+        check::<10, 4>();
+        check::<11, 2>();
+        check::<11, 4>();
+        check::<11, 8>();
+    }
 
     #[test]
     fn prepared_public_dot_products_match_independent_reference() {
@@ -303,10 +412,23 @@ mod tests {
 /// Values from distinct `PowerBasis` contexts must not be mixed, even when K
 /// agrees. This is a coordinate vector, not a fixed-basis extension element.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct PowerCoordinates<const K: usize>([u16; K]);
 
 impl<const K: usize> PowerCoordinates<K> {
     pub const ZERO: Self = Self([0; K]);
+
+    /// Allocate initialized canonical zeros without an elementwise Rust fill.
+    pub fn zeroed_vec(len: usize) -> Vec<Self> {
+        // SAFETY: this private representation contains only [u16; K]. All-zero
+        // bytes are valid and encode canonical zero for every supported basis;
+        // Box preserves the element alignment and allocation layout.
+        unsafe {
+            Box::<[Self]>::new_zeroed_slice(len)
+                .assume_init()
+                .into_vec()
+        }
+    }
 
     pub const fn coordinates(&self) -> &[u16; K] {
         &self.0
@@ -333,6 +455,14 @@ pub struct PowerBasis<const K: usize> {
     inverse: [[u16; K]; K],
     // alpha^K = sum_k feedback[k] * alpha^k.
     feedback: [u16; K],
+}
+
+fn coordinate_output<const K: usize>(
+    output: &mut [PowerCoordinates<K>],
+) -> &mut [MaybeUninit<PowerCoordinates<K>>] {
+    // SAFETY: MaybeUninit<T> has T's layout and accepts every initialized T.
+    // The exclusive borrow is preserved; writers only replace valid values.
+    unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), output.len()) }
 }
 
 impl<const K: usize> PowerBasis<K> {
@@ -446,9 +576,20 @@ impl<const K: usize> PowerBasis<K> {
 
     /// Emit start, alpha*start, ... without conversions or allocation per step.
     pub fn fill_powers(&self, start: PowerCoordinates<K>, output: &mut [PowerCoordinates<K>]) {
+        self.fill_powers_uninit(start, coordinate_output(output));
+    }
+
+    /// Write every output slot once, without reading its previous contents.
+    /// All slots are initialized on successful return; inputs and length checks
+    /// are the same as the corresponding initialized-output method.
+    pub fn fill_powers_uninit(
+        &self,
+        start: PowerCoordinates<K>,
+        output: &mut [MaybeUninit<PowerCoordinates<K>>],
+    ) {
         let mut value = start;
         for slot in output {
-            *slot = value;
+            slot.write(value);
             self.advance(&mut value);
         }
     }
@@ -462,6 +603,17 @@ impl<const K: usize> PowerBasis<K> {
         &self,
         starts: [PowerCoordinates<K>; 2],
         outputs: [&mut [PowerCoordinates<K>]; 2],
+    ) {
+        self.fill_powers_pair_uninit(starts, outputs.map(coordinate_output));
+    }
+
+    /// Write every output slot once, without reading its previous contents.
+    /// All slots are initialized on successful return; inputs and length checks
+    /// are the same as the corresponding initialized-output method.
+    pub fn fill_powers_pair_uninit(
+        &self,
+        starts: [PowerCoordinates<K>; 2],
+        outputs: [&mut [MaybeUninit<PowerCoordinates<K>>]; 2],
     ) {
         assert_eq!(
             outputs[0].len(),
@@ -480,8 +632,8 @@ impl<const K: usize> PowerBasis<K> {
             return;
         }
         let [a, b] = outputs;
-        self.fill_powers(starts[0], a);
-        self.fill_powers(starts[1], b);
+        self.fill_powers_uninit(starts[0], a);
+        self.fill_powers_uninit(starts[1], b);
     }
 
     /// Emit ordinary powers alongside an adjoint sequence for a public polynomial.
@@ -497,6 +649,24 @@ impl<const K: usize> PowerBasis<K> {
         subtract: PowerCoordinates<K>,
         polynomial: &[u16],
         outputs: [&mut [PowerCoordinates<K>]; 2],
+    ) {
+        self.fill_powers_adjoint_pair_uninit(
+            starts,
+            subtract,
+            polynomial,
+            outputs.map(coordinate_output),
+        );
+    }
+
+    /// Write every output slot once, without reading its previous contents.
+    /// All slots are initialized on successful return; inputs and length checks
+    /// are the same as the corresponding initialized-output method.
+    pub fn fill_powers_adjoint_pair_uninit(
+        &self,
+        starts: [PowerCoordinates<K>; 2],
+        subtract: PowerCoordinates<K>,
+        polynomial: &[u16],
+        outputs: [&mut [MaybeUninit<PowerCoordinates<K>>]; 2],
     ) {
         assert_eq!(
             outputs[0].len(),
@@ -534,8 +704,8 @@ impl<const K: usize> PowerBasis<K> {
         let [a, b] = outputs;
         let [mut first, mut second] = starts;
         for j in 0..a.len() {
-            a[j] = first;
-            b[j] = second;
+            a[j].write(first);
+            b[j].write(second);
             if j + 1 < a.len() {
                 self.advance(&mut first);
                 self.advance_sub_scaled(&mut second, polynomial[a.len() - 1 - j], subtract);
@@ -554,6 +724,24 @@ impl<const K: usize> PowerBasis<K> {
         subtract: PowerCoordinates<K>,
         polynomials: [[&[u16]; 2]; PAIRS],
         outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    ) {
+        self.fill_adjoint_pairs_uninit(
+            starts,
+            subtract,
+            polynomials,
+            outputs.map(|pair| pair.map(coordinate_output)),
+        );
+    }
+
+    /// Write every output slot once, without reading its previous contents.
+    /// All slots are initialized on successful return; inputs and length checks
+    /// are the same as the corresponding initialized-output method.
+    pub fn fill_adjoint_pairs_uninit<const PAIRS: usize>(
+        &self,
+        starts: [[PowerCoordinates<K>; 2]; PAIRS],
+        subtract: PowerCoordinates<K>,
+        polynomials: [[&[u16]; 2]; PAIRS],
+        outputs: [[&mut [MaybeUninit<PowerCoordinates<K>>]; 2]; PAIRS],
     ) {
         const {
             assert!(PAIRS > 0);
@@ -592,7 +780,7 @@ impl<const K: usize> PowerBasis<K> {
             for (side, output) in outputs.into_iter().enumerate() {
                 let mut value = starts[pair][side];
                 for (j, slot) in output.iter_mut().enumerate() {
-                    *slot = value;
+                    slot.write(value);
                     if j + 1 < len {
                         self.advance_sub_scaled(
                             &mut value,
@@ -617,6 +805,24 @@ impl<const K: usize> PowerBasis<K> {
         subtract: [PowerCoordinates<K>; PAIRS],
         polynomials: [&[u16]; PAIRS],
         outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    ) {
+        self.fill_powers_adjoint_pairs_uninit(
+            starts,
+            subtract,
+            polynomials,
+            outputs.map(|pair| pair.map(coordinate_output)),
+        );
+    }
+
+    /// Write every output slot once, without reading its previous contents.
+    /// All slots are initialized on successful return; inputs and length checks
+    /// are the same as the corresponding initialized-output method.
+    pub fn fill_powers_adjoint_pairs_uninit<const PAIRS: usize>(
+        &self,
+        starts: [[PowerCoordinates<K>; 2]; PAIRS],
+        subtract: [PowerCoordinates<K>; PAIRS],
+        polynomials: [&[u16]; PAIRS],
+        outputs: [[&mut [MaybeUninit<PowerCoordinates<K>>]; 2]; PAIRS],
     ) {
         const {
             assert!(PAIRS > 0);
@@ -651,7 +857,7 @@ impl<const K: usize> PowerBasis<K> {
             return;
         }
         for (i, output) in outputs.into_iter().enumerate() {
-            self.fill_powers_adjoint_pair(starts[i], subtract[i], polynomials[i], output);
+            self.fill_powers_adjoint_pair_uninit(starts[i], subtract[i], polynomials[i], output);
         }
     }
 }
@@ -766,7 +972,7 @@ mod power_basis_tests {
                         starts,
                         basis.encode(subtract),
                         polynomials,
-                        outputs,
+                        outputs.map(|pair| pair.map(coordinate_output)),
                     )
                 };
                 for (pair, reference) in actual.iter().zip(&expected) {

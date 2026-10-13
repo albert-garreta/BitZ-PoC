@@ -1,0 +1,256 @@
+Buffer experiment analysis: qualify-direct
+Deltas are percentages; negative is lower. Each row is compared within its protocol and mode.
+
+N=512 batch=1024 security=128 t=1 canonical cold buffers-direct samples=21 processes=21
+  total=144.677ms prove=134.728ms verify=30.929ms vs-control=-0.14% vs-baseline=n/a
+  per-seed total vs control: 42:+0.11%, 43:-0.23%, 44:-0.16%
+  faults=28843 retainedRSS=31.95MiB scratch=0.00MiB peakRSS/process median=72.88MiB max=73.16MiB
+
+N=512 batch=1024 security=128 t=1 canonical cold control samples=21 processes=21
+  total=144.880ms prove=134.929ms verify=30.695ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=28844 retainedRSS=31.96MiB scratch=0.00MiB peakRSS/process median=72.80MiB max=73.12MiB
+
+N=512 batch=1024 security=128 t=1 canonical repeated buffers-direct samples=21 processes=3
+  total=139.922ms prove=131.014ms verify=30.675ms vs-control=+0.39% vs-baseline=n/a
+  per-seed total vs control: 42:+0.05%, 43:-0.16%, 44:+0.39%
+  faults=20929 retainedRSS=38.43MiB scratch=0.00MiB peakRSS/process median=81.67MiB max=81.71MiB
+
+N=512 batch=1024 security=128 t=1 canonical repeated control samples=21 processes=3
+  total=139.375ms prove=130.459ms verify=30.517ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=20929 retainedRSS=38.50MiB scratch=0.00MiB peakRSS/process median=81.79MiB max=82.00MiB
+
+N=512 batch=1024 security=128 t=1 factored cold buffers-direct samples=21 processes=21
+  total=132.816ms prove=122.875ms verify=13.949ms vs-control=+0.38% vs-baseline=n/a
+  per-seed total vs control: 42:-0.03%, 43:+0.56%, 44:+0.31%
+  faults=23807 retainedRSS=50.50MiB scratch=0.00MiB peakRSS/process median=71.96MiB max=72.40MiB
+
+N=512 batch=1024 security=128 t=1 factored cold control samples=21 processes=21
+  total=132.308ms prove=122.382ms verify=14.034ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=23807 retainedRSS=50.49MiB scratch=0.00MiB peakRSS/process median=71.95MiB max=72.18MiB
+
+N=512 batch=1024 security=128 t=1 factored repeated buffers-direct samples=21 processes=3
+  total=128.128ms prove=119.230ms verify=13.623ms vs-control=-0.12% vs-baseline=n/a
+  per-seed total vs control: 42:-0.19%, 43:+0.42%, 44:-0.12%
+  faults=15329 retainedRSS=55.58MiB scratch=0.00MiB peakRSS/process median=81.21MiB max=81.36MiB
+
+N=512 batch=1024 security=128 t=1 factored repeated control samples=21 processes=3
+  total=128.286ms prove=119.402ms verify=13.757ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=15329 retainedRSS=55.53MiB scratch=0.00MiB peakRSS/process median=80.93MiB max=81.15MiB
+
+N=512 batch=1024 security=128 t=8 canonical cold buffers-direct samples=21 processes=21
+  total=31.983ms prove=29.011ms verify=8.225ms vs-control=-8.64% vs-baseline=n/a
+  per-seed total vs control: 42:-9.45%, 43:-10.38%, 44:-8.43%
+  faults=31036 retainedRSS=72.23MiB scratch=0.00MiB peakRSS/process median=80.26MiB max=80.71MiB
+
+N=512 batch=1024 security=128 t=8 canonical cold control samples=21 processes=21
+  total=35.007ms prove=32.010ms verify=9.516ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=31033 retainedRSS=72.17MiB scratch=0.00MiB peakRSS/process median=80.21MiB max=80.57MiB
+
+N=512 batch=1024 security=128 t=8 canonical repeated buffers-direct samples=21 processes=3
+  total=29.431ms prove=27.573ms verify=9.456ms vs-control=-6.70% vs-baseline=n/a
+  per-seed total vs control: 42:-5.79%, 43:-6.17%, 44:-7.23%
+  faults=20968 retainedRSS=41.25MiB scratch=0.00MiB peakRSS/process median=83.87MiB max=84.12MiB
+
+N=512 batch=1024 security=128 t=8 canonical repeated control samples=21 processes=3
+  total=31.543ms prove=29.597ms verify=10.425ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=20967 retainedRSS=41.04MiB scratch=0.00MiB peakRSS/process median=83.75MiB max=83.89MiB
+
+N=512 batch=1024 security=128 t=8 factored cold buffers-direct samples=21 processes=21
+  total=30.632ms prove=27.627ms verify=6.690ms vs-control=-6.20% vs-baseline=n/a
+  per-seed total vs control: 42:-6.42%, 43:-6.21%, 44:-6.34%
+  faults=24282 retainedRSS=52.64MiB scratch=0.00MiB peakRSS/process median=72.81MiB max=73.16MiB
+
+N=512 batch=1024 security=128 t=8 factored cold control samples=21 processes=21
+  total=32.659ms prove=29.717ms verify=6.911ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24278 retainedRSS=52.52MiB scratch=0.00MiB peakRSS/process median=72.86MiB max=73.36MiB
+
+N=512 batch=1024 security=128 t=8 factored repeated buffers-direct samples=21 processes=3
+  total=27.907ms prove=26.030ms verify=6.575ms vs-control=-4.06% vs-baseline=n/a
+  per-seed total vs control: 42:-3.39%, 43:-3.77%, 44:-5.53%
+  faults=15361 retainedRSS=58.31MiB scratch=0.00MiB peakRSS/process median=83.04MiB max=83.06MiB
+
+N=512 batch=1024 security=128 t=8 factored repeated control samples=21 processes=3
+  total=29.089ms prove=27.197ms verify=6.707ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=15355 retainedRSS=58.54MiB scratch=0.00MiB peakRSS/process median=83.28MiB max=83.43MiB
+
+N=512 batch=1024 security=128 t=16 canonical cold buffers-direct samples=21 processes=21
+  total=31.548ms prove=28.315ms verify=8.013ms vs-control=-10.14% vs-baseline=n/a
+  per-seed total vs control: 42:-8.95%, 43:-9.81%, 44:-10.91%
+  faults=31680 retainedRSS=74.86MiB scratch=0.00MiB peakRSS/process median=81.54MiB max=82.60MiB
+
+N=512 batch=1024 security=128 t=16 canonical cold control samples=21 processes=21
+  total=35.109ms prove=31.718ms verify=9.927ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=31684 retainedRSS=74.90MiB scratch=0.00MiB peakRSS/process median=81.44MiB max=82.10MiB
+
+N=512 batch=1024 security=128 t=16 canonical repeated buffers-direct samples=21 processes=3
+  total=29.603ms prove=27.284ms verify=9.648ms vs-control=-7.20% vs-baseline=n/a
+  per-seed total vs control: 42:-6.18%, 43:-8.48%, 44:-7.86%
+  faults=21014 retainedRSS=46.11MiB scratch=0.00MiB peakRSS/process median=87.96MiB max=87.98MiB
+
+N=512 batch=1024 security=128 t=16 canonical repeated control samples=21 processes=3
+  total=31.901ms prove=29.504ms verify=11.348ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=21031 retainedRSS=46.29MiB scratch=0.00MiB peakRSS/process median=87.88MiB max=87.93MiB
+
+N=512 batch=1024 security=128 t=16 factored cold buffers-direct samples=21 processes=21
+  total=30.466ms prove=27.048ms verify=7.496ms vs-control=-7.24% vs-baseline=n/a
+  per-seed total vs control: 42:-7.97%, 43:-7.25%, 44:-6.40%
+  faults=24934 retainedRSS=55.33MiB scratch=0.00MiB peakRSS/process median=74.29MiB max=75.31MiB
+
+N=512 batch=1024 security=128 t=16 factored cold control samples=21 processes=21
+  total=32.844ms prove=29.440ms verify=7.892ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24952 retainedRSS=55.39MiB scratch=0.00MiB peakRSS/process median=74.20MiB max=74.96MiB
+
+N=512 batch=1024 security=128 t=16 factored repeated buffers-direct samples=21 processes=3
+  total=28.585ms prove=26.245ms verify=7.315ms vs-control=-5.29% vs-baseline=n/a
+  per-seed total vs control: 42:-4.43%, 43:-4.85%, 44:-6.64%
+  faults=15647 retainedRSS=61.43MiB scratch=0.00MiB peakRSS/process median=85.72MiB max=85.78MiB
+
+N=512 batch=1024 security=128 t=16 factored repeated control samples=21 processes=3
+  total=30.182ms prove=27.873ms verify=7.908ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=15640 retainedRSS=61.54MiB scratch=0.00MiB peakRSS/process median=85.82MiB max=86.09MiB
+
+N=1024 batch=1024 security=128 t=1 canonical cold buffers-direct samples=21 processes=21
+  total=278.130ms prove=259.611ms verify=61.242ms vs-control=+0.11% vs-baseline=n/a
+  per-seed total vs control: 42:-0.17%, 43:+0.26%, 44:-0.15%
+  faults=55611 retainedRSS=56.54MiB scratch=0.00MiB peakRSS/process median=132.08MiB max=132.42MiB
+
+N=1024 batch=1024 security=128 t=1 canonical cold control samples=21 processes=21
+  total=277.825ms prove=259.484ms verify=60.684ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=55612 retainedRSS=56.56MiB scratch=0.00MiB peakRSS/process median=131.90MiB max=132.42MiB
+
+N=1024 batch=1024 security=128 t=1 canonical repeated buffers-direct samples=21 processes=3
+  total=271.199ms prove=254.323ms verify=60.351ms vs-control=+0.23% vs-baseline=n/a
+  per-seed total vs control: 42:+0.13%, 43:+0.50%, 44:+0.05%
+  faults=40991 retainedRSS=58.39MiB scratch=0.00MiB peakRSS/process median=202.12MiB max=202.12MiB
+
+N=1024 batch=1024 security=128 t=1 canonical repeated control samples=21 processes=3
+  total=270.568ms prove=253.509ms verify=60.071ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=40991 retainedRSS=58.45MiB scratch=0.00MiB peakRSS/process median=202.07MiB max=202.34MiB
+
+N=1024 batch=1024 security=128 t=1 factored cold buffers-direct samples=21 processes=21
+  total=251.271ms prove=232.664ms verify=25.762ms vs-control=+0.46% vs-baseline=n/a
+  per-seed total vs control: 42:-0.01%, 43:+0.36%, 44:+0.26%
+  faults=45889 retainedRSS=94.57MiB scratch=0.00MiB peakRSS/process median=131.89MiB max=132.34MiB
+
+N=1024 batch=1024 security=128 t=1 factored cold control samples=21 processes=21
+  total=250.122ms prove=231.500ms verify=25.633ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=45888 retainedRSS=94.52MiB scratch=0.00MiB peakRSS/process median=131.88MiB max=132.32MiB
+
+N=1024 batch=1024 security=128 t=1 factored repeated buffers-direct samples=21 processes=3
+  total=241.323ms prove=224.904ms verify=23.381ms vs-control=-0.25% vs-baseline=n/a
+  per-seed total vs control: 42:-0.14%, 43:-0.15%, 44:-0.30%
+  faults=24578 retainedRSS=101.69MiB scratch=0.00MiB peakRSS/process median=166.96MiB max=167.02MiB
+
+N=1024 batch=1024 security=128 t=1 factored repeated control samples=21 processes=3
+  total=241.935ms prove=225.491ms verify=23.538ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24578 retainedRSS=101.74MiB scratch=0.00MiB peakRSS/process median=166.71MiB max=167.34MiB
+
+N=1024 batch=1024 security=128 t=8 canonical cold buffers-direct samples=21 processes=21
+  total=57.427ms prove=52.225ms verify=16.004ms vs-control=-12.03% vs-baseline=n/a
+  per-seed total vs control: 42:-11.41%, 43:-12.43%, 44:-11.86%
+  faults=57457 retainedRSS=76.22MiB scratch=0.00MiB peakRSS/process median=137.55MiB max=138.35MiB
+
+N=1024 batch=1024 security=128 t=8 canonical cold control samples=21 processes=21
+  total=65.277ms prove=59.992ms verify=19.322ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=57488 retainedRSS=76.30MiB scratch=0.00MiB peakRSS/process median=137.53MiB max=138.42MiB
+
+N=1024 batch=1024 security=128 t=8 canonical repeated buffers-direct samples=21 processes=3
+  total=51.731ms prove=48.173ms verify=16.589ms vs-control=-8.01% vs-baseline=n/a
+  per-seed total vs control: 42:-8.08%, 43:-8.12%, 44:-7.38%
+  faults=35843 retainedRSS=77.20MiB scratch=0.00MiB peakRSS/process median=171.96MiB max=172.23MiB
+
+N=1024 batch=1024 security=128 t=8 canonical repeated control samples=21 processes=3
+  total=56.235ms prove=52.577ms verify=18.701ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=35833 retainedRSS=77.34MiB scratch=0.00MiB peakRSS/process median=172.14MiB max=172.43MiB
+
+N=1024 batch=1024 security=128 t=8 factored cold buffers-direct samples=21 processes=21
+  total=53.995ms prove=48.817ms verify=9.303ms vs-control=-8.86% vs-baseline=n/a
+  per-seed total vs control: 42:-9.23%, 43:-8.75%, 44:-8.41%
+  faults=47769 retainedRSS=98.29MiB scratch=0.00MiB peakRSS/process median=137.61MiB max=138.69MiB
+
+N=1024 batch=1024 security=128 t=8 factored cold control samples=21 processes=21
+  total=59.242ms prove=54.110ms verify=11.400ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=47735 retainedRSS=98.11MiB scratch=0.00MiB peakRSS/process median=137.65MiB max=138.29MiB
+
+N=1024 batch=1024 security=128 t=8 factored repeated buffers-direct samples=21 processes=3
+  total=47.903ms prove=44.329ms verify=9.235ms vs-control=-8.05% vs-baseline=n/a
+  per-seed total vs control: 42:-8.47%, 43:-8.22%, 44:-8.10%
+  faults=24609 retainedRSS=115.18MiB scratch=0.00MiB peakRSS/process median=177.96MiB max=178.43MiB
+
+N=1024 batch=1024 security=128 t=8 factored repeated control samples=21 processes=3
+  total=52.096ms prove=48.585ms verify=9.616ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24598 retainedRSS=115.42MiB scratch=0.00MiB peakRSS/process median=178.18MiB max=178.59MiB
+
+N=1024 batch=1024 security=128 t=16 canonical cold buffers-direct samples=21 processes=21
+  total=53.313ms prove=47.768ms verify=14.216ms vs-control=-13.12% vs-baseline=n/a
+  per-seed total vs control: 42:-11.98%, 43:-14.32%, 44:-12.36%
+  faults=58197 retainedRSS=79.25MiB scratch=0.00MiB peakRSS/process median=139.07MiB max=139.45MiB
+
+N=1024 batch=1024 security=128 t=16 canonical cold control samples=21 processes=21
+  total=61.362ms prove=55.767ms verify=17.792ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=58198 retainedRSS=79.41MiB scratch=0.00MiB peakRSS/process median=139.05MiB max=140.10MiB
+
+N=1024 batch=1024 security=128 t=16 canonical repeated buffers-direct samples=21 processes=3
+  total=49.419ms prove=45.630ms verify=15.521ms vs-control=-9.33% vs-baseline=n/a
+  per-seed total vs control: 42:-9.76%, 43:-9.93%, 44:-8.25%
+  faults=35886 retainedRSS=81.53MiB scratch=0.00MiB peakRSS/process median=175.24MiB max=176.02MiB
+
+N=1024 batch=1024 security=128 t=16 canonical repeated control samples=21 processes=3
+  total=54.502ms prove=50.742ms verify=17.438ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=35891 retainedRSS=82.35MiB scratch=0.00MiB peakRSS/process median=176.27MiB max=176.53MiB
+
+N=1024 batch=1024 security=128 t=16 factored cold buffers-direct samples=21 processes=21
+  total=51.999ms prove=46.294ms verify=9.249ms vs-control=-9.18% vs-baseline=n/a
+  per-seed total vs control: 42:-9.17%, 43:-8.91%, 44:-9.54%
+  faults=50487 retainedRSS=101.13MiB scratch=0.00MiB peakRSS/process median=146.82MiB max=147.75MiB
+
+N=1024 batch=1024 security=128 t=16 factored cold control samples=21 processes=21
+  total=57.255ms prove=51.877ms verify=10.880ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=50512 retainedRSS=101.20MiB scratch=0.00MiB peakRSS/process median=146.88MiB max=147.78MiB
+
+N=1024 batch=1024 security=128 t=16 factored repeated buffers-direct samples=21 processes=3
+  total=47.171ms prove=43.298ms verify=9.373ms vs-control=-8.22% vs-baseline=n/a
+  per-seed total vs control: 42:-8.66%, 43:-5.78%, 44:-8.91%
+  faults=24633 retainedRSS=119.59MiB scratch=0.00MiB peakRSS/process median=181.71MiB max=181.83MiB
+
+N=1024 batch=1024 security=128 t=16 factored repeated control samples=21 processes=3
+  total=51.398ms prove=47.536ms verify=9.840ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24624 retainedRSS=119.96MiB scratch=0.00MiB peakRSS/process median=182.34MiB max=182.35MiB
+
+Notes:
+  Percent deltas are candidate/reference - 1; negative means lower time or memory.
+  Cold means first commit+prove in a fresh process/Prepared, after setup/input generation; no cache flush.
+  Repeated samples share one process/Prepared per seed; within-process samples are correlated.
+  Per-seed median changes indicate consistency, not a confidence interval or statistical significance.
+  Compare matching protocol, mode, degree, batch, security and worker count only.
+  Candidate control uses the same instrumented binary; frozen baseline checks overall change.
+  Peak RSS is process lifetime high-water; separate per-process maxima avoid treating repeated values as independent peaks.
+  Post-drop RSS includes inputs, Prepared, JSON and allocator retention. Scratch bytes isolates cached vectors.
+  Null baseline metrics were not collected; they are not zero.
+  A subset phase may lack frozen baselines; the root campaign validator checks these across phases.
+  No new prover execution or performance measurement is performed by this helper.
+

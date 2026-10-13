@@ -10,6 +10,7 @@ use field::{
     q12289::{PowerBasis, PowerCoordinates, PreparedPublicDotProducts},
 };
 use rayon::prelude::*;
+use std::ops::Deref;
 
 use crate::{
     piop::spartan::{
@@ -23,6 +24,7 @@ use crate::{
     transcript::traits::Transcript,
 };
 
+use super::ring::{CoordinateBufferMode, CoordinateBuffers, CoordinateScratch};
 use super::{Cfg, F, FalconAlgebraicStatement, FalconError, Layout, N, Q, WitnessData};
 
 pub(super) const EXTENSION_DEGREE: usize = 11;
@@ -57,10 +59,16 @@ pub(super) struct PreparedClaim {
 
 struct Coordinates {
     rows: Vec<CoordinatesInAlpha>,
-    columns: Vec<CoordinatesInAlpha>,
-    s2: Vec<CoordinatesInAlpha>,
+    buffers: CoordinateBuffers,
     alpha: Ext,
     target: Ext,
+}
+
+impl Deref for Coordinates {
+    type Target = CoordinateBuffers;
+    fn deref(&self) -> &Self::Target {
+        &self.buffers
+    }
 }
 
 crate::piop::spartan::grinding::grinding_domains! {
@@ -76,9 +84,50 @@ pub(super) fn prove(
     field: &Cfg,
     grinding_bits: u32,
 ) -> Result<(Proof, PreparedClaim), FalconError> {
+    prove_inner(transcript, layout, public, data, field, grinding_bits, None)
+}
+
+#[tracing::instrument(skip_all, name = "falcon_factored_ring:prove")]
+pub(super) fn prove_with_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    data: &WitnessData,
+    field: &Cfg,
+    grinding_bits: u32,
+    scratch: &CoordinateScratch,
+) -> Result<(Proof, PreparedClaim), FalconError> {
+    prove_inner(
+        transcript,
+        layout,
+        public,
+        data,
+        field,
+        grinding_bits,
+        Some(scratch),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_inner(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    data: &WitnessData,
+    field: &Cfg,
+    grinding_bits: u32,
+    scratch: Option<&CoordinateScratch>,
+) -> Result<(Proof, PreparedClaim), FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
     validate_witness(layout, data)?;
-    let coordinates = prepare_coordinates(transcript, layout, public, field, grinding_bits)?;
+    let coordinates = prepare_coordinates_with_scratch(
+        transcript,
+        layout,
+        public,
+        field,
+        grinding_bits,
+        scratch,
+    )?;
     let lift = calculate_lift(&coordinates, data);
     check_lift(&lift, layout.batch())?;
     check_read_off(&coordinates, &lift)?;
@@ -191,6 +240,17 @@ fn prepare_coordinates(
     field: &Cfg,
     grinding_bits: u32,
 ) -> Result<Coordinates, FalconError> {
+    prepare_coordinates_with_scratch(transcript, layout, public, field, grinding_bits, None)
+}
+
+fn prepare_coordinates_with_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    field: &Cfg,
+    grinding_bits: u32,
+    scratch: Option<&CoordinateScratch>,
+) -> Result<Coordinates, FalconError> {
     transcript.absorb_slice(DOMAIN);
     transcript.absorb_slice(&(Q as u64).to_le_bytes());
     // The fixed extension encoding; the integer lift itself uses alpha's basis.
@@ -210,7 +270,13 @@ fn prepare_coordinates(
     let lambda = equality_weights(&point);
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    coordinates(public, &lambda, alpha)
+    coordinates_with_buffers(
+        public,
+        &lambda,
+        alpha,
+        CoordinateBufferMode::current(),
+        scratch,
+    )
 }
 
 fn sample_extension(transcript: &mut impl Transcript, non_base: bool) -> Result<Ext, FalconError> {
@@ -227,11 +293,21 @@ fn sample_extension(transcript: &mut impl Transcript, non_base: bool) -> Result<
     Err(error("factored ring non-base sampling exhausted"))
 }
 
-#[tracing::instrument(skip_all, name = "falcon_factored_ring:coordinates")]
 fn coordinates(
     public: &FalconAlgebraicStatement,
     lambda: &[Ext],
     alpha: Ext,
+) -> Result<Coordinates, FalconError> {
+    coordinates_with_buffers(public, lambda, alpha, CoordinateBufferMode::current(), None)
+}
+
+#[tracing::instrument(skip_all, name = "falcon_factored_ring:coordinates")]
+fn coordinates_with_buffers(
+    public: &FalconAlgebraicStatement,
+    lambda: &[Ext],
+    alpha: Ext,
+    mode: CoordinateBufferMode,
+    scratch: Option<&CoordinateScratch>,
 ) -> Result<Coordinates, FalconError> {
     let basis = PowerBasis::try_new(alpha)
         .map_err(|e| error(format!("invalid factored ring power basis: {e:?}")))?;
@@ -241,11 +317,11 @@ fn coordinates(
         .iter()
         .map(|&value| basis.encode(value))
         .collect();
-    let mut columns = vec![CoordinatesInAlpha::ZERO; N];
-    basis.fill_powers(basis.encode(Ext::ONE), &mut columns);
+    let mut buffers = CoordinateBuffers::new(N, batch * N, mode, scratch);
+    let (columns, s2) = buffers.output(N, batch * N);
+    basis.fill_powers_uninit(basis.encode(Ext::ONE), columns);
     let subtract = basis.encode(powers[N].add(Ext::ONE));
     let evaluator = PreparedPublicDotProducts::new(&powers[..N]);
-    let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut targets = vec![Ext::ZERO; batch];
     let workers = rayon::current_num_threads();
     let simd = cfg!(all(
@@ -274,7 +350,7 @@ fn coordinates(
             }
             if targets.len() == 8 {
                 let mut outputs = out.chunks_mut(N);
-                basis.fill_adjoint_pairs::<4>(
+                basis.fill_adjoint_pairs_uninit::<4>(
                     std::array::from_fn(|pair| [starts[2 * pair], starts[2 * pair + 1]]),
                     subtract,
                     std::array::from_fn(|pair| {
@@ -291,7 +367,7 @@ fn coordinates(
                 let i = first + local;
                 if out.len() == 2 * N {
                     let (a, b) = out.split_at_mut(N);
-                    basis.fill_adjoint_pairs::<1>(
+                    basis.fill_adjoint_pairs_uninit::<1>(
                         [[starts[local], starts[local + 1]]],
                         subtract,
                         [[&public.public_keys[i], &public.public_keys[i + 1]]],
@@ -301,7 +377,7 @@ fn coordinates(
                 }
                 let mut value = starts[local];
                 for (j, slot) in out.iter_mut().enumerate() {
-                    *slot = value;
+                    slot.write(value);
                     if j + 1 == N {
                         break;
                     }
@@ -313,10 +389,13 @@ fn coordinates(
                 }
             }
         });
+    // SAFETY: fill_powers initialized all N columns, and each disjoint s2 chunk
+    // was filled completely, including the odd final signature. Rayon joined
+    // all writers before either vector length becomes visible.
+    unsafe { buffers.finish(N, batch * N) };
     Ok(Coordinates {
         rows,
-        columns,
-        s2,
+        buffers,
         alpha,
         target: targets.into_iter().fold(Ext::ZERO, Ext::add),
     })
@@ -333,7 +412,7 @@ fn calculate_lift(coordinates: &Coordinates, data: &WitnessData) -> [i128; LIFT_
             for j in 0..N {
                 for (k, sum) in inner.iter_mut().enumerate() {
                     *sum += i64::from(data.witness.s1[i][j])
-                        * i64::from(coordinates.columns[j].coordinates()[k]);
+                        * i64::from(coordinates.s1[j].coordinates()[k]);
                     *sum += i64::from(data.witness.s2[i][j])
                         * i64::from(coordinates.s2[i * N + j].coordinates()[k]);
                 }
@@ -432,7 +511,7 @@ fn collapse_claim(
         })
     };
     let s1_rows: Vec<_> = coordinates.rows.iter().map(evaluate).collect();
-    let s1_columns = coordinates.columns.iter().map(evaluate).collect();
+    let s1_columns = coordinates.s1.iter().map(evaluate).collect();
     let mut weights_s2 = vec![field.zero(); coordinates.s2.len()];
     weights_s2
         .par_chunks_mut(N)
@@ -497,6 +576,66 @@ mod tests {
         }
         let data = WitnessData::new(&public, witness).unwrap();
         (layout, public, data)
+    }
+
+    #[test]
+    fn coordinate_buffer_modes_preserve_factored_lift_and_projection() {
+        let field = field();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        for batch in [1, 3, 17, 129] {
+            let (_, public, data) = fixture(batch);
+            let lambda: Vec<_> = (0..batch)
+                .map(|i| {
+                    Ext::new(std::array::from_fn(|k| {
+                        ((i * 313 + k * 719 + 1) as i64 % Q) as u16
+                    }))
+                })
+                .collect();
+            for mode in [
+                CoordinateBufferMode::Zeroed,
+                CoordinateBufferMode::Direct,
+                CoordinateBufferMode::Reuse,
+            ] {
+                let scratch = CoordinateScratch::default();
+                for seed in [1, 2] {
+                    let alpha = Ext::new(std::array::from_fn(|k| {
+                        ((seed * 941 + k * 337) as i64 % Q) as u16
+                    }));
+                    let expected = coordinates_with_buffers(
+                        &public,
+                        &lambda,
+                        alpha,
+                        CoordinateBufferMode::Baseline,
+                        None,
+                    )
+                    .unwrap();
+                    let actual = pool
+                        .install(|| {
+                            coordinates_with_buffers(&public, &lambda, alpha, mode, Some(&scratch))
+                        })
+                        .unwrap();
+                    assert_eq!(actual.rows, expected.rows);
+                    assert_eq!(actual.s1, expected.s1);
+                    assert_eq!(actual.s2, expected.s2);
+                    assert_eq!(actual.target, expected.target);
+                    let lift = calculate_lift(&expected, &data);
+                    assert_eq!(calculate_lift(&actual, &data), lift);
+                    check_read_off(&actual, &lift).unwrap();
+                    let xi = F::from_with_cfg(97u128, &field);
+                    assert_eq!(
+                        collapse_claim(&actual, &lift, xi, &field),
+                        collapse_claim(&expected, &lift, xi, &field)
+                    );
+                }
+                assert_eq!(
+                    scratch.retained_bytes() != 0,
+                    mode == CoordinateBufferMode::Reuse
+                );
+            }
+        }
     }
 
     fn schoolbook_target(h: &[u16; N], s1: &[i16; N], s2: &[i16; N]) -> [u16; N] {
@@ -581,7 +720,7 @@ mod tests {
                     j,
                     powers.as_slice(),
                 ));
-                assert_eq!(actual.columns[j], p);
+                assert_eq!(actual.s1[j], p);
                 assert_eq!(actual.s2[i * N + j], w);
                 // Independent direct convolution for every witness coefficient.
                 for k in 0..EXTENSION_DEGREE {

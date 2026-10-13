@@ -8,6 +8,11 @@ use field::{
     q12289::{PowerBasis, PowerCoordinates, PreparedPublicDotProducts},
 };
 use rayon::prelude::*;
+use std::{
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     piop::spartan::{
@@ -50,10 +55,158 @@ pub(super) struct PreparedClaim {
     pub target: F,
 }
 
+type CachedCoordinates = (Vec<CoordinatesInAlpha>, Vec<CoordinatesInAlpha>);
+
+/// One bounded cache per prepared prover. The lock is held only during checkout
+/// and return; concurrent proofs allocate their own buffers instead of waiting
+/// for a proof to finish. The coordinates are public, transcript-derived data.
+#[derive(Default)]
+pub(super) struct CoordinateScratch(Arc<Mutex<Option<CachedCoordinates>>>);
+
+impl CoordinateScratch {
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub(super) fn retained_bytes(&self) -> usize {
+        self.0
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .as_ref()
+            .map_or(0, |(a, b)| {
+                (a.capacity() + b.capacity()) * std::mem::size_of::<CoordinatesInAlpha>()
+            })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CoordinateBufferMode {
+    Baseline,
+    Zeroed,
+    Direct,
+    Reuse,
+}
+
+impl CoordinateBufferMode {
+    pub(super) fn current() -> Self {
+        // Direct output won at 8/16 workers, but was neutral at one worker.
+        let default = if rayon::current_num_threads() > 1 {
+            Self::Direct
+        } else {
+            Self::Baseline
+        };
+        #[cfg(feature = "bench-internals")]
+        return match std::env::var("BITZ_ARITHMETIC_COORDINATE_BUFFERS") {
+            Err(std::env::VarError::NotPresent) => default,
+            Ok(value) => match value.as_str() {
+                "baseline" => Self::Baseline,
+                "zeroed" => Self::Zeroed,
+                "direct" => Self::Direct,
+                "reuse" => Self::Reuse,
+                _ => panic!(
+                    "BITZ_ARITHMETIC_COORDINATE_BUFFERS must be baseline, zeroed, direct, or reuse"
+                ),
+            },
+            Err(std::env::VarError::NotUnicode(_)) => {
+                panic!("BITZ_ARITHMETIC_COORDINATE_BUFFERS must be valid Unicode")
+            }
+        };
+        #[cfg(not(feature = "bench-internals"))]
+        default
+    }
+}
+
+/// Initialized vectors after filling, with an optional RAII cache return. In
+/// direct mode their lengths remain zero until all output slots are written.
+pub(super) struct CoordinateBuffers {
+    pub(super) s1: Vec<CoordinatesInAlpha>,
+    pub(super) s2: Vec<CoordinatesInAlpha>,
+    cache: Option<Arc<Mutex<Option<CachedCoordinates>>>>,
+}
+
+impl CoordinateBuffers {
+    pub(super) fn new(
+        first_len: usize,
+        second_len: usize,
+        mode: CoordinateBufferMode,
+        scratch: Option<&CoordinateScratch>,
+    ) -> Self {
+        let cache = (mode == CoordinateBufferMode::Reuse)
+            .then(|| scratch.map(|scratch| Arc::clone(&scratch.0)))
+            .flatten();
+        let reused = cache.as_ref().and_then(|cache| {
+            cache
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .take()
+        });
+        let (mut s1, mut s2) = reused.unwrap_or_else(|| (Vec::new(), Vec::new()));
+        for (buffer, len) in [(&mut s1, first_len), (&mut s2, second_len)] {
+            match mode {
+                CoordinateBufferMode::Baseline => *buffer = vec![CoordinatesInAlpha::ZERO; len],
+                CoordinateBufferMode::Zeroed => *buffer = CoordinatesInAlpha::zeroed_vec(len),
+                CoordinateBufferMode::Direct => *buffer = Vec::with_capacity(len),
+                // Warm calls preserve initialized storage. A cold call or a
+                // larger shape initializes only the newly exposed suffix.
+                CoordinateBufferMode::Reuse => buffer.resize(len, CoordinatesInAlpha::ZERO),
+            }
+        }
+        Self { s1, s2, cache }
+    }
+
+    pub(super) fn output(
+        &mut self,
+        first_len: usize,
+        second_len: usize,
+    ) -> (
+        &mut [MaybeUninit<CoordinatesInAlpha>],
+        &mut [MaybeUninit<CoordinatesInAlpha>],
+    ) {
+        self.s1.clear();
+        self.s2.clear();
+        (
+            &mut self.s1.spare_capacity_mut()[..first_len],
+            &mut self.s2.spare_capacity_mut()[..second_len],
+        )
+    }
+
+    /// # Safety
+    /// The first `first_len` / `second_len` slots must have been initialized.
+    pub(super) unsafe fn finish(&mut self, first_len: usize, second_len: usize) {
+        // SAFETY: forwarded from the caller; output() already checked capacity.
+        unsafe {
+            self.s1.set_len(first_len);
+            self.s2.set_len(second_len);
+        }
+    }
+}
+
+impl Drop for CoordinateBuffers {
+    fn drop(&mut self) {
+        let Some(cache) = &self.cache else { return };
+        let mut cached = cache.lock().unwrap_or_else(|poison| poison.into_inner());
+        // Only one pair is retained even when simultaneous proofs allocate
+        // fallback storage. Empty/partially written buffers are safe to return:
+        // their lengths were kept at zero until completion.
+        if cached.is_none() {
+            *cached = Some((std::mem::take(&mut self.s1), std::mem::take(&mut self.s2)));
+        }
+    }
+}
+
 struct Coordinates {
-    s1: Vec<CoordinatesInAlpha>,
-    s2: Vec<CoordinatesInAlpha>,
+    buffers: CoordinateBuffers,
     target: CoordinatesInAlpha,
+}
+
+impl Deref for Coordinates {
+    type Target = CoordinateBuffers;
+    fn deref(&self) -> &Self::Target {
+        &self.buffers
+    }
+}
+
+impl DerefMut for Coordinates {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buffers
+    }
 }
 
 crate::piop::spartan::grinding::grinding_domains! {
@@ -69,6 +222,40 @@ pub(super) fn prove(
     field: &Cfg,
     grinding_bits: u32,
 ) -> Result<(Proof, PreparedClaim), FalconError> {
+    prove_inner(transcript, layout, public, data, field, grinding_bits, None)
+}
+
+#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]
+pub(super) fn prove_with_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    data: &WitnessData,
+    field: &Cfg,
+    grinding_bits: u32,
+    scratch: &CoordinateScratch,
+) -> Result<(Proof, PreparedClaim), FalconError> {
+    prove_inner(
+        transcript,
+        layout,
+        public,
+        data,
+        field,
+        grinding_bits,
+        Some(scratch),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_inner(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    data: &WitnessData,
+    field: &Cfg,
+    grinding_bits: u32,
+    scratch: Option<&CoordinateScratch>,
+) -> Result<(Proof, PreparedClaim), FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
     validate_witness(layout, data)?;
     bind_parameters(transcript, layout, field, grinding_bits);
@@ -76,12 +263,14 @@ pub(super) fn prove(
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
     let options = CoordinateOptions::current();
-    let (coordinates, totals) = coordinates_with_options(
+    let (coordinates, totals) = coordinates_with_buffers(
         public,
         &lambda,
         alpha,
         options,
         options.fuse_carries.then_some(data),
+        CoordinateBufferMode::current(),
+        scratch,
     )?;
     let carries = if options.fuse_carries {
         carries_from_totals(totals, &coordinates.target)?
@@ -345,13 +534,34 @@ fn elapsed_ns(start: Option<std::time::Instant>) -> u64 {
     start.map_or(0, |start| start.elapsed().as_nanos() as u64)
 }
 
-#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
 fn coordinates_with_options(
     public: &FalconAlgebraicStatement,
     lambda: &[Ext],
     alpha: Ext,
     options: CoordinateOptions,
     witness: Option<&WitnessData>,
+) -> Result<(Coordinates, [i64; EXTENSION_DEGREE]), FalconError> {
+    coordinates_with_buffers(
+        public,
+        lambda,
+        alpha,
+        options,
+        witness,
+        CoordinateBufferMode::current(),
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:coordinates")]
+fn coordinates_with_buffers(
+    public: &FalconAlgebraicStatement,
+    lambda: &[Ext],
+    alpha: Ext,
+    options: CoordinateOptions,
+    witness: Option<&WitnessData>,
+    mode: CoordinateBufferMode,
+    scratch: Option<&CoordinateScratch>,
 ) -> Result<(Coordinates, [i64; EXTENSION_DEGREE]), FalconError> {
     // A single diagnostic record aggregates worker time. It is not an elapsed
     // phase breakdown: workers overlap. Disabled tracing makes no timer calls.
@@ -377,8 +587,8 @@ fn coordinates_with_options(
     let batch = public.public_keys.len();
     let wrap = powers[N].add(Ext::ONE);
     let allocation_start = profile.then(std::time::Instant::now);
-    let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
-    let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
+    let mut buffers = CoordinateBuffers::new(batch * N, batch * N, mode, scratch);
+    let (s1, s2) = buffers.output(batch * N, batch * N);
     let mut targets = vec![Ext::ZERO; batch];
     diagnostics.record("buffer_allocation_wall_ns", elapsed_ns(allocation_start));
     // Four independent SIMD states hide the dependency chain in each pair.
@@ -420,7 +630,10 @@ fn coordinates_with_options(
     let fill = |(chunk, ((a, b), targets)): (
         usize,
         (
-            (&mut [CoordinatesInAlpha], &mut [CoordinatesInAlpha]),
+            (
+                &mut [MaybeUninit<CoordinatesInAlpha>],
+                &mut [MaybeUninit<CoordinatesInAlpha>],
+            ),
             &mut [Ext],
         ),
     )| {
@@ -451,7 +664,7 @@ fn coordinates_with_options(
                 work.public_eval_ns += elapsed_ns(before);
                 let (starts, subtract) = prepare(start + i, evaluations, target);
                 let before = profile.then(std::time::Instant::now);
-                basis.fill_powers_adjoint_pair(
+                basis.fill_powers_adjoint_pair_uninit(
                     starts,
                     subtract,
                     &public.public_keys[start + i],
@@ -462,6 +675,9 @@ fn coordinates_with_options(
         }
         if let Some(data) = witness {
             let before = profile.then(std::time::Instant::now);
+            // SAFETY: either the group writer or each individual writer above
+            // initialized every slot in these disjoint chunks on return.
+            let (a, b) = unsafe { (initialized_coordinates(a), initialized_coordinates(b)) };
             work.totals = coordinate_totals(a, b, data, start, targets.len());
             work.carry_ns = elapsed_ns(before);
         }
@@ -486,8 +702,22 @@ fn coordinates_with_options(
     diagnostics.record("public_eval_worker_ns", work.public_eval_ns);
     diagnostics.record("recurrence_worker_ns", work.recurrence_ns);
     diagnostics.record("carry_worker_ns", work.carry_ns);
+    // SAFETY: the zipped chunks cover exactly batch*N slots in both outputs.
+    // Each writer initializes its complete chunk, including single/tail cases,
+    // and the parallel reduction joins all workers before lengths are exposed.
+    unsafe { buffers.finish(batch * N, batch * N) };
     let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
-    Ok((Coordinates { s1, s2, target }, work.totals))
+    Ok((Coordinates { buffers, target }, work.totals))
+}
+
+/// # Safety
+/// Every slot must have been initialized by a coordinate writer.
+unsafe fn initialized_coordinates(
+    values: &[MaybeUninit<CoordinatesInAlpha>],
+) -> &[CoordinatesInAlpha] {
+    // SAFETY: MaybeUninit has the same layout as its contents, and the caller
+    // guarantees initialization. The shared borrow retains the input lifetime.
+    unsafe { std::slice::from_raw_parts(values.as_ptr().cast(), values.len()) }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -495,8 +725,8 @@ fn fill_coordinate_group<const PAIRS: usize>(
     basis: &PowerBasis<EXTENSION_DEGREE>,
     public: &FalconAlgebraicStatement,
     start: usize,
-    a: &mut [CoordinatesInAlpha],
-    b: &mut [CoordinatesInAlpha],
+    a: &mut [MaybeUninit<CoordinatesInAlpha>],
+    b: &mut [MaybeUninit<CoordinatesInAlpha>],
     targets: &mut [Ext],
     evaluate: &impl Fn(usize) -> [Ext; 2],
     prepare: &impl Fn(usize, [Ext; 2], &mut Ext) -> ([CoordinatesInAlpha; 2], CoordinatesInAlpha),
@@ -511,7 +741,7 @@ fn fill_coordinate_group<const PAIRS: usize>(
     let before = profile.then(std::time::Instant::now);
     let mut a = a.chunks_mut(N);
     let mut b = b.chunks_mut(N);
-    basis.fill_powers_adjoint_pairs(
+    basis.fill_powers_adjoint_pairs_uninit(
         prepared.map(|v| v.0),
         prepared.map(|v| v.1),
         std::array::from_fn(|i| public.public_keys[start + i].as_slice()),
@@ -704,6 +934,156 @@ mod tests {
     }
 
     #[test]
+    fn coordinate_buffer_modes_match_carries_and_projection_after_reuse() {
+        let field = field();
+        #[cfg(feature = "parallel")]
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        for batch in [1, 3, 17, 129] {
+            let (_, public, data) = fixture(batch);
+            let lambda: Vec<_> = (0..batch)
+                .map(|i| {
+                    Ext::new(std::array::from_fn(|k| {
+                        ((i * 373 + k * 719 + 1) as i64 % Q) as u16
+                    }))
+                })
+                .collect();
+            for mode in [
+                CoordinateBufferMode::Zeroed,
+                CoordinateBufferMode::Direct,
+                CoordinateBufferMode::Reuse,
+            ] {
+                let scratch = CoordinateScratch::default();
+                // Changing alpha forces every stale coordinate to be replaced,
+                // even though the cached vectors have the correct dimensions.
+                for seed in [1, 2] {
+                    let alpha = Ext::new(std::array::from_fn(|k| {
+                        ((seed * 941 + k * 337) as i64 % Q) as u16
+                    }));
+                    let options = CoordinateOptions {
+                        paired_public: false,
+                        pairs: 4,
+                        fuse_carries: false,
+                    };
+                    let (expected, _) = coordinates_with_buffers(
+                        &public,
+                        &lambda,
+                        alpha,
+                        options,
+                        None,
+                        CoordinateBufferMode::Baseline,
+                        None,
+                    )
+                    .unwrap();
+                    let expected_carries = calculate_carries(&expected, &data).unwrap();
+                    let xi = F::from_with_cfg(97u128, &field);
+                    let expected_claim = collapse_claim(&expected, &expected_carries, xi, &field);
+                    for pairs in [2, 4, 8] {
+                        let run = || {
+                            coordinates_with_buffers(
+                                &public,
+                                &lambda,
+                                alpha,
+                                CoordinateOptions {
+                                    paired_public: true,
+                                    pairs,
+                                    fuse_carries: true,
+                                },
+                                Some(&data),
+                                mode,
+                                Some(&scratch),
+                            )
+                        };
+                        #[cfg(feature = "parallel")]
+                        let (actual, totals) = pool.install(run).unwrap();
+                        #[cfg(not(feature = "parallel"))]
+                        let (actual, totals) = run().unwrap();
+                        assert_eq!(
+                            actual.s1, expected.s1,
+                            "mode={mode:?}, batch={batch}, pairs={pairs}"
+                        );
+                        assert_eq!(actual.s2, expected.s2);
+                        assert_eq!(actual.target, expected.target);
+                        assert_eq!(
+                            carries_from_totals(totals, &actual.target).unwrap(),
+                            expected_carries
+                        );
+                        assert_eq!(
+                            collapse_claim(&actual, &expected_carries, xi, &field),
+                            expected_claim
+                        );
+                    }
+                }
+                assert_eq!(
+                    scratch.retained_bytes() != 0,
+                    mode == CoordinateBufferMode::Reuse
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coordinate_scratch_is_bounded_exclusive_and_panic_safe() {
+        let scratch = CoordinateScratch::default();
+        let initial = CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        let first_ptr = initial.s1.as_ptr();
+        drop(initial);
+        let retained = scratch.retained_bytes();
+        let mut checked_out =
+            CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        assert_eq!(checked_out.s1.as_ptr(), first_ptr);
+        assert_eq!(scratch.retained_bytes(), 0);
+        let fallback = CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        assert_ne!(fallback.s1.as_ptr(), checked_out.s1.as_ptr());
+        drop(fallback);
+        assert_eq!(scratch.retained_bytes(), retained);
+        // Simulate a writer panic after touching only one slot. The guard may
+        // return capacity, but it must never expose partially initialized data.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (a, _) = checked_out.output(17, 33);
+            a[0].write(CoordinatesInAlpha::ZERO);
+            panic!("simulated coordinate writer panic");
+        }));
+        assert!(result.is_err());
+        drop(checked_out);
+        assert_eq!(scratch.retained_bytes(), retained);
+        let again = CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        assert!(
+            again
+                .s1
+                .iter()
+                .chain(&again.s2)
+                .all(|&value| value == CoordinatesInAlpha::ZERO)
+        );
+        drop(again);
+        // Also return an interrupted buffer into an empty cache, so the next
+        // checkout must initialize the suffix hidden by its zero length.
+        let mut interrupted =
+            CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let (a, _) = interrupted.output(17, 33);
+                a[0].write(CoordinatesInAlpha::ZERO);
+                panic!("interrupted sole cached writer");
+            }))
+            .is_err()
+        );
+        drop(interrupted);
+        assert_eq!(scratch.retained_bytes(), retained);
+        let recovered = CoordinateBuffers::new(17, 33, CoordinateBufferMode::Reuse, Some(&scratch));
+        assert_eq!(recovered.s1, vec![CoordinatesInAlpha::ZERO; 17]);
+        assert_eq!(recovered.s2, vec![CoordinatesInAlpha::ZERO; 33]);
+        // Empty output also has a valid completion and return path.
+        let mut empty = CoordinateBuffers::new(0, 0, CoordinateBufferMode::Direct, None);
+        let (a, b) = empty.output(0, 0);
+        assert!(a.is_empty() && b.is_empty());
+        // SAFETY: zero output slots require no initialization.
+        unsafe { empty.finish(0, 0) };
+    }
+
+    #[test]
     fn prepared_collapse_matches_individual_field_operations() {
         // For alpha=Z, encode preserves the coordinates, including q-1.
         let basis =
@@ -728,12 +1108,15 @@ mod tests {
             }));
         }
         let coordinates = Coordinates {
-            s1: values.iter().map(|&v| basis.encode(Ext::new(v))).collect(),
-            s2: values
-                .iter()
-                .rev()
-                .map(|&v| basis.encode(Ext::new(v)))
-                .collect(),
+            buffers: CoordinateBuffers {
+                s1: values.iter().map(|&v| basis.encode(Ext::new(v))).collect(),
+                s2: values
+                    .iter()
+                    .rev()
+                    .map(|&v| basis.encode(Ext::new(v)))
+                    .collect(),
+                cache: None,
+            },
             target: basis.encode(Ext::new([(Q - 1) as u16; EXTENSION_DEGREE])),
         };
         let bound = carry_bound(1024) as i64;
@@ -850,8 +1233,11 @@ mod tests {
         #[cfg(not(feature = "parallel"))]
         let actual = coordinates(&public, &lambda, alpha).unwrap();
         let mut reference = Coordinates {
-            s1: vec![],
-            s2: vec![],
+            buffers: CoordinateBuffers {
+                s1: vec![],
+                s2: vec![],
+                cache: None,
+            },
             target: CoordinatesInAlpha::ZERO,
         };
         let powers = powers(alpha);
@@ -1183,8 +1569,11 @@ mod tests {
         data.witness.s1[BATCH - 1].fill(16383);
         data.witness.s2[BATCH - 1].fill(-16384);
         let mut coordinates = Coordinates {
-            s1: (0..BATCH * N).map(|j| patterns[j % 4]).collect(),
-            s2: (0..BATCH * N).map(|j| patterns[(j / 7 + 1) % 4]).collect(),
+            buffers: CoordinateBuffers {
+                s1: (0..BATCH * N).map(|j| patterns[j % 4]).collect(),
+                s2: (0..BATCH * N).map(|j| patterns[(j / 7 + 1) % 4]).collect(),
+                cache: None,
+            },
             target: CoordinatesInAlpha::ZERO,
         };
         // Independent coordinate-major i128 dot products supply both a valid

@@ -1,0 +1,40 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/candidate",
+    "--degree",
+    "1024",
+    "--batch",
+    "1024",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "43",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "overrides": {
+    "BITZ_ARITHMETIC_BINDING_OWNED": "on",
+    "BITZ_ARITHMETIC_WORD_INITIAL": "off",
+    "BITZ_ARITHMETIC_WORD_FUSION": "off",
+    "BITZ_ARITHMETIC_NORM_FACTORED": "off",
+    "BITZ_ARITHMETIC_PUBLIC_EVAL": "legacy",
+    "BITZ_ARITHMETIC_RECURRENCE_PAIRS": "4",
+    "BITZ_ARITHMETIC_CARRY_FUSION": "off",
+    "BITZ_ARITHMETIC_RING": "factored",
+    "BITZ_ARITHMETIC_COORDINATE_BUFFERS": "baseline",
+    "BITZ_ARITHMETIC_WORD_DIRECT_INIT": "off",
+    "BITZ_ARITHMETIC_WORD_SCRATCH": "off",
+    "BITZ_ARITHMETIC_FACTORED_INITIAL_FUSED": "on",
+    "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION": "off",
+    "RAYON_NUM_THREADS": "16",
+    "BITZ_FALCON_WORKER_CPUS": "6,7,4,5,2,3,0,1,14,15,12,13,10,11,8,9",
+    "BITZ_FALCON_MAIN_CPU": "6",
+    "BITZ_FALCON_CASE_CACHE": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-performance-cases-20261012"
+  },
+  "binary_sha256": "226e9f3f5614a721414e227f18f877be9dbe8b162bc915679e39a7e3de77c692",
+  "cwd": "/home/john-wu/code/BitZ-pcs"
+}

@@ -1,0 +1,71 @@
+{
+  "job": {
+    "id": "canonical-direct-n1024-b1024-s128-t16-seed42",
+    "variant": "arithmetic",
+    "config": "canonical-direct",
+    "threads": 16,
+    "seed": 42
+  },
+  "phase": "stages",
+  "degree": 1024,
+  "batch": 1024,
+  "security": 128,
+  "trials": [
+    {
+      "trial": "warmup",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "d0b9cd07e55160700ece3d78f5ea1668e1e992d696a4af7ddce11c3c4e39e18f",
+      "total_prover_ms": 54.399221,
+      "prove_ms": 48.855917,
+      "witness_commit_ms": 5.5432440000000005,
+      "verify_ms": 14.439959,
+      "process_peak_rss_kib": 142352,
+      "proof_payload_bytes": 321272
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "d0b9cd07e55160700ece3d78f5ea1668e1e992d696a4af7ddce11c3c4e39e18f",
+      "total_prover_ms": 49.672502,
+      "prove_ms": 45.933119000000005,
+      "witness_commit_ms": 3.739282,
+      "verify_ms": 15.722634999999999,
+      "process_peak_rss_kib": 178116,
+      "proof_payload_bytes": 321272
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "d0b9cd07e55160700ece3d78f5ea1668e1e992d696a4af7ddce11c3c4e39e18f",
+      "total_prover_ms": 50.435895,
+      "prove_ms": 46.749313,
+      "witness_commit_ms": 3.686402,
+      "verify_ms": 15.974001000000001,
+      "process_peak_rss_kib": 178828,
+      "proof_payload_bytes": 321272
+    },
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v9",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "d0b9cd07e55160700ece3d78f5ea1668e1e992d696a4af7ddce11c3c4e39e18f",
+      "total_prover_ms": 50.602871,
+      "prove_ms": 46.673649999999995,
+      "witness_commit_ms": 3.9290499999999997,
+      "verify_ms": 16.414452999999998,
+      "process_peak_rss_kib": 179076,
+      "proof_payload_bytes": 321272
+    }
+  ],
+  "verified": true,
+  "command_sha256": "a93a3429c97d1d94cb07ff21e7d5babcb04d02061c46c3bed7cb5bbbb5444267",
+  "stdout_sha256": "1905649f2e5352ec82ee85f7e54de2337b9e614dbdfd9b7049eb95e00ff4462d",
+  "stderr_sha256": "54350b2703db2fe7dfb2a0b6b1594fccd44cdd182e8322c73f62b528c3fb88b1"
+}

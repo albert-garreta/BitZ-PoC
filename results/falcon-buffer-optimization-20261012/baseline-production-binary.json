@@ -1,0 +1,10 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/baseline-production",
+  "sha256": "cc0e1df9cf2feb6d43ced6c0e7c23673c9711b74b4cd1ef10ae594be422dd08a",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "rustflags": "-C target-cpu=native",
+  "build_seconds": 264.9034206867218,
+  "source_commit": "666b546a08af1972b5a40d88787cddb02ccd18b4"
+}

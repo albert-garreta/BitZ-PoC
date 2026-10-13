@@ -1,0 +1,10 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/baseline",
+  "sha256": "57ee768283ea3ae1ef782d78c5bbb51efc4b25704ffe78370fa225a82d875fa2",
+  "source_commit": "666b546a0",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "rustflags": "-C target-cpu=native"
+}

@@ -1,0 +1,54 @@
+Independent direct-buffer qualification assessment, 2026-10-12
+
+Completed phase: qualify-direct, 576 processes / 1152 proofs including warmups.
+Analysis started only after all 576 result files existed. The analysis helper
+revalidated raw logs, commands, frozen binaries, metadata and within-phase exact
+proof/source identity. This phase compares candidate control to buffers-direct;
+the root campaign validator provides frozen-baseline comparisons across phases.
+Detailed records: analysis-qualify-direct.json and analysis-qualify-direct.txt.
+
+Recommendation: enable coordinate-direct plus word-direct for parallel pools,
+and retain baseline initialization with one worker. Performance evidence here
+qualifies 8 and 16 workers; other parallel worker counts were not measured.
+
+Total-prover median reduction versus control (cold / repeated):
+  Degree / protocol         8 workers              16 workers
+  512 / v9                   8.64% / 6.70%         10.14% / 7.20%
+  512 / v10                  6.20% / 4.06%          7.24% / 5.29%
+  1024 / v9                 12.03% / 8.01%         13.12% / 9.33%
+  1024 / v10                 8.86% / 8.05%          9.18% / 8.22%
+All 16 matched cells improve, as do all 48 seed medians. Verification medians
+also improve in every 8/16-worker cell, by 1.98-20.10%.
+
+At one worker, pooled total-prover deltas range from 0.25% faster to 0.46%
+slower with no useful general benefit. Canonical repeated proving is 0.39%
+slower at degree 512 and 0.23% slower at degree 1024; the latter regresses in
+all three seed medians. Canonical verifier medians are 0.47-0.92% slower across
+the cold/repeated cells. These are small effects, but disabling the new default
+at one worker avoids changing that path without an observed gain.
+
+Additional coordinate and word-binding cached vector capacity is zero in every
+configuration here. This metric excludes the pre-existing sumcheck scratch.
+Post-proof retained RSS median differences versus control range from -836 to
++212 KiB. Direct initialization therefore does not exhibit the retained-buffer
+growth seen in reuse configurations. RSS still includes allocator and input
+retention and should not be described as exclusively Prepared-owned storage.
+
+Limits: batch 1024, security 128 on the recorded host; fresh-process cold and
+same-Prepared repeated measurements are separate. Three repeated processes
+produce 21 correlated proof samples; per-seed agreement is not a confidence
+interval. Production defaults still need the planned feature/build confirmation.
+
+Production harness handoff:
+  Before editing, archived the exact experiment runner as runner-experiments.py.
+  SHA256: b8c9e2799a7d85cd6f2db002be7e631542a165610201ec3dc944d9141cfc11b0
+  It matches the qualify-direct manifest's runner hash.
+  Added --candidate-production to the source runner only after qualification
+  completed. It allows canonical baseline/control jobs without configuration
+  overrides, removes all experiment selectors from both processes, and permits
+  null additional cached-vector metrics for builds without bench-internals.
+  Linux minor-fault and RSS measurements remain required for the candidate.
+  Legacy manifests use a false fallback, preserving prior command reconstruction.
+  Python syntax/help, synthetic restrictions/default environment/null handling,
+  and one prior command/raw-result compatibility check passed. No Rust builds
+  or prover executions were performed during this handoff.

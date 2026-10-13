@@ -1,0 +1,4352 @@
+{
+  "phase": "confirm-factored",
+  "manifest_sha256": "344e4281c2ee5751757a712565418aebbbd856713e81d683d149605ea8514a9d",
+  "candidate_production": false,
+  "primary_reference": "control",
+  "raw_artifacts_and_commands_revalidated": true,
+  "exact_proof_identity_checked": true,
+  "missing_frozen_baseline_cases_in_this_phase": 6,
+  "rows": [
+    {
+      "phase": "confirm-factored",
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "cold",
+      "variant": "buffers-direct",
+      "processes": 21,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 30.19573,
+          "minimum": 29.808838,
+          "maximum": 32.333994
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 26.895338000000002,
+          "minimum": 26.433965,
+          "maximum": 29.35485
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 3.364714,
+          "minimum": 2.851062,
+          "maximum": 3.7498319999999996
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 7.48696,
+          "minimum": 7.080241,
+          "maximum": 7.594894
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 76116,
+          "minimum": 75296,
+          "maximum": 76480
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 256360,
+          "minimum": 256328,
+          "maximum": 257576
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.157918,
+          "minimum": 0.143411,
+          "maximum": 0.294427
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 965.93748,
+          "minimum": 964.487026,
+          "maximum": 969.262339
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 24948,
+          "minimum": 24867,
+          "maximum": 25035
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 14600,
+          "minimum": 14500,
+          "maximum": 14840
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 46676,
+          "minimum": 46332,
+          "maximum": 47024
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 56708,
+          "minimum": 56380,
+          "maximum": 57024
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 29.901123000000002,
+            "minimum": 29.808838,
+            "maximum": 30.426376
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.715098,
+            "minimum": 26.433965,
+            "maximum": 27.037888
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.409659,
+            "minimum": 2.851062,
+            "maximum": 3.452339
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.422619,
+            "minimum": 7.384296,
+            "maximum": 7.518019
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 76164,
+            "minimum": 75408,
+            "maximum": 76400
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256328,
+            "minimum": 256328,
+            "maximum": 256328
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.232439,
+            "minimum": 0.147118,
+            "maximum": 0.271524
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.233991,
+            "minimum": 964.487026,
+            "maximum": 969.262339
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24961,
+            "minimum": 24920,
+            "maximum": 24998
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14568,
+            "minimum": 14508,
+            "maximum": 14660
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46676,
+            "minimum": 46484,
+            "maximum": 46980
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56684,
+            "minimum": 56468,
+            "maximum": 56964
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 30.489456,
+            "minimum": 29.96255,
+            "maximum": 32.333994
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.915115999999998,
+            "minimum": 26.851124000000002,
+            "maximum": 29.35485
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.300332,
+            "minimum": 2.9790039999999998,
+            "maximum": 3.7498319999999996
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.446133,
+            "minimum": 7.080241,
+            "maximum": 7.556051
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 76048,
+            "minimum": 75296,
+            "maximum": 76468
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256360,
+            "minimum": 256360,
+            "maximum": 256360
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.15198699999999998,
+            "minimum": 0.148782,
+            "maximum": 0.294427
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 965.9864620000001,
+            "minimum": 965.430762,
+            "maximum": 968.458929
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24938,
+            "minimum": 24867,
+            "maximum": 25013
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14636,
+            "minimum": 14512,
+            "maximum": 14840
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46760,
+            "minimum": 46332,
+            "maximum": 46924
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56828,
+            "minimum": 56380,
+            "maximum": 56908
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 30.23803,
+            "minimum": 29.883349,
+            "maximum": 30.844117
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.878446,
+            "minimum": 26.73753,
+            "maximum": 27.337495
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.197938,
+            "minimum": 3.144407,
+            "maximum": 3.689127
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.5512820000000005,
+            "minimum": 7.463776,
+            "maximum": 7.594894
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 76240,
+            "minimum": 75700,
+            "maximum": 76480
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 257576,
+            "minimum": 257576,
+            "maximum": 257576
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.146096,
+            "minimum": 0.143411,
+            "maximum": 0.15965200000000002
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 965.694821,
+            "minimum": 964.715749,
+            "maximum": 966.874191
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24968,
+            "minimum": 24911,
+            "maximum": 25035
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14600,
+            "minimum": 14500,
+            "maximum": 14836
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46672,
+            "minimum": 46584,
+            "maximum": 47024
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56784,
+            "minimum": 56584,
+            "maximum": 57024
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 76116,
+        "maximum": 76480
+      },
+      "warmups_per_process": [
+        0
+      ],
+      "samples_per_process": [
+        1
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": -2.6748889999999967,
+            "percent": -8.137628926306494,
+            "per_seed_percent": {
+              "42": -8.95944277233477,
+              "43": -6.946323032340473,
+              "44": -8.207171696921623
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": -2.609897,
+            "percent": -8.845538766256222,
+            "per_seed_percent": {
+              "42": -8.759531033565093,
+              "43": -8.421572388870924,
+              "44": -9.322132619797586
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.004088000000000314,
+            "percent": 0.12164400323035895,
+            "per_seed_percent": {
+              "42": 2.5709065978941625,
+              "43": -3.2243005726785623,
+              "44": -4.841002836971442
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": -0.4041049999999995,
+            "percent": -5.121045131423951,
+            "per_seed_percent": {
+              "42": -6.247332559915164,
+              "43": -4.488817143476509,
+              "44": -4.653230904937223
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": -20,
+            "percent": -0.026268782179261763,
+            "per_seed_percent": {
+              "42": -0.1625419463087252,
+              "43": -0.11033468186832929,
+              "44": 0.628266722981885
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.006731999999999988,
+            "percent": 4.452793248052056,
+            "per_seed_percent": {
+              "42": 52.77164339984752,
+              "43": 0.5298109613323776,
+              "44": -1.4396545908385572
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": -0.5376069999998663,
+            "percent": -0.055625541437243076,
+            "per_seed_percent": {
+              "42": -0.028691232211630613,
+              "43": -0.03225608983675743,
+              "44": -0.07289047582171859
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 9,
+            "percent": 0.036088054853844476,
+            "per_seed_percent": {
+              "42": 0.09222872724357067,
+              "43": -0.12015379685997862,
+              "44": 0.25698682942498774
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": -24,
+            "percent": -0.1641137855579844,
+            "per_seed_percent": {
+              "42": -0.6546644844517169,
+              "43": -0.5976636783482703,
+              "44": 0.19214932747735336
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": -8,
+            "percent": -0.01713649216005253,
+            "per_seed_percent": {
+              "42": -0.11983223487117556,
+              "43": -0.11961722488038617,
+              "44": 0.2922468626439745
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": -20,
+            "percent": -0.03525595825694117,
+            "per_seed_percent": {
+              "42": -0.19719698570321853,
+              "43": -0.1335582735835783,
+              "44": 0.4599816007359703
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "cold",
+      "variant": "control",
+      "processes": 21,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 32.870619,
+          "minimum": 32.243503,
+          "maximum": 34.745696
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 29.505235000000003,
+          "minimum": 29.034142999999997,
+          "maximum": 31.370743
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 3.360626,
+          "minimum": 3.155478,
+          "maximum": 3.776152
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 7.891064999999999,
+          "minimum": 7.728205999999999,
+          "maximum": 8.024407
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 76136,
+          "minimum": 75316,
+          "maximum": 76500
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 256360,
+          "minimum": 256328,
+          "maximum": 257576
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.15118600000000001,
+          "minimum": 0.144724,
+          "maximum": 0.268387
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 966.4750869999999,
+          "minimum": 964.988926,
+          "maximum": 970.167981
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 24939,
+          "minimum": 24874,
+          "maximum": 25019
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 14624,
+          "minimum": 14500,
+          "maximum": 14840
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 46684,
+          "minimum": 46260,
+          "maximum": 47036
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 56728,
+          "minimum": 56244,
+          "maximum": 57148
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 32.843739,
+            "minimum": 32.243503,
+            "maximum": 34.745696
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 29.279878,
+            "minimum": 29.034142999999997,
+            "maximum": 31.370743
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.3241970000000003,
+            "minimum": 3.155478,
+            "maximum": 3.776152
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.917235,
+            "minimum": 7.856079,
+            "maximum": 8.024407
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 76288,
+            "minimum": 76052,
+            "maximum": 76368
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256328,
+            "minimum": 256328,
+            "maximum": 256328
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.152148,
+            "minimum": 0.14635700000000001,
+            "maximum": 0.263959
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.511295,
+            "minimum": 965.081511,
+            "maximum": 967.654498
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24938,
+            "minimum": 24899,
+            "maximum": 25019
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14664,
+            "minimum": 14552,
+            "maximum": 14800
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46732,
+            "minimum": 46460,
+            "maximum": 47036
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56796,
+            "minimum": 56444,
+            "maximum": 57148
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 32.76545,
+            "minimum": 32.583296,
+            "maximum": 33.289983
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 29.390236,
+            "minimum": 29.077334999999998,
+            "maximum": 30.076355
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.41029,
+            "minimum": 3.196365,
+            "maximum": 3.719534
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.796085000000001,
+            "minimum": 7.728205999999999,
+            "maximum": 7.860516999999999
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 76132,
+            "minimum": 75388,
+            "maximum": 76500
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256360,
+            "minimum": 256360,
+            "maximum": 256360
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.15118600000000001,
+            "minimum": 0.146297,
+            "maximum": 0.15456199999999998
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.2981520000001,
+            "minimum": 964.988926,
+            "maximum": 970.167981
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24968,
+            "minimum": 24919,
+            "maximum": 25014
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14724,
+            "minimum": 14552,
+            "maximum": 14840
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46816,
+            "minimum": 46440,
+            "maximum": 46964
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56904,
+            "minimum": 56488,
+            "maximum": 56964
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 32.941604,
+            "minimum": 32.735984,
+            "maximum": 33.465644000000005
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 29.641682999999997,
+            "minimum": 29.375258000000002,
+            "maximum": 30.14303
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.360626,
+            "minimum": 3.16174,
+            "maximum": 3.518515
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.919809,
+            "minimum": 7.845508,
+            "maximum": 7.979442
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 75764,
+            "minimum": 75316,
+            "maximum": 76344
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 257576,
+            "minimum": 257576,
+            "maximum": 257576
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.14823,
+            "minimum": 0.144724,
+            "maximum": 0.268387
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.3992340000001,
+            "minimum": 965.2994729999999,
+            "maximum": 966.797597
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24904,
+            "minimum": 24874,
+            "maximum": 24961
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 14572,
+            "minimum": 14500,
+            "maximum": 14624
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 46536,
+            "minimum": 46260,
+            "maximum": 46680
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 56524,
+            "minimum": 56244,
+            "maximum": 56728
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 76136,
+        "maximum": 76500
+      },
+      "warmups_per_process": [
+        0
+      ],
+      "samples_per_process": [
+        1
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "repeated",
+      "variant": "buffers-direct",
+      "processes": 3,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 28.388392,
+          "minimum": 27.617303,
+          "maximum": 28.848221
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 26.050349,
+          "minimum": 25.172038,
+          "maximum": 26.442031
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 2.344094,
+          "minimum": 2.2458270000000002,
+          "maximum": 2.536136
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 7.318923,
+          "minimum": 6.968901,
+          "maximum": 7.667522000000001
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 86932,
+          "minimum": 85512,
+          "maximum": 110072
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 256360,
+          "minimum": 256328,
+          "maximum": 257576
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.203836,
+          "minimum": 0.146137,
+          "maximum": 0.223332
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 966.7913649999999,
+          "minimum": 965.691615,
+          "maximum": 967.60324
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 15646,
+          "minimum": 12318,
+          "maximum": 15712
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 62920,
+          "minimum": 62616,
+          "maximum": 63316
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 56768,
+          "minimum": 55652,
+          "maximum": 79700
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 63004,
+          "minimum": 62616,
+          "maximum": 79700
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 28.355991,
+            "minimum": 27.617303,
+            "maximum": 28.784791000000002
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.02895,
+            "minimum": 25.172038,
+            "maximum": 26.375345000000003
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.3275919999999997,
+            "minimum": 2.2586519999999997,
+            "maximum": 2.536136
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.122481,
+            "minimum": 6.968901,
+            "maximum": 7.667522000000001
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 86928,
+            "minimum": 85872,
+            "maximum": 110072
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256328,
+            "minimum": 256328,
+            "maximum": 256328
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.146137,
+            "minimum": 0.146137,
+            "maximum": 0.146137
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 967.60324,
+            "minimum": 967.60324,
+            "maximum": 967.60324
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15389,
+            "minimum": 12318,
+            "maximum": 15464
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 62964,
+            "minimum": 62672,
+            "maximum": 63316
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 56768,
+            "minimum": 55652,
+            "maximum": 79700
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 63184,
+            "minimum": 62820,
+            "maximum": 79700
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 28.436914,
+            "minimum": 28.276581,
+            "maximum": 28.635739
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.083232000000002,
+            "minimum": 25.948387,
+            "maximum": 26.281867000000002
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.345707,
+            "minimum": 2.328134,
+            "maximum": 2.402695
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.392091,
+            "minimum": 7.091583,
+            "maximum": 7.538386999999999
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 86900,
+            "minimum": 85512,
+            "maximum": 87224
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256360,
+            "minimum": 256360,
+            "maximum": 256360
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.223332,
+            "minimum": 0.223332,
+            "maximum": 0.223332
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 965.691615,
+            "minimum": 965.691615,
+            "maximum": 965.691615
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15657,
+            "minimum": 15413,
+            "maximum": 15712
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 62912,
+            "minimum": 62644,
+            "maximum": 63180
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 57004,
+            "minimum": 56348,
+            "maximum": 57360
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 63148,
+            "minimum": 62724,
+            "maximum": 63376
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 28.366781,
+            "minimum": 28.251092,
+            "maximum": 28.848221
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 26.094013,
+            "minimum": 25.941444,
+            "maximum": 26.442031
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.3205690000000003,
+            "minimum": 2.2458270000000002,
+            "maximum": 2.415468
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.318923,
+            "minimum": 7.266343,
+            "maximum": 7.6305119999999995
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 87272,
+            "minimum": 86128,
+            "maximum": 87560
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 257576,
+            "minimum": 257576,
+            "maximum": 257576
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.203836,
+            "minimum": 0.203836,
+            "maximum": 0.203836
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.7913649999999,
+            "minimum": 966.7913649999999,
+            "maximum": 966.7913649999999
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15650,
+            "minimum": 15364,
+            "maximum": 15694
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 62852,
+            "minimum": 62616,
+            "maximum": 63092
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 56804,
+            "minimum": 56220,
+            "maximum": 57076
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 62948,
+            "minimum": 62616,
+            "maximum": 63092
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 87560,
+        "maximum": 110072
+      },
+      "warmups_per_process": [
+        2
+      ],
+      "samples_per_process": [
+        7
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": -1.727838000000002,
+            "percent": -5.737232050625196,
+            "per_seed_percent": {
+              "42": -5.460740839822686,
+              "43": -5.332578042351555,
+              "44": -6.7437446783329635
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": -1.694074999999998,
+            "percent": -6.10600169605251,
+            "per_seed_percent": {
+              "42": -6.183130707633366,
+              "43": -5.848488416575737,
+              "44": -7.069482425994589
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.00958799999999993,
+            "percent": 0.4107078756704796,
+            "per_seed_percent": {
+              "42": -0.11569385415022282,
+              "43": -1.284679875803485,
+              "44": -0.5969999648747892
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": -0.41670799999999986,
+            "percent": -5.386865014631647,
+            "per_seed_percent": {
+              "42": -8.676317875730478,
+              "43": -2.438338410207952,
+              "44": -5.386865014631647
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 428,
+            "percent": 0.49477480810136143,
+            "per_seed_percent": {
+              "42": -0.14244359693057485,
+              "43": 0.7559595584825107,
+              "44": -0.4562460078474273
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.05499499999999999,
+            "percent": 36.94882458462385,
+            "per_seed_percent": {
+              "42": -44.88744574051237,
+              "43": 50.14723480926706,
+              "44": 36.94882458462385
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": 0.1975039999999808,
+            "percent": 0.020432987210949882,
+            "per_seed_percent": {
+              "42": 0.1192101661276812,
+              "43": -0.0933428233308442,
+              "44": -0.34598219365941096
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": -5,
+            "percent": -0.0319468404574752,
+            "per_seed_percent": {
+              "42": -1.6928580554490869,
+              "43": 0.038336208548983564,
+              "44": 0.019173004409789307
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": -84,
+            "percent": -0.13332486826233003,
+            "per_seed_percent": {
+              "42": -0.12689550155446927,
+              "43": 0.31891822936598313,
+              "44": -0.5758035940268247
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": -152,
+            "percent": -0.2670414617006345,
+            "per_seed_percent": {
+              "42": -0.2670414617006345,
+              "43": 0.3732920129595696,
+              "44": -0.4695822820297124
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": -40,
+            "percent": -0.06344775077723463,
+            "per_seed_percent": {
+              "42": 0.19028288722566788,
+              "43": 0.33685013346891335,
+              "44": -0.4239433054922803
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "repeated",
+      "variant": "control",
+      "processes": 3,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 30.11623,
+          "minimum": 29.595234,
+          "maximum": 30.860848
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 27.744424,
+          "minimum": 27.24053,
+          "maximum": 28.47777
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 2.334506,
+          "minimum": 2.249394,
+          "maximum": 2.414747
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 7.735631,
+          "minimum": 7.517468,
+          "maximum": 8.12672
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 86504,
+          "minimum": 85280,
+          "maximum": 87784
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 256360,
+          "minimum": 256328,
+          "maximum": 257576
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.148841,
+          "minimum": 0.14874199999999999,
+          "maximum": 0.265161
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 966.593861,
+          "minimum": 966.451132,
+          "maximum": 970.1479039999999
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 15651,
+          "minimum": 15366,
+          "maximum": 15728
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 63004,
+          "minimum": 62644,
+          "maximum": 63348
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 56920,
+          "minimum": 56268,
+          "maximum": 57332
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 63044,
+          "minimum": 62644,
+          "maximum": 63348
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 29.993879,
+            "minimum": 29.595234,
+            "maximum": 30.292814
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 27.744424,
+            "minimum": 27.24053,
+            "maximum": 27.983677
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.330288,
+            "minimum": 2.249394,
+            "maximum": 2.370633
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.799161,
+            "minimum": 7.652855,
+            "maximum": 8.090021
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 87052,
+            "minimum": 85868,
+            "maximum": 87504
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256328,
+            "minimum": 256328,
+            "maximum": 256328
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.265161,
+            "minimum": 0.265161,
+            "maximum": 0.265161
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.451132,
+            "minimum": 966.451132,
+            "maximum": 966.451132
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15654,
+            "minimum": 15374,
+            "maximum": 15718
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 63044,
+            "minimum": 62740,
+            "maximum": 63124
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 56920,
+            "minimum": 56340,
+            "maximum": 57108
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 63064,
+            "minimum": 62740,
+            "maximum": 63124
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 30.038754,
+            "minimum": 29.647313,
+            "maximum": 30.158730000000002
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 27.703466,
+            "minimum": 27.271019,
+            "maximum": 27.893466
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.376234,
+            "minimum": 2.265164,
+            "maximum": 2.414747
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.57684,
+            "minimum": 7.517468,
+            "maximum": 8.000051
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 86248,
+            "minimum": 85280,
+            "maximum": 86504
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 256360,
+            "minimum": 256360,
+            "maximum": 256360
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.14874199999999999,
+            "minimum": 0.14874199999999999,
+            "maximum": 0.14874199999999999
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 966.593861,
+            "minimum": 966.593861,
+            "maximum": 966.593861
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15651,
+            "minimum": 15366,
+            "maximum": 15701
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 62712,
+            "minimum": 62644,
+            "maximum": 63004
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 56792,
+            "minimum": 56268,
+            "maximum": 57152
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 62936,
+            "minimum": 62644,
+            "maximum": 63168
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 30.4181,
+            "minimum": 30.070653,
+            "maximum": 30.860848
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 28.079057000000002,
+            "minimum": 27.743432,
+            "maximum": 28.47777
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 2.334506,
+            "minimum": 2.258812,
+            "maximum": 2.385291
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 7.735631,
+            "minimum": 7.648987,
+            "maximum": 8.12672
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 87672,
+            "minimum": 86328,
+            "maximum": 87784
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 257576,
+            "minimum": 257576,
+            "maximum": 257576
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.148841,
+            "minimum": 0.148841,
+            "maximum": 0.148841
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 970.1479039999999,
+            "minimum": 970.1479039999999,
+            "maximum": 970.1479039999999
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 15647,
+            "minimum": 15447,
+            "maximum": 15728
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 63216,
+            "minimum": 62688,
+            "maximum": 63348
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 57072,
+            "minimum": 56480,
+            "maximum": 57332
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 63216,
+            "minimum": 62876,
+            "maximum": 63348
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 87504,
+        "maximum": 87784
+      },
+      "warmups_per_process": [
+        2
+      ],
+      "samples_per_process": [
+        7
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "cold",
+      "variant": "buffers-direct",
+      "processes": 21,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 51.282081,
+          "minimum": 49.978275000000004,
+          "maximum": 55.778665999999994
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 45.81955,
+          "minimum": 44.923626,
+          "maximum": 50.154999
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 5.402748,
+          "minimum": 4.6467979999999995,
+          "maximum": 5.947709
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 9.355103,
+          "minimum": 9.092557,
+          "maximum": 9.64948
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 150192,
+          "minimum": 142036,
+          "maximum": 151384
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 321232,
+          "minimum": 319952,
+          "maximum": 321680
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.15811899999999998,
+          "minimum": 0.152428,
+          "maximum": 0.271153
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 1794.2953510000002,
+          "minimum": 1791.9423299999999,
+          "maximum": 1803.456728
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 50518,
+          "minimum": 48409,
+          "maximum": 50653
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 23208,
+          "minimum": 23088,
+          "maximum": 23324
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 89124,
+          "minimum": 80840,
+          "maximum": 89604
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 103688,
+          "minimum": 103436,
+          "maximum": 104132
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 51.034183,
+            "minimum": 49.978275000000004,
+            "maximum": 52.075452
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 45.649719,
+            "minimum": 44.923626,
+            "maximum": 46.46429
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.39825,
+            "minimum": 4.6467979999999995,
+            "maximum": 5.611082
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.267187,
+            "minimum": 9.092557,
+            "maximum": 9.557146000000001
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150416,
+            "minimum": 142148,
+            "maximum": 151016
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321232,
+            "minimum": 321232,
+            "maximum": 321232
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.155925,
+            "minimum": 0.155264,
+            "maximum": 0.166184
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1793.7215150000002,
+            "minimum": 1791.9423299999999,
+            "maximum": 1798.504983
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50532,
+            "minimum": 48476,
+            "maximum": 50653
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23204,
+            "minimum": 23092,
+            "maximum": 23220
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 89288,
+            "minimum": 80840,
+            "maximum": 89604
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103688,
+            "minimum": 103464,
+            "maximum": 104132
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 51.234752,
+            "minimum": 50.574383,
+            "maximum": 54.69178
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 45.759215999999995,
+            "minimum": 45.133854,
+            "maximum": 49.329048
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.411295,
+            "minimum": 5.127778,
+            "maximum": 5.947709
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.311701000000001,
+            "minimum": 9.134076,
+            "maximum": 9.376144
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150124,
+            "minimum": 142036,
+            "maximum": 150384
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321680,
+            "minimum": 321680,
+            "maximum": 321680
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.158199,
+            "minimum": 0.152428,
+            "maximum": 0.230105
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1794.812028,
+            "minimum": 1792.81964,
+            "maximum": 1803.456728
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50539,
+            "minimum": 48409,
+            "maximum": 50637
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23184,
+            "minimum": 23096,
+            "maximum": 23284
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 89124,
+            "minimum": 80992,
+            "maximum": 89340
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103652,
+            "minimum": 103500,
+            "maximum": 103996
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 52.091262,
+            "minimum": 50.652691,
+            "maximum": 55.778665999999994
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 46.810995,
+            "minimum": 45.589626,
+            "maximum": 50.154999
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.385617,
+            "minimum": 4.715859,
+            "maximum": 5.623606
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.430967,
+            "minimum": 9.17334,
+            "maximum": 9.64948
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150356,
+            "minimum": 142744,
+            "maximum": 151384
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 319952,
+            "minimum": 319952,
+            "maximum": 319952
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.166325,
+            "minimum": 0.15295,
+            "maximum": 0.271153
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1795.1065050000002,
+            "minimum": 1793.191643,
+            "maximum": 1797.795461
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50493,
+            "minimum": 48463,
+            "maximum": 50600
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23224,
+            "minimum": 23088,
+            "maximum": 23324
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 89036,
+            "minimum": 81016,
+            "maximum": 89592
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103692,
+            "minimum": 103436,
+            "maximum": 103992
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 150192,
+        "maximum": 151384
+      },
+      "warmups_per_process": [
+        0
+      ],
+      "samples_per_process": [
+        1
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": -6.138400000000004,
+            "percent": -10.69026224283981,
+            "per_seed_percent": {
+              "42": -11.121986247380967,
+              "43": -10.527761282336268,
+              "44": -9.849486382964145
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": -5.986031000000004,
+            "percent": -11.554799472280807,
+            "per_seed_percent": {
+              "42": -12.104506594310948,
+              "43": -11.393726591597142,
+              "44": -9.9574637405202
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": -0.19245399999999968,
+            "percent": -3.4396255934995734,
+            "per_seed_percent": {
+              "42": -4.1725779400508145,
+              "43": -2.714636828601724,
+              "44": -3.3594056593498123
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": -1.5234819999999996,
+            "percent": -14.004413257790416,
+            "per_seed_percent": {
+              "42": -14.360946126572093,
+              "43": -13.97953234660968,
+              "44": -14.261161543046297
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": -428,
+            "percent": -0.28415881025096734,
+            "per_seed_percent": {
+              "42": 0.03458274587002652,
+              "43": -0.3610587516924668,
+              "44": 0.08786878261795028
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": -0.009327000000000002,
+            "percent": -5.570153960082658,
+            "per_seed_percent": {
+              "42": -8.63037860453668,
+              "43": -5.522377363448506,
+              "44": 6.615172590622098
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": -0.827424999999721,
+            "percent": -0.04609294757227378,
+            "per_seed_percent": {
+              "42": -0.07805934049380792,
+              "43": -0.07013817755254781,
+              "44": 0.02227918406583207
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 7,
+            "percent": 0.013858367484309575,
+            "per_seed_percent": {
+              "42": -0.06130965330379823,
+              "43": 0.015831865587467853,
+              "44": 0.04160722776984649
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": 28,
+            "percent": 0.1207937877480525,
+            "per_seed_percent": {
+              "42": 0.08626639061422026,
+              "43": 0.0,
+              "44": 0.3803596127247566
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": -80,
+            "percent": -0.08968207703690112,
+            "per_seed_percent": {
+              "42": 0.013441462431118545,
+              "43": -0.08968207703690112,
+              "44": 0.16650166501666064
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": 72,
+            "percent": 0.06948733786287242,
+            "per_seed_percent": {
+              "42": -0.11174906554660691,
+              "43": 0.03474366893143621,
+              "44": 0.26688326757948744
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "cold",
+      "variant": "control",
+      "processes": 21,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 57.420481,
+          "minimum": 56.256179,
+          "maximum": 67.958312
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 51.805581000000004,
+          "minimum": 50.922712000000004,
+          "maximum": 62.220119
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 5.595202,
+          "minimum": 5.0966190000000005,
+          "maximum": 6.103884000000001
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 10.878585,
+          "minimum": 10.647058,
+          "maximum": 12.333467
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 150620,
+          "minimum": 141752,
+          "maximum": 151452
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 321232,
+          "minimum": 319952,
+          "maximum": 321680
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.16744599999999998,
+          "minimum": 0.14990399999999998,
+          "maximum": 0.283987
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 1795.122776,
+          "minimum": 1792.028173,
+          "maximum": 1803.4894399999998
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 50511,
+          "minimum": 48356,
+          "maximum": 50669
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 23180,
+          "minimum": 23064,
+          "maximum": 23348
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 89204,
+          "minimum": 80636,
+          "maximum": 90072
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 103616,
+          "minimum": 103200,
+          "maximum": 104472
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 57.420481,
+            "minimum": 57.021176,
+            "maximum": 67.958312
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 51.936359,
+            "minimum": 51.374314999999996,
+            "maximum": 62.220119
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.633304,
+            "minimum": 5.215525,
+            "maximum": 5.912332
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 10.821216,
+            "minimum": 10.647058,
+            "maximum": 11.408186
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150364,
+            "minimum": 142456,
+            "maximum": 151212
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321232,
+            "minimum": 321232,
+            "maximum": 321232
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.170653,
+            "minimum": 0.14990399999999998,
+            "maximum": 0.276783
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1795.122776,
+            "minimum": 1793.996215,
+            "maximum": 1798.1642390000002
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50563,
+            "minimum": 48370,
+            "maximum": 50630
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23184,
+            "minimum": 23084,
+            "maximum": 23308
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 89276,
+            "minimum": 80660,
+            "maximum": 89692
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103804,
+            "minimum": 103200,
+            "maximum": 104092
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 57.263295,
+            "minimum": 56.256179,
+            "maximum": 59.472933
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 51.643314000000004,
+            "minimum": 50.922712000000004,
+            "maximum": 53.862732
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.562290999999999,
+            "minimum": 5.333336999999999,
+            "maximum": 5.733844
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 10.824983,
+            "minimum": 10.703353,
+            "maximum": 11.001418000000001
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150668,
+            "minimum": 150200,
+            "maximum": 151096
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321680,
+            "minimum": 321680,
+            "maximum": 321680
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.16744599999999998,
+            "minimum": 0.152489,
+            "maximum": 0.26975000000000005
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1796.07176,
+            "minimum": 1792.028173,
+            "maximum": 1803.4894399999998
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50531,
+            "minimum": 50441,
+            "maximum": 50669
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23184,
+            "minimum": 23072,
+            "maximum": 23348
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 89204,
+            "minimum": 88900,
+            "maximum": 90072
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103616,
+            "minimum": 103428,
+            "maximum": 104472
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 57.782545999999996,
+            "minimum": 57.077182,
+            "maximum": 58.187633000000005
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 51.987646,
+            "minimum": 51.566229,
+            "maximum": 52.635993
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 5.572831000000001,
+            "minimum": 5.0966190000000005,
+            "maximum": 6.103884000000001
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 10.999644,
+            "minimum": 10.878585,
+            "maximum": 12.333467
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 150224,
+            "minimum": 141752,
+            "maximum": 151452
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 319952,
+            "minimum": 319952,
+            "maximum": 319952
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.156005,
+            "minimum": 0.152779,
+            "maximum": 0.283987
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1794.706659,
+            "minimum": 1792.2996960000003,
+            "maximum": 1798.497268
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 50472,
+            "minimum": 48356,
+            "maximum": 50657
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 23136,
+            "minimum": 23064,
+            "maximum": 23248
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 88888,
+            "minimum": 80636,
+            "maximum": 89324
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 103416,
+            "minimum": 103284,
+            "maximum": 103852
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 150620,
+        "maximum": 151452
+      },
+      "warmups_per_process": [
+        0
+      ],
+      "samples_per_process": [
+        1
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "repeated",
+      "variant": "buffers-direct",
+      "processes": 3,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 46.730052,
+          "minimum": 45.328632,
+          "maximum": 58.600653
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 42.804958,
+          "minimum": 41.472068,
+          "maximum": 52.984550999999996
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 3.856474,
+          "minimum": 3.5477600000000002,
+          "maximum": 5.616002
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 9.472846,
+          "minimum": 9.002957,
+          "maximum": 11.023099
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 185488,
+          "minimum": 184740,
+          "maximum": 186060
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 321232,
+          "minimum": 319952,
+          "maximum": 321680
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.15331,
+          "minimum": 0.153069,
+          "maximum": 0.154633
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 1793.9765080000002,
+          "minimum": 1793.875908,
+          "maximum": 1801.3786280000002
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 24628,
+          "minimum": 24585,
+          "maximum": 24718
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 122156,
+          "minimum": 121164,
+          "maximum": 122924
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 122328,
+          "minimum": 121664,
+          "maximum": 122988
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 122328,
+          "minimum": 121664,
+          "maximum": 122988
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 46.525465000000004,
+            "minimum": 46.199118,
+            "maximum": 58.600653
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 42.657199,
+            "minimum": 42.375997,
+            "maximum": 52.984550999999996
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.89147,
+            "minimum": 3.763408,
+            "maximum": 5.616002
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.455804,
+            "minimum": 9.219688,
+            "maximum": 11.023099
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185760,
+            "minimum": 184740,
+            "maximum": 186060
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321232,
+            "minimum": 321232,
+            "maximum": 321232
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.153069,
+            "minimum": 0.153069,
+            "maximum": 0.153069
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1793.9765080000002,
+            "minimum": 1793.9765080000002,
+            "maximum": 1793.9765080000002
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24626,
+            "minimum": 24600,
+            "maximum": 24712
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 122328,
+            "minimum": 121404,
+            "maximum": 122800
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 122400,
+            "minimum": 121664,
+            "maximum": 122836
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 122400,
+            "minimum": 121664,
+            "maximum": 122836
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 46.036229,
+            "minimum": 45.328632,
+            "maximum": 50.636962000000004
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 42.337644,
+            "minimum": 41.472068,
+            "maximum": 46.856251
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.8149859999999998,
+            "minimum": 3.698435,
+            "maximum": 3.9694570000000002
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.472846,
+            "minimum": 9.002957,
+            "maximum": 9.782502000000001
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185328,
+            "minimum": 184892,
+            "maximum": 185488
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321680,
+            "minimum": 321680,
+            "maximum": 321680
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.15331,
+            "minimum": 0.15331,
+            "maximum": 0.15331
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1793.875908,
+            "minimum": 1793.875908,
+            "maximum": 1793.875908
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24623,
+            "minimum": 24594,
+            "maximum": 24718
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 121896,
+            "minimum": 121164,
+            "maximum": 122156
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 121956,
+            "minimum": 121696,
+            "maximum": 122412
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 121956,
+            "minimum": 121696,
+            "maximum": 122412
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 46.943095,
+            "minimum": 46.193347,
+            "maximum": 47.100722999999995
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 43.109745,
+            "minimum": 42.645477,
+            "maximum": 43.220355000000005
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.874137,
+            "minimum": 3.5477600000000002,
+            "maximum": 4.002921000000001
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.53846,
+            "minimum": 9.363119,
+            "maximum": 9.931032
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185684,
+            "minimum": 185216,
+            "maximum": 186048
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 319952,
+            "minimum": 319952,
+            "maximum": 319952
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.154633,
+            "minimum": 0.154633,
+            "maximum": 0.154633
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1801.3786280000002,
+            "minimum": 1801.3786280000002,
+            "maximum": 1801.3786280000002
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24630,
+            "minimum": 24585,
+            "maximum": 24665
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 122456,
+            "minimum": 121732,
+            "maximum": 122924
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 122632,
+            "minimum": 122052,
+            "maximum": 122988
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 122632,
+            "minimum": 122052,
+            "maximum": 122988
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 186048,
+        "maximum": 186060
+      },
+      "warmups_per_process": [
+        2
+      ],
+      "samples_per_process": [
+        7
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": -4.414900000000003,
+            "percent": -8.63213245365838,
+            "per_seed_percent": {
+              "42": -8.40415968729089,
+              "43": -9.075484017670421,
+              "44": -8.536800044563453
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": -4.3098309999999955,
+            "percent": -9.147512047650252,
+            "per_seed_percent": {
+              "42": -9.087993384001603,
+              "43": -9.574855575490272,
+              "44": -9.085950305129064
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": -0.03548700000000027,
+            "percent": -0.9118025591726142,
+            "per_seed_percent": {
+              "42": 0.19655824808255673,
+              "43": -1.199517364993119,
+              "44": -1.0965033208342523
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": -0.3572260000000007,
+            "percent": -3.634012039789747,
+            "per_seed_percent": {
+              "42": -1.9847362110572586,
+              "43": -2.3937766752263667,
+              "44": -3.843086905406856
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 48,
+            "percent": 0.025884383088858876,
+            "per_seed_percent": {
+              "42": 0.17256255392579245,
+              "43": -0.2819447732604452,
+              "44": 0.3502021228301455
+            },
+            "seeds_lower": 1,
+            "seeds_higher": 2,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": -0.002475000000000005,
+            "percent": -1.5887280546907578,
+            "per_seed_percent": {
+              "42": -1.743428443046502,
+              "43": -1.239419199402203,
+              "44": -17.51366921825408
+            },
+            "seeds_lower": 3,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": -3.2653259999997317,
+            "percent": -0.18168539916146864,
+            "per_seed_percent": {
+              "42": -0.1529359251822071,
+              "43": -0.21756062300555268,
+              "44": 0.2301745887359763
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": -21,
+            "percent": -0.08519615400218727,
+            "per_seed_percent": {
+              "42": -0.09736308316430353,
+              "43": 0.024373400495592,
+              "44": -0.07708223457341123
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": -336,
+            "percent": -0.2743036279920341,
+            "per_seed_percent": {
+              "42": -0.05229099941173043,
+              "43": -0.7620164126611928,
+              "44": 0.18981542086660141
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": -424,
+            "percent": -0.345411887382685,
+            "per_seed_percent": {
+              "42": -0.20545934840034974,
+              "43": -0.7131692067213757,
+              "44": 0.11429317833000496
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": -424,
+            "percent": -0.345411887382685,
+            "per_seed_percent": {
+              "42": -0.20545934840034974,
+              "43": -0.7131692067213757,
+              "44": 0.11429317833000496
+            },
+            "seeds_lower": 2,
+            "seeds_higher": 1,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    },
+    {
+      "phase": "confirm-factored",
+      "degree": 1024,
+      "batch": 1024,
+      "security": 128,
+      "threads": 16,
+      "protocol": "factored",
+      "mode": "repeated",
+      "variant": "control",
+      "processes": 3,
+      "samples": 21,
+      "statistics": {
+        "total_prover_ms": {
+          "samples": 21,
+          "median": 51.144952,
+          "minimum": 49.774449999999995,
+          "maximum": 53.80331
+        },
+        "prove_ms": {
+          "samples": 21,
+          "median": 47.114788999999995,
+          "minimum": 45.990142999999996,
+          "maximum": 49.935735
+        },
+        "witness_commit_ms": {
+          "samples": 21,
+          "median": 3.8919610000000002,
+          "minimum": 3.784247,
+          "maximum": 4.105125
+        },
+        "verify_ms": {
+          "samples": 21,
+          "median": 9.830072000000001,
+          "minimum": 9.42236,
+          "maximum": 10.218246
+        },
+        "process_peak_rss_kib": {
+          "samples": 21,
+          "median": 185440,
+          "minimum": 184300,
+          "maximum": 186308
+        },
+        "proof_payload_bytes": {
+          "samples": 21,
+          "median": 321232,
+          "minimum": 319952,
+          "maximum": 321680
+        },
+        "prepare_ms": {
+          "samples": 21,
+          "median": 0.155785,
+          "minimum": 0.155234,
+          "maximum": 0.187465
+        },
+        "external_input_ms": {
+          "samples": 21,
+          "median": 1797.241834,
+          "minimum": 1796.7243449999999,
+          "maximum": 1797.787185
+        },
+        "prover_minor_faults": {
+          "samples": 21,
+          "median": 24649,
+          "minimum": 24582,
+          "maximum": 24811
+        },
+        "process_rss_before_prover_kib": {
+          "samples": 21,
+          "median": 122492,
+          "minimum": 121100,
+          "maximum": 122984
+        },
+        "process_rss_after_prover_kib": {
+          "samples": 21,
+          "median": 122752,
+          "minimum": 121600,
+          "maximum": 123048
+        },
+        "process_retained_rss_kib": {
+          "samples": 21,
+          "median": 122752,
+          "minimum": 121600,
+          "maximum": 123048
+        },
+        "prepared_scratch_bytes_before_prover": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "prepared_retained_scratch_bytes": {
+          "samples": 21,
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "seeds": {
+        "42": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 50.794299,
+            "minimum": 50.673179999999995,
+            "maximum": 51.436654
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 46.921414,
+            "minimum": 46.788391999999995,
+            "maximum": 47.470362
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.883836,
+            "minimum": 3.842848,
+            "maximum": 3.9661519999999997
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.647276999999999,
+            "minimum": 9.42236,
+            "maximum": 10.218246
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185440,
+            "minimum": 184612,
+            "maximum": 185920
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321232,
+            "minimum": 321232,
+            "maximum": 321232
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.155785,
+            "minimum": 0.155785,
+            "maximum": 0.155785
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1796.7243449999999,
+            "minimum": 1796.7243449999999,
+            "maximum": 1796.7243449999999
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24650,
+            "minimum": 24601,
+            "maximum": 24687
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 122392,
+            "minimum": 121428,
+            "maximum": 122984
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 122652,
+            "minimum": 121828,
+            "maximum": 123048
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 122652,
+            "minimum": 121828,
+            "maximum": 123048
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "43": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 50.631260999999995,
+            "minimum": 49.774449999999995,
+            "maximum": 53.80331
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 46.820654000000005,
+            "minimum": 45.990142999999996,
+            "maximum": 49.935735
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.861303,
+            "minimum": 3.784247,
+            "maximum": 4.04523
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.705166,
+            "minimum": 9.530195,
+            "maximum": 9.843678
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185852,
+            "minimum": 184300,
+            "maximum": 186308
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 321680,
+            "minimum": 321680,
+            "maximum": 321680
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.155234,
+            "minimum": 0.155234,
+            "maximum": 0.155234
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1797.787185,
+            "minimum": 1797.787185,
+            "maximum": 1797.787185
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24617,
+            "minimum": 24583,
+            "maximum": 24811
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 122832,
+            "minimum": 121172,
+            "maximum": 122960
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 122832,
+            "minimum": 121600,
+            "maximum": 122996
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 122832,
+            "minimum": 121600,
+            "maximum": 122996
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        "44": {
+          "total_prover_ms": {
+            "samples": 7,
+            "median": 51.324571,
+            "minimum": 50.810299,
+            "maximum": 52.662923
+          },
+          "prove_ms": {
+            "samples": 7,
+            "median": 47.418133000000005,
+            "minimum": 46.848166,
+            "maximum": 48.665321999999996
+          },
+          "witness_commit_ms": {
+            "samples": 7,
+            "median": 3.917088,
+            "minimum": 3.8789160000000003,
+            "maximum": 4.105125
+          },
+          "verify_ms": {
+            "samples": 7,
+            "median": 9.919682000000002,
+            "minimum": 9.830072000000001,
+            "maximum": 9.998771
+          },
+          "process_peak_rss_kib": {
+            "samples": 7,
+            "median": 185036,
+            "minimum": 184308,
+            "maximum": 185732
+          },
+          "proof_payload_bytes": {
+            "samples": 7,
+            "median": 319952,
+            "minimum": 319952,
+            "maximum": 319952
+          },
+          "prepare_ms": {
+            "samples": 7,
+            "median": 0.187465,
+            "minimum": 0.187465,
+            "maximum": 0.187465
+          },
+          "external_input_ms": {
+            "samples": 7,
+            "median": 1797.241834,
+            "minimum": 1797.241834,
+            "maximum": 1797.241834
+          },
+          "prover_minor_faults": {
+            "samples": 7,
+            "median": 24649,
+            "minimum": 24582,
+            "maximum": 24754
+          },
+          "process_rss_before_prover_kib": {
+            "samples": 7,
+            "median": 122224,
+            "minimum": 121100,
+            "maximum": 122820
+          },
+          "process_rss_after_prover_kib": {
+            "samples": 7,
+            "median": 122492,
+            "minimum": 121768,
+            "maximum": 122852
+          },
+          "process_retained_rss_kib": {
+            "samples": 7,
+            "median": 122492,
+            "minimum": 121768,
+            "maximum": 122852
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "samples": 7,
+            "median": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      },
+      "peak_rss_per_process_kib": {
+        "median": 185920,
+        "maximum": 186308
+      },
+      "warmups_per_process": [
+        2
+      ],
+      "samples_per_process": [
+        7
+      ],
+      "comparisons": {
+        "control": {
+          "total_prover_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prove_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "witness_commit_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "verify_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_peak_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "proof_payload_bytes": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepare_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "external_input_ms": {
+            "delta": 0.0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prover_minor_faults": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_before_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_rss_after_prover_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "process_retained_rss_kib": {
+            "delta": 0,
+            "percent": 0.0,
+            "per_seed_percent": {
+              "42": 0.0,
+              "43": 0.0,
+              "44": 0.0
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 3
+          },
+          "prepared_scratch_bytes_before_prover": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          },
+          "prepared_retained_scratch_bytes": {
+            "delta": 0,
+            "percent": null,
+            "per_seed_percent": {
+              "42": null,
+              "43": null,
+              "44": null
+            },
+            "seeds_lower": 0,
+            "seeds_higher": 0,
+            "comparable_seeds": 0
+          }
+        },
+        "baseline": null
+      }
+    }
+  ],
+  "notes": [
+    "Percent deltas are candidate/reference - 1; negative means lower time or memory.",
+    "Cold means first commit+prove in a fresh process/Prepared, after setup/input generation; no cache flush.",
+    "Repeated samples share one process/Prepared per seed; within-process samples are correlated.",
+    "Per-seed median changes indicate consistency, not a confidence interval or statistical significance.",
+    "Compare matching protocol, mode, degree, batch, security and worker count only.",
+    "Candidate control uses the same instrumented binary; frozen baseline checks overall change.",
+    "Peak RSS is process lifetime high-water; separate per-process maxima avoid treating repeated values as independent peaks.",
+    "Post-drop RSS includes inputs, Prepared, JSON and allocator retention. Scratch bytes counts only additional coordinate and word-binding cached vector capacity, excluding existing sumcheck scratch.",
+    "Null metrics were not collected (old baseline or feature-disabled production candidate); they are not zero.",
+    "A subset phase may lack frozen baselines; the root campaign validator checks these across phases.",
+    "No new prover execution or performance measurement is performed by this helper."
+  ]
+}

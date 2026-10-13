@@ -1,0 +1,16 @@
+{
+  "verified_proofs": 144,
+  "proofs_by_protocol": {
+    "bitz/falcon1024-algebraic/non-zk/v9": 24,
+    "bitz/falcon512-algebraic/non-zk/v9": 24,
+    "bitz/falcon1024-algebraic/non-zk/v10-factored-ring": 48,
+    "bitz/falcon512-algebraic/non-zk/v10-factored-ring": 48
+  },
+  "input_source_equality": true,
+  "complete_proof_equality_within_protocol": true,
+  "raw_log_hashes_verified": true,
+  "command_provenance_verified": true,
+  "experimental_payload_limit_percent": 110,
+  "experimental_payload_comparisons": 6,
+  "max_experimental_payload_growth_percent": 0.28343611785959233
+}

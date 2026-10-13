@@ -1,0 +1,28 @@
+Independent read-only coordinate-buffer safety review
+Date: 2026-10-12
+Scope: ring.rs, factored_ring.rs, vendor/field/src/q12289.rs, and q12289/avx512.rs changes.
+
+No remaining correctness or memory-safety blockers found in the reviewed changes.
+
+One finding was fixed: AVX masked stores now address MaybeUninit<PowerCoordinates<K>> directly. PowerCoordinates originally had Rust layout; adding repr(transparent) makes the array's offset, size, and alignment explicit. The ring agent applied this annotation.
+
+Initialization and bounds:
+- Output slices contain MaybeUninit values until writers finish; no mutable reference to an uninitialized coordinate is formed.
+- K=11 is checked before AVX stores. The 0x07ff mask writes exactly eleven u16 coordinates, including small and final outputs, with no padded destination assumed.
+- Public writer entry points check matching output/polynomial lengths and canonical polynomial coefficients before selecting SIMD. Canonical starts and feedback remain enforced by existing coordinate constructors.
+- Canonical ring chunking covers batch*N outputs on both sides. Full groups and fallback signatures write every slot. Factored ring fills all shared N columns, paired S2 signatures, and the odd final signature.
+- Carry accumulation reads a shared coordinate slice only after its disjoint chunk is fully written. Vector lengths become visible only after Rayon joins all writers.
+
+Unwinding and cache ownership:
+- output() clears both vector lengths before writing. A writer panic leaves lengths zero; returned partially written cache storage cannot expose uninitialized values.
+- Reuse initializes newly exposed slots before subsequent output checkout and then overwrites all requested slots. Complete initialized vectors may be returned normally.
+- The cache retains at most one vector pair. Checkout/return use short mutex guards; workers run without the mutex. Concurrent proofs receive separate storage. Outstanding leases keep their cache owner alive via Arc.
+
+Algebra and transcript:
+- Public recurrences, canonical reduction bounds, target evaluation, carry arithmetic, challenge sampling, and proof serialization are unchanged by the buffer representation.
+- Direct/zeroed/reuse modes change allocation and output initialization only. Protocol v9/v10 selection remains separate.
+
+Limitations:
+- This was source review, not a new test or benchmark run. Central test/benchmark results are recorded separately.
+- No sanitizer, Miri, or formal verification was performed in this review. Hardware instruction behavior relies on the existing masked-store intrinsics and target-feature dispatch contracts.
+- Performance and retained-memory tradeoffs require the separate cold/warm and worker-count measurements; no speedup is inferred here.

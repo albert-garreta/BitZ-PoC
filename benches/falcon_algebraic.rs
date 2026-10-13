@@ -148,6 +148,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for trial in 0..trials {
                 let statement = public.clone();
                 let coefficients = s2.clone();
+                #[cfg(feature = "bench-internals")]
+                let scratch_before_prover_bytes = Some(prepared.retained_scratch_bytes());
+                #[cfg(not(feature = "bench-internals"))]
+                let scratch_before_prover_bytes: Option<usize> = None;
+                let rss_before_prover_kib = falcon_metrics::process_current_rss_kib();
+                let minor_faults_before = falcon_metrics::process_minor_faults();
                 let total = Instant::now();
                 let committed = prepared.commit_from_s2(statement, coefficients)?;
                 let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
@@ -155,6 +161,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let proof = prepared.prove(committed)?;
                 let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
                 let total_prover_ms = total.elapsed().as_secs_f64() * 1000.0;
+                let prover_minor_faults = minor_faults_before.and_then(|before| {
+                    falcon_metrics::process_minor_faults()?.checked_sub(before)
+                });
+                let rss_after_prover_kib = falcon_metrics::process_current_rss_kib();
                 let start = Instant::now();
                 prepared.verify(&public, &proof)?;
                 let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -170,10 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else { packing_strategy };
                 let proof_debug_digest = falcon_metrics::debug_digest(&proof)?;
-                let peak_rss_kib = falcon_metrics::process_peak_rss_kib();
-                println!(
-                    "{}",
-                    json!({
+                let mut event = json!({
                         "relation": concat!("falcon", stringify!($degree), "-algebraic-public-h-t-private-s1-s2"),
                         "degree": $degree,
                         "extension_degree": 11,
@@ -213,10 +220,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "source_bits": prepared.committed_source_bits(),
                         "committed_source_bits": prepared.committed_source_bits(),
                         "source_packed_bytes": prepared.committed_source_bits() / 8,
-                        "process_peak_rss_kib": peak_rss_kib,
+                        "prover_minor_faults": prover_minor_faults,
+                        "process_rss_before_prover_kib": rss_before_prover_kib,
+                        "process_rss_after_prover_kib": rss_after_prover_kib,
+                        "prepared_scratch_bytes_before_prover": scratch_before_prover_bytes,
                         "algebraic_security_bits": prepared.security().algebraic_bits,
-                    })
-                );
+                    });
+                // Sample retained RSS after verification and dropping the proof;
+                // Prepared and the input corpus remain live for the next trial.
+                drop(proof);
+                #[cfg(feature = "bench-internals")]
+                {
+                    event["prepared_retained_scratch_bytes"] = json!(prepared.retained_scratch_bytes());
+                }
+                #[cfg(not(feature = "bench-internals"))]
+                {
+                    event["prepared_retained_scratch_bytes"] = serde_json::Value::Null;
+                }
+                event["process_retained_rss_kib"] = json!(falcon_metrics::process_current_rss_kib());
+                event["process_peak_rss_kib"] = json!(falcon_metrics::process_peak_rss_kib());
+                println!("{event}");
             }
             Ok(())
         }};

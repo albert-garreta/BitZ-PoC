@@ -1,0 +1,145 @@
+RUN correctness100/combined-canonical-repeated-n512-b129-s100-t8-seed43-r0
+OK combined-canonical-repeated-n512-b129-s100-t8-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n512-b129-s100-t8-seed43-r0
+OK baseline-canonical-repeated-n512-b129-s100-t8-seed43-r0
+RUN correctness100/combined-factored-repeated-n512-b129-s100-t16-seed43-r0
+OK combined-factored-repeated-n512-b129-s100-t16-seed43-r0
+RUN correctness100/baseline-factored-repeated-n512-b129-s100-t16-seed43-r0
+OK baseline-factored-repeated-n512-b129-s100-t16-seed43-r0
+RUN correctness100/combined-factored-repeated-n512-b129-s100-t8-seed43-r0
+OK combined-factored-repeated-n512-b129-s100-t8-seed43-r0
+RUN correctness100/baseline-factored-repeated-n512-b129-s100-t8-seed43-r0
+OK baseline-factored-repeated-n512-b129-s100-t8-seed43-r0
+RUN correctness100/combined-factored-repeated-n512-b129-s100-t1-seed43-r0
+OK combined-factored-repeated-n512-b129-s100-t1-seed43-r0
+RUN correctness100/baseline-factored-repeated-n512-b129-s100-t1-seed43-r0
+OK baseline-factored-repeated-n512-b129-s100-t1-seed43-r0
+RUN correctness100/baseline-factored-repeated-n1024-b129-s100-t1-seed43-r0
+OK baseline-factored-repeated-n1024-b129-s100-t1-seed43-r0
+RUN correctness100/combined-factored-repeated-n1024-b129-s100-t1-seed43-r0
+OK combined-factored-repeated-n1024-b129-s100-t1-seed43-r0
+RUN correctness100/baseline-factored-repeated-n1024-b129-s100-t16-seed43-r0
+OK baseline-factored-repeated-n1024-b129-s100-t16-seed43-r0
+RUN correctness100/combined-factored-repeated-n1024-b129-s100-t16-seed43-r0
+OK combined-factored-repeated-n1024-b129-s100-t16-seed43-r0
+RUN correctness100/combined-canonical-repeated-n512-b129-s100-t16-seed43-r0
+OK combined-canonical-repeated-n512-b129-s100-t16-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n512-b129-s100-t16-seed43-r0
+OK baseline-canonical-repeated-n512-b129-s100-t16-seed43-r0
+RUN correctness100/combined-canonical-repeated-n1024-b129-s100-t8-seed43-r0
+OK combined-canonical-repeated-n1024-b129-s100-t8-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n1024-b129-s100-t8-seed43-r0
+OK baseline-canonical-repeated-n1024-b129-s100-t8-seed43-r0
+RUN correctness100/combined-factored-repeated-n1024-b129-s100-t8-seed43-r0
+OK combined-factored-repeated-n1024-b129-s100-t8-seed43-r0
+RUN correctness100/baseline-factored-repeated-n1024-b129-s100-t8-seed43-r0
+OK baseline-factored-repeated-n1024-b129-s100-t8-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n1024-b129-s100-t16-seed43-r0
+OK baseline-canonical-repeated-n1024-b129-s100-t16-seed43-r0
+RUN correctness100/combined-canonical-repeated-n1024-b129-s100-t16-seed43-r0
+OK combined-canonical-repeated-n1024-b129-s100-t16-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n512-b129-s100-t1-seed43-r0
+OK baseline-canonical-repeated-n512-b129-s100-t1-seed43-r0
+RUN correctness100/combined-canonical-repeated-n512-b129-s100-t1-seed43-r0
+OK combined-canonical-repeated-n512-b129-s100-t1-seed43-r0
+RUN correctness100/baseline-canonical-repeated-n1024-b129-s100-t1-seed43-r0
+OK baseline-canonical-repeated-n1024-b129-s100-t1-seed43-r0
+RUN correctness100/combined-canonical-repeated-n1024-b129-s100-t1-seed43-r0
+OK combined-canonical-repeated-n1024-b129-s100-t1-seed43-r0
+{"command_and_raw_hashes_verified": true, "complete_proof_equality_within_protocol": true, "experimental_payload_comparisons": 4, "frozen_baseline_comparisons": 8, "frozen_binary_hashes_verified": true, "input_source_equality": true, "max_experimental_payload_growth_percent": 0.5883327809081962, "phases_complete": true, "proofs_by_protocol": {"bitz/falcon1024-algebraic/non-zk/v10-factored-ring": 38, "bitz/falcon1024-algebraic/non-zk/v9": 34, "bitz/falcon512-algebraic/non-zk/v10-factored-ring": 38, "bitz/falcon512-algebraic/non-zk/v9": 34}, "schema": "bitz/falcon-buffer-optimization/v1", "verified_proofs": 144}
+correctness100 baseline           canonical repeated N= 512 t= 1 n=  2 total=37.069 faults=None retained_kib=None
+correctness100 baseline           canonical repeated N= 512 t= 8 n=  2 total=18.281 faults=None retained_kib=None
+correctness100 baseline           canonical repeated N= 512 t=16 n=  2 total=11.646 faults=None retained_kib=None
+correctness100 baseline           canonical repeated N=1024 t= 1 n=  2 total=61.369 faults=None retained_kib=None
+correctness100 baseline           canonical repeated N=1024 t= 8 n=  2 total=13.144 faults=None retained_kib=None
+correctness100 baseline           canonical repeated N=1024 t=16 n=  2 total=16.470 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N= 512 t= 1 n=  2 total=35.761 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N= 512 t= 8 n=  2 total=8.855 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N= 512 t=16 n=  2 total=14.154 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N=1024 t= 1 n=  2 total=58.979 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N=1024 t= 8 n=  2 total=12.690 faults=None retained_kib=None
+correctness100 baseline           factored  repeated N=1024 t=16 n=  2 total=18.302 faults=None retained_kib=None
+correctness100 combined           canonical repeated N= 512 t= 1 n=  2 total=37.232 faults=3591.0 retained_kib=25596.0
+correctness100 combined           canonical repeated N= 512 t= 8 n=  2 total=403.547 faults=3747.5 retained_kib=28936.0
+correctness100 combined           canonical repeated N= 512 t=16 n=  2 total=15.922 faults=3849.0 retained_kib=30932.0
+correctness100 combined           canonical repeated N=1024 t= 1 n=  2 total=61.112 faults=2389.5 retained_kib=60834.0
+correctness100 combined           canonical repeated N=1024 t= 8 n=  2 total=13.542 faults=2466.0 retained_kib=63224.0
+correctness100 combined           canonical repeated N=1024 t=16 n=  2 total=16.028 faults=2587.5 retained_kib=65644.0
+correctness100 combined           factored  repeated N= 512 t= 1 n=  2 total=35.635 faults=4204.5 retained_kib=21760.0
+correctness100 combined           factored  repeated N= 512 t= 8 n=  2 total=10.495 faults=4295.0 retained_kib=24126.0
+correctness100 combined           factored  repeated N= 512 t=16 n=  2 total=15.003 faults=4468.5 retained_kib=26918.0
+correctness100 combined           factored  repeated N=1024 t= 1 n=  2 total=58.291 faults=3028.0 retained_kib=58248.0
+correctness100 combined           factored  repeated N=1024 t= 8 n=  2 total=12.335 faults=3091.5 retained_kib=60270.0
+correctness100 combined           factored  repeated N=1024 t=16 n=  2 total=15.827 faults=3167.0 retained_kib=62538.0
+smoke        baseline           canonical cold     N= 512 t= 1 n=  1 total=13.970 faults=None retained_kib=None
+smoke        baseline           canonical cold     N=1024 t= 1 n=  1 total=14.474 faults=None retained_kib=None
+smoke        baseline           canonical repeated N= 512 t= 1 n=  1 total=13.724 faults=None retained_kib=None
+smoke        baseline           canonical repeated N=1024 t= 1 n=  1 total=14.380 faults=None retained_kib=None
+smoke        baseline           factored  cold     N= 512 t= 1 n=  1 total=13.854 faults=None retained_kib=None
+smoke        baseline           factored  cold     N=1024 t= 1 n=  1 total=14.751 faults=None retained_kib=None
+smoke        baseline           factored  repeated N= 512 t= 1 n=  1 total=13.756 faults=None retained_kib=None
+smoke        baseline           factored  repeated N=1024 t= 1 n=  1 total=15.593 faults=None retained_kib=None
+smoke        combined           canonical cold     N= 512 t= 1 n=  1 total=13.807 faults=2785 retained_kib=9404
+smoke        combined           canonical cold     N=1024 t= 1 n=  1 total=14.357 faults=2763 retained_kib=10100
+smoke        combined           canonical repeated N= 512 t= 1 n=  1 total=13.688 faults=2782 retained_kib=9228
+smoke        combined           canonical repeated N=1024 t= 1 n=  1 total=14.357 faults=2763 retained_kib=9956
+smoke        combined           factored  cold     N= 512 t= 1 n=  1 total=13.742 faults=2780 retained_kib=9280
+smoke        combined           factored  cold     N=1024 t= 1 n=  1 total=14.488 faults=2745 retained_kib=9904
+smoke        combined           factored  repeated N= 512 t= 1 n=  1 total=13.587 faults=2778 retained_kib=9260
+smoke        combined           factored  repeated N=1024 t= 1 n=  1 total=15.505 faults=2744 retained_kib=9776
+smoke        control            canonical cold     N= 512 t= 1 n=  1 total=13.948 faults=2749 retained_kib=9276
+smoke        control            canonical cold     N=1024 t= 1 n=  1 total=14.303 faults=2694 retained_kib=9924
+smoke        control            canonical repeated N= 512 t= 1 n=  1 total=13.624 faults=2749 retained_kib=9232
+smoke        control            canonical repeated N=1024 t= 1 n=  1 total=14.562 faults=2694 retained_kib=9724
+smoke        control            factored  cold     N= 512 t= 1 n=  1 total=13.721 faults=2752 retained_kib=9172
+smoke        control            factored  cold     N=1024 t= 1 n=  1 total=14.492 faults=2688 retained_kib=9500
+smoke        control            factored  repeated N= 512 t= 1 n=  1 total=13.611 faults=2749 retained_kib=9276
+smoke        control            factored  repeated N=1024 t= 1 n=  1 total=14.727 faults=2693 retained_kib=9792
+smoke        coordinate-direct  canonical cold     N= 512 t= 1 n=  1 total=17.837 faults=2751 retained_kib=9188
+smoke        coordinate-direct  canonical cold     N=1024 t= 1 n=  1 total=14.372 faults=2694 retained_kib=9816
+smoke        coordinate-direct  canonical repeated N= 512 t= 1 n=  1 total=13.602 faults=2751 retained_kib=9232
+smoke        coordinate-direct  canonical repeated N=1024 t= 1 n=  1 total=14.350 faults=2691 retained_kib=9840
+smoke        coordinate-direct  factored  cold     N= 512 t= 1 n=  1 total=13.682 faults=2751 retained_kib=9300
+smoke        coordinate-direct  factored  cold     N=1024 t= 1 n=  1 total=14.758 faults=2687 retained_kib=9812
+smoke        coordinate-direct  factored  repeated N= 512 t= 1 n=  1 total=13.665 faults=2751 retained_kib=9116
+smoke        coordinate-direct  factored  repeated N=1024 t= 1 n=  1 total=14.944 faults=2691 retained_kib=9784
+smoke        coordinate-reuse   canonical cold     N= 512 t= 1 n=  1 total=13.905 faults=2771 retained_kib=9212
+smoke        coordinate-reuse   canonical cold     N=1024 t= 1 n=  1 total=14.451 faults=2731 retained_kib=9968
+smoke        coordinate-reuse   canonical repeated N= 512 t= 1 n=  1 total=13.635 faults=2770 retained_kib=9316
+smoke        coordinate-reuse   canonical repeated N=1024 t= 1 n=  1 total=14.389 faults=2727 retained_kib=9980
+smoke        coordinate-reuse   factored  cold     N= 512 t= 1 n=  1 total=13.622 faults=2765 retained_kib=9200
+smoke        coordinate-reuse   factored  cold     N=1024 t= 1 n=  1 total=14.526 faults=2711 retained_kib=9732
+smoke        coordinate-reuse   factored  repeated N= 512 t= 1 n=  1 total=13.656 faults=2764 retained_kib=9064
+smoke        coordinate-reuse   factored  repeated N=1024 t= 1 n=  1 total=15.071 faults=2715 retained_kib=9996
+smoke        coordinate-zeroed  canonical cold     N= 512 t= 1 n=  1 total=13.751 faults=2749 retained_kib=9280
+smoke        coordinate-zeroed  canonical cold     N=1024 t= 1 n=  1 total=14.318 faults=2689 retained_kib=9704
+smoke        coordinate-zeroed  canonical repeated N= 512 t= 1 n=  1 total=14.470 faults=2750 retained_kib=9124
+smoke        coordinate-zeroed  canonical repeated N=1024 t= 1 n=  1 total=16.111 faults=2695 retained_kib=9808
+smoke        coordinate-zeroed  factored  cold     N= 512 t= 1 n=  1 total=13.770 faults=2750 retained_kib=9028
+smoke        coordinate-zeroed  factored  cold     N=1024 t= 1 n=  1 total=14.645 faults=2688 retained_kib=9824
+smoke        coordinate-zeroed  factored  repeated N= 512 t= 1 n=  1 total=13.584 faults=2717 retained_kib=9348
+smoke        coordinate-zeroed  factored  repeated N=1024 t= 1 n=  1 total=16.035 faults=2687 retained_kib=9516
+smoke        factored-fold      factored  cold     N= 512 t= 1 n=  1 total=13.753 faults=2751 retained_kib=9140
+smoke        factored-fold      factored  cold     N=1024 t= 1 n=  1 total=14.648 faults=2692 retained_kib=9744
+smoke        factored-fold      factored  repeated N= 512 t= 1 n=  1 total=13.576 faults=2751 retained_kib=9124
+smoke        factored-fold      factored  repeated N=1024 t= 1 n=  1 total=15.772 faults=2690 retained_kib=9928
+smoke        factored-initial   factored  cold     N= 512 t= 1 n=  1 total=13.627 faults=2751 retained_kib=9120
+smoke        factored-initial   factored  cold     N=1024 t= 1 n=  1 total=14.563 faults=2690 retained_kib=9852
+smoke        factored-initial   factored  repeated N= 512 t= 1 n=  1 total=13.682 faults=2749 retained_kib=9356
+smoke        factored-initial   factored  repeated N=1024 t= 1 n=  1 total=15.683 faults=2689 retained_kib=9828
+smoke        word-direct        canonical cold     N= 512 t= 1 n=  1 total=13.750 faults=2748 retained_kib=9228
+smoke        word-direct        canonical cold     N=1024 t= 1 n=  1 total=14.318 faults=2690 retained_kib=9600
+smoke        word-direct        canonical repeated N= 512 t= 1 n=  1 total=13.672 faults=2751 retained_kib=9176
+smoke        word-direct        canonical repeated N=1024 t= 1 n=  1 total=14.354 faults=2695 retained_kib=9732
+smoke        word-direct        factored  cold     N= 512 t= 1 n=  1 total=13.745 faults=2749 retained_kib=9292
+smoke        word-direct        factored  cold     N=1024 t= 1 n=  1 total=14.533 faults=2687 retained_kib=9556
+smoke        word-direct        factored  repeated N= 512 t= 1 n=  1 total=13.793 faults=2751 retained_kib=9160
+smoke        word-direct        factored  repeated N=1024 t= 1 n=  1 total=15.426 faults=2692 retained_kib=9740
+smoke        word-reuse         canonical cold     N= 512 t= 1 n=  1 total=14.226 faults=2730 retained_kib=9140
+smoke        word-reuse         canonical cold     N=1024 t= 1 n=  1 total=14.445 faults=2725 retained_kib=9904
+smoke        word-reuse         canonical repeated N= 512 t= 1 n=  1 total=13.615 faults=2771 retained_kib=9324
+smoke        word-reuse         canonical repeated N=1024 t= 1 n=  1 total=14.388 faults=2726 retained_kib=10044
+smoke        word-reuse         factored  cold     N= 512 t= 1 n=  1 total=13.711 faults=2770 retained_kib=9176
+smoke        word-reuse         factored  cold     N=1024 t= 1 n=  1 total=14.529 faults=2719 retained_kib=9688
+smoke        word-reuse         factored  repeated N= 512 t= 1 n=  1 total=13.633 faults=2770 retained_kib=9296
+smoke        word-reuse         factored  repeated N=1024 t= 1 n=  1 total=23.028 faults=2725 retained_kib=9984

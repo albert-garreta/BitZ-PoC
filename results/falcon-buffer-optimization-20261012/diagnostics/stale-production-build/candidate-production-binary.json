@@ -1,0 +1,11 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/candidate-production",
+  "sha256": "cc0e1df9cf2feb6d43ced6c0e7c23673c9711b74b4cd1ef10ae594be422dd08a",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "rustflags": "-C target-cpu=native",
+  "build_seconds": 0.09203505516052246,
+  "source_commit": "666b546a08af1972b5a40d88787cddb02ccd18b4",
+  "source_snapshot_sha256": "8faeb3a660e85835be757abf7d6e6cf800d1bcae2a8b70fc4094e75384aa65e0"
+}

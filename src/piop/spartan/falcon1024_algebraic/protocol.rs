@@ -176,6 +176,8 @@ pub struct PreparedFalconAlgebraic {
     compute_variant: &'static str,
     ring_mode: RingMode,
     scratch: Mutex<Scratch>,
+    coordinate_scratch: ring::CoordinateScratch,
+    binding_scratch: arithmetic::BindingScratch,
 }
 
 /// The committed witness. Consumed by proving to avoid witness copies.
@@ -467,6 +469,8 @@ impl PreparedFalconAlgebraic {
             compute_variant,
             ring_mode,
             scratch: Mutex::default(),
+            coordinate_scratch: ring::CoordinateScratch::default(),
+            binding_scratch: arithmetic::BindingScratch::default(),
         };
         if prepared.security().algebraic_bits < target_bits as f64 {
             return Err(error("algebraic composition misses security target"));
@@ -476,6 +480,14 @@ impl PreparedFalconAlgebraic {
 
     pub fn batch(&self) -> usize {
         self.layout.batch()
+    }
+
+    /// Coordinate and word-binding vector capacity cached for subsequent proofs.
+    /// Excludes existing sumcheck scratch, allocator retention, and in-flight work.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn retained_scratch_bytes(&self) -> usize {
+        self.coordinate_scratch.retained_bytes() + self.binding_scratch.retained_bytes()
     }
     pub fn capacity(&self) -> usize {
         self.layout.allocation_capacity()
@@ -853,25 +865,27 @@ impl PreparedFalconAlgebraic {
             let _span = tracing::info_span!("falcon_algebraic:ring").entered();
             match self.ring_mode {
                 RingMode::Canonical => {
-                    let (proof, claim) = ring::prove(
+                    let (proof, claim) = ring::prove_with_scratch(
                         &mut t,
                         &self.layout,
                         &committed.statement,
                         &committed.witness,
                         &field,
                         self.carry_grinding(),
+                        &self.coordinate_scratch,
                     )?;
                     (RingProof::Canonical(proof), RingClaim::Canonical(claim))
                 }
                 #[cfg(any(test, feature = "bench-internals"))]
                 RingMode::Factored => {
-                    let (proof, claim) = super::factored_ring::prove(
+                    let (proof, claim) = super::factored_ring::prove_with_scratch(
                         &mut t,
                         &self.layout,
                         &committed.statement,
                         &committed.witness,
                         &field,
                         self.carry_grinding(),
+                        &self.coordinate_scratch,
                     )?;
                     (RingProof::Factored(proof), RingClaim::Factored(claim))
                 }
@@ -944,7 +958,7 @@ impl PreparedFalconAlgebraic {
                 let (proof, claim) = {
                     let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
                     match ring_claim {
-                        RingClaim::Canonical(claim) => arithmetic::prove_owned(
+                        RingClaim::Canonical(claim) => arithmetic::prove_owned_with_scratch(
                             &mut t,
                             &self.layout,
                             &committed.witness,
@@ -952,9 +966,10 @@ impl PreparedFalconAlgebraic {
                             &field,
                             claim,
                             &self.schedule,
+                            &self.binding_scratch,
                         )?,
                         #[cfg(any(test, feature = "bench-internals"))]
-                        RingClaim::Factored(claim) => arithmetic::prove_factored_ring(
+                        RingClaim::Factored(claim) => arithmetic::prove_factored_ring_with_scratch(
                             &mut t,
                             &self.layout,
                             &committed.witness,
@@ -962,6 +977,7 @@ impl PreparedFalconAlgebraic {
                             &field,
                             claim,
                             &self.schedule,
+                            &self.binding_scratch,
                         )?,
                     }
                 };

@@ -1,6 +1,7 @@
 //! Two public degree-11 power sequences in one AVX-512 vector.
 use super::PowerCoordinates;
 use core::arch::x86_64::*;
+use std::mem::MaybeUninit;
 
 const Q: u16 = 12_289;
 const SHIFT: u32 = 0x07fe_07fe;
@@ -69,13 +70,14 @@ unsafe fn load_starts<const K: usize>(starts: [PowerCoordinates<K>; 2]) -> __m51
 #[target_feature(enable = "avx512f,avx512bw")]
 unsafe fn store<const K: usize>(
     value: __m512i,
-    a: &mut PowerCoordinates<K>,
-    b: &mut PowerCoordinates<K>,
+    a: &mut MaybeUninit<PowerCoordinates<K>>,
+    b: &mut MaybeUninit<PowerCoordinates<K>>,
 ) {
-    // Only eleven enabled 16-bit stores: the 22-byte destination is not padded.
-    unsafe { _mm512_mask_storeu_epi16(a.0.as_mut_ptr().cast(), 0x07ff, value) };
+    // K == 11 is checked by the callers. Each masked store writes all eleven
+    // u16s (22 bytes), without forming a reference to uninitialized coordinates.
+    unsafe { _mm512_mask_storeu_epi16(a.as_mut_ptr().cast(), 0x07ff, value) };
     let upper = _mm512_shuffle_i64x2::<0x4e>(value, value);
-    unsafe { _mm512_mask_storeu_epi16(b.0.as_mut_ptr().cast(), 0x07ff, upper) };
+    unsafe { _mm512_mask_storeu_epi16(b.as_mut_ptr().cast(), 0x07ff, upper) };
 }
 
 /// Emit both sequences with canonical coordinates, including their starts.
@@ -91,7 +93,7 @@ unsafe fn store<const K: usize>(
 pub(super) unsafe fn fill_powers_pair<const K: usize>(
     feedback: &[u16; K],
     starts: [PowerCoordinates<K>; 2],
-    outputs: [&mut [PowerCoordinates<K>]; 2],
+    outputs: [&mut [MaybeUninit<PowerCoordinates<K>>]; 2],
 ) {
     // SAFETY: forwarded from this function's contract; the ordinary specialization
     // does not use the zero subtraction vector or empty polynomial.
@@ -111,7 +113,7 @@ pub(super) unsafe fn fill_powers_adjoint_pair<const K: usize>(
     starts: [PowerCoordinates<K>; 2],
     subtract: PowerCoordinates<K>,
     polynomial: &[u16],
-    outputs: [&mut [PowerCoordinates<K>]; 2],
+    outputs: [&mut [MaybeUninit<PowerCoordinates<K>>]; 2],
 ) {
     // SAFETY: this function exposes exactly the adjoint specialization's contract.
     unsafe { fill_pair::<K, true>(feedback, starts, subtract, polynomial, outputs) };
@@ -151,7 +153,7 @@ unsafe fn fill_pair<const K: usize, const ADJOINT: bool>(
     starts: [PowerCoordinates<K>; 2],
     subtract: PowerCoordinates<K>,
     polynomial: &[u16],
-    outputs: [&mut [PowerCoordinates<K>]; 2],
+    outputs: [&mut [MaybeUninit<PowerCoordinates<K>>]; 2],
 ) {
     assert_eq!(K, 11);
     assert_eq!(outputs[0].len(), outputs[1].len());
@@ -235,7 +237,7 @@ pub(super) unsafe fn fill_powers_adjoint_pairs<const K: usize, const PAIRS: usiz
     starts: [[PowerCoordinates<K>; 2]; PAIRS],
     subtract: [PowerCoordinates<K>; PAIRS],
     polynomials: [&[u16]; PAIRS],
-    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    mut outputs: [[&mut [MaybeUninit<PowerCoordinates<K>>]; 2]; PAIRS],
 ) {
     assert_eq!(K, 11);
     assert!(PAIRS > 0);
@@ -314,7 +316,7 @@ pub(super) unsafe fn fill_adjoint_pairs<const K: usize, const PAIRS: usize>(
     starts: [[PowerCoordinates<K>; 2]; PAIRS],
     subtract: PowerCoordinates<K>,
     polynomials: [[&[u16]; 2]; PAIRS],
-    mut outputs: [[&mut [PowerCoordinates<K>]; 2]; PAIRS],
+    mut outputs: [[&mut [MaybeUninit<PowerCoordinates<K>>]; 2]; PAIRS],
 ) {
     assert_eq!(K, 11);
     assert!(PAIRS > 0);
@@ -381,7 +383,7 @@ pub(super) unsafe fn fill_adjoint_pairs<const K: usize, const PAIRS: usize>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{PowerBasis, PowerCoordinates, Q12289Extension};
+    use super::super::{PowerBasis, PowerCoordinates, Q12289Extension, coordinate_output};
     use super::{
         fill_powers_adjoint_pair, fill_powers_adjoint_pairs, fill_powers_pair, reduce_adjoint,
     };
@@ -421,7 +423,11 @@ mod tests {
         // Each test checks runtime features before reaching this helper; the
         // feedback/starts are canonical and both slices have length `len`.
         unsafe {
-            fill_powers_pair(&feedback, starts, [&mut a[2..len + 2], &mut b[2..len + 2]]);
+            fill_powers_pair(
+                &feedback,
+                starts,
+                [&mut a[2..len + 2], &mut b[2..len + 2]].map(coordinate_output),
+            );
         }
         assert_eq!(&a[2..len + 2], expected_a.as_slice());
         assert_eq!(&b[2..len + 2], expected_b.as_slice());
@@ -504,7 +510,7 @@ mod tests {
                 fill_powers_pair(
                     &basis.feedback,
                     starts.map(|start| basis.encode(start)),
-                    [&mut a, &mut b],
+                    [a.as_mut_slice(), b.as_mut_slice()].map(coordinate_output),
                 );
             }
             for (mut expected, output) in starts.into_iter().zip([a, b]) {
@@ -549,7 +555,7 @@ mod tests {
                 starts,
                 subtract,
                 polynomial,
-                [&mut a[2..len + 2], &mut b[2..len + 2]],
+                [&mut a[2..len + 2], &mut b[2..len + 2]].map(coordinate_output),
             );
         }
         assert_eq!(&a[2..len + 2], expected_a.as_slice());
@@ -629,7 +635,7 @@ mod tests {
                 let mut buffers = actual.iter_mut();
                 let outputs = std::array::from_fn(|_| {
                     let [a, b] = buffers.next().unwrap();
-                    [&mut a[2..len + 2], &mut b[2..len + 2]]
+                    [&mut a[2..len + 2], &mut b[2..len + 2]].map(coordinate_output)
                 });
                 // Feature availability is checked by the test; inputs have
                 // canonical lanes and all guarded slices have the same length.
@@ -732,7 +738,11 @@ mod tests {
                 let mut out_b = [ZERO; 2];
                 // All operands are canonical and both outputs have length two.
                 unsafe {
-                    fill_powers_pair(&feedback, starts, [&mut out_a, &mut out_b]);
+                    fill_powers_pair(
+                        &feedback,
+                        starts,
+                        [out_a.as_mut_slice(), out_b.as_mut_slice()].map(coordinate_output),
+                    );
                 }
                 assert_eq!(
                     out_a,

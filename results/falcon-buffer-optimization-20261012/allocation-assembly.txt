@@ -1,0 +1,225 @@
+Falcon buffer allocation assembly inspection
+Date: 2026-10-12
+Scope: read-only inspection; no build or benchmark run.
+
+Artifact
+  .tmp/falcon-buffer-optimization-20261012/baseline
+  SHA256: 57ee768283ea3ae1ef782d78c5bbb51efc4b25704ffe78370fa225a82d875fa2
+  ELF Build ID: 32bfe9b267ac8a49cb960e4a9de7f10d590c2000
+  Native x86-64 release ELF, dynamically linked, symbols retained.
+  This is the frozen baseline supplied by root, before current buffer changes.
+
+Conclusion
+  Both targeted baseline paths perform actual serial eager initialization.
+  Coordinate tables use malloc followed by inline stores of zero; the first
+  word-fold table uses malloc followed by memset and one final vector store.
+  Neither target table already obtains its storage through calloc. This is
+  established from generated instructions, not inferred from vec! syntax.
+  These instructions establish a cost mechanism, not the savings achievable
+  by any candidate. Allocation, first-touch faults, later writes and page
+  placement still need measurement; lazy-zero allocation can move physical
+  zeroing/fault work to worker writes rather than eliminate it.
+
+Canonical coordinate generation
+  Falcon-512 symbol:
+    bitz::piop::spartan::falcon512_algebraic::ring::coordinates_with_options
+    address 0x203730, size 0x1d2c, end 0x20545c
+  Falcon-1024 symbol:
+    bitz::piop::spartan::falcon1024_algebraic::ring::coordinates_with_options
+    address 0x35a6d0, size 0x1cec, end 0x35c3bc
+
+  N=1024:
+    0x35b234 / 0x35b261: imul $0x5800,%rbx,%r13
+      Computes batch * 22528 = batch * 1024 * 22 bytes per coordinate table.
+    0x35b29e: call malloc through GOT 0x594cc8 (first table)
+    0x35b2e0..0x35b35d: unrolled serial zero loop, eight entries per iteration
+    0x35b370..0x35b39b: zero the remaining entries
+    0x35b3b2: call malloc through GOT 0x594cc8 (second table)
+    0x35b470..0x35b4ee: equivalent eight-entry zero loop
+    0x35b500..0x35b52b: zero the remaining entries
+
+  The per-entry store pattern is:
+    vmovdqu %xmm0,(destination)       # 16 zero bytes
+    movq $0x0,0xe(destination)       # 8 zero bytes, overlapping two bytes
+  The loop advances 0xb0 = 176 = 8*22 bytes. These instructions write all
+  canonical-zero coordinates before the recurrence workers overwrite them.
+  There is no memset or calloc call for either large coordinate vector.
+  The smaller batch-sized target vector also has malloc plus inline zeroing
+  (malloc at 0x35b544; zero loop at 0x35b590).
+
+  N=512 follows the same implementation:
+    0x2042d4 / 0x204301: imul $0x2c00 (batch * 512 * 22 bytes)
+    first malloc 0x20433e; main zero loop 0x204380..0x2043fd
+    second malloc 0x204452; main zero loop 0x204510..0x20458e
+
+  For batch 1024, the two coordinate vectors cover 22 MiB (N512) or 44 MiB
+  (N1024) of distinct storage. The overlapping store widths issue 24 bytes per
+  22-byte entry; this is not a claim about measured DRAM traffic.
+
+First word fold
+  first_fold_with_factors is inlined into these symbols:
+    Falcon-512 word_binding::prove_with_correction::<Blake3Transcript>
+      address 0x2b9f20, size 0x886a, end 0x2c278a
+    Falcon-1024 word_binding::prove_with_correction::<Blake3Transcript>
+      address 0x3ce2f0, size 0x8a1b, end 0x3d6d0b
+
+  N=1024 dense [F;2] output table:
+    0x3d2eaa: call __rust_alloc with alignment 8
+    0x3d2eb8: shl $0xf,%r12 (32768 bytes per padded instance)
+    0x3d2ebf: lea -0x20(%r12),%rdx
+    0x3d2ec9: xor %esi,%esi (memset byte value zero)
+    0x3d2ecb: call memset through GOT 0x594d50 for total bytes minus 32
+    0x3d2ef2: vmovups %ymm0,-0x20(%r13,%r12,1) writes final 32 zero bytes
+    0x3d37ea: call Rayon bridge for first_fold_with_factors::{closure#3}
+  The memset and final zero store occur before the worker bridge.
+
+  N=512 equivalent output allocation:
+    0x2bea9a: call __rust_alloc with alignment 8
+    0x2beaab: shl $0xe,%rbx (16384 bytes per padded instance)
+    0x2beab2: lea -0x20(%rbx),%rdx
+    0x2beabb: call memset for total bytes minus 32
+    0x2bead0: final vmovups 32-byte zero store
+    0x2bec21: call Rayon bridge for first_fold_with_factors::{closure#3}
+  At padded capacity 1024, these dense tables are 16 MiB / 32 MiB.
+
+Allocator routing
+  __rust_alloc is at 0x12fe50, size 0x4d.
+  For alignment <=16 and size >= alignment, it tail-calls malloc at 0x12fe67.
+  Thus the first-fold alignment-8 allocation above uses malloc, not calloc.
+
+  __rust_alloc_zeroed is at 0x12ff50, size 0x76.
+  For ordinary size >= alignment, its path at 0x12ff98..0x12ffa7 tail-calls
+  calloc(size,1), through GOT 0x594d10. Its alternate aligned path uses
+  posix_memalign then memset. Presence of this allocator in the binary does
+  not mean baseline coordinate/word tables call it; their sites above do not.
+
+Commands used (from /home/john-wu/code/BitZ-pcs)
+  file .tmp/falcon-buffer-optimization-20261012/baseline
+  sha256sum .tmp/falcon-buffer-optimization-20261012/baseline
+  nm -S -n -C .tmp/falcon-buffer-optimization-20261012/baseline
+  objdump -d -C --no-show-raw-insn --start-address=START --stop-address=END \
+    .tmp/falcon-buffer-optimization-20261012/baseline
+
+  Full symbol ranges inspected:
+    [0x203730,0x20545c), [0x35a6d0,0x35c3bc)
+    [0x2b9f20,0x2c278a), [0x3ce2f0,0x3d6d0b)
+    [0x12fe50,0x12ffd0)
+  Python subprocess extraction filtered allocator calls and surrounding
+  instructions, followed by bounded objdump reads of the loops above.
+  Source correspondence checked against:
+    git show HEAD:src/piop/spartan/falcon1024_algebraic/word_binding.rs
+  HEAD at inspection: 666b546a08af1972b5a40d88787cddb02ccd18b4.
+
+Candidate inspection (appended after root supplied the frozen binary)
+--------------------------------------------------------------------
+  .tmp/falcon-buffer-optimization-20261012/candidate
+  SHA256: 226e9f3f5614a721414e227f18f877be9dbe8b162bc915679e39a7e3de77c692
+  ELF Build ID: 7164a38a006dca93f8ea0a5bcf94c9c5cadf6a34
+  No builds or benchmark runs were performed for this inspection.
+
+CoordinateBuffer::new modes are distinct in generated code
+  Falcon-512 CoordinateBuffers::new: 0x320c70, size 0xa0b
+  Falcon-1024 CoordinateBuffers::new: 0x4214f0, size 0xa0b
+  Detailed control-flow checks below use the N1024 specialization. N512 has
+  the same allocation branches; its allocator call sites were checked too.
+
+  The N1024 jump table at 0x487a0 maps the source enum discriminants:
+    0 baseline -> 0x421563
+    1 zeroed   -> 0x421811
+    2 direct   -> 0x421735
+    3 reuse without a supplied cache -> 0x42177c
+  Reuse with a supplied cache branches to checkout at 0x42168a before the
+  jump-table dispatch. The table was read with objdump -s and decoded as
+  four little-endian signed32 offsets relative to 0x487a0.
+
+  Baseline:
+    First malloc at 0x421590; inline zero loop at 0x4215e0..0x42165e.
+    Second __rust_alloc at 0x4219e3; zero loop at 0x421a90..0x421b0e.
+    The serial zeroing baseline remains available in the candidate.
+
+  Zeroed:
+    First table calls calloc(size,1) directly at 0x421843.
+    Second table calls __rust_alloc_zeroed at 0x421a3b with alignment 2.
+    For these nonempty 22-byte-element allocations, __rust_alloc_zeroed
+    routes to calloc at 0x1323b7. Neither table has an additional caller-side
+    fill after allocation. N512 calls are 0x320fc3 and 0x3211bb.
+    This verifies allocation lowering; libc/OS can still perform zeroing or
+    page-fault work, depending on allocation size and reuse history.
+
+  Direct:
+    First table malloc at 0x421762, then metadata-only path to 0x42193b.
+    Second __rust_alloc at 0x421976 with alignment 2, then metadata-only
+    path 0x421e87 -> 0x421dde -> return. __rust_alloc routes to malloc.
+    The vector lengths are stored as zero. There is no preinitialization
+    loop, memset, or calloc on this path. N512 calls are 0x320ee2 and
+    0x3210f6. Subsequent parallel recurrence writers initialize the slots.
+
+  Warm reuse:
+    Checkout clones the Arc and takes the mutex at 0x42168a..0x4216a8;
+    cached vector metadata is moved out, and mutex unlock is 0x421716
+    before output-buffer processing.
+    At 0x421c8c..0x421c92, requested first length minus existing length
+    branches to 0x4217aa when no growth is needed.
+    At 0x4217af..0x4217ba, the same condition for the second vector branches
+    to 0x421dd4, then metadata-only return at 0x421dde.
+    Thus fixed-shape initialized cache hits do not allocate or zero the
+    coordinate outputs. Empty cache/cold reuse and larger requested lengths
+    enter reserve/zero-suffix paths. No claim of lock-free operation is made.
+
+  The caller still initializes the small batch-sized target vector; direct
+  mode removes the two large coordinate-vector pre-fills, not every zero
+  store anywhere in coordinate generation. N1024 coordinates_with_buffers
+  is at 0x425e80 (size 0x1a0c); it calls the constructor at 0x4269f6 and
+  allocates the target vector at 0x426a71.
+
+First word fold: direct path bypasses baseline memset
+  first_fold_into / initialize_dense are inlined into prove_with_options:
+    N512:  0x2b4600, size 0x9d2a
+    N1024: 0x3cff70, size 0x9b9d
+
+  N1024 tests direct_init at 0x3d566b and branches at 0x3d5677.
+    direct_init=false goes to 0x3d57a1, where the cold allocation has
+    memset at 0x3d57f6 and final32 zero store at 0x3d5805. A zero-suffix
+    resize path has memset at 0x3d5893.
+    direct_init=true starts at 0x3d567d, clears only Vec length at
+    0x3d5685, and checks capacity at 0x3d5690. Warm capacity goes directly
+    to worker setup. Insufficient capacity branches to 0x3d6ccf, which
+    calls RawVecInner::finish_grow at 0x3d6cea; the helper (0x13b470,
+    size 0x15c) uses malloc for cold allocation / realloc for growth and
+    has no zero-fill. Control rejoins worker setup at 0x3d56e6.
+    Both direct cases reach the MaybeUninit Rayon bridge call at
+    0x3d5907, bypassing the two baseline memsets entirely.
+
+  N512 has the equivalent direct test at 0x2b9909 / branch 0x2b9918;
+  the direct Rayon bridge call is 0x2b9bad. The baseline-only memset
+  sites are 0x2b9ab1 and 0x2b9b43.
+
+  Actual direct output stores were checked in the N1024 MaybeUninit Rayon
+  helper at 0x3dcb80 (size 0x9e7):
+    Unfused loop calls the slot computation at 0x3dd0cf, then writes the
+    resulting32-byte [F;2] once at 0x3dd0e3, advancing32 bytes each step.
+    Fused loop calls the two slot computations at 0x3dcdb4 and 0x3dcdcc,
+    then writes their32-byte results at 0x3dcdee and 0x3dcdfd.
+  These are computed-value writes, not preliminary zeros. Local stack
+  accumulator initialization remains, as expected.
+
+Additional commands
+  sha256sum .tmp/falcon-buffer-optimization-20261012/candidate
+  file .tmp/falcon-buffer-optimization-20261012/candidate
+  nm -S -n -C .tmp/falcon-buffer-optimization-20261012/candidate
+  objdump -s --start-address=0x487a0 --stop-address=0x487b0 \
+    .tmp/falcon-buffer-optimization-20261012/candidate
+  objdump -d -C --no-show-raw-insn --start-address=START --stop-address=END \
+    .tmp/falcon-buffer-optimization-20261012/candidate
+  Main inspected ranges:
+    [0x320c70,0x32167b), [0x4214f0,0x421efb), [0x425e80,0x42788c)
+    [0x2b4600,0x2be32a), [0x3cff70,0x3d9b0d), [0x3dcb80,0x3dd567)
+    [0x132260,0x1323d6), [0x13b470,0x13b5cc)
+
+Interpretation
+  The candidate implements the intended memory-write experiments in machine
+  code: calloc for zeroed coordinates, allocation without pre-fill for direct
+  coordinates and direct word-fold outputs, and no output allocation/pre-fill
+  on fixed-shape warm coordinate cache hits. Baseline branches retain eager
+  initialization. Timing and end-to-end qualification are separate evidence;
+  this inspection alone does not establish a speedup.

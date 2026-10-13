@@ -1,0 +1,55 @@
+Buffer experiment analysis: confirm-factored
+Deltas are percentages; negative is lower. Primary reference: control; comparisons stay within protocol and mode.
+
+N=512 batch=1024 security=128 t=16 factored cold buffers-direct samples=21 processes=21
+  total=30.196ms prove=26.895ms verify=7.487ms vs-control=-8.14% vs-baseline=n/a
+  per-seed total vs control: 42:-8.96%, 43:-6.95%, 44:-8.21%
+  faults=24948 retainedRSS=55.38MiB scratch=0.00MiB peakRSS/process median=74.33MiB max=74.69MiB
+
+N=512 batch=1024 security=128 t=16 factored cold control samples=21 processes=21
+  total=32.871ms prove=29.505ms verify=7.891ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24939 retainedRSS=55.40MiB scratch=0.00MiB peakRSS/process median=74.35MiB max=74.71MiB
+
+N=512 batch=1024 security=128 t=16 factored repeated buffers-direct samples=21 processes=3
+  total=28.388ms prove=26.050ms verify=7.319ms vs-control=-5.74% vs-baseline=n/a
+  per-seed total vs control: 42:-5.46%, 43:-5.33%, 44:-6.74%
+  faults=15646 retainedRSS=61.53MiB scratch=0.00MiB peakRSS/process median=85.51MiB max=107.49MiB
+
+N=512 batch=1024 security=128 t=16 factored repeated control samples=21 processes=3
+  total=30.116ms prove=27.744ms verify=7.736ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=15651 retainedRSS=61.57MiB scratch=0.00MiB peakRSS/process median=85.45MiB max=85.73MiB
+
+N=1024 batch=1024 security=128 t=16 factored cold buffers-direct samples=21 processes=21
+  total=51.282ms prove=45.820ms verify=9.355ms vs-control=-10.69% vs-baseline=n/a
+  per-seed total vs control: 42:-11.12%, 43:-10.53%, 44:-9.85%
+  faults=50518 retainedRSS=101.26MiB scratch=0.00MiB peakRSS/process median=146.67MiB max=147.84MiB
+
+N=1024 batch=1024 security=128 t=16 factored cold control samples=21 processes=21
+  total=57.420ms prove=51.806ms verify=10.879ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=50511 retainedRSS=101.19MiB scratch=0.00MiB peakRSS/process median=147.09MiB max=147.90MiB
+
+N=1024 batch=1024 security=128 t=16 factored repeated buffers-direct samples=21 processes=3
+  total=46.730ms prove=42.805ms verify=9.473ms vs-control=-8.63% vs-baseline=n/a
+  per-seed total vs control: 42:-8.40%, 43:-9.08%, 44:-8.54%
+  faults=24628 retainedRSS=119.46MiB scratch=0.00MiB peakRSS/process median=181.69MiB max=181.70MiB
+
+N=1024 batch=1024 security=128 t=16 factored repeated control samples=21 processes=3
+  total=51.145ms prove=47.115ms verify=9.830ms vs-control=+0.00% vs-baseline=n/a
+  per-seed total vs control: 42:+0.00%, 43:+0.00%, 44:+0.00%
+  faults=24649 retainedRSS=119.88MiB scratch=0.00MiB peakRSS/process median=181.56MiB max=181.94MiB
+
+Notes:
+  Percent deltas are candidate/reference - 1; negative means lower time or memory.
+  Cold means first commit+prove in a fresh process/Prepared, after setup/input generation; no cache flush.
+  Repeated samples share one process/Prepared per seed; within-process samples are correlated.
+  Per-seed median changes indicate consistency, not a confidence interval or statistical significance.
+  Compare matching protocol, mode, degree, batch, security and worker count only.
+  Candidate control uses the same instrumented binary; frozen baseline checks overall change.
+  Peak RSS is process lifetime high-water; separate per-process maxima avoid treating repeated values as independent peaks.
+  Post-drop RSS includes inputs, Prepared, JSON and allocator retention. Scratch bytes counts only additional coordinate and word-binding cached vector capacity, excluding existing sumcheck scratch.
+  Null metrics were not collected (old baseline or feature-disabled production candidate); they are not zero.
+  A subset phase may lack frozen baselines; the root campaign validator checks these across phases.
+  No new prover execution or performance measurement is performed by this helper.

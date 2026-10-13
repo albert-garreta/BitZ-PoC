@@ -1,0 +1,22 @@
+{
+  "command": [
+    "cargo",
+    "bench",
+    "--locked",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_algebraic",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "cwd": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012",
+  "overrides": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/target",
+    "TMPDIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-build-tmp",
+    "CARGO_BUILD_JOBS": "8"
+  },
+  "source_commit": "666b546a08af1972b5a40d88787cddb02ccd18b4",
+  "candidate_source_snapshot": null
+}

@@ -1,0 +1,102 @@
+Falcon buffer experiment: ring stage assessment, 2026-10-12
+
+Evidence and interpretation
+---------------------------
+Source: profiles/profile-summary.json and profiles/runs/stages/*/{command.json,
+result.json,stderr.log}; minor faults from analysis-screen.json. These are frozen
+candidate-v1 profiles, SHA256:
+226e9f3f5614a721414e227f18f877be9dbe8b162bc915679e39a7e3de77c692.
+They do not measure the final production build. All cases use batch 1024,
+security 128, 16 pinned workers, seeds 42/43/44, one excluded warmup and three
+measured proofs per seed (nine observations per table cell).
+
+Independently reconstructed all 12 summary rows from raw events. Each run has
+four parentless falcon_algebraic:prove roots. Keeping the last three and events
+whose ancestor_ids contain that root reproduces every summary median. This
+excludes commitment and verification spans, including verifier coordinates.
+elapsed_ms is elapsed wall time; fields ending _ns are divided by 1e6. The
+public_eval_worker_ns and recurrence_worker_ns fields sum overlapping worker
+intervals and MUST NOT be presented as elapsed phase time or added to wall time.
+Nested spans overlap, and independently computed medians need not sum.
+
+Both variants use the same binary. Direct enables coordinate-direct AND word
+direct initialization. It does not enable scratch reuse or the new factored
+arithmetic kernels. Canonical public evaluation remains legacy, recurrence
+group remains 4, and carry fusion remains off. Factored uses its existing paired
+public evaluator. Thus prove-time changes cannot be credited solely to the
+coordinate change. Tracing adds overhead; final untraced qualification/production
+results should supply headline end-to-end gains.
+
+Recommended stage table: elapsed milliseconds, control -> direct
+----------------------------------------------------------------
+Stage                       v9 / 512       v9 / 1024      v10 / 512      v10 / 1024
+Coordinates                 2.861 -> .712  6.066 -> 1.460  .607 -> .265   1.017 -> .485
+Coordinate allocation*      2.481 -> .007  5.331 -> .008   not split      not split
+Collapse                    1.160 -> 1.139 2.237 -> 2.263  .527 -> .526   1.238 -> 1.262
+Carries / integer lift       .324 -> .312   .554 -> .737   .111 -> .117    .253 -> .244
+Whole ring                  4.872 -> 2.669 9.641 -> 5.240 1.810 -> 1.486  3.420 -> 2.756
+First word fold             1.332 -> .851  2.404 -> 1.487 2.310 -> .934   5.684 -> 1.836
+Whole arithmetic            6.811 -> 6.556 10.832->10.410 7.449 -> 6.296 13.224 -> 9.808
+Prove (excludes commitment) 30.244->27.282 51.833->45.921 28.197->26.532 48.198->44.051
+
+* Canonical allocation field includes coordinate buffers/output preparation and
+the small target vector. It is not just the allocator call itself. Whole ring
+is falcon_algebraic:ring for both protocols; factored's inner prove span is
+nested and should not be added. Carries and integer lift have different protocol
+roles and should retain their respective names in a user-facing table.
+
+Canonical detail: separate wall time and summed worker time
+----------------------------------------------------------
+Metric                            N512 control -> direct   N1024 control -> direct
+Basis/powers wall ms                  .0332 -> .0333           .0646 -> .0639
+Coordinate-work wall ms              2.8356 -> .6887          6.0423 -> 1.4362
+Allocation portion of above          87.49% -> .98%           88.23% -> .53%
+Public evaluation summed worker ms   1.2676 -> .8194          2.5885 -> 1.7435
+Recurrence summed worker ms          2.6167 -> 8.1729          6.3087 -> 18.2664
+
+Coordinate wall time falls 75.1% / 75.9%; whole-ring wall time falls 45.2% / 45.6%.
+All three seed medians improve for both measures at both canonical degrees.
+The allocation/prezero pass almost disappears, but recurrence worker time grows
+about 3.12x / 2.90x. This is consistent with first-touch/page-fault work moving
+from serial initialization into parallel output writers; it is not evidence
+that the recurrence arithmetic itself became slower. Fault handling, memory
+traffic, cache state and scheduling are not individually attributed by these
+timers. The public-evaluation kernel is unchanged: its smaller measured worker
+time is not an independently established evaluator optimization.
+
+Initial page cost persists
+-------------------------
+Screen median process minor faults, control -> coordinate-direct:
+                         cold                   repeated
+v9  / 512             31,681 -> 31,693         21,022 -> 21,024
+v9  / 1024            58,251 -> 58,191         35,878 -> 35,886
+v10 / 512             24,973 -> 24,967         15,537 -> 15,498
+v10 / 1024            50,509 -> 50,497         24,642 -> 24,637
+These process-wide counts remain approximately unchanged. Direct initialization
+removes the explicit prezero pass; it does not eliminate demand-zero page
+handling or demonstrate fewer page faults. The assembly report independently
+confirms the changed output initialization, whereas these counters alone do
+not prove which part caused the measured speedup.
+
+Factored behavior and remaining bottlenecks
+-----------------------------------------
+Factored coordinate wall time falls 56.4% / 52.3%, with all seed medians faster.
+Pooled whole-ring time improves 17.9% / 19.4%. Unlike canonical, factored has no
+separate allocation/evaluation/recurrence counters, so their individual savings
+cannot be extracted from this trace. The smaller coordinate footprint and prior
+factoring make its absolute coordinate saving smaller (.343 / .532 ms).
+
+Caveat: v10 N1024 seed 43 whole-ring median regresses 3.173 -> 3.608 ms while its
+coordinate median improves .992 -> .486 ms. Collapse is variable in that seed:
+control samples 3.099/1.238/1.005 ms, direct 3.116/1.026/1.994 ms. Do not describe
+the whole-ring gain as unanimous across seeds. Canonical N1024 carries also rise
+.554 -> .737 ms in the pooled profile; the isolated carry algorithm is unchanged.
+
+After direct initialization, collapse is the largest named ring substage at both
+degrees in both protocols (v9: 1.139/2.263 ms; v10: .526/1.262 ms). Binding remains
+the larger non-GKR phase: 4.452/7.308 ms for v9 and 4.123/6.600 ms for v10. The
+forest remains the largest named prover substage overall: approximately
+11.6/20.6 ms for v9 and 11.8/21.3 ms for v10. These profiles support retaining
+coordinate allocation as the explanation for this patch's ring gains, then
+reassessing collapse and binding for subsequent work; they do not establish a
+new arithmetic-kernel speedup or justify promotion of scratch reuse.

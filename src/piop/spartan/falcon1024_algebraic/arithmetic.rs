@@ -161,10 +161,56 @@ pub(super) fn prove_owned(
     ring: PreparedClaim,
     schedule: &Schedule,
 ) -> Result<(Proof, BridgeClaim), FalconError> {
+    prove_owned_with_scratch(
+        transcript,
+        layout,
+        data,
+        source,
+        field,
+        ring,
+        schedule,
+        &BindingScratch::default(),
+    )
+}
+
+/// One cached workspace per prepared prover. A concurrent proof gets its own
+/// workspace; the mutex is never held while proving.
+#[derive(Default)]
+pub(super) struct BindingScratch(std::sync::Mutex<Option<word_binding::WordWorkspace>>);
+
+impl BindingScratch {
+    #[cfg(feature = "bench-internals")]
+    pub(super) fn retained_bytes(&self) -> usize {
+        self.0.lock().unwrap().as_ref().map_or(0, |workspace| {
+            workspace.capacity_slots() * std::mem::size_of::<[F; 2]>()
+        })
+    }
+
+    fn with_workspace<R>(&self, run: impl FnOnce(&mut word_binding::WordWorkspace) -> R) -> R {
+        let mut workspace = self.0.lock().unwrap().take().unwrap_or_default();
+        let result = run(&mut workspace);
+        let mut cached = self.0.lock().unwrap();
+        if cached.is_none() {
+            *cached = Some(workspace);
+        }
+        result
+    }
+}
+
+pub(super) fn prove_owned_with_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: PreparedClaim,
+    schedule: &Schedule,
+    scratch: &BindingScratch,
+) -> Result<(Proof, BridgeClaim), FalconError> {
     // The production caller is finished with these projections. Reusing them
     // avoids retaining and copying another pair of full coefficient tables.
     if arithmetic_experiment("BITZ_ARITHMETIC_BINDING_OWNED", true) {
-        prove_with_ring(
+        prove_with_ring_and_scratch(
             transcript,
             layout,
             data,
@@ -172,9 +218,19 @@ pub(super) fn prove_owned(
             field,
             RingInput::Owned(ring),
             schedule,
+            Some(scratch),
         )
     } else {
-        prove(transcript, layout, data, source, field, &ring, schedule)
+        prove_with_ring_and_scratch(
+            transcript,
+            layout,
+            data,
+            source,
+            field,
+            RingInput::Borrowed(&ring),
+            schedule,
+            Some(scratch),
+        )
     }
 }
 
@@ -195,10 +251,33 @@ pub(super) fn prove_factored_ring(
     ring: super::factored_ring::PreparedClaim,
     schedule: &Schedule,
 ) -> Result<(Proof, BridgeClaim), FalconError> {
+    prove_factored_ring_with_scratch(
+        transcript,
+        layout,
+        data,
+        source,
+        field,
+        ring,
+        schedule,
+        &BindingScratch::default(),
+    )
+}
+
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) fn prove_factored_ring_with_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: super::factored_ring::PreparedClaim,
+    schedule: &Schedule,
+    scratch: &BindingScratch,
+) -> Result<(Proof, BridgeClaim), FalconError> {
     if !schedule.word_binding {
         return Err(failure("factored ring requires word binding"));
     }
-    prove_with_ring(
+    prove_with_ring_and_scratch(
         transcript,
         layout,
         data,
@@ -206,6 +285,7 @@ pub(super) fn prove_factored_ring(
         field,
         RingInput::Factored(ring),
         schedule,
+        Some(scratch),
     )
 }
 
@@ -217,6 +297,21 @@ fn prove_with_ring(
     field: &Cfg,
     ring: RingInput<'_>,
     schedule: &Schedule,
+) -> Result<(Proof, BridgeClaim), FalconError> {
+    prove_with_ring_and_scratch(
+        transcript, layout, data, source, field, ring, schedule, None,
+    )
+}
+
+fn prove_with_ring_and_scratch(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: RingInput<'_>,
+    schedule: &Schedule,
+    scratch: Option<&BindingScratch>,
 ) -> Result<(Proof, BridgeClaim), FalconError> {
     if source.layout() != layout {
         return Err(failure("algebraic source layout mismatch"));
@@ -266,21 +361,30 @@ fn prove_with_ring(
         } else {
             None
         };
-        let (proof, row_weights, claim) = word_binding::prove_with_correction(
-            transcript,
-            layout,
-            source,
-            form,
-            word_binding::WordFactors {
-                norm: correction,
-                s1,
-            },
-            target,
-            norm,
-            merge_nonce,
-            schedule,
-            field,
-        )?;
+        let prove = |workspace: &mut word_binding::WordWorkspace| {
+            word_binding::prove_with_workspace(
+                transcript,
+                layout,
+                source,
+                form,
+                word_binding::WordFactors {
+                    norm: correction,
+                    s1,
+                },
+                target,
+                norm,
+                merge_nonce,
+                schedule,
+                field,
+                workspace,
+            )
+        };
+        let (proof, row_weights, claim) =
+            if let Some(scratch) = scratch.filter(|_| word_binding::workspace_reuse_enabled()) {
+                scratch.with_workspace(prove)
+            } else {
+                prove(&mut word_binding::WordWorkspace::default())
+            }?;
         return Ok((
             proof,
             BridgeClaim {
@@ -1638,6 +1742,35 @@ mod tests {
             }
             assert!(BindingForm::new_factored(&layout, invalid, &norm, f.one(), &f).is_err());
         }
+    }
+
+    #[test]
+    fn binding_scratch_checkout_does_not_hold_the_mutex() {
+        let scratch = BindingScratch::default();
+        scratch.with_workspace(|_| {
+            assert!(scratch.0.try_lock().unwrap().is_none());
+            // An overlapping proof can check out a separate workspace and
+            // return it before the first proof finishes. Only one is cached.
+            scratch.with_workspace(|_| {
+                assert!(scratch.0.try_lock().unwrap().is_none());
+            });
+            assert!(scratch.0.try_lock().unwrap().is_some());
+        });
+        assert!(scratch.0.lock().unwrap().is_some());
+    }
+
+    #[test]
+    fn binding_scratch_recovers_after_an_unwound_proof() {
+        let scratch = BindingScratch::default();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                scratch.with_workspace(|_| panic!("interrupted proof"));
+            }))
+            .is_err()
+        );
+        assert!(scratch.0.lock().unwrap().is_none());
+        scratch.with_workspace(|_| {});
+        assert!(scratch.0.lock().unwrap().is_some());
     }
 
     #[test]

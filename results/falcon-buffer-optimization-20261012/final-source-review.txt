@@ -1,0 +1,64 @@
+Final source and reporting review, 2026-10-12
+
+Scope: read-only follow-up to binding-review.txt, reviewing production defaults,
+scratch gating, measured-build/source identity, analysis output and README claims.
+No builds, tests or prover executions were performed by this reviewer.
+
+Source checks:
+  All eleven files listed in candidate-v2-source.json match their recorded
+  SHA256 values in the workspace at review time; no mismatches.
+  ring.rs selects direct coordinate initialization when Rayon workers > 1 and
+  baseline initialization with one worker. Overrides require bench-internals.
+  word_binding.rs applies the same worker condition to direct dense output.
+  Word scratch, initial fusion and factored fold reduction remain default-off.
+  arithmetic.rs now checks workspace_reuse_enabled before taking BindingScratch
+  locks; the default path uses a local workspace instead of the cache lease.
+  protocol.rs documents retained_scratch_bytes as additional coordinate and
+  word-binding vector capacity only, excluding existing sumcheck scratch.
+  Earlier independent arithmetic, initialization and lock-lifetime checks remain
+  recorded in binding-review.txt. No new source-level defect found here.
+
+Build identity:
+  build-source-audit.json records fresh compilation of field, BitZ and the bench
+  for v1 baseline/candidate and final production baseline/candidate. Cargo's
+  artifact fresh=false means compilation occurred in those captured logs.
+  Final production candidate SHA256:
+  321f791c5d7b5c09de5cb3b92ff69327cd0e23272117cc5a69da0d76bb9d235d
+  Final production uses falcon-hybrid without bench-internals and a fresh
+  isolated Cargo target. The same-hash stale shared-target candidate was caught
+  and archived before any production measurement; it is excluded from results.
+
+Analysis/report checks:
+  The completed production phase contains 288 processes and 576 proofs including
+  warmups. analyze.py revalidated raw commands/results, frozen binaries, selected
+  protocol, source identity and complete proof equality with no missing baseline.
+  Production comparisons use baseline as the primary reference; the variant
+  named control is the final candidate-default binary, not an experimental
+  baseline. Per-seed reporting follows this distinction.
+  Both degrees improve across all eight 8/16-worker cold/repeated cells and all
+  24 seed medians. Total reductions are 6.50-13.36%; verifier reductions are
+  8.42-18.58%. One-worker total differences are -0.23% to +0.36%, with no claimed
+  material one-worker gain. Per-process peak RSS changes remain within about
+  half a MiB. Missing current-RSS/fault/cached-vector metrics are not zero.
+  README distinguishes final production results from v1 selector qualification
+  and traced profiles. It states cold/repeated setup and correlation limits,
+  excludes setup/verification from the prover timer, and does not equate minor
+  faults or summed worker time with allocated bytes or elapsed wall time.
+  Final main validation records 3828 proofs, including the 36 production
+  security-100 partial-batch proofs and 192 additional v1 factored confirmation
+  proofs; separate profiles record 144, giving 3972 verified executions. All
+  phases are complete. The v1 factored confirmation improves all four matched
+  cold/repeated cells and all twelve seed medians; it uses the frozen v1
+  experiment binary and is not final-production-v10 evidence.
+  Test counts follow root's captured final logs: 355 Falcon tests plus two
+  separately run large-batch tests, and 23 native + 23 portable field tests.
+
+Limits: comparison is specific to the recorded host, batch/security and measured
+worker counts. Three repeated processes per configuration do not support treating
+all 21 timed samples as independent processes. No statistical significance or
+universal absence of performance regressions is claimed.
+
+Final handoff: README and campaign.json contain actual completed production and
+v1 confirmation counts/results, with no pending placeholders. Root also reports
+the final coordinate reviewer reconfirmed no must-fix issue. Earlier source
+review content and its scope/limitations are preserved above.

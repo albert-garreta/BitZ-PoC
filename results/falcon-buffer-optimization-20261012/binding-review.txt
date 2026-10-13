@@ -1,0 +1,80 @@
+Independent source review and harness validation, 2026-10-12
+
+Reviewed files:
+  src/piop/spartan/falcon1024_algebraic/word_binding.rs
+  src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs
+  src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+  src/piop/spartan/falcon1024_algebraic/protocol.rs
+  vendor/field/src/prime/prepared_linear.rs (existing reduction contract)
+  scripts/falcon_buffer_optimization.py
+  benches/falcon_algebraic.rs
+  benches/common/falcon_metrics.rs
+  ring.rs / factored_ring.rs coordinate cache plumbing was also inspected.
+
+Source-level findings:
+  No correctness or lock-lifetime defect found in the reviewed binding changes.
+  The factored fold gives PreparedProductReduction(2) exactly two canonical
+  Montgomery products. For the production prime p < 2^126, 2*p^2 < p*2^128;
+  the REDC bound also holds for the existing 127-bit-prime test case.
+  Fused initial accumulation preserves c0, c2, initial, and the norm even/odd
+  contributions. Restricting this loop to live instances preserves the zero
+  contribution from inactive coefficient weights; separate padding checks remain.
+  Direct dense initialization keeps Vec length zero until all worker writes
+  complete. Even lengths and 1024-slot chunks ensure the fused pair loop leaves
+  no unwritten tail. Panic paths do not expose uninitialized field elements.
+  BindingScratch releases its checkout mutex before proving and locks briefly
+  to return one workspace. Normal errors return scratch; unwinding discards it
+  without poisoning a lock held across proving. Concurrent calls use separate
+  workspaces and retain at most one cached workspace.
+  New experiment flags default off outside bench-internals. Existing canonical
+  owned binding remains enabled by default. Scratch fields are not proof data.
+  Existing tests cover independent dense references, signed inputs, partial
+  batches, direct-init tails/panics, changing workspace sizes, full proof and
+  transcript equality, and verifier tampering rejection.
+  Requested one extra test from the binding agent: enable the new double-product
+  fold reduction in the existing eta=0 / norm.first=0-or-1 edge-case test. The
+  fused initial path was already covered there at review time.
+
+Harness checks completed without running a prover:
+  Python syntax compilation and --help succeeded.
+  Synthetic validation reused one previously recorded, verified baseline JSON
+  trial and added synthetic candidate resource fields; no synthetic timings were
+  presented as new measurements or saved into benchmark campaigns.
+  Confirmed old baseline trials can omit new memory fields; candidate Linux
+  trials require them. Zero minor faults and zero scratch capacity are valid.
+  Confirmed rejection of incorrect iteration order, selected protocol mismatch,
+  insufficient algebraic security, and changed command records.
+  Confirmed complete proof comparison, raw-result reconstruction, artifact
+  hashing, and summary handling of missing baseline metrics as null, not zero.
+  git diff --check passed for the owned benchmark files.
+
+Measurement design and limits:
+  Cold means first proof in a fresh process and Prepared object; it does not
+  mean flushed CPU or filesystem caches. Default: seven processes per each of
+  three seeds. Repeated mode shares Prepared across two warmups and seven timed
+  samples per seed. Warmups are excluded from reported sample medians.
+  getrusage(RUSAGE_SELF) records process-wide minor-fault deltas around commit
+  plus prove. Resource sampling, verification, input generation and preparation
+  are outside those timers. Fault counts are not converted into guessed bytes.
+  Retained RSS is sampled after verification and proof drop, with Prepared,
+  input corpus, JSON event and allocator state still live. Peak RSS remains the
+  process-lifetime high-water mark. Cached scratch bytes count only additional
+  coordinate and word-binding cached vector capacity, excluding pre-existing
+  sumcheck scratch, in-flight and allocator-retained memory.
+  Phase manifests bind settings, job/repetition lists, runner/helper hashes and
+  frozen binary hashes. Resume validates commands and reconstructs raw trials.
+  Final validation compares candidate proofs with frozen v9/v10 baselines and
+  verifies input/source equality; the two protocols are compared separately.
+  Latency harness runs are sequential, pinned and untraced. Separate profiles
+  can use the previous arithmetic runner.
+  This review did not compile Rust, execute tests, run benchmarks, or establish
+  performance improvements. Root owns build/test and benchmark qualification.
+
+Integration follow-up from root:
+  The first real smoke run exposed a benchmark selector conflict: explicitly
+  setting BITZ_BENCH_WORD_BINDER=on chose a constructor that bypassed the ring
+  mode selector. The strict raw normalizer rejected v9 output requested as v10.
+  Root removed that redundant override (word binding is already the default),
+  archived the failed smoke artifacts under diagnostics/invalid-smoke-selector,
+  and restarted smoke with unchanged runtime candidate binary. The corrected
+  runner was reviewed; archived diagnostic runs are excluded from comparisons.

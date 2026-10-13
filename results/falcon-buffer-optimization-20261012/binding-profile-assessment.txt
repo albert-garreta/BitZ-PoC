@@ -1,0 +1,22 @@
+Binding profile assessment, 2026-10-12
+Source: profiles/profile-summary.json and corresponding command.json files.
+Batch 1024, security 128, 16 workers; 9 traced samples per row (3 iterations for each of seeds 42/43/44, after one warmup).
+
+Control -> direct coordinate + word-buffer initialization, median milliseconds:
+                         Falcon-512             Falcon-1024
+Canonical binding        4.689 -> 4.452 (-5.1%)  7.584 -> 7.308 (-3.6%)
+Canonical first fold     1.332 -> 0.851 (-36.1%) 2.404 -> 1.487 (-38.2%)
+Canonical construction   0.434 -> 0.439           0.865 -> 0.869
+Factored binding         5.313 -> 4.123 (-22.4%) 10.009 -> 6.600 (-34.1%)
+Factored first fold      2.310 -> 0.934 (-59.6%) 5.684 -> 1.836 (-67.7%)
+Factored construction    0.187 -> 0.200           0.360 -> 0.370
+
+The largest measured binding-stage change is in the first-fold span, which includes creating and writing the dense output. Coefficient construction is not improved by these buffer switches. After direct initialization, canonical binding remains 4.45/7.31 ms; the first-fold spans are 0.85/1.49 ms. The profile does not separately time every remaining binding operation, so the remainder cannot be assigned to one kernel from this summary.
+
+Factored kernels individually versus factored control (baseline buffer initialization remains enabled for both experiments):
+- Fused initial scans: binding 5.313 -> 5.326 ms (+0.25%) at 512 and 10.009 -> 9.964 ms (-0.44%) at 1024. First fold, which this switch does not change, stays within 0.6%. There is no isolated initial-round scan span here; the data establish no material binding improvement, not a hardware explanation for why fusion was neutral.
+- Two-product first-fold reduction: first fold 2.310 -> 2.293 ms (-0.7%) and 5.684 -> 5.550 ms (-2.4%). Binding is 5.313 -> 5.353 ms (+0.76%) and 10.009 -> 9.987 ms (-0.21%). The small local reduction is not a consistent material binding improvement. These rows do not establish whether the same kernel would help when combined with direct buffers.
+
+Both factored-kernel switches should remain off on this evidence. The direct-buffer switch has a much larger observed effect on its targeted first-fold span. This conclusion does not identify memory bandwidth, allocation latency, or instruction throughput as the remaining bottleneck; hardware counters or more focused spans would be needed for that attribution.
+
+Limits: tracing and worker timing perturb performance. These figures are stage diagnostics, not the uninstrumented qualification results used to select defaults. Nested wall spans overlap; separately computed medians do not add or subtract into an exact time budget. Summed *_worker_ns values are worker time, not wall duration, and must not be added to binding/proof wall times. The direct variants enable both coordinate and word-buffer changes, so full-proof differences cannot be attributed solely to binding. No builds, tests, new benchmarks, or source edits were performed for this assessment.

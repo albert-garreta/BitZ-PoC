@@ -1,0 +1,18 @@
+{
+  "buffers-direct": {
+    "BITZ_ARITHMETIC_COORDINATE_BUFFERS": "direct",
+    "BITZ_ARITHMETIC_WORD_DIRECT_INIT": "on"
+  },
+  "buffers-zeroed": {
+    "BITZ_ARITHMETIC_COORDINATE_BUFFERS": "zeroed",
+    "BITZ_ARITHMETIC_WORD_DIRECT_INIT": "on"
+  },
+  "buffers-reuse": {
+    "BITZ_ARITHMETIC_COORDINATE_BUFFERS": "reuse",
+    "BITZ_ARITHMETIC_WORD_SCRATCH": "on"
+  },
+  "factored-binder": {
+    "BITZ_ARITHMETIC_FACTORED_INITIAL_FUSED": "on",
+    "BITZ_ARITHMETIC_FACTORED_FOLD_REDUCTION": "on"
+  }
+}

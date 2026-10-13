@@ -616,6 +616,19 @@ fn deferred_norm_handles_zero_scale_and_boolean_first_coordinate() {
                         (sums, initial),
                         "mode={mode}, eta={eta:?}, first={first:?}, reuse={reuse}"
                     );
+                    if let Some(s1) = &factors.s1 {
+                        assert_eq!(
+                            first_round_factored_fused(
+                                &form,
+                                &source,
+                                s1,
+                                factors.norm.as_ref().unwrap(),
+                                &f,
+                                reuse,
+                            ),
+                            (sums, initial),
+                        );
+                    }
                 }
                 for r in [f.zero(), f.one(), value(-3, &f)] {
                     let expected = first_fold_with_factors(
@@ -631,6 +644,26 @@ fn deferred_norm_handles_zero_scale_and_boolean_first_coordinate() {
                             first_fold_with_factors(&form, &source, r, &factors, &f, fused),
                             expected,
                             "mode={mode}, eta={eta:?}, first={first:?}, fused={fused}"
+                        );
+                        let mut values = Vec::new();
+                        let sums = first_fold_into(
+                            &form,
+                            &source,
+                            r,
+                            &factors,
+                            &f,
+                            WordOptions {
+                                fused_fold: fused,
+                                direct_init: true,
+                                factored_fold_reduction: true,
+                                ..WordOptions::default()
+                            },
+                            &mut values,
+                        );
+                        assert_eq!(
+                            (values, sums),
+                            expected,
+                            "combined reduction: mode={mode}, eta={eta:?}, first={first:?}, fused={fused}"
                         );
                     }
                 }
@@ -665,6 +698,12 @@ fn factored_word_kernels_match_dense_signed_bit_reference() {
                         first_round_with_factors(&form, &source, &factors, &f, reuse),
                         (sums, initial)
                     );
+                    if let (Some(s1), Some(norm)) = (&factors.s1, &factors.norm) {
+                        assert_eq!(
+                            first_round_factored_fused(&form, &source, s1, norm, &f, reuse),
+                            (sums, initial),
+                        );
+                    }
                 }
                 for r in [
                     f.zero(),
@@ -693,14 +732,28 @@ fn factored_word_kernels_match_dense_signed_bit_reference() {
                                 );
                                 sum
                             });
-                    for fused in [false, true] {
-                        let actual =
-                            first_fold_with_factors(&form, &source, r, &factors, &f, fused);
-                        assert_eq!(
-                            actual.0, expected,
-                            "batch={batch} mode={mode} fused={fused}"
-                        );
-                        assert_eq!(actual.1, expected_sums);
+                    let mut values = vec![[value(-91, &f); 2]; expected.len() + 16];
+                    for options in [
+                        WordOptions::default(),
+                        WordOptions {
+                            direct_init: true,
+                            ..WordOptions::default()
+                        },
+                        WordOptions {
+                            factored_fold_reduction: true,
+                            ..WordOptions::default()
+                        },
+                        WordOptions {
+                            fused_fold: true,
+                            direct_init: true,
+                            factored_fold_reduction: true,
+                            ..WordOptions::default()
+                        },
+                    ] {
+                        let sums =
+                            first_fold_into(&form, &source, r, &factors, &f, options, &mut values);
+                        assert_eq!(values, expected, "batch={batch} mode={mode} {options:?}");
+                        assert_eq!(sums, expected_sums);
                     }
                 }
             }
@@ -795,6 +848,221 @@ fn factored_word_proofs_preserve_transcript_and_reject_tampering() {
                 )
                 .is_err()
             );
+        }
+    }
+}
+
+#[test]
+fn direct_dense_initialization_reuses_and_recovers_from_panics() {
+    let f = test_field();
+    let mut values = Vec::new();
+    for fused in [false, true] {
+        for len in [2050, 512, 3072, 1024] {
+            let slot = |i| [value(i as i64 * 3 - 19, &f), value(7 - i as i64, &f)];
+            let expected: Vec<_> = (0..len).map(slot).collect();
+            let actual = initialize_dense(&mut values, len, &f, true, fused, slot);
+            assert_eq!(values, expected);
+            assert_eq!(actual, dense_sums(&expected, 1, &f));
+        }
+        let capacity = values.capacity();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            initialize_dense(&mut values, 2048, &f, true, fused, |i| {
+                assert_ne!(i, 777, "injected worker failure");
+                [f.one(); 2]
+            });
+        }));
+        assert!(panicked.is_err());
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), capacity);
+        initialize_dense(&mut values, 1024, &f, true, fused, |_| [f.zero(); 2]);
+        assert_eq!(values, vec![[f.zero(); 2]; 1024]);
+        let odd_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            initialize_dense(&mut values, 3, &f, true, fused, |_| [f.one(); 2]);
+        }));
+        assert!(odd_length.is_err());
+    }
+}
+
+#[test]
+fn optimized_dense_folds_match_independent_reference_through_terminal() {
+    let f = test_field();
+    let layout = Layout::new(3).unwrap();
+    let source = source_fixture(&layout);
+    for mode in [0, 3] {
+        for challenges in 0..3 {
+            let (form, factors, dense_form) = factored_fixture(&layout, &f, mode);
+            let mut reference = Reference::new(&dense_form, &source, &f);
+            let mut values = Vec::new();
+            let mut stride = 1;
+            let mut transcript = Blake3Transcript::new();
+            transcript.absorb_slice(b"word-dense-reference-challenges");
+            for round in 0..rounds(&layout) {
+                let r = match challenges {
+                    0 => f.zero(),
+                    1 => f.one(),
+                    _ => sample(&mut transcript, &f).unwrap(),
+                };
+                let sums = if round == 0 {
+                    first_fold_into(
+                        &form,
+                        &source,
+                        r,
+                        &factors,
+                        &f,
+                        WordOptions {
+                            fused_fold: true,
+                            direct_init: true,
+                            factored_fold_reduction: true,
+                            ..WordOptions::default()
+                        },
+                        &mut values,
+                    )
+                } else {
+                    let result = dense_fold(&mut values, stride, r, &f);
+                    stride *= 2;
+                    result
+                };
+                reference.fold(r, &f);
+                let active: Vec<_> = values.iter().step_by(stride).copied().collect();
+                let expected: Vec<_> = reference.weights[0]
+                    .iter()
+                    .zip(&reference.tables[0])
+                    .map(|(&w, &x)| [w, x])
+                    .collect();
+                assert_eq!(
+                    active, expected,
+                    "mode={mode} challenge={challenges} round={round}"
+                );
+                assert_eq!(sums, dense_sums(&expected, 1, &f));
+            }
+        }
+    }
+}
+
+#[test]
+fn workspace_and_factored_options_preserve_complete_word_proofs() {
+    let mut workspace = WordWorkspace::default();
+    let mut largest = 0;
+    for (batch, grinding, modulus) in [
+        (3, 0, (1u128 << 127) - 1),
+        (1, 2, (1u128 << 61) - 1),
+        (17, 0, (1u128 << 127) - 1),
+        (3, 0, (1u128 << 61) - 1),
+    ] {
+        let f = F::make_cfg(&Uint::from(modulus)).unwrap();
+        let layout = Layout::new(batch).unwrap();
+        let source = source_fixture(&layout);
+        let schedule = test_schedule(grinding);
+        for mode in [0, 3] {
+            let (_, _, dense) = factored_fixture(&layout, &f, mode);
+            let target = Reference::new(&dense, &source, &f).target(&f);
+            let mut baseline = Blake3Transcript::new();
+            let expected = prove_with_options(
+                &mut baseline,
+                &layout,
+                &source,
+                dense,
+                WordFactors::default(),
+                target,
+                dummy_norm(&f),
+                None,
+                &schedule,
+                &f,
+                &mut WordWorkspace::default(),
+                WordOptions::default(),
+            )
+            .unwrap();
+            for options in [
+                WordOptions {
+                    direct_init: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    scratch: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    scratch: true,
+                    direct_init: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    factored_initial_fused: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    factored_fold_reduction: true,
+                    ..WordOptions::default()
+                },
+                WordOptions {
+                    reuse_initial: true,
+                    fused_fold: true,
+                    direct_init: true,
+                    scratch: true,
+                    factored_initial_fused: true,
+                    factored_fold_reduction: true,
+                },
+            ] {
+                let (form, factors, _) = factored_fixture(&layout, &f, mode);
+                let mut transcript = Blake3Transcript::new();
+                let actual = prove_with_options(
+                    &mut transcript,
+                    &layout,
+                    &source,
+                    form,
+                    factors,
+                    target,
+                    dummy_norm(&f),
+                    None,
+                    &schedule,
+                    &f,
+                    &mut workspace,
+                    options,
+                )
+                .unwrap();
+                assert_eq!(actual, expected, "batch={batch} mode={mode} {options:?}");
+                assert_eq!(transcript.state_digest(), baseline.state_digest());
+                if options.scratch {
+                    largest = largest.max(layout.source_bits() / 32);
+                }
+                assert_eq!(workspace.capacity_slots(), largest);
+                let (form, factors, _) = factored_fixture(&layout, &f, mode);
+                let mut verifier = Blake3Transcript::new();
+                assert_eq!(
+                    verify_with_factors(
+                        &mut verifier,
+                        &layout,
+                        &form,
+                        &factors,
+                        target,
+                        &actual.0,
+                        &schedule,
+                        &f,
+                    )
+                    .unwrap(),
+                    actual.2
+                );
+                assert_eq!(verifier.state_digest(), transcript.state_digest());
+                let (form, factors, _) = factored_fixture(&layout, &f, mode);
+                assert!(
+                    prove_with_options(
+                        &mut Blake3Transcript::new(),
+                        &layout,
+                        &source,
+                        form,
+                        factors,
+                        f.add(&target, &f.one()),
+                        dummy_norm(&f),
+                        None,
+                        &schedule,
+                        &f,
+                        &mut workspace,
+                        options,
+                    )
+                    .is_err()
+                );
+                assert_eq!(workspace.capacity_slots(), largest);
+            }
         }
     }
 }

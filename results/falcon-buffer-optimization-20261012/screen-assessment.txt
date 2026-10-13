@@ -1,0 +1,65 @@
+Independent assessment of the completed 16-worker screen, 2026-10-12
+
+Evidence: analysis-screen.json/.txt, produced by analyze.py only after all 864
+processes completed. Revalidated 1728 proofs including warmups, raw artifact and
+command hashes, frozen binary hashes, affinity/metadata, input/source equality,
+and exact proof identity within v9/v10 against the frozen baseline. No missing
+baseline cases. No prover execution was performed by the analysis helper.
+
+Recommendation: qualify coordinate-direct + word-direct together against
+candidate control at 1/8/16 workers, both degrees and protocols, separately for
+21 cold and 21 repeated samples. Their combination was not measured in this
+screen: the variant called "combined" instead uses coordinate reuse and word
+scratch/direct initialization, plus factored kernels for v10.
+
+Individual total-prover median reductions versus candidate control:
+  Degree/protocol      Coordinate-direct cold/repeated    Word-direct cold/repeated
+  512 / v9                     6.41% / 5.98%                    4.59% / 1.26%
+  512 / v10                    3.34% / 1.95%                    4.77% / 3.79%
+  1024 / v9                    7.51% / 8.28%                    4.77% / 2.51%
+  1024 / v10                   4.02% / 1.76%                    5.66% / 6.58%
+Each individual direct variant improves all 24 corresponding seed medians.
+Both retain zero cached scratch. Post-drop RSS median changes versus control
+range from -588 to +308 KiB for coordinate-direct and -440 to +232 KiB for
+word-direct; sample peak-RSS median changes are also below 1 MiB in magnitude.
+Minor-fault counts stay approximately unchanged. This supports removal of
+initialization traffic as a hypothesis; fault counts alone do not establish
+the cause of the latency gains.
+
+Frozen baseline versus candidate control is close: control total medians range
+from 0.98% lower to 0.60% higher across the eight matched cells. Candidate control
+is the cleaner implementation comparison because it uses the instrumented
+candidate binary. Both direct variants also improve every matching frozen
+baseline total median. These are screening observations, not confidence bounds.
+
+Other variants:
+  Coordinate-zeroed is competitive with coordinate-direct in v9 (5.63-8.75%
+  reductions), but v10 repeated gains are only 0.24% and 0.40%, with mixed seed
+  directions. Direct is the more consistent choice across both protocols.
+  Coordinate reuse retains 22/44 MiB in v9 and about 11/22 MiB in v10. Cold
+  proving is slightly worse in all pooled cells. At degree 1024 repeated,
+  total medians regress 1.23% in v9 and 1.57% in v10, all three seeds each.
+  Degree 512 repeated does improve, so there is workload dependence; do not
+  promote reuse globally from this screen.
+  Word reuse has a real candidate benefit for repeated v10: 5.44% at degree
+  512 and 9.20% at degree 1024, all seeds faster. The tradeoff is 16/32 MiB of
+  cached witness scratch, with corresponding retained/peak RSS growth. At
+  degree 1024 repeated v9 it is 0.34% slower overall with mixed seed directions.
+  Keep it experimental or consider a separate explicit repeated-v10 policy.
+  Factored initial fusion and factored fold reduction each change pooled total
+  latency by at most 0.51% in magnitude. Their seed directions are not broadly
+  consistent; no basis here to promote either arithmetic kernel.
+  Reuse-heavy combined gains 5.60-9.03% across the eight cells, but retains
+  27-76 MiB of scratch. For degree 1024 repeated it loses to coordinate-direct
+  alone in v9 and word-reuse alone in v10. Its v10 verification rises from
+  9.799 to 13.743 ms at degree 1024 repeated, while process peak RSS rises from
+  about 182 to 228 MiB. It is not a clean default candidate.
+
+Interpretation limits:
+  Cold is first commit+prove after setup in a fresh process/Prepared; caches
+  are not flushed. Repeated samples share Prepared and process, giving only
+  three process clusters despite 21 timed samples. Per-seed agreement is not
+  a statistical confidence interval. Post-drop RSS includes inputs, allocator
+  retention and Prepared, while cached scratch bytes isolates stored vectors.
+  This screen is batch 1024, security 128, 16 workers on the recorded host.
+  Additivity and 1/8-worker behavior require the proposed qualification run.

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--features",
+    "falcon-hybrid,bench-internals",
+    "--lib",
+    "falcon",
+    "--",
+    "--test-threads=1"
+  ],
+  "overrides": {
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-poc-push-target",
+    "CARGO_PROFILE_TEST_OPT_LEVEL": "2",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "8"
+  },
+  "experiment_environment_cleared": true
+}

@@ -1,0 +1,130 @@
+   Compiling cfg-if v1.0.5
+   Compiling either v1.18.0
+   Compiling const-oid v0.10.2
+   Compiling const-oid v0.9.6
+   Compiling subtle v2.6.1
+   Compiling hybrid-array v0.4.15
+   Compiling foldhash v0.2.0
+   Compiling base64ct v1.8.3
+   Compiling smallvec v1.16.1
+   Compiling generic-array v0.14.9
+   Compiling base16ct v0.2.0
+   Compiling utf8parse v0.2.2
+   Compiling foldhash v0.1.5
+   Compiling anstyle-query v1.1.5
+   Compiling getrandom v0.2.17
+   Compiling getrandom v0.4.3
+   Compiling chacha20 v0.10.2
+   Compiling zerocopy v0.8.57
+   Compiling keccak v0.2.2
+   Compiling libm v0.2.16
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.5
+   Compiling zeroize v1.9.0
+   Compiling thiserror v2.0.20
+   Compiling bytemuck v1.25.2
+   Compiling derive_more v2.1.1
+   Compiling tracing v0.1.44
+   Compiling serde v1.0.229
+   Compiling sha2-asm v0.6.4
+   Compiling num-integer v0.1.47
+   Compiling anstyle-parse v1.0.0
+   Compiling fixedbitset v0.5.7
+   Compiling serde_json v1.0.151
+   Compiling rustix v1.1.5
+   Compiling sponge-cursor v0.1.0
+   Compiling hashbrown v0.17.1
+   Compiling hashbrown v0.15.5
+   Compiling bitflags v2.13.2
+   Compiling rustc-hash v2.1.3
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.1.1
+   Compiling thread_local v1.1.10
+   Compiling fastrand v2.5.0
+   Compiling hex-literal v1.1.0
+   Compiling rand_core v0.6.4
+   Compiling keccak v0.1.6
+   Compiling rayon v1.12.0
+   Compiling rand v0.10.3
+   Compiling itertools v0.15.0
+   Compiling itertools v0.14.0
+   Compiling anyhow v1.0.104
+   Compiling pem-rfc7468 v0.7.0
+   Compiling anstream v1.0.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling num-bigint v0.5.1
+   Compiling num-bigint v0.4.8
+   Compiling ff v0.13.1
+   Compiling fn-dsa-comm v0.3.0
+   Compiling der v0.7.10
+   Compiling group v0.13.0
+   Compiling clap_builder v4.6.7
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling bincode v1.3.3
+   Compiling fn-dsa-kgen v0.3.0
+   Compiling fn-dsa-vrfy v0.3.0
+   Compiling fn-dsa-sign v0.3.0
+   Compiling indexmap v2.14.2
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling crypto-bigint v0.5.5
+   Compiling digest v0.10.7
+   Compiling wasmtime-internal-core v48.0.2
+   Compiling sha2 v0.10.9
+   Compiling hmac v0.12.1
+   Compiling signature v2.2.0
+   Compiling sha3 v0.10.9
+   Compiling rfc6979 v0.4.0
+   Compiling digest v0.11.3
+   Compiling blake3 v1.8.7
+   Compiling sha2 v0.11.0
+   Compiling sha3 v0.11.0
+   Compiling sha3 v0.12.0
+   Compiling fn-dsa v0.3.0
+   Compiling toml_edit v0.22.27
+   Compiling petgraph v0.8.3
+   Compiling cranelift-bitset v0.135.2
+   Compiling spki v0.7.3
+   Compiling cranelift-entity v0.135.2
+   Compiling pkcs8 v0.10.2
+   Compiling tempfile v3.27.0
+   Compiling sec1 v0.7.3
+   Compiling elliptic-curve v0.13.8
+   Compiling ecdsa v0.16.9
+   Compiling primeorder v0.13.6
+   Compiling binius-utils v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-compute v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling k256 v0.13.4
+   Compiling p256 v0.13.2
+   Compiling binius-field v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-hash v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling clap v4.6.7
+   Compiling toml v0.8.23
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.8
+   Compiling binius-core v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-math v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-transcript v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-spartan-frontend v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-hash-prover v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling spongefish v0.7.4
+   Compiling binius-frontend v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+   Compiling binius-ip v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-iop v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-ip-prover v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-circuits v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-spartan-verifier v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-verifier v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-iop-prover v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling binius-spartan-prover v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-core)
+   Compiling circuit v0.1.0 (/home/john-wu/code/BitZ-pcs/crates/circuit)
+   Compiling binius-prover v0.1.0 (https://github.com/wu-s-john/binius64?rev=bc73510ed63bf47eec25d4d10ade84f1c1fe2790#bc73510e)
+   Compiling flock-prover v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-prover)
+   Compiling bitz v0.1.0 (/home/john-wu/code/BitZ-pcs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.27s

@@ -1,0 +1,46 @@
+{
+  "schema": "bitz/falcon-buffer-optimization/v1",
+  "job": {
+    "id": "factored-initial-factored-cold-n1024-b1024-s128-t16-seed42-r0",
+    "variant": "arithmetic",
+    "config": "factored-initial",
+    "protocol": "factored",
+    "mode": "cold",
+    "degree": 1024,
+    "threads": 16,
+    "seed": 42,
+    "repetition": 0,
+    "warmup": 0,
+    "iterations": 1
+  },
+  "trials": [
+    {
+      "trial": "sample",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v10-factored-ring",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "source_root": "684fe6f5e59badcdb3138908b72f2fe4772c6b1be4e15f1dffc6795e88ebeb76",
+      "proof_debug_digest": "6297cf48493274c0ffbf84791cf2bed7bf08bf9741f4d7bcd5ee42a0c7c3c179",
+      "total_prover_ms": 58.515378,
+      "prove_ms": 52.45135,
+      "witness_commit_ms": 6.063968,
+      "verify_ms": 10.715103000000001,
+      "process_peak_rss_kib": 150484,
+      "proof_payload_bytes": 321232,
+      "iteration": 0,
+      "prepare_ms": 0.277615,
+      "external_input_ms": 1795.016715,
+      "prover_minor_faults": 50475,
+      "process_rss_before_prover_kib": 23292,
+      "process_rss_after_prover_kib": 88996,
+      "process_retained_rss_kib": 103524,
+      "prepared_scratch_bytes_before_prover": 0,
+      "prepared_retained_scratch_bytes": 0
+    }
+  ],
+  "verified": true,
+  "manifest_sha256": "2525c745892aa007b13dadb1afc5233215797ef597ce938253ba27431df7ebd9",
+  "command_sha256": "2fcaa9b9a224a8236bffcc1ea34bf07abcfefdd24414283deba4d43d31fa00e3",
+  "stdout_sha256": "d94a157e6c2733c6ffd156b9fc7995597695244ef943bd28adcd407d07ec0e96",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "process_sha256": "63b0e55bace3c250b5c3230c4b1919f8e8ca9be78702d99715bd885471c6458c"
+}

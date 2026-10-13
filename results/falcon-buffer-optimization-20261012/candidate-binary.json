@@ -1,0 +1,9 @@
+{
+  "executable": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-optimization-20261012/candidate",
+  "sha256": "226e9f3f5614a721414e227f18f877be9dbe8b162bc915679e39a7e3de77c692",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "rustflags": "-C target-cpu=native"
+}

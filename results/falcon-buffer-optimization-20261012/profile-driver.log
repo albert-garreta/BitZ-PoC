@@ -1,0 +1,85 @@
+RUN stages/canonical-control-n1024-b1024-s128-t16-seed44
+OK canonical-control-n1024-b1024-s128-t16-seed44
+RUN stages/factored-initial-n1024-b1024-s128-t16-seed44
+OK factored-initial-n1024-b1024-s128-t16-seed44
+RUN stages/factored-control-n1024-b1024-s128-t16-seed44
+OK factored-control-n1024-b1024-s128-t16-seed44
+RUN stages/factored-fold-n1024-b1024-s128-t16-seed44
+OK factored-fold-n1024-b1024-s128-t16-seed44
+RUN stages/canonical-direct-n1024-b1024-s128-t16-seed44
+OK canonical-direct-n1024-b1024-s128-t16-seed44
+RUN stages/factored-direct-n1024-b1024-s128-t16-seed44
+OK factored-direct-n1024-b1024-s128-t16-seed44
+RUN stages/factored-direct-n1024-b1024-s128-t16-seed42
+OK factored-direct-n1024-b1024-s128-t16-seed42
+RUN stages/canonical-control-n1024-b1024-s128-t16-seed42
+OK canonical-control-n1024-b1024-s128-t16-seed42
+RUN stages/factored-initial-n1024-b1024-s128-t16-seed42
+OK factored-initial-n1024-b1024-s128-t16-seed42
+RUN stages/factored-fold-n1024-b1024-s128-t16-seed42
+OK factored-fold-n1024-b1024-s128-t16-seed42
+RUN stages/canonical-direct-n1024-b1024-s128-t16-seed42
+OK canonical-direct-n1024-b1024-s128-t16-seed42
+RUN stages/factored-control-n1024-b1024-s128-t16-seed42
+OK factored-control-n1024-b1024-s128-t16-seed42
+RUN stages/factored-initial-n512-b1024-s128-t16-seed44
+OK factored-initial-n512-b1024-s128-t16-seed44
+RUN stages/canonical-control-n512-b1024-s128-t16-seed44
+OK canonical-control-n512-b1024-s128-t16-seed44
+RUN stages/factored-fold-n512-b1024-s128-t16-seed44
+OK factored-fold-n512-b1024-s128-t16-seed44
+RUN stages/factored-control-n512-b1024-s128-t16-seed44
+OK factored-control-n512-b1024-s128-t16-seed44
+RUN stages/factored-direct-n512-b1024-s128-t16-seed44
+OK factored-direct-n512-b1024-s128-t16-seed44
+RUN stages/canonical-direct-n512-b1024-s128-t16-seed44
+OK canonical-direct-n512-b1024-s128-t16-seed44
+RUN stages/canonical-direct-n1024-b1024-s128-t16-seed43
+OK canonical-direct-n1024-b1024-s128-t16-seed43
+RUN stages/factored-fold-n1024-b1024-s128-t16-seed43
+OK factored-fold-n1024-b1024-s128-t16-seed43
+RUN stages/canonical-control-n1024-b1024-s128-t16-seed43
+OK canonical-control-n1024-b1024-s128-t16-seed43
+RUN stages/factored-direct-n1024-b1024-s128-t16-seed43
+OK factored-direct-n1024-b1024-s128-t16-seed43
+RUN stages/factored-control-n1024-b1024-s128-t16-seed43
+OK factored-control-n1024-b1024-s128-t16-seed43
+RUN stages/factored-initial-n1024-b1024-s128-t16-seed43
+OK factored-initial-n1024-b1024-s128-t16-seed43
+RUN stages/canonical-direct-n512-b1024-s128-t16-seed43
+OK canonical-direct-n512-b1024-s128-t16-seed43
+RUN stages/canonical-control-n512-b1024-s128-t16-seed43
+OK canonical-control-n512-b1024-s128-t16-seed43
+RUN stages/factored-fold-n512-b1024-s128-t16-seed43
+OK factored-fold-n512-b1024-s128-t16-seed43
+RUN stages/factored-control-n512-b1024-s128-t16-seed43
+OK factored-control-n512-b1024-s128-t16-seed43
+RUN stages/factored-direct-n512-b1024-s128-t16-seed43
+OK factored-direct-n512-b1024-s128-t16-seed43
+RUN stages/factored-initial-n512-b1024-s128-t16-seed43
+OK factored-initial-n512-b1024-s128-t16-seed43
+RUN stages/factored-fold-n512-b1024-s128-t16-seed42
+OK factored-fold-n512-b1024-s128-t16-seed42
+RUN stages/factored-control-n512-b1024-s128-t16-seed42
+OK factored-control-n512-b1024-s128-t16-seed42
+RUN stages/factored-initial-n512-b1024-s128-t16-seed42
+OK factored-initial-n512-b1024-s128-t16-seed42
+RUN stages/canonical-control-n512-b1024-s128-t16-seed42
+OK canonical-control-n512-b1024-s128-t16-seed42
+RUN stages/canonical-direct-n512-b1024-s128-t16-seed42
+OK canonical-direct-n512-b1024-s128-t16-seed42
+RUN stages/factored-direct-n512-b1024-s128-t16-seed42
+OK factored-direct-n512-b1024-s128-t16-seed42
+{'verified_proofs': 144, 'proofs_by_protocol': {'bitz/falcon1024-algebraic/non-zk/v9': 24, 'bitz/falcon512-algebraic/non-zk/v9': 24, 'bitz/falcon1024-algebraic/non-zk/v10-factored-ring': 48, 'bitz/falcon512-algebraic/non-zk/v10-factored-ring': 48}, 'input_source_equality': True, 'complete_proof_equality_within_protocol': True, 'raw_log_hashes_verified': True, 'command_provenance_verified': True, 'experimental_payload_limit_percent': 110, 'experimental_payload_comparisons': 6, 'max_experimental_payload_growth_percent': 0.28343611785959233}
+stages         canonical-control N= 512 t=16 total=32.619 prove=30.256 verify=11.272 rss=89616
+stages         canonical-control N=1024 t=16 total=55.773 prove=51.846 verify=17.316 rss=179312
+stages         canonical-direct N= 512 t=16 total=29.752 prove=27.294 verify=9.565 rss=89024
+stages         canonical-direct N=1024 t=16 total=49.692 prove=45.933 verify=15.232 rss=178556
+stages         factored-control N= 512 t=16 total=30.660 prove=28.209 verify=7.953 rss=87484
+stages         factored-control N=1024 t=16 total=52.098 prove=48.210 verify=10.054 rss=184852
+stages         factored-direct N= 512 t=16 total=28.967 prove=26.544 verify=7.396 rss=87048
+stages         factored-direct N=1024 t=16 total=47.977 prove=44.063 verify=9.575 rss=184424
+stages         factored-fold N= 512 t=16 total=30.741 prove=28.286 verify=7.801 rss=87272
+stages         factored-fold N=1024 t=16 total=51.469 prove=47.598 verify=10.042 rss=184268
+stages         factored-initial N= 512 t=16 total=30.661 prove=28.305 verify=7.838 rss=87036
+stages         factored-initial N=1024 t=16 total=51.929 prove=48.040 verify=10.154 rss=184496

@@ -1,0 +1,20 @@
+Coordinate buffer initialization validation
+
+Commands (from repository root):
+  env -u FZF_DEFAULT_OPTS RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR=.tmp/falcon-poc-push-target cargo test --manifest-path vendor/field/Cargo.toml --lib q12289
+  env -u FZF_DEFAULT_OPTS RUSTFLAGS="-C target-cpu=x86-64" CARGO_TARGET_DIR=.tmp/falcon-poc-push-target cargo test --manifest-path vendor/field/Cargo.toml --lib q12289
+
+Both completed: 23 passed, 0 failed, 1 existing exhaustive test ignored.
+The portable build exercises the safe fallback through the public dispatcher;
+private AVX-512 tests also execute when the runtime CPU supports the features.
+Native and portable logs are stored separately in this directory.
+
+New tests cover zeroed allocations and truly uninitialized outputs; degrees
+9/10/11; recurrence groups 2/4/8; empty and short outputs, boundary tails through
+1024; guarded adjacent memory; canonical coordinate bounds; independent fixed-
+basis arithmetic; and overwriting outputs with a different recurrence.
+The PowerCoordinates representation is now explicitly transparent so masked
+SIMD stores have a defined offset to the underlying u16 array.
+
+Root integration checks cover canonical/factored ring coordinate modes and
+prepared-prover cache lifecycle. No benchmarks were run by this subagent.

@@ -1,0 +1,10 @@
+Candidate v2 change note: disabled word-scratch gate
+Date: 2026-10-12
+
+Added word_binding::workspace_reuse_enabled(), retaining the existing default false and BITZ_ARITHMETIC_WORD_SCRATCH=on/off benchmark override. WordOptions::configured and the arithmetic scratch-lease callsite now use the same helper.
+
+When scratch reuse is disabled, arithmetic passes a fresh local WordWorkspace directly and does not acquire BindingScratch's checkout/return mutex guards or cache an empty workspace. When enabled, the existing lease behavior and bounded dense-buffer retention remain unchanged. Builds without bench-internals use the false default and therefore bypass the cache.
+
+No experiment defaults, arithmetic kernels, proof data, transcript operations, or validation order changed. No tests were added. Existing workspace/cache and complete-proof equality tests cover the underlying paths.
+
+Validation for this edit: targeted rustfmt and git diff --check passed. No builds, tests, or benchmarks were run while the frozen candidate-v1 qualification campaign was active. Candidate-v2 requires the parent's subsequent build and validation.

@@ -1,0 +1,26 @@
+RUN smoke/coordinate-zeroed-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK coordinate-zeroed-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/combined-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK combined-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/word-direct-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK word-direct-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/coordinate-reuse-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK coordinate-reuse-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/control-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK control-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/baseline-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK baseline-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/word-reuse-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK word-reuse-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/coordinate-direct-canonical-repeated-n512-b3-s128-t1-seed42-r0
+OK coordinate-direct-canonical-repeated-n512-b3-s128-t1-seed42-r0
+RUN smoke/factored-fold-factored-repeated-n512-b3-s128-t1-seed42-r0
+Traceback (most recent call last):
+  File "/home/john-wu/code/BitZ-pcs/scripts/falcon_buffer_optimization.py", line 368, in <module>
+    main()
+    ~~~~^^
+  File "/home/john-wu/code/BitZ-pcs/scripts/falcon_buffer_optimization.py", line 355, in main
+    trials = normalize(read_jsonl(directory / "stdout.jsonl"), job, manifest)
+  File "/home/john-wu/code/BitZ-pcs/scripts/falcon_buffer_optimization.py", line 72, in normalize
+    raise ValueError(f"selected protocol was not used: {job['id']}")
+ValueError: selected protocol was not used: factored-fold-factored-repeated-n512-b3-s128-t1-seed42-r0

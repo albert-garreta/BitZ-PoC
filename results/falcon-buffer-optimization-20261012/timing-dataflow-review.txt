@@ -1,0 +1,113 @@
+Timing dataflow review: Falcon buffer experiments
+Date: 2026-10-12
+Baseline: 666b546a08af1972b5a40d88787cddb02ccd18b4
+Scope: working-tree production-source changes relative to that commit, covering
+coordinate allocation/direct initialization/reuse, dense first-fold allocation
+and reuse, factored first-round fusion, and factored coefficient reduction.
+Benchmark/reporting code and tests are not part of the prover dataflow verdict.
+
+Method and limits
+-----------------
+Applied the manual dataflow guidance in:
+  /home/john-wu/.ai-agent-army/skills/constant-time-analysis/SKILL.md
+  /home/john-wu/.ai-agent-army/skills/constant-time-analysis/references/compiled.md
+Inspected git diff, current source, and baseline source using git show HEAD:path.
+This is SOURCE REVIEW ONLY: no analyzer, compilation, benchmarks, or instruction-
+level constant-time audit was performed. The concurrent benchmark run was left
+undisturbed. This non-ZK prover does not claim overall constant-time execution.
+
+For this comparison, witness s1/s2 values and packed source words are treated as
+sensitive. Public statement values, public dimensions, transcript-derived
+challenges/coordinates, experiment flags, worker counts, target features, and
+cache capacity/availability are permitted control inputs. Transcript challenges
+are public in the proof protocol; they are not raw private witness coefficients.
+
+Conclusion
+----------
+No newly introduced class of witness-dependent branch, division/remainder, or
+memory-address selection was found in the inspected changes. The new factored
+first-round fusion DOES call the existing witness-dependent signed_acc helper.
+Its zero/sign predicates on a, b, and b-a were already used by the corresponding
+separate baseline passes. Their order and grouping change, so this finding is
+not a claim that the new function is constant-time or has an identical timing
+trace. No overall constant-time certification is made.
+
+Evidence (paths relative to repository root; current source line numbers)
+------------------------------------------------------------------------
+1. Coordinate buffers and recurrence outputs
+   src/piop/spartan/falcon1024_algebraic/ring.rs:60-183
+   Allocation mode, cache checkout/return, capacity growth, and initialized
+   lengths depend on configuration, public shape, and cache availability.
+   Reuse does not inspect prior buffer contents to decide how to initialize.
+   The direct writer changes output initialization rather than recurrence
+   arithmetic. coordinates_with_buffers at 560-687 dispatches pairs/groups,
+   workers, and tails by public lengths/features/configuration. The initialized
+   carry-input view at 674 feeds the existing coordinate_totals calculation;
+   carry arithmetic was not changed into new witness-selected control flow.
+
+   src/piop/spartan/falcon1024_algebraic/factored_ring.rs:305-395
+   The same buffer abstraction replaces initialized output assignment with
+   write-once slots. Pair/tail branches and polynomial indices follow lengths
+   and j. The lift calculation retains its existing arithmetic.
+
+   vendor/field/src/q12289.rs:415-460,585-713 and subsequent grouped writers
+   Zeroed allocation and MaybeUninit output APIs do not inspect output values.
+   Their loop bounds, pair counts, degree dispatch, and indices are public.
+   Canonical-polynomial assertions existed already and inspect public polynomial
+   input. The portable recurrence arithmetic is the same as the baseline.
+
+   vendor/field/src/q12289/avx512.rs:70-80
+   Stores now target MaybeUninit output addresses. The eleven-u16 lane mask is
+   constant (0x07ff); no witness-selected mask or address was introduced.
+
+2. Dense word initialization and prepared scratch
+   src/piop/spartan/falcon1024_algebraic/word_binding.rs:410-448,821-909
+   Options come from configuration. Direct/fused branches and reserve/resize
+   decisions depend on flags and public length/capacity. Chunk and slot indices
+   are fixed by enumeration. The fused initialization multiplies witness-derived
+   field values, but introduces no content-dependent source-level branch or
+   index; the same fused arithmetic existed in the baseline initializer.
+
+   src/piop/spartan/falcon1024_algebraic/arithmetic.rs:178-197
+   Scratch checkout and return branch on cache availability only. They do not
+   scan dense values or choose capacity from their contents.
+   src/piop/spartan/falcon1024_algebraic/protocol.rs:178-179,469-489,864,957
+   Prepared-state scratch fields and prover plumbing add no witness predicates.
+
+3. Factored first-round fusion retains existing variable-time behavior
+   src/piop/spartan/falcon1024_algebraic/word_binding.rs:387-390
+   signed_acc branches on x != 0 and selects one of two accumulators with x < 0.
+   This exact helper existed at the same lines in the baseline. With witness
+   words as x, both are witness-dependent and must not be called constant-time.
+
+   New first_round_factored_fused at 607-680 calls signed_acc at 638-645 for a,
+   b-a, and b. Its side/reuse_product branches and source/coefficient indices
+   depend on public loop indices and configuration. Baseline FactoredNorm's
+   first_round (HEAD lines 455-482) and first_round_with_factors (498-562) already
+   called signed_acc for the same witness expressions in separate ring, S1,
+   and norm passes (notably 518-523 and 542-544). The fusion combines these
+   passes; it does not introduce a new witness predicate or lookup key.
+
+4. First-fold coefficient reduction
+   src/piop/spartan/falcon1024_algebraic/word_binding.rs:727-818
+   New prepared reduction is selected by flags, presence of factored inputs,
+   side, and batch position (748-773). The divisions/remainders at 753-754 and
+   762/767 use public output index i and constant N, not witness values.
+   Products being combined are ring/public-challenge coefficients and norm
+   equality-table factors (FactoredNorm construction at 470-493).
+   Word reads at 799 use i and i+1. The k == 2 branch at 803 is a fixed three-
+   term decoder convention; witness decoding uses xor/mask, not a witness index.
+
+   vendor/field/src/prime/prepared_linear.rs:319-382 (unchanged dependency)
+   PreparedProductReduction selects its reduction schedule from the public
+   modulus and fixed max_terms=2. Its existing modulus scan and schedule checks
+   are not witness-derived decisions. This review does not independently
+   establish constant-time behavior of the complete field backend.
+
+Out of scope
+------------
+Existing signed_acc behavior, sparse source construction, protocol validation
+and error handling, transcript/grinding behavior, allocator/cache scheduling,
+and the entire field backend were not audited as an overall constant-time
+system. Source equivalence cannot establish a machine-code timing guarantee;
+compiler lowering and changed instruction/cache scheduling may alter timing.

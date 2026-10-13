@@ -1,0 +1,1 @@
+The first smoke attempt set BITZ_BENCH_WORD_BINDER=on, which forces the benchmark to call new_with_binding and bypass the ring selector. The runner correctly rejected the v9 proof produced for a requested v10 case. Removed this unnecessary binder override; the production default already uses words. Archived trials are excluded from performance and final proof validation counts.

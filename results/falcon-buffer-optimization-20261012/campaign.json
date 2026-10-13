@@ -1,0 +1,126 @@
+{
+  "baseline_commit": "666b546a08af1972b5a40d88787cddb02ccd18b4",
+  "branch": "falcon-poc",
+  "batch": 1024,
+  "security_bits": 128,
+  "degrees": [
+    512,
+    1024
+  ],
+  "threads": [
+    1,
+    8,
+    16
+  ],
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "cold_samples_per_configuration": 21,
+  "repeated_samples_per_configuration": 21,
+  "repeated_warmups_per_seed": 2,
+  "cold_definition": "First proof per fresh process and Prepared object; CPU/filesystem caches are not flushed; input fixture/preparation excluded from prover timer.",
+  "proof_identity": "Compare complete Debug proof digest within canonical v9 and factored v10 against frozen baseline; no protocol changes.",
+  "platform": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "nonperformance_phases": [
+    "smoke",
+    "correctness100",
+    "production-correctness100"
+  ],
+  "initial_test_run": "Unoptimized full-suite run was interrupted after passing early tests; replaced with opt-level=2, debug assertions and overflow checks retained.",
+  "default_selection": {
+    "coordinate_buffers": "direct with more than one Rayon worker; baseline at one worker",
+    "word_direct_init": "on with more than one Rayon worker; off at one worker",
+    "coordinate_and_word_scratch": "experimental/off",
+    "factored_initial_fusion": "experimental/off",
+    "factored_fold_reduction": "experimental/off"
+  },
+  "qualified_experiment_phases": [
+    "screen",
+    "qualify-direct",
+    "confirm-factored"
+  ],
+  "traced_profile_proofs": 144,
+  "final_falcon_tests": {
+    "passed": 355,
+    "failed": 0,
+    "ignored": 3,
+    "large_batch_ignored_tests_run_separately_and_passed": 2
+  },
+  "field_tests": {
+    "native_passed": 23,
+    "portable_passed": 23,
+    "existing_ignored_each": 1
+  },
+  "candidate_v2_changes_since_experimental_binary": [
+    "selected worker-dependent direct initialization defaults",
+    "skip BindingScratch locks when reuse is disabled",
+    "test-only eta/Boolean and interrupted-writer coverage",
+    "clarified additional cached-buffer metric documentation"
+  ],
+  "production_confirmation": {
+    "phase": "production",
+    "processes": 288,
+    "verified_proofs": 576,
+    "status": "complete",
+    "protocol": "canonical-v9",
+    "features": [
+      "falcon-hybrid"
+    ],
+    "baseline_sha256": "cc0e1df9cf2feb6d43ced6c0e7c23673c9711b74b4cd1ef10ae594be422dd08a",
+    "candidate_sha256": "321f791c5d7b5c09de5cb3b92ff69327cd0e23272117cc5a69da0d76bb9d235d",
+    "experiment_overrides": false,
+    "analysis": "analysis-production.json",
+    "one_worker_outcome": "Near baseline (-0.23% to +0.36% total median difference); no material one-worker speedup claimed."
+  },
+  "production_correctness100": {
+    "phase": "production-correctness100",
+    "processes": 12,
+    "verified_proofs": 36,
+    "status": "complete",
+    "batch": 129,
+    "security_bits": 100,
+    "degrees": [
+      512,
+      1024
+    ],
+    "threads": [
+      1,
+      8,
+      16
+    ]
+  },
+  "experimental_factored_confirmation": {
+    "phase": "confirm-factored",
+    "processes": 96,
+    "verified_proofs": 192,
+    "status": "complete",
+    "protocol": "factored-v10",
+    "candidate_generation": "frozen-v1",
+    "threads": [
+      16
+    ],
+    "comparison": [
+      "control",
+      "buffers-direct"
+    ],
+    "analysis": "analysis-confirm-factored.json",
+    "note": "Explicit selectors in bench-internals; separate from final production canonical-v9 build."
+  },
+  "final_validation": {
+    "main_verified_proofs": 3828,
+    "profile_verified_proofs": 144,
+    "total_verified_proofs": 3972,
+    "all_phases_complete": true,
+    "input_source_equality": true,
+    "complete_proof_equality_within_protocol": true,
+    "max_experimental_payload_growth_percent": 0.5883327809081962,
+    "build_source_audit": "build-source-audit.json"
+  }
+}

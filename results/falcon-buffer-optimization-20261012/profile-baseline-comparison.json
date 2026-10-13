@@ -1,0 +1,6 @@
+{
+  "verified_profile_proofs": 144,
+  "frozen_baseline_cases": 12,
+  "exact_input_source_and_complete_proof_equality": true,
+  "note": "Traced profile proofs are separate from untraced latency samples."
+}

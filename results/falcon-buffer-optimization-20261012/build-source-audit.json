@@ -1,0 +1,110 @@
+{
+  "builds": [
+    {
+      "binary_role": "baseline",
+      "all_relevant_sources_compiled_fresh": true,
+      "artifacts": [
+        {
+          "target": "field",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/vendor/field/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/src/bin/bitz.rs",
+          "fresh": false
+        },
+        {
+          "target": "falcon_algebraic",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/benches/falcon_algebraic.rs",
+          "fresh": false
+        }
+      ]
+    },
+    {
+      "binary_role": "candidate-v1",
+      "all_relevant_sources_compiled_fresh": true,
+      "artifacts": [
+        {
+          "target": "field",
+          "src_path": "/home/john-wu/code/BitZ-pcs/vendor/field/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/src/bin/bitz.rs",
+          "fresh": false
+        },
+        {
+          "target": "falcon_algebraic",
+          "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_algebraic.rs",
+          "fresh": false
+        }
+      ]
+    },
+    {
+      "binary_role": "baseline-production",
+      "all_relevant_sources_compiled_fresh": true,
+      "artifacts": [
+        {
+          "target": "field",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/vendor/field/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "falcon_algebraic",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/benches/falcon_algebraic.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-buffer-baseline-20261012/src/bin/bitz.rs",
+          "fresh": false
+        }
+      ]
+    },
+    {
+      "binary_role": "candidate-production",
+      "all_relevant_sources_compiled_fresh": true,
+      "artifacts": [
+        {
+          "target": "field",
+          "src_path": "/home/john-wu/code/BitZ-pcs/vendor/field/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/src/lib.rs",
+          "fresh": false
+        },
+        {
+          "target": "falcon_algebraic",
+          "src_path": "/home/john-wu/code/BitZ-pcs/benches/falcon_algebraic.rs",
+          "fresh": false
+        },
+        {
+          "target": "bitz",
+          "src_path": "/home/john-wu/code/BitZ-pcs/src/bin/bitz.rs",
+          "fresh": false
+        }
+      ]
+    }
+  ],
+  "stale_candidate_excluded": "diagnostics/stale-production-build",
+  "note": "Final production candidate used a new isolated target directory; frozen executable hashes recorded in per-binary metadata."
+}

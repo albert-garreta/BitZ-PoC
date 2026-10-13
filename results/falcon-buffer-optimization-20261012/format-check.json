@@ -1,0 +1,24 @@
+{
+  "command": [
+    "rustfmt",
+    "--edition",
+    "2024",
+    "--config",
+    "skip_children=true",
+    "--check",
+    "benches/common/falcon_metrics.rs",
+    "benches/falcon_algebraic.rs",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs",
+    "src/piop/spartan/falcon1024_algebraic/factored_ring.rs",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs",
+    "src/piop/spartan/falcon1024_algebraic/ring.rs",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs",
+    "src/piop/spartan/falcon1024_algebraic/word_binding_tests.rs",
+    "vendor/field/src/q12289.rs",
+    "vendor/field/src/q12289/avx512.rs"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "note": "Unrestricted recursive rustfmt also reported a pre-existing formatting difference in unchanged benches/common/cli.rs; scoped check covers modified Rust files only."
+}
