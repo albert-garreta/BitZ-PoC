@@ -18,6 +18,28 @@ mod falcon_metrics;
 #[path = "common/cli.rs"]
 mod cli;
 
+/// Profiling markers: distinct frames around the timed prover phases.
+#[inline(never)]
+fn profile_commit_region<R>(f: impl FnOnce() -> R) -> R {
+    std::hint::black_box(f())
+}
+
+#[inline(never)]
+fn profile_prove_region<R>(f: impl FnOnce() -> R) -> R {
+    std::hint::black_box(f())
+}
+
+/// With `BITZ_PROFILE_IN_POOL` set, run a prover phase on the Flock pool's
+/// worker. At one thread, nested rayon work (BitZ's and Flock's) then runs
+/// inline on that worker, so sampled stacks keep their callers.
+fn in_profile_pool<R: Send>(f: impl FnOnce() -> R + Send) -> R {
+    if std::env::var_os("BITZ_PROFILE_IN_POOL").is_some() {
+        flock_core::all_core_pool().install(f)
+    } else {
+        f()
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clap::Parser;
     use serde_json::json;
@@ -159,10 +181,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let rss_before_prover_kib = falcon_metrics::process_current_rss_kib();
                 let minor_faults_before = falcon_metrics::process_minor_faults();
                 let total = Instant::now();
-                let committed = prepared.commit_from_s2(statement, coefficients)?;
+                let committed = in_profile_pool(|| {
+                    profile_commit_region(|| prepared.commit_from_s2(statement, coefficients))
+                })?;
                 let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
                 let start = Instant::now();
-                let proof = prepared.prove(committed)?;
+                let proof = in_profile_pool(|| profile_prove_region(|| prepared.prove(committed)))?;
                 let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
                 let total_prover_ms = total.elapsed().as_secs_f64() * 1000.0;
                 let prover_minor_faults = minor_faults_before.and_then(|before| {
@@ -217,6 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
                         "proof_debug_digest": proof_debug_digest,
                         "proof_payload_breakdown": proof.payload_size_breakdown(),
+                        "pcs_breakdown": proof.pcs_size_breakdown(),
                         "live_bits_per_signature": prepared.live_bits_per_signature(),
                         "source_bits_per_signature": prepared.source_bits_per_signature(),
                         "capacity": prepared.capacity(),

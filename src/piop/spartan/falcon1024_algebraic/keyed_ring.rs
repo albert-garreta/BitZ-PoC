@@ -105,6 +105,10 @@ pub(super) fn no_wrap_bound(batch: usize) -> u128 {
         + Q as u128 * quotient_bound(batch)
 }
 
+// Kept out of line (with the helpers below) so sampled prover profiles show the
+// keyed ring as its own frames; LTO otherwise folds it into the caller. Each is
+// called once per proof.
+#[inline(never)]
 #[tracing::instrument(skip_all, name = "falcon_keyed_ring:prove")]
 pub(super) fn prove(
     transcript: &mut impl Transcript,
@@ -246,6 +250,7 @@ fn bind(
 
 /// Uniform `A_i` from one seed: chunks of instances read disjoint keyed XOF
 /// streams, so prover and verifier expand them in parallel and identically.
+#[inline(never)]
 fn instance_polynomials(
     transcript: &mut impl Transcript,
     batch: usize,
@@ -287,6 +292,7 @@ fn instance_polynomials(
 
 /// Exact `K = sum_i A_i k_i` with `k_i = R_i / q`. Each `k_i` is recovered from
 /// `h_i*s2_i` modulo a 31-bit NTT prime: `|k_i| < 2^25` is far below half of it.
+#[inline(never)]
 fn calculate_quotient(
     public: &FalconAlgebraicStatement,
     data: &WitnessData,
@@ -417,6 +423,7 @@ impl LimbVector {
 
 /// `rows[p][i] = c_p A_i(xi_p)` and the claimed value
 /// `sum_p c_p (q K(xi_p) + sum_i A_i(xi_p) t_i(xi_p))`.
+#[inline(never)]
 fn rows_and_target(
     public: &FalconAlgebraicStatement,
     polynomials: &[[u16; BATCHING_COEFFICIENTS]],

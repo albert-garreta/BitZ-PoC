@@ -453,6 +453,46 @@ impl FalconAlgebraicProof {
             ),
         ]
     }
+
+    /// Diagnostic split of the `pcs` entry above; the parts sum to it, with
+    /// bincode's length prefixes as `framing`.
+    pub fn pcs_size_breakdown(&self) -> Vec<(&'static str, usize)> {
+        let l = &self.opening.ligerito;
+        let row_bytes = |rows: &Vec<Vec<Gf>>| rows.iter().map(|r| 16 * r.len()).sum::<usize>();
+        let hash = std::mem::size_of_val(&l.initial_root);
+        let mut parts = vec![
+            ("ring_switch_values", 16 * self.opening.ring.s_v.len()),
+            ("initial_opened_rows", row_bytes(&l.initial_proof.opened_rows)),
+            ("initial_merkle_paths", hash * l.initial_proof.merkle_proof.len()),
+            (
+                "recursive_opened_rows",
+                l.recursive_proofs.iter().map(|p| row_bytes(&p.opened_rows)).sum(),
+            ),
+            (
+                "recursive_merkle_paths",
+                l.recursive_proofs.iter().map(|p| hash * p.merkle_proof.len()).sum(),
+            ),
+            ("roots", hash * (1 + l.recursive_roots.len())),
+            ("final_message", 16 * l.final_proof.len()),
+            ("sumcheck_messages", 32 * l.sumcheck_transcript.len()),
+            ("ood_values", 16 * l.ood_values.len()),
+            (
+                "nonces",
+                8 * (l.grinding_nonces.len()
+                    + l.fold_grinding_nonces.len()
+                    + self.opening_nonces.len()
+                    + self.pcs_nonces.len()),
+            ),
+        ];
+        let total = self
+            .payload_size_breakdown()
+            .into_iter()
+            .find(|(name, _)| *name == "pcs")
+            .map_or(0, |(_, bytes)| bytes);
+        let listed: usize = parts.iter().map(|(_, bytes)| bytes).sum();
+        parts.push(("framing", total.saturating_sub(listed)));
+        parts
+    }
 }
 
 impl PreparedFalconAlgebraic {
