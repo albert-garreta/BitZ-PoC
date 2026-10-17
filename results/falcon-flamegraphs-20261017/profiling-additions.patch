@@ -1,0 +1,107 @@
+diff --git a/benches/falcon_algebraic.rs b/benches/falcon_algebraic.rs
+index d12f29158..3aea35324 100644
+--- a/benches/falcon_algebraic.rs
++++ b/benches/falcon_algebraic.rs
+@@ -18,6 +18,28 @@ mod falcon_metrics;
+ #[path = "common/cli.rs"]
+ mod cli;
+ 
++/// Profiling markers: distinct frames around the timed prover phases.
++#[inline(never)]
++fn profile_commit_region<R>(f: impl FnOnce() -> R) -> R {
++    std::hint::black_box(f())
++}
++
++#[inline(never)]
++fn profile_prove_region<R>(f: impl FnOnce() -> R) -> R {
++    std::hint::black_box(f())
++}
++
++/// With `BITZ_PROFILE_IN_POOL` set, run a prover phase on the Flock pool's
++/// worker. At one thread, nested rayon work (BitZ's and Flock's) then runs
++/// inline on that worker, so sampled stacks keep their callers.
++fn in_profile_pool<R: Send>(f: impl FnOnce() -> R + Send) -> R {
++    if std::env::var_os("BITZ_PROFILE_IN_POOL").is_some() {
++        flock_core::all_core_pool().install(f)
++    } else {
++        f()
++    }
++}
++
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     use clap::Parser;
+     use serde_json::json;
+@@ -159,10 +181,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                 let rss_before_prover_kib = falcon_metrics::process_current_rss_kib();
+                 let minor_faults_before = falcon_metrics::process_minor_faults();
+                 let total = Instant::now();
+-                let committed = prepared.commit_from_s2(statement, coefficients)?;
++                let committed = in_profile_pool(|| {
++                    profile_commit_region(|| prepared.commit_from_s2(statement, coefficients))
++                })?;
+                 let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
+                 let start = Instant::now();
+-                let proof = prepared.prove(committed)?;
++                let proof = in_profile_pool(|| profile_prove_region(|| prepared.prove(committed)))?;
+                 let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
+                 let total_prover_ms = total.elapsed().as_secs_f64() * 1000.0;
+                 let prover_minor_faults = minor_faults_before.and_then(|before| {
+@@ -217,6 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                         "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
+                         "proof_debug_digest": proof_debug_digest,
+                         "proof_payload_breakdown": proof.payload_size_breakdown(),
++                        "pcs_breakdown": proof.pcs_size_breakdown(),
+                         "live_bits_per_signature": prepared.live_bits_per_signature(),
+                         "source_bits_per_signature": prepared.source_bits_per_signature(),
+                         "capacity": prepared.capacity(),
+diff --git a/src/piop/spartan/falcon1024_algebraic/protocol.rs b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+index 4a9d3bc6a..70efc0e27 100644
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -389,6 +389,46 @@ impl FalconAlgebraicProof {
+             ),
+         ]
+     }
++
++    /// Diagnostic split of the `pcs` entry above; the parts sum to it, with
++    /// bincode's length prefixes as `framing`.
++    pub fn pcs_size_breakdown(&self) -> Vec<(&'static str, usize)> {
++        let l = &self.opening.ligerito;
++        let row_bytes = |rows: &Vec<Vec<Gf>>| rows.iter().map(|r| 16 * r.len()).sum::<usize>();
++        let hash = std::mem::size_of_val(&l.initial_root);
++        let mut parts = vec![
++            ("ring_switch_values", 16 * self.opening.ring.s_v.len()),
++            ("initial_opened_rows", row_bytes(&l.initial_proof.opened_rows)),
++            ("initial_merkle_paths", hash * l.initial_proof.merkle_proof.len()),
++            (
++                "recursive_opened_rows",
++                l.recursive_proofs.iter().map(|p| row_bytes(&p.opened_rows)).sum(),
++            ),
++            (
++                "recursive_merkle_paths",
++                l.recursive_proofs.iter().map(|p| hash * p.merkle_proof.len()).sum(),
++            ),
++            ("roots", hash * (1 + l.recursive_roots.len())),
++            ("final_message", 16 * l.final_proof.len()),
++            ("sumcheck_messages", 32 * l.sumcheck_transcript.len()),
++            ("ood_values", 16 * l.ood_values.len()),
++            (
++                "nonces",
++                8 * (l.grinding_nonces.len()
++                    + l.fold_grinding_nonces.len()
++                    + self.opening_nonces.len()
++                    + self.pcs_nonces.len()),
++            ),
++        ];
++        let total = self
++            .payload_size_breakdown()
++            .into_iter()
++            .find(|(name, _)| *name == "pcs")
++            .map_or(0, |(_, bytes)| bytes);
++        let listed: usize = parts.iter().map(|(_, bytes)| bytes).sum();
++        parts.push(("framing", total.saturating_sub(listed)));
++        parts
++    }
+ }
+ 
+ impl PreparedFalconAlgebraic {

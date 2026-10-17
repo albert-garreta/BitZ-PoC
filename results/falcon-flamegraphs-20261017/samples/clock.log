@@ -1,0 +1,8 @@
+12:01:22 bitz case cache exit=0
+12:02:08 aerie profiled exit=0 100%; charged
+12:03:29 bitz-shipped profiled exit=0 100%; charged
+12:04:39 bitz-onelimb profiled exit=0 100%; charged
+12:05:09 aerie clock exit=0 ghz=4.39 100%; charged
+12:06:07 bitz-shipped clock exit=0 ghz=4.37 100%; charged
+12:07:02 bitz-onelimb clock exit=0 ghz=4.36 100%; charged
+12:09:18 bitz-shipped profiled (rerun) exit=0 100%; charged

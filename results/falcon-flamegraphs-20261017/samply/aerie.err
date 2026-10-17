@@ -1,0 +1,11 @@
+# honest inputs: records=32768 source=canonical-cache source_ms=118.7 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+# honest inputs: records=32768 source=canonical-cache source_ms=105.5 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+# honest inputs: records=32768 source=canonical-cache source_ms=103.5 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+# honest inputs: records=32768 source=canonical-cache source_ms=111.6 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+# honest inputs: records=32768 source=canonical-cache source_ms=103.0 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+Stopping profile.

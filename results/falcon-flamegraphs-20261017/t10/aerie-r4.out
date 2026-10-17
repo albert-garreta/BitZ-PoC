@@ -1,0 +1,16 @@
+# benchmark_schema	8
+# profiled	false
+# rayon_threads	10
+# simd_backend	small_signed_dot=neon;key_unpack=neon
+# keccak_backend	hybrid
+# rustc	rustc 1.95.0 (59807616e 2026-04-14)
+# akita_rev	e023b6a46143f7b23199ccecb2684192baf7b640
+# git_revision	49b6c212c209286c536196f53618823ffdf0e899-dirty
+# heap_profile	none
+# parameter_set	Falcon-512
+# salt_mode	per-record
+# byte_breakdown_columns	salts_bytes	header_piop_bytes	pcs_bytes
+records	setup_ms	prove_ms	transport_materialize_ms	transport_binding_ms	record_materialize_ms	native_verify_ms	direct_witness_ms	pack_ms	encodability_ms	group_materialization_ms	commit_ms	projection_ms	stage1_ms	stage2_ms	stage3_ms	pcs_prove_ms	output_encode_ms	verify_parallel_ms	verify_decode_ms	verify_hash_to_point_ms	verify_binding_ms	stage_verify_ms	pcs_verify_ms	verify_single_thread_ms	stage_verify_single_thread_ms	pcs_verify_single_thread_ms	verifier_setup_heap_bytes	verify_peak_heap_bytes	verify_single_thread_peak_heap_bytes	commitment_bytes	pcs_proof_bytes	envelope_bytes	commit_groups_ms
+# batch_shape	live=32768	padded=32768
+32768	189.1	968.4	0.2	3.2	0.0	77.6	40.4	0.3	40.8	0.0	156.4	43.6	92.4	165.0	225.1	223.0	0.1	15.1	0.1	7.2	0.6	1.8	5.3	57.2	5.9	7.8	6985625	5472112	5411248	512	62381	1378672	s1:31.0;slack:2.9;digits:125.4;budget:2.9
+# honest FN-DSA fixtures: distinct reference-generated keypairs, signatures, and messages; salt_mode=per-record; deterministic benchmark randomness is not production key material

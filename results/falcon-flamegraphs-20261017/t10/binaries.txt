@@ -1,0 +1,4 @@
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie/target/release/deps/falcon-6efadfd380be1a7d 2533fb6c533acc25332ce42c13266847
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/bin/bitz-shipped ffe5aa6a0496c1e5afec6e26195c907b
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/bin/bitz-ring-t16 c8db61af46f5300f1063637a812c000d
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

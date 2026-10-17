@@ -1,0 +1,40 @@
+diff --git a/crates/aerie-bench/benches/falcon.rs b/crates/aerie-bench/benches/falcon.rs
+index 29993e0..65c41a4 100644
+--- a/crates/aerie-bench/benches/falcon.rs
++++ b/crates/aerie-bench/benches/falcon.rs
+@@ -636,6 +636,12 @@ struct VerifyHeap {
+     one_thread: usize,
+ }
+ 
++/// Profiling marker: a distinct frame around the timed prover call.
++#[inline(never)]
++fn profile_prove_region<R>(f: impl FnOnce() -> R) -> R {
++    std::hint::black_box(f())
++}
++
+ fn run_once<P: BenchParams>(
+     statement: &AggregationStatement<P>,
+     witness: &AggregationWitness<P>,
+@@ -656,8 +662,20 @@ fn run_once<P: BenchParams>(
+     let records = statement.len();
+     let (proof_bytes, prove) = {
+         let _heap_profile = start_heap_profile::<P>(heap_phase, HeapPhase::Prove, records);
+-        prove_aggregate_measured_with_mode(setup, statement, witness, salt_mode)
+-            .map_err(|error| error.to_string())?
++        // With AERIE_PROFILE_IN_POOL set, run the prover on a Rayon worker:
++        // at one thread, nested parallel work then runs inline there, so
++        // sampled stacks keep their callers.
++        let run = || {
++            profile_prove_region(|| {
++                prove_aggregate_measured_with_mode(setup, statement, witness, salt_mode)
++                    .map_err(|error| error.to_string())
++            })
++        };
++        if std::env::var_os("AERIE_PROFILE_IN_POOL").is_some() {
++            rayon::scope(|_| run())
++        } else {
++            run()
++        }?
+     };
+     let (verified_parallel, verify_parallel) = {
+         let _heap_profile = start_heap_profile::<P>(heap_phase, HeapPhase::Verify, records);

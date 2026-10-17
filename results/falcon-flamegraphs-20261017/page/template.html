@@ -1,0 +1,513 @@
+<title>Falcon Prover Flamegraphs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one wide report column; summary bars, then one icicle flamegraph per
+   prover, all drawn on one shared ms-per-prove scale. */
+:root {
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ring: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+  --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #898781;
+  --tint: 38%;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+    --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #898781;
+    --tint: 46%;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+  --muted: #898781; --grid: #2c2c2a; --axis: #383835; --ring: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+  --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #898781;
+  --tint: 46%;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+main { max-width: 1240px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 1.75rem; line-height: 1.2; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+p { margin: 0; max-width: 72ch; }
+.lede { display: grid; gap: 10px; }
+.meta { color: var(--ink-2); font-size: 0.9rem; }
+.eyebrow { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; }
+code, .code { font-family: var(--font-code); font-size: 0.86em; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 10px;
+  padding: 18px 18px 20px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.panel-head .figure { font-family: var(--font-code); font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 0.9rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chip { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+/* Summary bars */
+.bars { display: grid; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: minmax(8.5rem, 13rem) 1fr 4.2rem; gap: 12px; align-items: center; }
+.bar-row .label { font-size: 0.9rem; line-height: 1.25; }
+.bar-row .label small { display: block; color: var(--muted); font-size: 0.78rem; }
+.bar-track { position: relative; height: 26px; }
+.bar-track .seg { position: absolute; top: 0; bottom: 0; border-right: 2px solid var(--surface); }
+.bar-track .seg:first-child { border-radius: 4px 0 0 4px; }
+.bar-row .total { font-family: var(--font-code); font-size: 0.82rem; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.axis-row { display: grid; grid-template-columns: minmax(8.5rem, 13rem) 1fr 4.2rem; gap: 12px; }
+.axis-ticks { position: relative; height: 18px; border-top: 1px solid var(--axis); }
+.axis-ticks span { position: absolute; top: 3px; transform: translateX(-50%); font-family: var(--font-code); font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 0.86rem; min-width: 560px; width: 100%; }
+th, td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-2); font-weight: 500; }
+td .chip { display: inline-block; vertical-align: -1px; margin-right: 8px; }
+td.na { color: var(--muted); }
+.pairs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 18px 36px; }
+.pair-chart { display: grid; gap: 10px; min-width: 0; }
+.pair-chart h3 { font-size: 0.9rem; color: var(--ink-2); font-weight: 500; }
+#pairs-prove, #pairs-verify { display: grid; gap: 14px; }
+.pair-row { display: grid; grid-template-columns: minmax(7rem, 9.5rem) 1fr 4.6rem; gap: 10px; align-items: center; }
+.pair-row .label { font-size: 0.86rem; line-height: 1.2; }
+.pair-track, .pair-vals { display: grid; gap: 5px; }
+.pair-bar { height: 13px; border-radius: 0 3px 3px 0; min-width: 2px; }
+.pair-vals span { font-family: var(--font-code); font-size: 0.74rem; line-height: 13px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.size-table td.sub, .size-table td.sub + td, .size-table tr.sub td { color: var(--ink-2); font-size: 0.82rem; }
+.size-table tr.sub td:first-child { padding-left: 32px; }
+.size-table tr.group td { padding-top: 9px; }
+.size-table tr.total td { border-top: 1px solid var(--axis); }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.controls label { font-size: 0.85rem; color: var(--ink-2); }
+input[type="search"] {
+  font: 400 0.9rem var(--font-code);
+  padding: 7px 10px; min-width: 0; width: min(26rem, 100%);
+  border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--ink);
+}
+input[type="search"]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button {
+  font: 500 0.82rem var(--font-ui); padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface); color: var(--ink);
+}
+button:hover { border-color: var(--muted); }
+button[disabled] { opacity: 0.45; cursor: default; }
+.match { font-family: var(--font-code); font-size: 0.82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* Flamegraphs */
+.graph-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: space-between; }
+.crumbs { font-family: var(--font-code); font-size: 0.78rem; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.graph { overflow-x: auto; overflow-y: hidden; }
+.graph svg { display: block; }
+.graph rect.cell { stroke: var(--surface); stroke-width: 1; cursor: pointer; }
+.graph text { font: 400 11px var(--font-code); fill: var(--ink); pointer-events: none; }
+.graph .dim { opacity: 0.22; }
+.graph .hit { stroke: var(--ink); stroke-width: 1.5; }
+.graph .scale text { fill: var(--muted); font-size: 10px; }
+.graph .scale line { stroke: var(--grid); }
+
+.tip {
+  position: fixed; z-index: 20; pointer-events: none; max-width: min(34rem, calc(100vw - 32px));
+  background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16); padding: 9px 11px; font-size: 0.82rem; display: grid; gap: 4px;
+}
+.tip .name { font-family: var(--font-code); font-size: 0.8rem; overflow-wrap: anywhere; }
+.tip .row { display: flex; gap: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tip .row b { color: var(--ink); font-weight: 500; }
+
+details { font-size: 0.9rem; }
+details summary { cursor: pointer; color: var(--ink-2); }
+.notes { display: grid; gap: 8px; color: var(--ink-2); font-size: 0.9rem; }
+.notes p { max-width: 90ch; }
+
+@media (max-width: 640px) {
+  .bar-row, .axis-row { grid-template-columns: 1fr 3.6rem; gap: 4px 8px; }
+  .bar-row .label { grid-column: 1 / -1; }
+  .axis-row > :first-child { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .graph rect.cell { transition: opacity 120ms ease; }
+}
+</style>
+
+<main>
+  <header class="lede">
+    <div class="eyebrow">Prover profiles · single thread</div>
+    <h1>Falcon Prover Flamegraphs</h1>
+    <p id="subtitle" class="meta"></p>
+  </header>
+
+  <section class="panel" aria-labelledby="summary-title">
+    <div class="panel-head">
+      <h2 id="summary-title">Where one prove goes</h2>
+      <span class="figure" id="summary-scale"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="bars" id="bars"></div>
+    <details>
+      <summary>Table view</summary>
+      <div class="table-wrap"><table id="table"></table></div>
+    </details>
+  </section>
+
+  <section class="panel" aria-labelledby="threads-title" id="threads-panel" hidden>
+    <div class="panel-head">
+      <h2 id="threads-title">One thread and 10 threads</h2>
+      <span class="figure" id="threads-figure"></span>
+    </div>
+    <div class="legend">
+      <span><i class="chip" style="background:var(--c1)"></i>1 thread</span>
+      <span><i class="chip" style="background:var(--c2)"></i>10 threads</span>
+    </div>
+    <div class="pairs">
+      <div class="pair-chart"><h3>Prove</h3><div id="pairs-prove"></div></div>
+      <div class="pair-chart"><h3>Verify</h3><div id="pairs-verify"></div></div>
+    </div>
+    <div class="table-wrap"><table id="threads-table"></table></div>
+    <div class="notes" id="threads-notes"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="size-title" id="size-panel" hidden>
+    <div class="panel-head">
+      <h2 id="size-title">What one proof carries</h2>
+      <span class="figure">bytes per proof, same scale</span>
+    </div>
+    <div class="legend" id="size-legend"></div>
+    <div class="bars" id="size-bars"></div>
+    <div class="table-wrap"><table id="size-table" class="size-table"></table></div>
+    <div class="notes" id="size-notes"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="graphs-title">
+    <div class="panel-head">
+      <h2 id="graphs-title">Flamegraphs</h2>
+      <span class="figure">same scale · click a frame to zoom</span>
+    </div>
+    <div class="controls">
+      <label for="search">Highlight frames</label>
+      <input type="search" id="search" placeholder="e.g. forest, sumcheck, ntt, merkle" autocomplete="off" spellcheck="false">
+      <button type="button" id="reset-all">Reset zoom</button>
+    </div>
+    <div id="graphs" style="display:grid; gap:26px"></div>
+  </section>
+
+  <section class="panel notes" aria-labelledby="notes-title">
+    <h2 id="notes-title">How these were made</h2>
+    <div id="notes" class="notes"></div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script type="application/json" id="data">/*DATA*/</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("data").textContent);
+  const CATS = DATA.categories;           // [{name, color var}]
+  const PROFILES = DATA.profiles;         // [{key, name, sub, ms, tree, cats:[ms per category]}]
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const catColor = (i) => `var(--c${CATS[i].slot})`;
+  const tint = (i) => `color-mix(in srgb, var(--c${CATS[i].slot}) var(--tint), var(--surface))`;
+  const fmt = (ms) => ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms.toFixed(ms >= 100 ? 0 : 1)} ms`;
+  const pct = (part, whole) => part / whole < 0.0005 ? "<0.1%" : `${(100 * part / whole).toFixed(part / whole >= 0.1 ? 0 : 1)}%`;
+  const maxMs = Math.max(...PROFILES.map((p) => p.ms));
+
+  document.getElementById("subtitle").textContent = DATA.subtitle;
+  document.getElementById("summary-scale").textContent = "ms per prove, same scale";
+  document.getElementById("notes").innerHTML = DATA.notes.map((n) => `<p>${n}</p>`).join("");
+
+  // Legend
+  document.getElementById("legend").innerHTML = CATS.map((c, i) =>
+    `<span><i class="chip" style="background:${catColor(i)}"></i>${c.name}</span>`).join("");
+
+  // Summary bars
+  const bars = document.getElementById("bars");
+  const tickStep = maxMs > 3000 ? 1000 : 500;
+  const ticks = [];
+  for (let t = 0; t <= maxMs; t += tickStep) ticks.push(t);
+  bars.innerHTML = PROFILES.map((p) => {
+    let x = 0;
+    const segs = p.cats.map((ms, i) => {
+      if (ms <= 0) return "";
+      const left = 100 * x / maxMs, width = 100 * ms / maxMs;
+      x += ms;
+      return `<div class="seg" style="left:${left}%;width:${width}%;background:${catColor(i)}" data-tip="${CATS[i].name}|${fmt(ms)}|${pct(ms, p.ms)} of ${p.name}"></div>`;
+    }).join("");
+    return `<div class="bar-row"><div class="label">${p.name}<small>${p.sub}</small></div>
+      <div class="bar-track">${segs}</div><span class="total">${fmt(p.ms)}</span></div>`;
+  }).join("") + `<div class="axis-row"><div></div><div class="axis-ticks">${ticks.map((t) =>
+    `<span style="left:${100 * t / maxMs}%">${t === 0 ? "0" : (t / 1000) + " s"}</span>`).join("")}</div><div></div></div>`;
+
+  // Table view
+  const table = document.getElementById("table");
+  table.innerHTML = `<thead><tr><th>Kind of work</th>${PROFILES.map((p) => `<th>${p.name}</th>`).join("")}</tr></thead><tbody>` +
+    CATS.map((c, i) => `<tr><td><i class="chip" style="background:${catColor(i)}"></i>${c.name}</td>${PROFILES.map((p) =>
+      p.cats[i] > 0 ? `<td>${fmt(p.cats[i])} <span style="color:var(--muted)">(${pct(p.cats[i], p.ms)})</span></td>` : `<td class="na">–</td>`).join("")}</tr>`).join("") +
+    `<tr><td><b>Total per prove</b></td>${PROFILES.map((p) => `<td><b>${fmt(p.ms)}</b></td>`).join("")}</tr></tbody>`;
+
+  // Tooltip
+  const tip = document.getElementById("tip");
+  const showTip = (html, ev) => {
+    tip.innerHTML = html; tip.hidden = false;
+    const pad = 14, r = tip.getBoundingClientRect();
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    if (x + r.width > innerWidth - 8) x = Math.max(8, ev.clientX - r.width - pad);
+    if (y + r.height > innerHeight - 8) y = Math.max(8, ev.clientY - r.height - pad);
+    tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+  };
+  const hideTip = () => { tip.hidden = true; };
+  bars.addEventListener("mousemove", (ev) => {
+    const seg = ev.target.closest(".seg");
+    if (!seg) return hideTip();
+    const [name, ms, share] = seg.dataset.tip.split("|");
+    showTip(`<div><b>${name}</b></div><div class="row"><span><b>${ms}</b> per prove</span><span>${share}</span></div>`, ev);
+  });
+  bars.addEventListener("mouseleave", hideTip);
+
+  // One thread and 10 threads
+  const THREADS = DATA.threads;
+  if (THREADS) {
+    document.getElementById("threads-panel").hidden = false;
+    document.getElementById("threads-figure").textContent = THREADS.figure;
+    const paired = (id, key) => {
+      const max = Math.max(...THREADS.rows.flatMap((r) => [r.t1[key], r.t10[key]]));
+      document.getElementById(id).innerHTML = THREADS.rows.map((r) => `<div class="pair-row">
+          <div class="label">${r.name}</div>
+          <div class="pair-track">
+            <div class="pair-bar" style="width:${100 * r.t1[key] / max}%;background:var(--c1)" title="1 thread: ${fmt(r.t1[key])}"></div>
+            <div class="pair-bar" style="width:${100 * r.t10[key] / max}%;background:var(--c2)" title="10 threads: ${fmt(r.t10[key])}"></div>
+          </div>
+          <div class="pair-vals"><span>${fmt(r.t1[key])}</span><span>${fmt(r.t10[key])}</span></div>
+        </div>`).join("");
+    };
+    paired("pairs-prove", "prove");
+    paired("pairs-verify", "verify");
+    const gib = (mib) => `${(mib / 1024).toFixed(1)} GiB`;
+    const mb = (b) => b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : `${(b / 1e3).toFixed(1)} kB`;
+    document.getElementById("threads-table").innerHTML =
+      `<thead><tr><th></th><th>Prove, 1 thread</th><th>Prove, 10 threads</th><th>Speedup</th>` +
+      `<th>Verify, 1 thread</th><th>Verify, 10 threads</th><th>Peak memory, 10 threads</th><th>Proof</th></tr></thead><tbody>` +
+      THREADS.rows.map((r) => `<tr><td>${r.name}<br><span style="color:var(--muted);font-size:0.78rem">${r.sub}</span></td>
+        <td>${fmt(r.t1.prove)}</td><td><b>${fmt(r.t10.prove)}</b></td><td>${(r.t1.prove / r.t10.prove).toFixed(1)}×</td>
+        <td>${fmt(r.t1.verify)}</td><td><b>${fmt(r.t10.verify)}</b></td><td>${gib(r.t10.rss_mib)}</td><td>${mb(r.proof)}</td></tr>`).join("") +
+      `</tbody>`;
+    document.getElementById("threads-notes").innerHTML = (THREADS.notes || []).map((n) => `<p>${n}</p>`).join("");
+  }
+
+  // Proof sizes
+  const SIZES = DATA.sizes;
+  if (SIZES) {
+    document.getElementById("size-panel").hidden = false;
+    const SC = SIZES.categories, ROWS = SIZES.rows;
+    const sizeColor = (i) => `var(--c${SC[i].slot})`;
+    const bytes = (b) => b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : b >= 1e4 ? `${(b / 1e3).toFixed(1)} kB` : `${b.toLocaleString("en-US")} B`;
+    const exact = (b) => b.toLocaleString("en-US");
+    const maxB = Math.max(...ROWS.map((r) => r.total));
+    const records = DATA.records;
+    document.getElementById("size-legend").innerHTML = SC.map((c, i) =>
+      `<span><i class="chip" style="background:${sizeColor(i)}"></i>${c.name}</span>`).join("");
+    const step = maxB > 1.2e6 ? 500000 : 250000;
+    const sizeTicks = [];
+    for (let t = 0; t <= maxB; t += step) sizeTicks.push(t);
+    const sizeBars = document.getElementById("size-bars");
+    sizeBars.innerHTML = ROWS.map((r) => {
+      let x = 0;
+      const segs = r.cats.map((b, i) => {
+        if (b <= 0) return "";
+        const left = 100 * x / maxB, width = Math.max(0.15, 100 * b / maxB);
+        x += b;
+        return `<div class="seg" style="left:${left}%;width:${width}%;background:${sizeColor(i)}" data-tip="${SC[i].name}|${bytes(b)} (${exact(b)} B)|${pct(b, r.total)} of this proof"></div>`;
+      }).join("");
+      return `<div class="bar-row"><div class="label">${r.name}<small>${r.sub} · ${(r.total / records).toFixed(1)} B per signature</small></div>
+        <div class="bar-track">${segs}</div><span class="total">${bytes(r.total)}</span></div>`;
+    }).join("") + `<div class="axis-row"><div></div><div class="axis-ticks">${sizeTicks.map((t) =>
+      `<span style="left:${100 * t / maxB}%">${t === 0 ? "0" : (t / 1e6).toFixed(1) + " MB"}</span>`).join("")}</div><div></div></div>`;
+    sizeBars.addEventListener("mousemove", (ev) => {
+      const seg = ev.target.closest(".seg");
+      if (!seg) return hideTip();
+      const [name, size, share] = seg.dataset.tip.split("|");
+      showTip(`<div><b>${name}</b></div><div class="row"><span><b>${size}</b></span><span>${share}</span></div>`, ev);
+    });
+    sizeBars.addEventListener("mouseleave", hideTip);
+
+    // Table: one group row per kind of data, then the parts each proof reports.
+    let html = `<thead><tr><th>Component</th>${ROWS.map((r) => `<th>${r.name}</th>`).join("")}</tr></thead><tbody>`;
+    SC.forEach((c, i) => {
+      if (ROWS.every((r) => r.cats[i] === 0)) return;
+      html += `<tr class="group"><td><i class="chip" style="background:${sizeColor(i)}"></i>${c.name}</td>${ROWS.map((r) =>
+        r.cats[i] > 0 ? `<td>${exact(r.cats[i])} <span style="color:var(--muted)">(${pct(r.cats[i], r.total)})</span></td>` : `<td class="na">–</td>`).join("")}</tr>`;
+      const labels = [];
+      ROWS.forEach((r) => r.details.forEach(([label, , indent, cat]) => {
+        if (indent === 1 && cat === i && !labels.includes(label)) labels.push(label);
+      }));
+      for (const label of labels) {
+        html += `<tr class="sub"><td>${label}</td>${ROWS.map((r) => {
+          const hit = r.details.find(([l, , indent, cat]) => l === label && indent === 1 && cat === i);
+          return hit ? `<td>${exact(hit[1])}</td>` : `<td class="na">–</td>`;
+        }).join("")}</tr>`;
+      }
+    });
+    html += `<tr class="total"><td><b>Total</b></td>${ROWS.map((r) => `<td><b>${exact(r.total)}</b></td>`).join("")}</tr>`;
+    html += `<tr><td>Per signature</td>${ROWS.map((r) => `<td>${(r.total / records).toFixed(1)} B</td>`).join("")}</tr></tbody>`;
+    document.getElementById("size-table").innerHTML = html;
+    document.getElementById("size-notes").innerHTML = (SIZES.notes || []).map((n) => `<p>${n}</p>`).join("");
+  }
+
+  // Flatten trees: x0 in ms from the left of the root, depth, parent.
+  for (const p of PROFILES) {
+    const nodes = [];
+    const walk = (node, x0, depth, parent) => {
+      const index = nodes.length;
+      const self = node.v - (node.k || []).reduce((s, c) => s + c.v, 0);
+      nodes.push({ n: node.n, v: node.v, c: node.c, x0, depth, parent, self, kids: [] });
+      if (parent >= 0) nodes[parent].kids.push(index);
+      let x = x0;
+      for (const child of node.k || []) { walk(child, x, depth + 1, index); x += child.v; }
+    };
+    walk(p.tree, 0, 0, -1);
+    p.nodes = nodes;
+    p.focus = 0;
+  }
+
+  const graphs = document.getElementById("graphs");
+  const ROW = 18, AXIS = 22;
+  let query = "";
+
+  graphs.innerHTML = PROFILES.map((p, i) => `<div class="graph-block" data-i="${i}">
+      <div class="graph-head"><h3>${p.name} <span class="meta" style="font-weight:400">· ${p.sub} · ${fmt(p.ms)} per prove</span></h3>
+        <span class="match" id="match-${i}"></span></div>
+      <div class="crumbs" id="crumbs-${i}"></div>
+      <div class="graph" id="graph-${i}"></div></div>`).join("");
+
+  function matches(name) { return query && name.toLowerCase().includes(query); }
+
+  function render(i) {
+    const p = PROFILES[i];
+    const host = document.getElementById(`graph-${i}`);
+    const width = Math.max(320, host.clientWidth);
+    const focus = p.nodes[p.focus];
+    // Unzoomed graphs share one scale; a zoomed graph fills its own width.
+    const span = p.focus === 0 ? maxMs : focus.v;
+    const origin = p.focus === 0 ? 0 : focus.x0;
+    const sx = width / span;
+    const ancestors = new Set();
+    for (let a = focus.parent; a >= 0; a = p.nodes[a].parent) ancestors.add(a);
+    let maxDepth = 0;
+    const out = [];
+    const texts = [];
+    let matched = 0;
+    const visit = (index, insideMatch) => {
+      const node = p.nodes[index];
+      const inFocus = index === p.focus || ancestors.has(index) || isDescendant(p, index, p.focus);
+      if (!inFocus) return;
+      let x, w;
+      if (ancestors.has(index)) { x = 0; w = width * (p.focus === 0 ? focus.v / maxMs : 1); }
+      else { x = (node.x0 - origin) * sx; w = node.v * sx; }
+      if (w < 0.6) return;
+      const y = AXIS + node.depth * ROW;
+      maxDepth = Math.max(maxDepth, node.depth);
+      const hit = matches(node.n);
+      if (hit && !insideMatch) matched += node.v;
+      const dim = query && !hit && !insideMatch ? " dim" : "";
+      out.push(`<rect class="cell${dim}${hit ? " hit" : ""}" data-n="${index}" x="${x.toFixed(2)}" y="${y}" width="${Math.max(0.6, w - 1).toFixed(2)}" height="${ROW - 1}" rx="2" fill="${tint(node.c)}"></rect>`);
+      if (w > 34) {
+        const chars = Math.floor((w - 8) / 6.6);
+        const label = node.n.length > chars ? node.n.slice(0, Math.max(1, chars - 1)) + "…" : node.n;
+        texts.push(`<text x="${(x + 4).toFixed(2)}" y="${y + 12.5}"${dim ? ' class="dim"' : ""}>${escapeHtml(label)}</text>`);
+      }
+      for (const kid of node.kids) visit(kid, insideMatch || hit);
+    };
+    visit(0, false);
+    const height = AXIS + (maxDepth + 1) * ROW + 4;
+    const tickMs = niceStep(span / Math.max(2, Math.floor(width / 110)));
+    const ticks = [];
+    for (let t = 0; t <= span + 1e-9; t += tickMs) {
+      const tx = t * sx;
+      ticks.push(`<line x1="${tx}" x2="${tx}" y1="${AXIS - 4}" y2="${height}" /><text x="${tx + 3}" y="12">${t === 0 ? "0" : fmt(t)}</text>`);
+    }
+    host.innerHTML = `<svg width="${width}" height="${height}" role="img" aria-label="${escapeHtml(p.name)} flamegraph">
+      <g class="scale">${ticks.join("")}</g>${out.join("")}${texts.join("")}</svg>`;
+    const crumbs = [];
+    for (let a = p.focus; a >= 0; a = p.nodes[a].parent) crumbs.unshift(p.nodes[a].n);
+    document.getElementById(`crumbs-${i}`).textContent = p.focus === 0 ? "" : "zoomed: " + crumbs.join(" › ");
+    document.getElementById(`match-${i}`).textContent = query ? `matching frames: ${fmt(matched)} (${pct(matched, p.ms)})` : "";
+  }
+
+  function isDescendant(p, index, ancestor) {
+    for (let a = index; a >= 0; a = p.nodes[a].parent) if (a === ancestor) return true;
+    return false;
+  }
+  function niceStep(raw) {
+    const pow = 10 ** Math.floor(Math.log10(raw));
+    for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * pow) return m * pow;
+    return 10 * pow;
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+  const renderAll = () => PROFILES.forEach((_, i) => render(i));
+  renderAll();
+  let pending = 0;
+  addEventListener("resize", () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(renderAll); });
+
+  graphs.addEventListener("mousemove", (ev) => {
+    const cell = ev.target.closest("rect.cell");
+    if (!cell) return hideTip();
+    const i = +cell.closest(".graph-block").dataset.i;
+    const p = PROFILES[i], node = p.nodes[+cell.dataset.n];
+    showTip(`<div class="name">${escapeHtml(node.n)}</div>
+      <div class="row"><span><b>${fmt(node.v)}</b> per prove</span><span>${pct(node.v, p.ms)} of prover</span><span>self ${fmt(Math.max(0, node.self))}</span></div>
+      <div class="row"><span><i class="chip" style="display:inline-block;vertical-align:-1px;margin-right:6px;background:${catColor(node.c)}"></i>${CATS[node.c].name}</span></div>`, ev);
+  });
+  graphs.addEventListener("mouseleave", hideTip);
+  graphs.addEventListener("click", (ev) => {
+    const cell = ev.target.closest("rect.cell");
+    if (!cell) return;
+    const i = +cell.closest(".graph-block").dataset.i;
+    const p = PROFILES[i];
+    const index = +cell.dataset.n;
+    p.focus = index === p.focus ? Math.max(0, p.nodes[index].parent) : index;
+    render(i);
+  });
+  document.getElementById("reset-all").addEventListener("click", () => {
+    PROFILES.forEach((p) => { p.focus = 0; });
+    renderAll();
+  });
+  const search = document.getElementById("search");
+  search.addEventListener("input", () => { query = search.value.trim().toLowerCase(); renderAll(); });
+})();
+</script>

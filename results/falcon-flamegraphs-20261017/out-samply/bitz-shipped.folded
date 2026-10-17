@@ -1,0 +1,130 @@
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed 51171
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;OnceLock::initialize;Once::call;Once::call_once_force::{closure} 4690
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;PreparedFalconAlgebraic::transcript 119062
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;PreparedFalconAlgebraic::transcript;Hasher::update_rayon;blake3::compress_subtree_wide;blake3::compress_chunks_parallel;blake3_hash_many_neon 109701
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;PreparedFalconAlgebraic::transcript;Hasher::update_rayon;blake3::compress_subtree_wide;blake3::compress_parents_parallel;blake3_hash_many_neon 12002
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;BindingForm::new_owned 3397
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;BindingForm::new_owned;BindingForm::new_owned_with_strategy_and_initial;BindingForm::new_owned_with_strategy_and_initial::{closure} 758385
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;BindingForm::new_owned;BindingForm::new_owned_with_strategy_and_initial;BindingForm::new_owned_with_strategy_and_initial::{closure};[libsystem_malloc.dylib];mach_absolute_time 5958
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;falcon_integer::prove;falcon_integer::prove_with_prefix 72936
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;falcon_integer::prove;falcon_integer::prove_with_prefix;falcon_integer::prove_with_prefix::{closure} 1246240
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;falcon_integer::prove;falcon_integer::prove_with_prefix;falcon_integer::prove_with_prefix::{closure};PrimeParameters::reduce_product_acc 48565
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;falcon_integer::prove;falcon_integer::prove_with_prefix;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 25527
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;falcon_integer::prove;falcon_integer::prove_with_prefix;matrix::eq_table 3987
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_norm;matrix::eq_table 1539
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial 491317
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;<ProverGrindingRoundBoundary as RoundBoundaryPolicy>::after_round;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 14821
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;PrimeParameters::remainder 3747
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;PublicWeights::fold;word_binding::lerp 3986
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;PublicWeights::spare 3984
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;Sparse::from_source::{closure} 111209
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;__bzero 80991
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;word_binding::dense_fold::{closure} 23306
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;word_binding::dense_fold::{closure};word_binding::lerp 1157895
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;word_binding::dense_sums 562387
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;word_binding::first_fold_into::{closure} 445372
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;arithmetic::prove_owned_with_scratch;arithmetic::prove_with_ring_and_scratch;arithmetic::prove_with_ring_and_scratch::{closure};word_binding::prove_with_options_and_initial;word_binding::first_fold_into::{closure};word_binding::lerp 389140
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 3997
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 7983
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;Forest::bit_round;Forest::bit_round::{closure} 395913
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;Forest::cross_sums 837047
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;Forest::cross_sums;BitSelectors::new;BitSelectors::new::{closure} 3992
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;Forest::cross_sums;Buckets::reset 3994
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::bit_rounds;Forest::cross_sums;gkr::eq_table;utils::build_eq_x_r_vec;__bzero 2056
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::fold_table_in 16125
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::fold_table_in;_platform_memset 7981
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::jit_fold_round_with;Forest::jit_fold_into 156767
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::jit_fold_round_with;Forest::jit_fold_into;neon::jit_fold_group 1217763
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::jit_round_sums 1268078
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::jit_round_sums;_platform_memset 3987
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::jit_round_sums;neon::jit_bucket_finish 3274
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::product_level_into 301621
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::upper_levels_into 738084
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;Forest::upper_levels_into;forest::level_up_into 82646
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;OnceLock::initialize;Once::call;Once::call_once_force::{closure};NibbleRows::new 80871
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;OnceLock::initialize;Once::call;Once::call_once_force::{closure};NibbleRows::new;_platform_memmove 39300
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;OnceLock::initialize;Once::call;Once::call_once_force::{closure};NibbleRows::new;_platform_memset 7963
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;format::format_inner 27
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds 4856
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 214582
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds;gkr::eq_table;utils::build_eq_x_r_vec 2408
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds;kernels::fused_fold_round;neon::fused_task 2401164
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds;kernels::round_sums 1555
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;Forest::prove_depth;gkr::prove_dense_rounds;kernels::round_sums;neon::round_sums_task 622155
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;fold::fold_columns 388057
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;integer_bridge::bind;Hasher::update;ChunkState::update;portable::compress_in_place 16361
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;ligerito::pack_columns_from_rows_repeated 36133
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;integer_bridge::prove_weighted;ligerito::pack_columns_from_rows_repeated;ligerito::transpose_64x64 116235
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;<Blake3Transcript as Transcript>::get_challenge;Hasher::final_output;portable::compress_in_place 3988
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;<ProverGrindingRoundBoundary as RoundBoundaryPolicy>::after_round;RawVec::grow_one;RawVecInner::finish_grow;[libsystem_malloc.dylib] 3975
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;<ProverGrindingRoundBoundary as RoundBoundaryPolicy>::after_round;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 11839
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;GatherState::new 3905
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;TensorState::new 142302
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;TensorState::new;sumcheck::eq_table 7926
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure} 20332
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure};LaneLayout::fold 44445
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure};LaneLayout::message 4010
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure};_platform_memmove 15179
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure};sumcheck::apply 95031
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;joint_sumcheck::prove;inner::prove_batched_inner_sumcheck::{closure};sumcheck::dense_fold 11427
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;Geometry::ring_marginal;ligerito::sv_fold_eq_tiled;ligerito::sv_fold_mfr_chunk 159613
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;Geometry::ring_marginal;ligerito::sv_fold_eq_tiled;utils::build_eq_x_r_vec 3978
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl 41761
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;<GrindingChallenger as Challenger>::try_sample_f128;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 64697
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;<GrindingChallenger as Challenger>::try_sample_f128;<ZincChallenger as Challenger>::grind_pow;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 7975
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;<GrindingChallenger as Challenger>::try_sample_f128;<ZincChallenger as Challenger>::grind_pow;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 3998
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;<ZincChallenger as Challenger>::grind_pow;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 15346
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;<ZincChallenger as Challenger>::grind_pow;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 1823570
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;Geometry::write_words 3985
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;Geometry::write_words;_platform_memmove 3990
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;JointProverData::open;merkle::merkle_multi_proof 3944
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;SumcheckProver::drain_pending_fold 4022
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;SumcheckProver::fold;f128_slice::fold_pairs 1747
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;SumcheckProver::introduce_new;ligerito::round_msg_lsb 3804
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::induce_sumcheck_poly 43561
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::induce_sumcheck_poly;lincheck::build_eq_table 4003
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::induce_sumcheck_poly_auto;ligerito::transpose_forward_ntt_sparse_legacy;ligerito::transpose_sparse_suffix 7977
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::induce_sumcheck_poly_auto;ligerito::transpose_forward_ntt_sparse_legacy;ligerito::transpose_sparse_window 16341
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::ligero_commit;AdditiveNttF128::forward_transform_interleaved_from_layer 60955
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::ligero_commit;merkle::merkle_tree_impl;merkle::fill_internal_levels;merkle::blake3_hash_many;blake3_hash_many_neon 15152
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::ligero_commit;merkle::merkle_tree_impl;merkle::hash_leaves;blake3_hash_many_neon 47283
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;ligerito::sample_distinct_queries;<GrindingChallenger as Challenger>::try_sample_f128;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 8125
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;lookahead::accumulate 4037
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::recursive_prover_with_basis_initial_impl;lookahead::fold_two 9966
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::ring_switch_prove_marginal;<ProverBlockGrindingTranscript as Transcript>::get_field_challenge;grinding::find_grinding_nonce;blake3x4::smallest_pow_nonce;blake3x4::first_pow_nonce 8704
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;ligerito::supports_deferred_initial 3314
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;streamed::prepare;Geometry::write_words;[falcon_algebraic-8edd41f39df7f30c] 3965
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;streamed::prepare;Geometry::write_words;_platform_memmove 7987
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;streamed::prepare;InitialBasisTiles::write 98717
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;opening::prove_joint_sources_with_security;streamed::prepare;lookahead::accumulate 23185
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ptr::drop_glue;[libsystem_malloc.dylib] 77923
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ptr::drop_glue;[libsystem_malloc.dylib];mach_vm_reclaim_ring_resize;mach_vm_deferred_reclamation_buffer_resize;mach_msg2_internal;mach_msg2_trap 2436
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::calculate_carries;ring::calculate_carries::{closure} 195543
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::collapse_claim_with_batch;ring::collapse_claim_with_batch::{closure} 1692199
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::coordinates_with_buffers 11001
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::coordinates_with_buffers;CoordinateBuffers::new 99309
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::coordinates_with_buffers;PowerBasis::fill_powers_adjoint_pair_uninit 833536
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::coordinates_with_buffers;Q12289Extension::mul 16196
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::coordinates_with_buffers;ring::coordinates_with_buffers::{closure} 167754
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::instance_weights;falcon_extension::equality_weights;Q12289Extension::mul 7836
+BitZ prover;prove;PreparedFalconAlgebraic::prove_observed;ring::validate_context 46944
+BitZ prover;witness + commit (commit_from_s2) 30407
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;commit::encode 3061
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;commit::encode;AdditiveNttF128::forward_transform_interleaved_from_layer 476002
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;commit::encode;commit::replicate_message_fill;_platform_memmove 8008
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;merkle::merkle_tree_from_rows::{closure} 3995
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;merkle::merkle_tree_from_rows::{closure};[libsystem_malloc.dylib];madvise 3998
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;merkle::merkle_tree_from_rows::{closure};__bzero 12066
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;merkle::merkle_tree_from_rows::{closure};merkle::fill_internal_levels;merkle::blake3_hash_many;blake3_hash_many_neon 64883
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;PreparedFalconAlgebraic::commit_packed;opening::commit_sources;merkle::merkle_tree_from_rows::{closure};merkle::hash_leaves;blake3_hash_many_neon 258702
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;Source::pack;<Vec as SpecFromElem>::from_elem;[libsystem_malloc.dylib] 3978
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;Source::pack;<Vec as SpecFromElem>::from_elem;_platform_memmove 3824
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;Source::pack;source::pack_signature 24699
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;__bzero 3981
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;compact::pack_signatures 96755
+BitZ prover;witness + commit (commit_from_s2);PreparedFalconAlgebraic::commit_data;compact::pack_signatures;compact::observe_word 38659
+BitZ prover;witness + commit (commit_from_s2);WitnessData::from_s2 193912
+BitZ prover;witness + commit (commit_from_s2);WitnessData::from_s2;NegacyclicWorkspace::product 437652
+BitZ prover;witness + commit (commit_from_s2);WitnessData::from_s2;RawVecInner::reserve::do_reserve_and_handle;RawVecInner::finish_grow;[libsystem_malloc.dylib];mach_vm_reallocate;_kernelrpc_mach_vm_reallocate;mach_msg2_internal;mach_msg2_trap 3871
+BitZ prover;witness + commit (commit_from_s2);WitnessData::from_s2;_platform_memmove 31160
+BitZ prover;witness + commit (commit_from_s2);WitnessData::from_s2;_platform_memset 3830

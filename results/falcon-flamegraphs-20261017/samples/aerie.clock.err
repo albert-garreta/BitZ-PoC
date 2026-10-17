@@ -1,0 +1,22 @@
+# honest inputs: records=32768 source=canonical-cache source_ms=113.2 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+# honest inputs: records=32768 source=canonical-cache source_ms=102.0 cache=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/flamegraph-20261017/aerie-fixtures/fn-dsa-0.3.0-statement-records-v1-falcon512-32768-a3e1e5f16e516e31.bin (fixture acquisition excluded from setup/prove/verify)
+# byte_breakdown records=32768 salt_mode=per-record salts_bytes=1310720 header_piop_bytes=5051 pcs_bytes=62901
+        9.92 real         9.74 user         0.16 sys
+          2529460224  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              156121  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1285  involuntary context switches
+        228079770720  instructions retired
+         42788399052  cycles elapsed
+          2461550800  peak memory footprint

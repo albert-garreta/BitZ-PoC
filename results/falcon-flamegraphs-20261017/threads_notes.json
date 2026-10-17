@@ -1,0 +1,5 @@
+[
+  "Prove times include commitment. Each 10-thread figure is the median of five proves: Aerie runs one batch per process after a warm-up process, as its CI does, and BitZ proves five times in one process after a warm-up prove. The single-thread figures come from the unprofiled runs the flamegraphs are scaled to; Aerie's single-thread verify is its own one-thread verifier pool in the same runs.",
+  "BitZ as shipped turns on its optimized binder only at 1, 8, 12 or 16 workers. At 10 workers its default path proves in {DEFAULT_PROVE} and verifies in {DEFAULT_VERIFY}. The table forces the optimized binder, the same code the single-thread flamegraph runs.",
+  "Aerie's verifier computes HashToPoint from the salts; BitZ verifies against targets it is given. Peak memory is the process's maximum resident set size on 10 threads, including inputs and verification."
+]
