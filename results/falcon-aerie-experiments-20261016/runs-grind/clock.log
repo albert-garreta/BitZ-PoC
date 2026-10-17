@@ -1,0 +1,12 @@
+23:10:37 alg512-b1024-t10-union-r1 ghz=4.39 real=1.90 100%; charged
+23:10:51 alg512-b1024-t10-per-site-r1 ghz=4.21 real=1.67 100%; charged
+23:11:04 alg512-b1024-t10-per-site-r2 ghz=4.21 real=1.67 100%; charged
+23:11:18 alg512-b1024-t10-union-r2 ghz=4.40 real=1.90 100%; charged
+23:11:32 alg512-b1024-t1-union ghz=4.40 real=1.95 100%; charged
+23:11:46 alg512-b1024-t1-per-site ghz=4.39 real=1.74 100%; charged
+23:11:55 alg512-b1-t10-union-r1 ghz=7.26 real=0.40 100%; charged
+23:12:03 alg512-b1-t10-per-site-r1 ghz=6.15 real=0.26 100%; charged
+23:12:11 alg512-b1-t10-per-site-r2 ghz=6.22 real=0.26 100%; charged
+23:12:20 alg512-b1-t10-union-r2 ghz=7.21 real=0.41 100%; charged
+23:12:34 alg1024-b1024-t10-union ghz=4.30 real=2.39 100%; charged
+23:12:48 alg1024-b1024-t10-per-site ghz=4.06 real=2.22 100%; charged

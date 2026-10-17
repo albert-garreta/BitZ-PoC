@@ -1,0 +1,17 @@
+12:35:25 A-default-canonical-t13 exit=0 ghz=3.83 rss=3941MiB 100%; charged
+12:36:11 B-default-keyed-t13 exit=0 ghz=3.86 rss=3483MiB 100%; charged
+12:36:57 C-small-canonical-t13 exit=0 ghz=3.90 rss=2817MiB 100%; charged
+12:37:42 D-small-keyed-t13 exit=0 ghz=3.93 rss=2370MiB 100%; charged
+12:38:27 E-small-keyed-t14 exit=0 ghz=3.92 rss=2463MiB 100%; charged
+12:39:13 F-small-keyed-t15 exit=0 ghz=3.78 rss=2474MiB 100%; charged
+12:39:57 G-small-keyed-t16 exit=0 ghz=3.89 rss=2475MiB 100%; charged
+12:40:41 H-default-keyed-t16 exit=0 ghz=3.87 rss=3562MiB 100%; charged
+12:41:27 I-default-canonical-t16 exit=0 ghz=3.83 rss=4004MiB 100%; charged
+12:41:38 A1k-default-canonical-t13 exit=0 ghz=4.19 rss=140MiB 100%; charged
+12:41:49 B1k-default-keyed-t13 exit=0 ghz=4.31 rss=126MiB 100%; charged
+12:42:01 C1k-small-canonical-t13 exit=0 ghz=4.26 rss=110MiB 100%; charged
+12:42:12 D1k-small-keyed-t13 exit=0 ghz=4.34 rss=95MiB 100%; charged
+12:42:58 A1t-default-canonical-t13 exit=0 ghz=4.36 rss=3710MiB 100%; charged
+12:43:42 D1t-small-keyed-t13 exit=0 ghz=4.34 rss=2163MiB 100%; charged
+12:44:27 G1t-small-keyed-t16 exit=0 ghz=4.34 rss=2228MiB 100%; charged
+trace exit=0

@@ -1,0 +1,2 @@
+/Users/albertgarretafontelles/f2z-pcs-falcon-aerie/target-native/release/deps/falcon_algebraic-8edd41f39df7f30c f170831098d728b0156614c7ec062a03
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

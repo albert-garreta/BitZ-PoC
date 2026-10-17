@@ -1,0 +1,9 @@
+/Users/albertgarretafontelles/f2z-pcs-falcon-ring/target-native/release/deps/falcon_algebraic-8edd41f39df7f30c c48495155062740d1309ea314932a5a7
+17482040f8a1ca62efc63b74f177ed53449b876c
+ M src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+ M src/piop/spartan/falcon1024_algebraic/backend.rs
+ M src/piop/spartan/falcon1024_algebraic/compact.rs
+ M src/piop/spartan/falcon1024_algebraic/protocol.rs
+ M src/piop/spartan/falcon1024_algebraic/source.rs
+ M src/piop/spartan/falcon1024_algebraic/word_binding.rs
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

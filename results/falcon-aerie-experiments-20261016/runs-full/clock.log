@@ -1,0 +1,8 @@
+23:19:48 full512-b1024-t10-union-r1 ghz=3.76 real=3.40 100%; charged
+23:20:11 full512-b1024-t10-per-site-r1 ghz=3.74 real=2.88 100%; charged
+23:20:34 full512-b1024-t10-per-site-r2 ghz=3.73 real=2.87 100%; charged
+23:20:58 full512-b1024-t10-union-r2 ghz=3.75 real=3.42 100%; charged
+23:21:11 full512-b1-t10-union ghz=6.92 real=1.08 100%; charged
+23:21:23 full512-b1-t10-per-site ghz=6.89 real=0.67 100%; charged
+23:21:53 full512-b1024-t1-union ghz=4.45 real=9.79 100%; charged
+23:22:21 full512-b1024-t1-per-site ghz=4.46 real=7.99 100%; charged

@@ -1,0 +1,17 @@
+model=union union_bits=128.10 per_site_bits=131.00
+prime: carry 11 | norm instance 0 | norm rounds 12 x10 | merge 9 | binder 12 x10 | terminal merge 9
+bridge[0] 10 bits x 117 sites (row 13 col 1)
+joint 10 bits x 20 | ring switch 11 bits x 21 | bridge merge 0
+pcs fold/0/0 native Some(11) raw 2^-120.0 bits 13
+pcs fold/0/1 native Some(10) raw 2^-120.0 bits 13
+pcs fold/0/2 native Some(9) raw 2^-120.0 bits 13
+pcs fold/0/3 native Some(8) raw 2^-120.0 bits 13
+pcs queries/0 native Some(0) raw 2^-124.7 bits 9
+pcs introduce/0 native None raw 2^-128.0 bits 9
+pcs fold/1/0 native Some(9) raw 2^-121.4 bits 12
+pcs fold/1/1 native Some(8) raw 2^-121.4 bits 12
+pcs fold/1/2 native Some(7) raw 2^-121.4 bits 12
+pcs queries/1 native Some(0) raw 2^-124.9 bits 11
+pcs introduce/1 native None raw 2^-128.0 bits 9
+pcs fold/2/0 native Some(7) raw 2^-121.2 bits 12
+pcs queries/2 native Some(0) raw 2^-124.7 bits 11

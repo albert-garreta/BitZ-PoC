@@ -1,0 +1,2 @@
+/Users/albertgarretafontelles/f2z-pcs-falcon-aerie/target-native/release/deps/falcon_hybrid-3637745a306bd829 bfb3594b98de55814608ae581d4673c5
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true
