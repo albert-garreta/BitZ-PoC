@@ -19,10 +19,13 @@ impl FalconAlgebraicStatement {
         if self.public_keys.len() != batch || self.targets.len() != batch {
             return Err(FalconError::InvalidBatchCapacity);
         }
-        for polynomial in self.public_keys.iter().chain(&self.targets) {
-            if polynomial.iter().any(|&x| i64::from(x) >= Q) {
-                return Err(error("noncanonical algebraic public coefficient"));
-            }
+        if self
+            .public_keys
+            .par_iter()
+            .chain(&self.targets)
+            .any(|polynomial| polynomial.iter().any(|&x| i64::from(x) >= Q))
+        {
+            return Err(error("noncanonical algebraic public coefficient"));
         }
         Ok(())
     }

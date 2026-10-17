@@ -496,6 +496,59 @@ pub(super) fn verify_factored_ring(
     })
 }
 
+/// The prover runs the ordinary dense binder on keyed ring weights. The
+/// verifier replays it with the norm deferred and the ring weights evaluated
+/// from the public keys at the terminal point, never materializing them.
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) fn verify_keyed_ring(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    field: &Cfg,
+    ring: &super::keyed_ring::VerifierClaim,
+    keys: &[[u16; N]],
+    proof: &Proof,
+    schedule: &Schedule,
+) -> Result<BridgeClaim, FalconError> {
+    if !schedule.word_binding {
+        return Err(failure("keyed ring requires word binding"));
+    }
+    if keys.len() != layout.batch() || ring.rows.iter().any(|row| row.len() != layout.batch()) {
+        return Err(failure("keyed ring binding dimensions"));
+    }
+    validate_field(layout, field)?;
+    let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
+    transcript.absorb_slice(MERGE_DOMAIN);
+    verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
+    let eta = sample(transcript, field)?;
+    let (form, target) = BindingForm::new_keyed(layout, ring.target, &norm, eta, field)?;
+    let factors = word_binding::WordFactors {
+        s1: None,
+        norm: Some(word_binding::FactoredNorm::new(layout, &norm, eta, field)?),
+    };
+    let keyed = word_binding::KeyedRing {
+        points: &ring.points,
+        rows: &ring.rows,
+        keys,
+    };
+    let claim = word_binding::verify_with_ring(
+        transcript,
+        layout,
+        &form,
+        &factors,
+        Some(&keyed),
+        target,
+        proof,
+        schedule,
+        field,
+    )?;
+    Ok(BridgeClaim {
+        column_point: claim.column_point(layout).to_vec(),
+        row_weights: claim.row_weights(layout, field)?,
+        modulus: claim.modulus,
+        value: claim.value,
+    })
+}
+
 pub(super) fn verify(
     transcript: &mut impl Transcript,
     layout: &Layout,
@@ -906,6 +959,51 @@ impl<'a> BindingForm<'a> {
             false,
             false,
         )
+    }
+
+    /// Verifier form for keyed ring weights: the same target, slack and padding
+    /// weights as the prover's dense form, with no dense coefficients. The
+    /// caller supplies the ring and norm coefficients as factors.
+    #[cfg(any(test, feature = "bench-internals"))]
+    fn new_keyed(
+        layout: &'a Layout,
+        ring_target: F,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+    ) -> Result<(Self, F), FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        if norm.point.len() != COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
+            || norm.instance_point.len() != layout.capacity().ilog2() as usize
+        {
+            return Err(failure("algebraic binder claim dimension mismatch"));
+        }
+        validate_field_elements(&[ring_target], field).map_err(failure)?;
+        let mut scales = [field.one(); 4];
+        for i in 1..scales.len() {
+            scales[i] = field.mul(&scales[i - 1], &eta);
+        }
+        let instance_weights = eq_table(&norm.instance_point, field).map_err(failure)?;
+        let target = field.add(
+            &field.add(&ring_target, &field.mul(&scales[1], &norm.terminal)),
+            &field.mul(&scales[2], &norm.slack),
+        );
+        let slacks = instance_weights[..layout.batch()]
+            .iter()
+            .map(|weight| field.mul(&scales[2], weight))
+            .collect();
+        Ok((
+            Self {
+                layout,
+                field,
+                coefficients: [Vec::new(), Vec::new()],
+                slacks,
+                padding: scales[3],
+                options: BindingOptions::default(),
+                folded_decoder: Default::default(),
+            },
+            target,
+        ))
     }
 
     #[cfg(any(test, feature = "bench-internals"))]

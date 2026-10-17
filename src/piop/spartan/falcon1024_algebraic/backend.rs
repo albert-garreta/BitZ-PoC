@@ -2,6 +2,8 @@ mod arithmetic;
 mod compact;
 #[cfg(any(test, feature = "bench-internals"))]
 mod factored_ring;
+#[cfg(any(test, feature = "bench-internals"))]
+mod keyed_ring;
 mod protocol;
 mod ring;
 mod source;

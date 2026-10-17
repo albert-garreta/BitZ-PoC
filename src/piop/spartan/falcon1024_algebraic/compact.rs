@@ -318,12 +318,17 @@ fn pack_signatures(
 /// therefore cannot affect the ring equation, norm, or virtual padding check.
 pub(super) fn coefficients(
     layout: &Layout,
+    parameters: &IntegerMatrixLayout,
     exceptions: &[Vec<u16>],
     claim: BinaryClaim,
 ) -> Result<[Coefficients; 3], FalconError> {
     validate_exceptions(layout, exceptions)?;
-    let parameters = layout.bitz_params();
-    if claim.low.len() != parameters.rows() || claim.high_point.len() != parameters.col_vars {
+    let source = layout.bitz_params();
+    if parameters.row_vars < source.row_vars
+        || parameters.row_vars + parameters.col_vars != source.row_vars + source.col_vars
+        || claim.low.len() != parameters.rows()
+        || claim.high_point.len() != parameters.col_vars
+    {
         return Err(error("compact algebraic binary claim shape"));
     }
     let mut coefficients: [Coefficients; 3] = std::array::from_fn(|_| Coefficients::default());
@@ -363,31 +368,57 @@ pub(super) fn coefficients(
 
     // Slack occupies column zero inside each signature. A packed tail
     // word holds two Falcon-512 instances or one Falcon-1024 instance.
-    let instance_vars = layout.capacity().ilog2() as usize;
-    let local_columns = claim.high_point.len() - instance_vars;
-    let column_zero = claim.high_point[..local_columns]
-        .iter()
-        .fold(Gf::ONE, |weight, &point| weight * (Gf::ONE + point));
-    let instance_point = &claim.high_point[local_columns..];
     let packed_instances = 7 - TAIL_STRIDE.ilog2() as usize;
-    let local_instance_weights = eq_table(&instance_point[..packed_instances]);
-    let slack_weights: Vec<_> = (0..SLACK_BITS)
-        .map(|bit| column_zero * claim.low[16 * bit + 15])
-        .collect();
-    let mut slack = Vec::with_capacity(SLACK_BITS * local_instance_weights.len());
-    for (instance, instance_weight) in local_instance_weights.into_iter().enumerate() {
-        for (bit, &weight) in slack_weights.iter().enumerate() {
-            slack.push((
-                instance * TAIL_STRIDE + 3 * MAX_EXCEPTIONS + bit,
-                weight * instance_weight,
-            ));
+    let signature_vars = layout.signature_stride().ilog2() as usize;
+    if parameters.row_vars < signature_vars {
+        let instance_vars = layout.capacity().ilog2() as usize;
+        let local_columns = claim.high_point.len() - instance_vars;
+        let column_zero = claim.high_point[..local_columns]
+            .iter()
+            .fold(Gf::ONE, |weight, &point| weight * (Gf::ONE + point));
+        let instance_point = &claim.high_point[local_columns..];
+        let local_instance_weights = eq_table(&instance_point[..packed_instances]);
+        let slack_weights: Vec<_> = (0..SLACK_BITS)
+            .map(|bit| column_zero * claim.low[16 * bit + 15])
+            .collect();
+        let mut slack = Vec::with_capacity(SLACK_BITS * local_instance_weights.len());
+        for (instance, instance_weight) in local_instance_weights.into_iter().enumerate() {
+            for (bit, &weight) in slack_weights.iter().enumerate() {
+                slack.push((
+                    instance * TAIL_STRIDE + 3 * MAX_EXCEPTIONS + bit,
+                    weight * instance_weight,
+                ));
+            }
         }
+        coefficients[2].gathers.push(Gather::repeated_at(
+            slack,
+            instance_point[packed_instances..].to_vec(),
+            7,
+        ));
+    } else {
+        // Bridge rows hold 2^local whole signatures; their slack weights come
+        // from the row factor, and the column point indexes higher instances.
+        let local = parameters.row_vars - signature_vars;
+        let extra = packed_instances.saturating_sub(local);
+        let extra_weights = eq_table(&claim.high_point[..extra]);
+        let mut slack = Vec::with_capacity(SLACK_BITS << (local + extra));
+        for (outer, &outer_weight) in extra_weights.iter().enumerate() {
+            for inner in 0..1 << local {
+                let instance = inner + (outer << local);
+                for bit in 0..SLACK_BITS {
+                    slack.push((
+                        instance * TAIL_STRIDE + 3 * MAX_EXCEPTIONS + bit,
+                        claim.low[(inner << signature_vars) + 16 * bit + 15] * outer_weight,
+                    ));
+                }
+            }
+        }
+        coefficients[2].gathers.push(Gather::repeated_at(
+            slack,
+            claim.high_point[extra..].to_vec(),
+            TAIL_STRIDE.ilog2() as usize + local + extra,
+        ));
     }
-    coefficients[2].gathers.push(Gather::repeated_at(
-        slack,
-        instance_point[packed_instances..].to_vec(),
-        7,
-    ));
 
     let exception_count = exceptions.iter().map(Vec::len).sum::<usize>();
     if exception_count != 0 {
@@ -586,40 +617,52 @@ mod tests {
                 lo: (index as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15),
                 hi: (index as u64 + 1).wrapping_mul(0x25b44a15d941a31b),
             };
-            let mut claim = BinaryClaim {
-                low: (0..layout.bitz_params().rows()).map(field).collect(),
-                high_point: (0..layout.bitz_params().col_vars)
-                    .map(|i| field(i + 8192))
-                    .collect(),
-                value: Gf::ZERO,
-            };
-            for (words, high) in source.rows().iter().zip(eq_table(&claim.high_point)) {
-                let mut column = Gf::ZERO;
-                for (word_index, &word) in words.iter().enumerate() {
-                    let mut remaining = word;
-                    while remaining != 0 {
-                        column += claim.low[64 * word_index + remaining.trailing_zeros() as usize];
-                        remaining &= remaining - 1;
+            let base = layout.bitz_params();
+            let total = base.row_vars + base.col_vars;
+            // Wider bridge rows group consecutive source rows into one column.
+            for row_vars in (base.row_vars..=16).filter(|&rows| rows < total) {
+                let parameters = IntegerMatrixLayout {
+                    row_vars,
+                    col_vars: total - row_vars,
+                };
+                let mut claim = BinaryClaim {
+                    low: (0..parameters.rows()).map(field).collect(),
+                    high_point: (0..parameters.col_vars)
+                        .map(|i| field(i + (1 << 16)))
+                        .collect(),
+                    value: Gf::ZERO,
+                };
+                let groups = source.rows().chunks(1 << (row_vars - base.row_vars));
+                for (group, high) in groups.zip(eq_table(&claim.high_point)) {
+                    let mut column = Gf::ZERO;
+                    for (word_index, &word) in group.iter().flatten().enumerate() {
+                        let mut remaining = word;
+                        while remaining != 0 {
+                            column +=
+                                claim.low[64 * word_index + remaining.trailing_zeros() as usize];
+                            remaining &= remaining - 1;
+                        }
                     }
+                    claim.value += column * high;
                 }
-                claim.value += column * high;
-            }
-            let target = claim.value;
-            let coefficients = coefficients(&layout, &compact.exceptions, claim).unwrap();
-            if is_split(&layout) {
-                check_joint(
-                    &Geometry::new(source_logs(&layout)).unwrap(),
-                    compact.packed.each_ref().map(Vec::as_slice),
-                    coefficients.each_ref(),
-                    target,
-                );
-            } else {
-                check_joint(
-                    &Geometry::with_allocation_logs([source_logs(&layout)[0]], [12]).unwrap(),
-                    [compact.packed[0].as_slice()],
-                    [&coefficients[0]],
-                    target,
-                );
+                let target = claim.value;
+                let coefficients =
+                    coefficients(&layout, &parameters, &compact.exceptions, claim).unwrap();
+                if is_split(&layout) {
+                    check_joint(
+                        &Geometry::new(source_logs(&layout)).unwrap(),
+                        compact.packed.each_ref().map(Vec::as_slice),
+                        coefficients.each_ref(),
+                        target,
+                    );
+                } else {
+                    check_joint(
+                        &Geometry::with_allocation_logs([source_logs(&layout)[0]], [12]).unwrap(),
+                        [compact.packed[0].as_slice()],
+                        [&coefficients[0]],
+                        target,
+                    );
+                }
             }
         }
     }

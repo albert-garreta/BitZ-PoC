@@ -20,8 +20,13 @@ use crate::{
     piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
+use field::RingOps;
 use flock_core::field::Gf128 as Gf;
+use rayon::prelude::*;
 use std::sync::Mutex;
+
+use super::F;
+use crate::piop::spartan::SpartanField;
 
 crate::piop::spartan::grinding::grinding_domains! {
     OpeningGrinding => b"bitz/falcon1024-algebraic/opening-grinding/v2";
@@ -81,12 +86,49 @@ fn small_prime() -> bool {
     false
 }
 
-const SMALL_PRIME_MIN: u128 = 1 << 114;
-const SMALL_PRIME_MAX: u128 = (1 << 115) - (1 << 103);
+/// Bench-only number of bridge row variables `t` (13 by default: one source
+/// row of 2^13 bits). Larger `t` moves the lowest column variables into the
+/// rows, so the bridge sends `2^(n-t)` instead of `2^(n-13)` column sums.
+#[cfg(feature = "bench-internals")]
+fn requested_bridge_rows() -> usize {
+    static ROWS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *ROWS.get_or_init(|| match std::env::var("BITZ_FALCON_BRIDGE_ROWS") {
+        Err(std::env::VarError::NotPresent) => SOURCE_ROW_VARS,
+        Ok(value) => match value.parse::<usize>() {
+            Ok(rows @ 13..=16) => rows,
+            _ => panic!("BITZ_FALCON_BRIDGE_ROWS must be 13, 14, 15 or 16"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FALCON_BRIDGE_ROWS must be valid Unicode")
+        }
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+fn requested_bridge_rows() -> usize {
+    SOURCE_ROW_VARS
+}
 
+/// Row variables of one arithmetic source row, fixed by the source packing.
+const SOURCE_ROW_VARS: usize = 13;
+
+/// The bridge matrix: `t` row variables, capped to leave one column variable.
+fn bridge_params(layout: &Layout) -> IntegerMatrixLayout {
+    let source = layout.bitz_params();
+    let total = source.row_vars + source.col_vars;
+    let rows = requested_bridge_rows().min(total - 1).max(source.row_vars);
+    IntegerMatrixLayout {
+        row_vars: rows,
+        col_vars: total - rows,
+    }
+}
+
+/// With `t` bridge row variables the unsplit family is
+/// `2^(127-t) <= p <= 2^(128-t) - 2^(116-t)`, so `(2^t + 1)(p - 1) < 2^128 - 1`.
+/// At `t = 13` this is `[2^114, 2^115 - 2^103]`.
 fn prime_range() -> (u128, u128) {
     if small_prime() {
-        (SMALL_PRIME_MIN, SMALL_PRIME_MAX)
+        let t = requested_bridge_rows() as u32;
+        (1 << (127 - t), (1 << (128 - t)) - (1 << (116 - t)))
     } else {
         (PRIME_MIN, PRIME_MAX)
     }
@@ -179,6 +221,8 @@ enum RingMode {
     Canonical,
     #[cfg(any(test, feature = "bench-internals"))]
     Factored,
+    #[cfg(any(test, feature = "bench-internals"))]
+    Keyed,
 }
 
 impl RingMode {
@@ -187,8 +231,16 @@ impl RingMode {
             Self::Canonical => 10,
             #[cfg(any(test, feature = "bench-internals"))]
             Self::Factored => 20,
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Keyed => super::keyed_ring::point_numerator(keyed_points()),
         }
     }
+}
+
+/// Projection points of the keyed ring for the selected prime family.
+#[cfg(any(test, feature = "bench-internals"))]
+fn keyed_points() -> usize {
+    super::keyed_ring::points_for_domain(prime_domain_bits())
 }
 
 #[derive(Clone)]
@@ -196,6 +248,8 @@ enum RingProof {
     Canonical(ring::Proof),
     #[cfg(any(test, feature = "bench-internals"))]
     Factored(super::factored_ring::Proof),
+    #[cfg(any(test, feature = "bench-internals"))]
+    Keyed(super::keyed_ring::Proof),
 }
 
 // Delegate canonical Debug unchanged: benchmark digests cover the complete v9 proof.
@@ -205,6 +259,8 @@ impl std::fmt::Debug for RingProof {
             Self::Canonical(proof) => proof.fmt(f),
             #[cfg(any(test, feature = "bench-internals"))]
             Self::Factored(proof) => f.debug_tuple("FactoredRing").field(proof).finish(),
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Keyed(proof) => f.debug_tuple("KeyedRing").field(proof).finish(),
         }
     }
 }
@@ -215,6 +271,8 @@ impl RingProof {
             Self::Canonical(proof) => proof.payload_size_bytes(),
             #[cfg(any(test, feature = "bench-internals"))]
             Self::Factored(proof) => proof.payload_size_bytes(),
+            #[cfg(any(test, feature = "bench-internals"))]
+            Self::Keyed(proof) => proof.payload_size_bytes(),
         }
     }
 }
@@ -223,6 +281,10 @@ enum RingClaim {
     Canonical(ring::PreparedClaim),
     #[cfg(any(test, feature = "bench-internals"))]
     Factored(super::factored_ring::PreparedClaim),
+    /// Verifier side only: the prover hands dense keyed weights to the binder
+    /// as a canonical claim.
+    #[cfg(any(test, feature = "bench-internals"))]
+    Keyed(super::keyed_ring::VerifierClaim),
 }
 
 impl RingClaim {
@@ -230,7 +292,9 @@ impl RingClaim {
     fn canonical(&self) -> Result<&ring::PreparedClaim, FalconError> {
         match self {
             Self::Canonical(claim) => Ok(claim),
-            Self::Factored(_) => Err(error("compact computation requires canonical ring")),
+            Self::Factored(_) | Self::Keyed(_) => {
+                Err(error("compact computation requires canonical ring"))
+            }
         }
     }
 }
@@ -413,8 +477,18 @@ impl PreparedFalconAlgebraic {
                 }
                 return Self::new_factored_ring(batch, target_bits);
             }
+            Ok("keyed") => {
+                if compute_variant != "padding" {
+                    return Err(error("keyed ring requires raw word binding"));
+                }
+                return Self::new_keyed_ring(batch, target_bits);
+            }
             Err(std::env::VarError::NotPresent) | Ok("canonical") => {}
-            _ => return Err(error("BITZ_ARITHMETIC_RING must be canonical or factored")),
+            _ => {
+                return Err(error(
+                    "BITZ_ARITHMETIC_RING must be canonical, factored or keyed",
+                ));
+            }
         }
         if compute_variant != "padding" {
             return Self::with_compute_variant(batch, target_bits, compute_variant);
@@ -432,6 +506,20 @@ impl PreparedFalconAlgebraic {
             "padding",
             FalconAlgebraicBinding::Words,
             RingMode::Factored,
+        )
+    }
+
+    /// Experimental keyed integer ring check with public-key-factored verifier
+    /// weights; never selected by production builds.
+    #[cfg(any(test, feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn new_keyed_ring(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+        Self::with_ring_configuration(
+            batch,
+            target_bits,
+            "padding",
+            FalconAlgebraicBinding::Words,
+            RingMode::Keyed,
         )
     }
 
@@ -602,6 +690,14 @@ impl PreparedFalconAlgebraic {
                 "bitz/falcon1024-algebraic/non-zk/v10-factored-ring"
             } else {
                 "bitz/falcon512-algebraic/non-zk/v10-factored-ring"
+            };
+        }
+        #[cfg(any(test, feature = "bench-internals"))]
+        if self.ring_mode == RingMode::Keyed {
+            return if N == 1024 {
+                "bitz/falcon1024-algebraic/non-zk/v11-keyed-ring"
+            } else {
+                "bitz/falcon512-algebraic/non-zk/v11-keyed-ring"
             };
         }
         if self.schedule.word_binding {
@@ -812,6 +908,10 @@ impl PreparedFalconAlgebraic {
         if self.uses_compact_binding() {
             sites.push(binary(2, self.grinding.bridge_merge));
         }
+        #[cfg(any(test, feature = "bench-internals"))]
+        if self.ring_mode == RingMode::Keyed {
+            sites.push(super::keyed_ring::batching_error());
+        }
         sites.extend(
             self.pcs_grinding
                 .blocks
@@ -1021,12 +1121,17 @@ impl PreparedFalconAlgebraic {
             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
         }
         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
-        let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
-        for (key, target) in public.public_keys.iter().zip(&public.targets) {
-            for coefficient in key.iter().chain(target) {
-                coefficients.extend_from_slice(&coefficient.to_le_bytes());
-            }
-        }
+        // The same byte stream as one little-endian coefficient at a time,
+        // key then target per signature, filled in parallel.
+        let mut coefficients = vec![0u8; 4 * N * public.public_keys.len()];
+        coefficients
+            .par_chunks_mut(4 * N)
+            .zip(public.public_keys.par_iter().zip(&public.targets))
+            .for_each(|(bytes, (key, target))| {
+                for (bytes, coefficient) in bytes.chunks_exact_mut(2).zip(key.iter().chain(target)) {
+                    bytes.copy_from_slice(&coefficient.to_le_bytes());
+                }
+            });
         crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
         h.update(root);
         h.update(&self.ligerito.digest());
@@ -1090,6 +1195,19 @@ impl PreparedFalconAlgebraic {
                         &self.coordinate_scratch,
                     )?;
                     (RingProof::Factored(proof), RingClaim::Factored(claim))
+                }
+                #[cfg(any(test, feature = "bench-internals"))]
+                RingMode::Keyed => {
+                    let (proof, claim) = super::keyed_ring::prove(
+                        &mut t,
+                        &self.layout,
+                        &committed.statement,
+                        &committed.witness,
+                        &field,
+                        self.carry_grinding(),
+                        keyed_points(),
+                    )?;
+                    (RingProof::Keyed(proof), RingClaim::Canonical(claim))
                 }
             }
         };
@@ -1181,15 +1299,23 @@ impl PreparedFalconAlgebraic {
                             &self.schedule,
                             &self.binding_scratch,
                         )?,
+                        #[cfg(any(test, feature = "bench-internals"))]
+                        RingClaim::Keyed(_) => {
+                            return Err(error("keyed ring prover claims are canonical"));
+                        }
                     }
                 };
                 drop(committed.witness);
+                let params = bridge_params(&self.layout);
+                let extra = params.row_vars - SOURCE_ROW_VARS;
                 let (bridge, binary) = {
                     let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
+                    let claim = widen_bridge_claim(claim, extra, &field)?;
+                    let grouped = (extra > 0).then(|| bridge_columns(source.rows(), extra));
                     bridge::prove_weighted(
                         &mut t,
-                        &self.layout.bitz_params(),
-                        source.rows(),
+                        &params,
+                        grouped.as_deref().unwrap_or(source.rows()),
                         bridge_mode(),
                         &claim.column_point,
                         claim.modulus,
@@ -1197,12 +1323,11 @@ impl PreparedFalconAlgebraic {
                         &claim.row_weights,
                     )?
                 };
-                drop(claim);
                 let target = binary.value;
                 (
                     ArithmeticProof::Raw(proof),
                     vec![bridge],
-                    compact::coefficients(&self.layout, &committed.exceptions, binary)?,
+                    compact::coefficients(&self.layout, &params, &committed.exceptions, binary)?,
                     target,
                     Vec::new(),
                 )
@@ -1332,6 +1457,18 @@ impl PreparedFalconAlgebraic {
                 )?)
             }
             #[cfg(any(test, feature = "bench-internals"))]
+            (RingProof::Keyed(proof), RingMode::Keyed) => {
+                RingClaim::Keyed(super::keyed_ring::verify(
+                    &mut t,
+                    &self.layout,
+                    public,
+                    proof,
+                    &field,
+                    self.carry_grinding(),
+                    keyed_points(),
+                )?)
+            }
+            #[cfg(any(test, feature = "bench-internals"))]
             _ => return Err(error("ring proof version mismatch")),
         };
         let (coefficients, target) = match (&proof.arithmetic, self.uses_compact_binding()) {
@@ -1403,13 +1540,25 @@ impl PreparedFalconAlgebraic {
                         arithmetic,
                         &self.schedule,
                     )?,
+                    #[cfg(any(test, feature = "bench-internals"))]
+                    RingClaim::Keyed(claim) => arithmetic::verify_keyed_ring(
+                        &mut t,
+                        &self.layout,
+                        &field,
+                        claim,
+                        &public.public_keys,
+                        arithmetic,
+                        &self.schedule,
+                    )?,
                 };
                 drop(ring_claim);
                 drop(arithmetic_span);
                 let bridge_span = tracing::info_span!("falcon_algebraic:verify_bridge").entered();
+                let params = bridge_params(&self.layout);
+                let claim = widen_bridge_claim(claim, params.row_vars - SOURCE_ROW_VARS, &field)?;
                 let binary = bridge::verify_weighted(
                     &mut t,
-                    &self.layout.bitz_params(),
+                    &params,
                     bridge_mode(),
                     &claim.column_point,
                     claim.value,
@@ -1422,7 +1571,7 @@ impl PreparedFalconAlgebraic {
                 drop(bridge_span);
                 let target = binary.value;
                 (
-                    compact::coefficients(&self.layout, &proof.exceptions, binary)?,
+                    compact::coefficients(&self.layout, &params, &proof.exceptions, binary)?,
                     target,
                 )
             }
@@ -1497,8 +1646,46 @@ fn bridge_matrices(layout: &Layout, compact_binding: bool) -> Vec<IntegerMatrixL
     if compact_binding {
         compact::bridge_layouts(layout).to_vec()
     } else {
-        vec![layout.bitz_params()]
+        vec![bridge_params(layout)]
     }
+}
+
+/// Re-express a bridge claim on source rows (`2^13` rows per column) for a
+/// bridge with `2^extra` source rows per column: the lowest `extra` column
+/// variables move into the row weights through their equality weights.
+fn widen_bridge_claim(
+    claim: arithmetic::BridgeClaim,
+    extra: usize,
+    field: &Cfg,
+) -> Result<arithmetic::BridgeClaim, FalconError> {
+    if extra == 0 {
+        return Ok(claim);
+    }
+    let (moved, rest) = claim.column_point.split_at(extra);
+    let weights = crate::piop::spartan::matrix::eq_table(moved, field).map_err(error)?;
+    let rows: Vec<F> = claim
+        .row_weights
+        .iter()
+        .map(|&weight| F::from_with_cfg(weight, field))
+        .collect();
+    let row_weights = weights
+        .par_iter()
+        .flat_map_iter(|weight| {
+            rows.iter()
+                .map(move |row| u128::from(field.to_integer(&field.mul(row, weight))))
+        })
+        .collect();
+    Ok(arithmetic::BridgeClaim {
+        column_point: rest.to_vec(),
+        row_weights,
+        modulus: claim.modulus,
+        value: claim.value,
+    })
+}
+
+/// Bridge columns of `2^extra` consecutive source rows each.
+fn bridge_columns(rows: &[Vec<u64>], extra: usize) -> Vec<Vec<u64>> {
+    rows.par_chunks(1 << extra).map(|group| group.concat()).collect()
 }
 
 fn binding_numerator(layout: &Layout, compact_binding: bool, word_binding: bool) -> usize {
@@ -1668,6 +1855,10 @@ fn fixed_terms(
                 schedule.terminal_merge_bits,
             ),
         ));
+    }
+    #[cfg(any(test, feature = "bench-internals"))]
+    if ring_mode == RingMode::Keyed {
+        terms.push(("keyed ring instance batching", super::keyed_ring::batching_error()));
     }
     terms
 }
@@ -1860,6 +2051,93 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn widened_bridge_claim_preserves_the_weighted_bit_sum() {
+        use crate::piop::spartan::matrix::eq_table;
+        let field = F::make_cfg(&field::Uint::from((1u128 << 127) - 1)).unwrap();
+        let value = |seed: u64| F::from_with_cfg(u128::from(seed.wrapping_mul(0x9e37_79b9)), &field);
+        let source_cols = 1usize << 5;
+        let rows: Vec<Vec<u64>> = (0..source_cols)
+            .map(|c| {
+                (0..128)
+                    .map(|w| (c as u64 * 977 + w as u64 * 131).wrapping_mul(0x2545_f491_4f6c_dd1d))
+                    .collect()
+            })
+            .collect();
+        let claim = arithmetic::BridgeClaim {
+            column_point: (0..5).map(|i| value(i + 7)).collect(),
+            row_weights: (0..1u64 << 13)
+                .map(|r| u128::from(field.to_integer(&value(r + 99))))
+                .collect(),
+            modulus: field.modulus_u128(),
+            value: field.zero(),
+        };
+        let weighted = |claim: &arithmetic::BridgeClaim, columns: &[Vec<u64>]| {
+            let eq = eq_table(&claim.column_point, &field).unwrap();
+            let mut sum = field.zero();
+            for (column, weight) in columns.iter().zip(&eq) {
+                for (row, &row_weight) in claim.row_weights.iter().enumerate() {
+                    if column[row / 64] >> (row % 64) & 1 == 1 {
+                        let term = field.mul(&F::from_with_cfg(row_weight, &field), weight);
+                        sum = field.add(&sum, &term);
+                    }
+                }
+            }
+            sum
+        };
+        let expected = weighted(&claim, &rows);
+        for extra in 1..=3 {
+            let widened = widen_bridge_claim(claim.clone(), extra, &field).unwrap();
+            assert_eq!(widened.row_weights.len(), 1 << (13 + extra));
+            assert_eq!(widened.column_point.len(), 5 - extra);
+            assert_eq!(weighted(&widened, &bridge_columns(&rows, extra)), expected);
+        }
+    }
+
+    #[test]
+    fn keyed_ring_end_to_end_and_cross_version_rejection() {
+        for target in [100, 128] {
+            for batch in [1, 3, 33] {
+                let prepared = PreparedFalconAlgebraic::new_keyed_ring(batch, target).unwrap();
+                let old = PreparedFalconAlgebraic::new_with_binding(
+                    batch,
+                    target,
+                    FalconAlgebraicBinding::Words,
+                )
+                .unwrap();
+                let (public, witness) = fixture(batch);
+                let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
+                let proof = prepared.prove(committed).unwrap();
+                prepared.verify(&public, &proof).unwrap();
+                assert!(old.verify(&public, &proof).is_err());
+                let old_proof = old
+                    .prove(old.commit(public.clone(), witness).unwrap())
+                    .unwrap();
+                assert!(prepared.verify(&public, &old_proof).is_err());
+                // Adding q to one quotient coefficient keeps it in range; only
+                // the projected integer identity can reject it.
+                let mut altered = proof.clone();
+                let RingProof::Keyed(ring) = &mut altered.ring else {
+                    unreachable!()
+                };
+                ring.quotient[0] += Q;
+                assert!(prepared.verify(&public, &altered).is_err());
+                let mut malformed = proof.clone();
+                let RingProof::Keyed(ring) = &mut malformed.ring else {
+                    unreachable!()
+                };
+                ring.quotient[N] = i64::MIN;
+                assert!(prepared.verify(&public, &malformed).is_err());
+                let mut altered = public.clone();
+                altered.targets[batch - 1][3] = (altered.targets[batch - 1][3] + 1) % Q as u16;
+                assert!(prepared.verify(&altered, &proof).is_err());
+                let mut altered = public.clone();
+                altered.public_keys[0][N - 1] = (altered.public_keys[0][N - 1] + 1) % Q as u16;
+                assert!(prepared.verify(&altered, &proof).is_err());
+            }
+        }
     }
 
     #[test]
@@ -2119,6 +2397,7 @@ mod tests {
                     2 => match &mut bad.ring {
                         RingProof::Canonical(ring) => ring.carries[0] += 1,
                         RingProof::Factored(ring) => ring.lift[0] += 1,
+                        RingProof::Keyed(ring) => ring.quotient[0] += 1,
                     },
                     3 => {
                         if compact::is_split(&prepared.layout) {

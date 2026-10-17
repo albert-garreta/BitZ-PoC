@@ -1579,6 +1579,35 @@ pub(super) fn verify_with_factors(
     schedule: &Schedule,
     f: &Cfg,
 ) -> Result<WordBridgeClaim, FalconError> {
+    verify_with_ring(t, layout, form, factors, None, target, proof, schedule, f)
+}
+
+/// Keyed ring weights in place of dense ring coefficients: per point, the
+/// scaled instance factors, evaluated against the public keys at the terminal.
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) struct KeyedRing<'a> {
+    pub points: &'a [F],
+    pub rows: &'a [Vec<F>],
+    pub keys: &'a [[u16; N]],
+}
+
+#[cfg(not(any(test, feature = "bench-internals")))]
+pub(super) struct KeyedRing<'a> {
+    _keys: std::marker::PhantomData<&'a ()>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn verify_with_ring(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    form: &BindingForm<'_>,
+    factors: &WordFactors,
+    keyed: Option<&KeyedRing<'_>>,
+    target: F,
+    proof: &Proof,
+    schedule: &Schedule,
+    f: &Cfg,
+) -> Result<WordBridgeClaim, FalconError> {
     let n = 2 + usize::from(layout.batch() < layout.capacity());
     if proof.binding_terminal.len() != n {
         return Err(failure("word binding terminal count"));
@@ -1603,7 +1632,26 @@ pub(super) fn verify_with_factors(
         }
         reduction.reduce(sum)
     });
+    #[cfg(any(test, feature = "bench-internals"))]
+    let keyed_factors = keyed.map(|ring| {
+        (
+            ring,
+            super::super::keyed_ring::coefficient_factors(ring.points, &local[..N], &local[N..2 * N], f),
+        )
+    });
+    #[cfg(not(any(test, feature = "bench-internals")))]
+    let _ = keyed;
     let evaluate_instance = |instance: usize| {
+        #[cfg(any(test, feature = "bench-internals"))]
+        if let Some((ring, coefficient_factors)) = &keyed_factors {
+            return super::super::keyed_ring::instance_value(
+                ring.rows,
+                coefficient_factors,
+                &ring.keys[instance],
+                instance,
+                f,
+            );
+        }
         let mut sum = FpProductAcc::<2>::default();
         for side in 0..2 {
             if side == 0 && factors.s1.is_some() {
@@ -1623,9 +1671,13 @@ pub(super) fn verify_with_factors(
             value
         }
     };
+    // Keyed ring values read one public key each; spread them whenever there
+    // are workers, independently of the dense binder's qualified worker counts.
     #[cfg(feature = "parallel")]
     let values: Option<Vec<_>> =
-        if binding_parallel(binding_strategy(layout.batch(), BindingKernel::Evaluation)) {
+        if binding_parallel(binding_strategy(layout.batch(), BindingKernel::Evaluation))
+            || (keyed.is_some() && rayon::current_num_threads() > 1)
+        {
             Some(
                 (0..layout.batch())
                     .into_par_iter()

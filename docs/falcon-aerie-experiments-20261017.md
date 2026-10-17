@@ -1,9 +1,15 @@
 # Falcon-512 algebraic: Aerie comparison and bench-only experiments (2026-10-16/17)
 
 Base: `origin/falcon-poc` e140a3f3. Every switch below exists only in
-`bench-internals` builds. Without that feature the code paths, transcripts and
-batch limit are those of e140a3f3. John's algebraic tests pass on that build:
-92 passed, 1 ignored (the large batches).
+`bench-internals` builds. Without that feature, the transcripts and the batch
+limit are those of e140a3f3. The one default-path change is that statement
+validation and byte packing run in parallel; the hashed bytes are the same.
+
+The algebraic tests pass on the default feature set:
+- falcon-aerie-experiments: 92 passed;
+- falcon-ring-succinct: 98 passed, including the keyed ring and wider bridge rows.
+
+Both have 1 ignored test (the large batches).
 
 ## Switches
 
@@ -14,6 +20,8 @@ batch limit are those of e140a3f3. John's algebraic tests pass on that build:
 | `BITZ_FALCON_LIGERITO` | `udr` (default), `johnson` | `johnson` currently fails at 128 bits: out-of-domain samples give 118.8 bits < 128. |
 | `BITZ_FALCON_PRINT_GRINDING` | any | Prints the per-site difficulty report to stderr. |
 | `BITZ_ARITHMETIC_BINDING_STRATEGY` | `optimized` | Existing switch. Production enables the optimized binder only at 1, 8, 12 or 16 workers. |
+| `BITZ_ARITHMETIC_RING` | `canonical` (default), `factored`, `keyed` | `keyed`: the integer ring check of `keyed_ring.rs` (below). |
+| `BITZ_FALCON_BRIDGE_ROWS` | `13` (default) … `16` | Bridge row variables `t`. The proof carries `2^(n-t)` column sums instead of `2^(n-13)`. With `PRIME=small` the family becomes `2^(127-t) <= p <= 2^(128-t) - 2^(116-t)`. |
 
 - The batch cap is 65536 in `bench-internals` builds and stays at 1024 otherwise.
 - `falcon_algebraic:verify_{statement,sample_field,arithmetic,bridge,joint,pcs}` are tracing spans only.
@@ -79,3 +87,80 @@ Verifier at 32K, 10 threads (1 thread: 879 ms):
 | PCS | 3 ms |
 
 John's experimental three-plane compact binding (`BITZ_ARITHMETIC_COMPUTE_VARIANT=combined`) at 32K: 1.38–1.57 s prove, 3.14 MB proof.
+
+## Keyed integer ring check and bridge rows (branch falcon-ring-succinct)
+
+### The keyed ring check
+
+The ring relation holds iff `q` divides every coefficient of the integer residual
+`R_i = s1_i + (h_i s2_i mod X^N+1) - t_i`. The check runs in five steps:
+
+1. The verifier samples independent uniform `A_i in F_q[Y]` with 11 coefficients per signature, from one seed. If some `R_i` is nonzero mod `q`, so is `sum_i A_i R_i`, except with probability `q^-11`.
+2. The prover sends the exact quotient `K = sum_i A_i R_i / q`: `N + 10` integers, 4.2 KB for Falcon-512. It obtains each `R_i / q` from `h_i s2_i` modulo a 31-bit NTT prime.
+3. `sum_i A_i R_i - qK` is a nonzero integer polynomial of degree `N + 9` unless the batch relation holds. The protocol checks it at random points of `F_p`:
+   - one point when `p >= 2^120`, ground for `(N+9)/p`;
+   - two independent points and a merge coefficient otherwise.
+4. Weights: `s1[i][j]` gets `A_i(xi) xi^j` and `s2[i][j]` gets `A_i(xi) (h_i X^j mod X^N+1)(xi)`. The prover fills them with a two-term recurrence in `j`.
+5. The verifier never materializes them. Per point it forms `sum_j e_s1[j] xi^j` and `G[k] = sum_j e_s2[j] sigma(j,k) xi^((j+k) mod N)`, then takes one dot product `<h_i, G>` per key. That dot product splits `G` into four 32-bit limbs, so each term is a widening multiply-accumulate.
+
+The binder, norm and bridge are unchanged.
+
+### Statement validation
+
+Statement validation and byte packing are parallel now. The hashed byte stream is identical.
+
+### Bridge rows above 13
+
+Source rows stay one polynomial each (2^13 bits). The bridge then:
+- groups `2^(t-13)` source rows per column;
+- moves the lowest `t-13` column variables of the binder's claim into its row weights through their equality weights;
+- maps the binary claim to the compact planes with `compact::coefficients(layout, parameters, ...)`, whose slack gather now also handles rows that span whole signatures.
+
+### Results
+
+Falcon-512 @128, 32K signatures, 10 threads, per-site grinding, optimized binder. Each cell is the median of 3, gated runs on the M5:
+
+| Configuration | Prove | Verify | Proof | Bridge sums | Peak RSS |
+|---|---|---|---|---|---|
+| default prime, canonical ring, t=13 | 927 ms | 173 ms | 1.77 MB | 1.32 MB | 3.9 GiB |
+| default prime, keyed ring, t=13 | 1071 ms (25 % spread) | 30.3 ms | 1.77 MB | 1.32 MB | 3.4 GiB |
+| small prime, canonical ring, t=13 | 786 ms | 191 ms | 1.51 MB | 1.06 MB | 2.8 GiB |
+| small prime, keyed ring, t=13 | 818 ms | 26.7 ms | 1.51 MB | 1.06 MB | 2.3 GiB |
+| small prime, keyed ring, t=14 | 766 ms | 22.7 ms | 0.99 MB | 537 KB | 2.4 GiB |
+| small prime, keyed ring, t=15 | 843 ms | 23.6 ms | 0.73 MB | 275 KB | 2.4 GiB |
+| **small prime, keyed ring, t=16** | **807 ms** | **21.4 ms** | **0.59 MB** | **145 KB** | **2.4 GiB** |
+| default prime, keyed ring, t=16 | 902 ms | 18.7 ms | 0.63 MB | 178 KB | 3.5 GiB |
+| default prime, canonical ring, t=16 | 923 ms | 168.5 ms | 0.62 MB | 178 KB | 3.9 GiB |
+| Aerie v0.2.0 (same machine) | 964 ms | 14.9 ms | 1.38 MB (68 KB with one salt) | — | 2.0 GiB |
+
+One thread, 32K:
+
+| Configuration | Prove | Verify |
+|---|---|---|
+| default, canonical, t=13 | 3.94 s | 879 ms |
+| small, keyed, t=13 | 3.24 s | 82 ms |
+| small, keyed, t=16 | 3.68 s | 81 ms |
+| Aerie | 4.09 s | 57 ms |
+
+At t=16 the small prime grinds 18–19 bits per prime-field round, which costs about 0.4 s on one core.
+
+1K, 10 threads (median of 10):
+
+| Configuration | Prove | Verify | Proof |
+|---|---|---|---|
+| default, canonical | 39.3 ms | 9.2 ms | 258 KB |
+| default, keyed | 39.1 ms | 4.2 ms | 262 KB |
+| small, canonical | 41.6 ms | 8.6 ms | 248 KB |
+| small, keyed | 41.1 ms | 4.0 ms | 252 KB |
+
+Traced verifier at 32K (small, keyed, t=13), 26.5 ms in total:
+
+| Component | Time |
+|---|---|
+| Statement validation and hashing | 9.0 ms |
+| Bridge | 7.7 ms |
+| Binder and norm | 3.6 ms |
+| PCS | 2.8 ms |
+| Keyed ring | 2.2 ms |
+
+Prover phases, same configuration: forest 280 ms, binder 168 ms, integer outer 77 ms, keyed ring 159 ms (canonical: about 127 ms), PCS 49 ms, commit 80 ms.
