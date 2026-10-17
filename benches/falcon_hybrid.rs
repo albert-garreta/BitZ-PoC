@@ -116,6 +116,10 @@ macro_rules! backend_runner {
     )?;
     let protocol = bitz::piop::spartan::falcon::PROTOCOL_ID;
     let prepare_ms = ms(start);
+    #[cfg(feature = "bench-internals")]
+    if std::env::var_os("BITZ_FALCON_PRINT_GRINDING").is_some() {
+        eprint!("{}", prepared.grinding_report());
+    }
     assert_eq!(prepared.capacity(), options.batch.next_power_of_two());
     let pcs_query_shape = pcs_query_shape(
         &prepared.pcs_source_packed_logs(), &prepared.pcs_source_lane_widths(),

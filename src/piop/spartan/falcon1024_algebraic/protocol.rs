@@ -49,6 +49,78 @@ struct BinaryGrinding {
 /// least `target + log2(16/15)` bits. The factor is exact in binary.
 const ALLOCATION_BUDGET: f64 = 0.9375;
 
+use crate::piop::spartan::grinding::{
+    falcon_per_site_grinding as per_site_grinding, site_grinding_bits as site_bits,
+};
+
+/// Largest per-site numerator of a bridge: cubic layer rounds, and the
+/// column point if it is drawn as one challenge.
+fn bridge_site_numerator(matrix: &IntegerMatrixLayout) -> usize {
+    3.max(matrix.col_vars + usize::from(bridge_mode() == BridgeMode::TwoLimbs))
+}
+
+/// Bench-only prime family. `small` samples `2^114 <= p <= 2^115 - 2^103`, so
+/// `(rows + 1)(p - 1) < 2^128 - 1` at 2^13 bridge rows and the BitZ bridge runs
+/// unsplit: one forest leaf per source bit instead of one per bit and limb.
+/// The smaller prime-field domain is paid for with per-site grinding.
+#[cfg(feature = "bench-internals")]
+fn small_prime() -> bool {
+    static SMALL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SMALL.get_or_init(|| match std::env::var("BITZ_FALCON_PRIME") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "default" => false,
+            "small" => true,
+            _ => panic!("BITZ_FALCON_PRIME must be default or small"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => panic!("BITZ_FALCON_PRIME must be valid Unicode"),
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+fn small_prime() -> bool {
+    false
+}
+
+const SMALL_PRIME_MIN: u128 = 1 << 114;
+const SMALL_PRIME_MAX: u128 = (1 << 115) - (1 << 103);
+
+fn prime_range() -> (u128, u128) {
+    if small_prime() {
+        (SMALL_PRIME_MIN, SMALL_PRIME_MAX)
+    } else {
+        (PRIME_MIN, PRIME_MAX)
+    }
+}
+
+/// `log2` of the prime-field lower bound used by per-site grinding.
+fn prime_domain_bits() -> u32 {
+    prime_range().0.ilog2()
+}
+
+/// Bench-only opening regime: `johnson` selects the rate-1/2 Johnson preset
+/// instead of the matched unique-decoding one.
+fn ligerito_selection() -> LigeritoSelection {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_FALCON_LIGERITO") {
+        Err(std::env::VarError::NotPresent) => {}
+        Ok(value) => match value.as_str() {
+            "udr" => {}
+            "johnson" => return LigeritoSelection::JOHNSON,
+            _ => panic!("BITZ_FALCON_LIGERITO must be udr or johnson"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => panic!("BITZ_FALCON_LIGERITO must be valid Unicode"),
+    }
+    LigeritoSelection::MATCHED_UDR
+}
+
+fn bridge_mode() -> BridgeMode {
+    if small_prime() {
+        BridgeMode::Unsplit
+    } else {
+        BridgeMode::TwoLimbs
+    }
+}
+
 /// Accounting under the repository's computational grinding model, excluding
 /// the separate 128-bit collision-security assumption for BLAKE3.
 #[derive(Clone, Debug)]
@@ -431,18 +503,38 @@ impl PreparedFalconAlgebraic {
             return Err(error("algebraic security must be 100 or 128 bits"));
         }
         let d = layout.capacity().ilog2() as usize;
-        let (binding_bits, terminal_merge_bits) =
-            binding_grinding(&layout, compact_binding, word_binding, target_bits);
-        let schedule = Schedule {
-            norm_instance_bits: grind(target_bits, d, 125),
-            norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
-            merge_bits: grind(target_bits, 3, 125),
-            binding_bits,
-            word_binding,
-            terminal_merge_bits,
+        if small_prime() && !per_site_grinding() {
+            return Err(error("the small prime family requires per-site grinding"));
+        }
+        let schedule = if per_site_grinding() {
+            // Per-site numerators: one d-coordinate instance point, cubic
+            // norm rounds, the degree-3 merge, quadratic binder rounds.
+            Schedule {
+                norm_instance_bits: site_bits(target_bits, d, prime_domain_bits()),
+                norm_round_bits: site_bits(target_bits, 3, prime_domain_bits()),
+                merge_bits: site_bits(target_bits, 3, prime_domain_bits()),
+                binding_bits: site_bits(target_bits, 2, prime_domain_bits()),
+                word_binding,
+                terminal_merge_bits: site_bits(
+                    target_bits,
+                    terminal_merge_numerator(&layout, word_binding),
+                    prime_domain_bits(),
+                ),
+            }
+        } else {
+            let (binding_bits, terminal_merge_bits) =
+                binding_grinding(&layout, compact_binding, word_binding, target_bits);
+            Schedule {
+                norm_instance_bits: grind(target_bits, d, 125),
+                norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
+                merge_bits: grind(target_bits, 3, 125),
+                binding_bits,
+                word_binding,
+                terminal_merge_bits,
+            }
         };
         let geometry = SourceGeometry::new(&layout)?;
-        let ligerito = LigeritoSelection::MATCHED_UDR
+        let ligerito = ligerito_selection()
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
         let (grinding, pcs_grinding) = allocate_grinding(
@@ -455,7 +547,7 @@ impl PreparedFalconAlgebraic {
             ring_mode,
         )?;
         for matrix in bridge_matrices(&layout, compact_binding) {
-            bridge::validate_layout(&matrix, BridgeMode::TwoLimbs, PRIME_MAX)?;
+            bridge::validate_layout(&matrix, bridge_mode(), prime_range().1)?;
         }
         let prepared = Self {
             layout,
@@ -572,7 +664,7 @@ impl PreparedFalconAlgebraic {
             .sum()
     }
     pub fn prime_modulus_bounds(&self) -> (u128, u128) {
-        (PRIME_MIN, PRIME_MAX)
+        prime_range()
     }
 
     pub fn security(&self) -> FalconAlgebraicSecurity {
@@ -592,7 +684,7 @@ impl PreparedFalconAlgebraic {
                     "BitZ product GKR (tail)",
                 ][index],
                 binary(
-                    bridge::error_numerator(matrix, BridgeMode::TwoLimbs),
+                    bridge::error_numerator(matrix, bridge_mode()),
                     self.grinding.bridge[index],
                 ),
             ));
@@ -618,11 +710,115 @@ impl PreparedFalconAlgebraic {
                     .sum(),
             ),
         ]);
+        let algebraic_bits = if per_site_grinding() {
+            -self.largest_site_error().log2()
+        } else {
+            -terms.iter().map(|(_, p)| p).sum::<f64>().log2()
+        };
         FalconAlgebraicSecurity {
             target_bits: self.target_bits,
-            algebraic_bits: -terms.iter().map(|(_, p)| p).sum::<f64>().log2(),
+            algebraic_bits,
             terms,
         }
+    }
+
+    /// Difficulties and site counts of every grinding group, for experiments.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn grinding_report(&self) -> String {
+        let s = &self.schedule;
+        let d = self.layout.capacity().ilog2() as usize;
+        let mut out = format!(
+            "model={} union_bits={:.2} per_site_bits={:.2}\n",
+            if per_site_grinding() { "per-site" } else { "union" },
+            -self
+                .security()
+                .terms
+                .iter()
+                .map(|(_, p)| p)
+                .sum::<f64>()
+                .log2(),
+            -self.largest_site_error().log2(),
+        );
+        out += &format!(
+            "prime: carry {} | norm instance {} | norm rounds {} x{} | merge {} | binder {} x{} | terminal merge {}\n",
+            self.carry_grinding(),
+            s.norm_instance_bits,
+            s.norm_round_bits,
+            COEFFICIENT_LOG + 1 + d,
+            s.merge_bits,
+            s.binding_bits,
+            binding_rounds(&self.layout, s.word_binding),
+            s.terminal_merge_bits,
+        );
+        for (index, matrix) in self.bridge_layouts().iter().enumerate() {
+            out += &format!(
+                "bridge[{index}] {} bits x {} sites (row {} col {})\n",
+                self.grinding.bridge[index],
+                bridge::message_count(matrix),
+                matrix.row_vars,
+                matrix.col_vars,
+            );
+        }
+        out += &format!(
+            "joint {} bits x {} | ring switch {} bits x {} | bridge merge {}\n",
+            self.grinding.joint,
+            self.geometry.bit_log(),
+            self.grinding.opening,
+            self.geometry.packed_log() + 8,
+            self.grinding.bridge_merge,
+        );
+        for block in &self.pcs_grinding.blocks {
+            out += &format!(
+                "pcs {} native {:?} raw 2^{:.1} bits {}\n",
+                block.label,
+                block.native_bits,
+                block.raw_error.log2(),
+                block.bits,
+            );
+        }
+        out
+    }
+
+    /// Largest error of any single challenge site after its work, the
+    /// per-query rate of the per-site accounting.
+    fn largest_site_error(&self) -> f64 {
+        let d = self.layout.capacity().ilog2() as usize;
+        let domain = prime_domain_bits() as i32;
+        let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-domain - bits as i32);
+        let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
+        let s = &self.schedule;
+        let mut sites = vec![
+            2f64.powi(-144),
+            (N - 1 + d) as f64 * 2f64.powi(-149),
+            prime(self.ring_mode.projection_degree(), self.carry_grinding()),
+            prime(d, s.norm_instance_bits),
+            prime(3, s.norm_round_bits),
+            prime(3, s.merge_bits),
+            prime(2, s.binding_bits),
+            prime(
+                terminal_merge_numerator(&self.layout, s.word_binding),
+                s.terminal_merge_bits,
+            ),
+            binary(2, self.grinding.joint),
+            binary(256, self.grinding.opening),
+        ];
+        for (index, matrix) in self.bridge_layouts().iter().enumerate() {
+            sites.push(binary(
+                bridge_site_numerator(matrix),
+                self.grinding.bridge[index],
+            ));
+        }
+        if self.uses_compact_binding() {
+            sites.push(binary(2, self.grinding.bridge_merge));
+        }
+        sites.extend(
+            self.pcs_grinding
+                .blocks
+                .iter()
+                .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32))),
+        );
+        sites.into_iter().fold(0.0, f64::max)
     }
 
     fn carry_grinding(&self) -> u32 {
@@ -740,6 +936,9 @@ impl PreparedFalconAlgebraic {
         compact::validate_exceptions(&self.layout, exceptions)?;
         let mut h = blake3::Hasher::new();
         h.update(self.protocol_id().as_bytes());
+        if per_site_grinding() {
+            h.update(b"grinding-model:per-site/v1");
+        }
         h.update(b"ring-coordinate-basis:alpha-powers/canonical/v1");
         if compact::is_split(&self.layout) {
             h.update(b"signed12-with-sparse-signed15-exceptions;aligned-small/split-large;virtual-lanes16;native11;two-limbs/v4");
@@ -792,8 +991,11 @@ impl PreparedFalconAlgebraic {
                 h.update(&index.to_le_bytes());
             }
         }
-        h.update(&PRIME_MIN.to_le_bytes());
-        h.update(&PRIME_MAX.to_le_bytes());
+        if small_prime() {
+            h.update(b"prime-family:2^114..2^115-2^103;unsplit-bridge/v1");
+        }
+        h.update(&prime_range().0.to_le_bytes());
+        h.update(&prime_range().1.to_le_bytes());
         for bits in [
             self.schedule.norm_instance_bits,
             self.schedule.norm_round_bits,
@@ -924,7 +1126,7 @@ impl PreparedFalconAlgebraic {
                             &mut t,
                             matrix,
                             &rows,
-                            BridgeMode::TwoLimbs,
+                            bridge_mode(),
                             &claim.column_point,
                             claim.modulus,
                             self.grinding.bridge[index],
@@ -988,7 +1190,7 @@ impl PreparedFalconAlgebraic {
                         &mut t,
                         &self.layout.bitz_params(),
                         source.rows(),
-                        BridgeMode::TwoLimbs,
+                        bridge_mode(),
                         &claim.column_point,
                         claim.modulus,
                         self.grinding.bridge[0],
@@ -1099,8 +1301,14 @@ impl PreparedFalconAlgebraic {
         proof: &FalconAlgebraicProof,
         observe: impl FnOnce(&mut Blake3Transcript),
     ) -> Result<(), FalconError> {
-        let (mut t, digest) = self.transcript(public, &proof.source_root, &proof.exceptions)?;
-        let field = sample_field(&mut t)?;
+        let (mut t, digest) = {
+            let _span = tracing::info_span!("falcon_algebraic:verify_statement").entered();
+            self.transcript(public, &proof.source_root, &proof.exceptions)?
+        };
+        let field = {
+            let _span = tracing::info_span!("falcon_algebraic:verify_sample_field").entered();
+            sample_field(&mut t)?
+        };
         let ring_claim = match (&proof.ring, self.ring_mode) {
             (RingProof::Canonical(proof), RingMode::Canonical) => {
                 RingClaim::Canonical(ring::verify(
@@ -1152,7 +1360,7 @@ impl PreparedFalconAlgebraic {
                     binary_claims.push(bridge::verify_weighted(
                         &mut t,
                         matrix,
-                        BridgeMode::TwoLimbs,
+                        bridge_mode(),
                         &claim.column_point,
                         claim.value,
                         claim.modulus,
@@ -1175,6 +1383,8 @@ impl PreparedFalconAlgebraic {
                 if proof.bridges.len() != 1 || !proof.bridge_merge_nonces.is_empty() {
                     return Err(error("raw bridge shape"));
                 }
+                let arithmetic_span =
+                    tracing::info_span!("falcon_algebraic:verify_arithmetic").entered();
                 let claim = match &ring_claim {
                     RingClaim::Canonical(claim) => arithmetic::verify(
                         &mut t,
@@ -1195,10 +1405,12 @@ impl PreparedFalconAlgebraic {
                     )?,
                 };
                 drop(ring_claim);
+                drop(arithmetic_span);
+                let bridge_span = tracing::info_span!("falcon_algebraic:verify_bridge").entered();
                 let binary = bridge::verify_weighted(
                     &mut t,
                     &self.layout.bitz_params(),
-                    BridgeMode::TwoLimbs,
+                    bridge_mode(),
                     &claim.column_point,
                     claim.value,
                     claim.modulus,
@@ -1207,6 +1419,7 @@ impl PreparedFalconAlgebraic {
                     &claim.row_weights,
                 )?;
                 drop(claim);
+                drop(bridge_span);
                 let target = binary.value;
                 (
                     compact::coefficients(&self.layout, &proof.exceptions, binary)?,
@@ -1215,6 +1428,7 @@ impl PreparedFalconAlgebraic {
             }
             _ => return Err(error("arithmetic binding mode mismatch")),
         };
+        let joint_span = tracing::info_span!("falcon_algebraic:verify_joint").entered();
         let point = match &self.geometry {
             SourceGeometry::Single(g) => joint::verify(
                 &mut t,
@@ -1234,6 +1448,8 @@ impl PreparedFalconAlgebraic {
             ),
         }
         .map_err(error)?;
+        drop(joint_span);
+        let _pcs_span = tracing::info_span!("falcon_algebraic:verify_pcs").entered();
         let mut pcs = GrindingContext {
             plan: &self.pcs_grinding,
             nonces: GrindingNonces::Verify {
@@ -1395,6 +1611,9 @@ fn grind(target: usize, numerator: usize, domain_bits: u32) -> u32 {
 }
 
 fn carry_grinding(target_bits: usize, ring_mode: RingMode) -> u32 {
+    if per_site_grinding() {
+        return site_bits(target_bits, ring_mode.projection_degree(), prime_domain_bits());
+    }
     grind(target_bits, ring_mode.projection_degree(), 125)
 }
 
@@ -1411,7 +1630,8 @@ fn fixed_terms(
     ring_mode: RingMode,
 ) -> Vec<(&'static str, f64)> {
     let d = layout.capacity().ilog2() as usize;
-    let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
+    let domain = prime_domain_bits() as i32;
+    let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-domain - bits as i32);
     let mut terms = vec![
         ("prime sampling", 2f64.powi(-144)),
         // |E \ F_q| >= 2^149; includes instance batching and degree-(N-1) negacyclic residual.
@@ -1471,10 +1691,33 @@ fn allocate_grinding(
     let bit_log = geometry.bit_log();
     let matrices = bridge_matrices(layout, compact_binding);
     let bridge_count = matrices.len();
+    if per_site_grinding() {
+        // Every site on its own: bridge layer rounds and column point, the
+        // quadratic joint rounds, the ring switch's largest numerator, and
+        // each Ligerito block at least its native Flock work.
+        let bits = |numerator: usize| site_bits(target_bits, numerator, 128);
+        for block in &mut pcs.blocks {
+            let needed = (target_bits as f64 + block.raw_error.log2()).ceil().max(0.0) as u32;
+            block.bits = needed.max(block.native_bits.unwrap_or(0));
+        }
+        return Ok((
+            BinaryGrinding {
+                bridge: std::array::from_fn(|index| {
+                    matrices
+                        .get(index)
+                        .map_or(0, |m| bits(bridge_site_numerator(m)))
+                }),
+                bridge_merge: if compact_binding { bits(2) } else { 0 },
+                joint: bits(2),
+                opening: bits(256),
+            },
+            pcs,
+        ));
+    }
     let mut groups: Vec<_> = matrices
         .iter()
         .map(|params| GrindingGroup {
-            raw_error: gf(bridge::error_numerator(params, BridgeMode::TwoLimbs)),
+            raw_error: gf(bridge::error_numerator(params, bridge_mode())),
             sites: bridge::message_count(params) as f64,
             min_bits: 0,
         })
@@ -1529,7 +1772,8 @@ fn allocate_grinding(
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic:prime")]
 fn sample_field(t: &mut impl Transcript) -> Result<Cfg, FalconError> {
-    crate::prime_sampling::sample_prime_context(t, PRIME_MIN, PRIME_MAX, 144).map_err(error)
+    let (min, max) = prime_range();
+    crate::prime_sampling::sample_prime_context(t, min, max, 144).map_err(error)
 }
 
 #[cfg(test)]

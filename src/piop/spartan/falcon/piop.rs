@@ -68,13 +68,29 @@ pub struct FalconSecuritySchedule {
 }
 
 impl FalconSecuritySchedule {
-    pub const fn for_layout(target_bits: usize, layout: &FalconSourceLayout) -> Option<Self> {
+    pub fn for_layout(target_bits: usize, layout: &FalconSourceLayout) -> Option<Self> {
         let floor = match target_bits {
             100 => 114,
             128 => 125,
             _ => return None,
         };
         let n = FalconSecurityNumerators::for_layout(layout);
+        if crate::piop::spartan::grinding::falcon_per_site_grinding() {
+            // Per-site numerators: the instance and row points and the linear
+            // batch are single draws; integer rounds are cubic, binder
+            // rounds quadratic.
+            let site = |numerator: usize| {
+                crate::piop::spartan::grinding::site_grinding_bits(target_bits, numerator, floor)
+            };
+            return Some(Self {
+                norm_instance_bits: site(n.norm_instances),
+                relation_batching_bits: site(n.relation_batching),
+                outer_point_bits: site(n.outer_point),
+                integer_round_bits: site(3),
+                linear_point_bits: site(n.linear),
+                binding_round_bits: site(2),
+            });
+        }
         Some(Self {
             norm_instance_bits: stage_grinding_bits(n.norm_instances, target_bits, floor),
             relation_batching_bits: stage_grinding_bits(n.relation_batching, target_bits, floor),

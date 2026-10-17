@@ -176,6 +176,29 @@ fn allocate_grinding(
     // Block structure, raw errors and native Flock work do not depend on the
     // plan's target; its difficulties are replaced below.
     let mut pcs = GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
+    if crate::piop::spartan::grinding::falcon_per_site_grinding() {
+        // Every site on its own: bridge layer rounds and column point, the
+        // link and ring-switch draws, quadratic joint rounds, each Keccak
+        // slab's univariate skip, and each Ligerito block at least its
+        // native Flock work.
+        let bits = |numerator: usize| {
+            crate::piop::spartan::grinding::site_grinding_bits(target_bits, numerator, 128)
+        };
+        for block in &mut pcs.blocks {
+            let needed = (target_bits as f64 + block.raw_error.log2()).ceil().max(0.0) as u32;
+            block.bits = needed.max(block.native_bits.unwrap_or(0));
+        }
+        return Ok((
+            BinaryGrinding {
+                bridge: bits(bridge_site_numerator(layout, bridge_mode)),
+                links: bits(LINK_ERROR_NUMERATOR),
+                joint: bits(2),
+                opening: bits(256),
+                keccak: [bits(KECCAK_SITE_NUMERATOR); KECCAK_SLABS],
+            },
+            pcs,
+        ));
+    }
     let gf = |numerator: usize| numerator as f64 * 2f64.powi(-128);
     let bit_log = geometry.bit_log();
     let mut groups = vec![
@@ -235,6 +258,20 @@ fn allocate_grinding(
         pcs,
     ))
 }
+/// Largest per-site numerator of the bridge: cubic layer rounds, and the
+/// column point if it is drawn as one challenge.
+fn bridge_site_numerator(
+    layout: &FalconSourceLayout,
+    bridge_mode: integer_bridge::BridgeMode,
+) -> usize {
+    let params = layout.bitz_params();
+    3.max(params.col_vars + usize::from(bridge_mode == integer_bridge::BridgeMode::TwoLimbs))
+}
+
+/// Largest per-site Keccak numerator: the univariate skip (degree < 128);
+/// the initial draw's terms total less for every supported slab.
+const KECCAK_SITE_NUMERATOR: usize = 128;
+
 // Independent coefficients batch the authenticated claims with degree one.
 // SHAKE wiring has degree at most 16 + 10 + 1 (local, instance, merge),
 // and arithmetic padding at most 17 + 10 + 1. Their union is at most 56;
@@ -454,12 +491,103 @@ impl PreparedFalconHybrid {
             &self.grinding,
             &self.pcs_grinding,
         ));
-        let algebraic_bits = -terms.iter().map(|(_, error)| error).sum::<f64>().log2();
+        let algebraic_bits = if crate::piop::spartan::grinding::falcon_per_site_grinding() {
+            -self.largest_site_error().log2()
+        } else {
+            -terms.iter().map(|(_, error)| error).sum::<f64>().log2()
+        };
         FalconHybridSecurity {
             target_bits: self.target_bits,
             algebraic_bits,
             terms,
         }
+    }
+
+    /// Largest error of any single challenge site after its work, the
+    /// per-query rate of the per-site accounting.
+    fn largest_site_error(&self) -> f64 {
+        let s =
+            super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout).expect("prepared target");
+        let n = super::piop::FalconSecurityNumerators::for_layout(&self.layout);
+        let d = self.layout.capacity().trailing_zeros() as usize;
+        let prime_bits = self.prime_modulus_bounds().0.ilog2() as i32;
+        let prime = |numerator: usize, g: u32| numerator as f64 * 2f64.powi(-prime_bits - g as i32);
+        let binary = |numerator: usize, g: u32| numerator as f64 * 2f64.powi(-128 - g as i32);
+        let mut sites = vec![
+            2f64.powi(-144),
+            (4 * d + 2 * N + 1) as f64
+                / crate::piop::spartan::falcon_parameters::field_cardinality(EXTENSION_DEGREE)
+                    .as_f64(),
+            prime(
+                2 * EXTENSION_DEGREE - 2,
+                super::shared_ring::projection_grinding_bits(self.target_bits),
+            ),
+            prime(n.norm_instances, s.norm_instance_bits),
+            prime(n.relation_batching, s.relation_batching_bits),
+            prime(n.outer_point, s.outer_point_bits),
+            prime(3, s.integer_round_bits),
+            prime(n.linear, s.linear_point_bits),
+            prime(2, s.binding_round_bits),
+            binary(
+                bridge_site_numerator(&self.layout, self.bridge_mode),
+                self.grinding.bridge,
+            ),
+            binary(LINK_ERROR_NUMERATOR, self.grinding.links),
+            binary(2, self.grinding.joint),
+            binary(256, self.grinding.opening),
+        ];
+        sites.extend(
+            self.grinding
+                .keccak
+                .iter()
+                .map(|&bits| binary(KECCAK_SITE_NUMERATOR, bits)),
+        );
+        sites.extend(
+            self.pcs_grinding
+                .blocks
+                .iter()
+                .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32))),
+        );
+        sites.into_iter().fold(0.0, f64::max)
+    }
+
+    /// Difficulties of every grinding group, for experiments.
+    #[cfg(feature = "bench-internals")]
+    #[doc(hidden)]
+    pub fn grinding_report(&self) -> String {
+        let s = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
+            .expect("prepared target");
+        let mut out = format!(
+            "per_site_bits={:.2} reported_bits={:.2}\nprime: norm instance {} | relation batching {} | outer point {} | integer rounds {} | linear {} | binder {} | projection {}\n",
+            -self.largest_site_error().log2(),
+            self.security().algebraic_bits,
+            s.norm_instance_bits,
+            s.relation_batching_bits,
+            s.outer_point_bits,
+            s.integer_round_bits,
+            s.linear_point_bits,
+            s.binding_round_bits,
+            super::shared_ring::projection_grinding_bits(self.target_bits),
+        );
+        out += &format!(
+            "bridge {} bits x {} sites | links {} | joint {} | ring switch {} | keccak {:?}\n",
+            self.grinding.bridge,
+            integer_bridge::message_count(&self.layout.bitz_params()),
+            self.grinding.links,
+            self.grinding.joint,
+            self.grinding.opening,
+            self.grinding.keccak,
+        );
+        for block in &self.pcs_grinding.blocks {
+            out += &format!(
+                "pcs {} native {:?} raw 2^{:.1} bits {}\n",
+                block.label,
+                block.native_bits,
+                block.raw_error.log2(),
+                block.bits,
+            );
+        }
+        out
     }
 
     /// Generate and commit the full witness, including SHAKE and HashToPoint.
@@ -668,7 +796,11 @@ impl PreparedFalconHybrid {
             integer_bridge::error_numerator(&self.layout.bitz_params(), self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
         h.update(&self.grinding.bridge.to_le_bytes());
-        h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+        if crate::piop::spartan::grinding::falcon_per_site_grinding() {
+            h.update(b"grinding:per-site/v1");
+        } else {
+            h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+        }
         for bits in [self.grinding.joint, self.grinding.opening]
             .into_iter()
             .chain(self.grinding.keccak)

@@ -70,7 +70,13 @@ pub(super) struct Layout {
 
 impl Layout {
     pub fn new(batch: usize) -> Result<Self, FalconError> {
-        if !(1..=1024).contains(&batch) {
+        // Batches above 1024 are an unqualified throughput extension, available
+        // only to bench-internals builds.
+        #[cfg(not(feature = "bench-internals"))]
+        const MAX_BATCH: usize = 1024;
+        #[cfg(feature = "bench-internals")]
+        const MAX_BATCH: usize = 1 << 16;
+        if !(1..=MAX_BATCH).contains(&batch) {
             return Err(FalconError::InvalidBatchCapacity);
         }
         Ok(Self {

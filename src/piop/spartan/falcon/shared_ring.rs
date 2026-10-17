@@ -126,7 +126,16 @@ impl VerifierProjectedClaim {
     }
 }
 
-pub(super) const fn projection_grinding_bits(target_bits: usize) -> u32 {
+pub(super) fn projection_grinding_bits(target_bits: usize) -> u32 {
+    if crate::piop::spartan::grinding::falcon_per_site_grinding() {
+        // One draw with numerator 2k-2 over the prime floor.
+        let floor = prime_bounds(target_bits).map_or(125, |(min, _)| min.ilog2());
+        return crate::piop::spartan::grinding::site_grinding_bits(
+            target_bits,
+            2 * EXTENSION_DEGREE - 2,
+            floor,
+        );
+    }
     if target_bits == 128 { 14 } else { 2 }
 }
 

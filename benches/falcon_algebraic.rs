@@ -103,6 +103,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(not(feature = "bench-internals"))]
             let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
             let prepare_ms = start.elapsed().as_secs_f64() * 1000.0;
+            #[cfg(feature = "bench-internals")]
+            if std::env::var_os("BITZ_FALCON_PRINT_GRINDING").is_some() {
+                eprint!("{}", prepared.grinding_report());
+            }
 
             let start = Instant::now();
             let cases = falcon_degree_inputs::generate_cases($degree, options.batch, options.seed)?;

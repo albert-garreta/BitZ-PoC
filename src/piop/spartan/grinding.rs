@@ -34,6 +34,40 @@ const GRINDING_NONCE_DOMAIN: &[u8] = b"bitz/spartan/fiat-shamir-grinding/nonce/v
 /// BLAKE3 outputs 256 bits, so no larger difficulty can be satisfied.
 pub const MAX_GRINDING_BITS: u32 = 256;
 
+/// Bench-only Falcon experiment (Aerie-style per-query accounting): every
+/// challenge site is ground until its own error is at most `2^-target`,
+/// instead of all sites sharing one union budget. The Fiat-Shamir error is
+/// then `(Q + R) * 2^-target` for `Q` prover and `R` verifier-only queries.
+#[cfg(feature = "bench-internals")]
+pub(crate) fn falcon_per_site_grinding() -> bool {
+    static MODEL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *MODEL.get_or_init(|| match std::env::var("BITZ_FALCON_GRINDING_MODEL") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "union" => false,
+            "per-site" => true,
+            _ => panic!("BITZ_FALCON_GRINDING_MODEL must be union or per-site"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FALCON_GRINDING_MODEL must be valid Unicode")
+        }
+    })
+}
+
+#[cfg(not(feature = "bench-internals"))]
+pub(crate) fn falcon_per_site_grinding() -> bool {
+    false
+}
+
+/// Least difficulty with `numerator * 2^-(domain_bits + bits) <= 2^-target`
+/// at one challenge site.
+pub(crate) fn site_grinding_bits(target: usize, numerator: usize, domain_bits: u32) -> u32 {
+    if numerator == 0 {
+        return 0;
+    }
+    (target as u32 + numerator.next_power_of_two().ilog2()).saturating_sub(domain_bits)
+}
+
 /// The type-level domain of one class of prover-message grinding boundaries.
 ///
 /// Use a distinct zero-sized marker type for protocol stages whose nonces are
