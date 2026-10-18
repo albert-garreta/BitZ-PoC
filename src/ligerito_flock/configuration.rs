@@ -169,9 +169,9 @@ impl LigeritoSelection {
 }
 
 fn validate_geometry(packed_vars: usize, rate: usize, initial_k: usize) -> Result<(), String> {
-    if !(1..=4).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
+    if !(1..=6).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
         return Err(
-            "Ligerito requires inverse-rate exponent 1..4 and 1 <= initial_k < packed variables"
+            "Ligerito requires inverse-rate exponent 1..6 and 1 <= initial_k < packed variables"
                 .into(),
         );
     }

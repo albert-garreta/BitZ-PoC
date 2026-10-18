@@ -140,18 +140,24 @@ fn prime_domain_bits() -> u32 {
 }
 
 /// Bench-only opening regime: `johnson` selects the rate-1/2 Johnson preset
-/// instead of the matched unique-decoding one.
-fn ligerito_selection() -> LigeritoSelection {
+/// instead of the matched unique-decoding one, and any other Ligerito profile
+/// string (`udrg:R:K`, `custom:R:K`) selects that rate and first fold.
+fn ligerito_selection(target_bits: usize) -> LigeritoSelection {
     #[cfg(feature = "bench-internals")]
     match std::env::var("BITZ_FALCON_LIGERITO") {
         Err(std::env::VarError::NotPresent) => {}
         Ok(value) => match value.as_str() {
             "udr" => {}
             "johnson" => return LigeritoSelection::JOHNSON,
-            _ => panic!("BITZ_FALCON_LIGERITO must be udr or johnson"),
+            other => {
+                return LigeritoSelection::parse(other, target_bits)
+                    .unwrap_or_else(|e| panic!("BITZ_FALCON_LIGERITO: {e}"));
+            }
         },
         Err(std::env::VarError::NotUnicode(_)) => panic!("BITZ_FALCON_LIGERITO must be valid Unicode"),
     }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = target_bits;
     LigeritoSelection::MATCHED_UDR
 }
 
@@ -662,7 +668,7 @@ impl PreparedFalconAlgebraic {
             }
         };
         let geometry = SourceGeometry::new(&layout)?;
-        let ligerito = ligerito_selection()
+        let ligerito = ligerito_selection(target_bits)
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
         let (grinding, pcs_grinding) = allocate_grinding(
