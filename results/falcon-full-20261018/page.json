@@ -1,0 +1,170 @@
+{
+ "figure": "M5 \u00b7 10 threads \u00b7 mean over input seeds",
+ "subtitle": "128-bit security. Prove includes the witness commitment.",
+ "rows": [
+  {
+   "key": "S0",
+   "name": "As built on macOS",
+   "sub": "union grinding \u00b7 reference binder",
+   "kind": "base",
+   "seeds": 6,
+   "prove": 552.3,
+   "min": 524.0,
+   "max": 600.6,
+   "verify": 28.29,
+   "proof": 697791,
+   "mhash": 32.3
+  },
+  {
+   "key": "S1",
+   "name": "+ optimized binder",
+   "sub": "BITZ_BENCH_BINDER_REPLAY=on",
+   "kind": "base",
+   "seeds": 6,
+   "prove": 516.4,
+   "min": 496.7,
+   "max": 540.2,
+   "verify": 28.18,
+   "proof": 697791,
+   "mhash": 32.3
+  },
+  {
+   "key": "S2",
+   "name": "+ per-site grinding",
+   "sub": "John's prime \u00b7 2^13 bridge rows",
+   "kind": "base",
+   "seeds": 6,
+   "prove": 407.7,
+   "min": 382.2,
+   "max": 437.2,
+   "verify": 28.14,
+   "proof": 698175,
+   "mhash": 4.6
+  },
+  {
+   "key": "S3",
+   "name": "+ 2^16 bridge rows",
+   "sub": "smallest proof at John's prime",
+   "kind": "base",
+   "seeds": 6,
+   "prove": 421.6,
+   "min": 396.1,
+   "max": 460.6,
+   "verify": 28.21,
+   "proof": 556989,
+   "mhash": 5.1
+  },
+  {
+   "key": "S4",
+   "name": "+ small prime",
+   "sub": "2^16 bridge rows",
+   "kind": "base",
+   "seeds": 5,
+   "prove": 1651.3,
+   "min": 591.3,
+   "max": 3257.1,
+   "verify": 28.05,
+   "proof": 550130,
+   "mhash": 443.4
+  },
+  {
+   "key": "S5",
+   "name": "Small prime, 2^13 rows",
+   "sub": "per-site \u00b7 optimized binder",
+   "kind": "base",
+   "seeds": 5,
+   "prove": 434.3,
+   "min": 383.3,
+   "max": 518.7,
+   "verify": 27.41,
+   "proof": 664748,
+   "mhash": 30.1
+  },
+  {
+   "key": "T5",
+   "name": "Tight numerator, small prime, 2^13 rows",
+   "sub": "fastest \u00b7 accounting experiment",
+   "kind": "tight",
+   "seeds": 6,
+   "prove": 379.2,
+   "min": 372.9,
+   "max": 393.0,
+   "verify": 27.52,
+   "proof": 663671,
+   "mhash": 10.2
+  },
+  {
+   "key": "T4",
+   "name": "Tight numerator, small prime, 2^16 rows",
+   "sub": "accounting experiment",
+   "kind": "tight",
+   "seeds": 6,
+   "prove": 467.7,
+   "min": 446.0,
+   "max": 494.5,
+   "verify": 28.38,
+   "proof": 551250,
+   "mhash": 38.6
+  }
+ ],
+ "parts": [
+  "Ligerito opening",
+  "HashToPoint selection masks",
+  "Bridge column sums",
+  "Bridge GKR and nonces",
+  "Keccak (SHAKE256)",
+  "Ring check",
+  "Arithmetic, joint sumcheck, links"
+ ],
+ "breakdown": [
+  {
+   "key": "S0",
+   "name": "As built on macOS",
+   "total": 697418,
+   "cats": [
+    400632,
+    92160,
+    163840,
+    10928,
+    13360,
+    12554,
+    3944
+   ]
+  },
+  {
+   "key": "S3",
+   "name": "+ 2^16 bridge rows",
+   "total": 556498,
+   "cats": [
+    401512,
+    92160,
+    20480,
+    12488,
+    13360,
+    12554,
+    3944
+   ]
+  },
+  {
+   "key": "T5",
+   "name": "Tight numerator, small prime, 2^13 rows",
+   "total": 664978,
+   "cats": [
+    401480,
+    92160,
+    131072,
+    10408,
+    13360,
+    12554,
+    3944
+   ]
+  }
+ ],
+ "notes": [
+  "Full Falcon is John's <code>falcon_hybrid</code> prover. Besides the ring and norm it proves SHAKE256 HashToPoint, and its statement is the public keys, messages and signatures, so Aerie has no counterpart here.",
+  "Each bar is the mean over input seeds of the median prove for that seed, and the line spans the lowest and highest seed. Two configurations have five seeds because one run each was disturbed by another session. With fixed inputs every prove replays one transcript, so each large grinding site is a single draw. With the small prime at 2^16 rows, the binder's grinding (its 28-bit linear site and 26 rounds) took 60M to 966M hashes depending on the seed, against about 275M expected.",
+  "The tight numerator (<code>BITZ_FALCON_LINEAR_NUMERATOR=tight</code>) counts the linear block's grinding numerator as m + d + 6 instead of m + d + B + 5. The block draws one multilinear point over rows and signatures, \u03b7 and one merge coefficient, so the batch size B should not enter. It stays an accounting experiment until John confirms this.",
+  "The optimized binder replay is on by default only on Linux x86-64, so on the M5 it needs <code>BITZ_BENCH_BINDER_REPLAY=on</code>. Per-site grinding, the bridge rows and the small prime use the same switches as the algebraic prover.",
+  "On one thread (one seed) the hybrid proves in 2.35 s as built, 1.66 s with per-site grinding and 1.72 s with 2^16 rows, and verifies in 40 ms. Peak memory at 10 threads is 2.4 to 2.5 GiB in every configuration."
+ ]
+}

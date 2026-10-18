@@ -295,6 +295,11 @@ if SIZES.exists():
         data["threads"] = threads
         for row in threads["rows"]:
             print(row["name"], row["t1"], row["t10"], row["proof"])
+FULL = Path(__file__).parent.parent / "full-falcon-20261018" / "page.json"
+if FULL.exists():
+    data["full"] = json.loads(FULL.read_text())
+    for row in data["full"]["rows"]:
+        print("full", row["key"], row["prove"], row["min"], row["max"], row["proof"])
 html = TEMPLATE.read_text().replace("/*DATA*/", json.dumps(data, separators=(",", ":")).replace("</", "<\\/"))
 INDEX.parent.mkdir(parents=True, exist_ok=True)
 INDEX.write_text(html)
