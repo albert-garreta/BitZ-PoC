@@ -1,0 +1,50 @@
+per_site_bits=128.00 reported_bits=128.00
+prime: norm instance 7 | relation batching 3 | outer point 8 | integer rounds 5 | linear 8 | binder 4 | projection 8
+bridge 4 bits x 273 sites | links 8 | joint 1 | ring switch 8 | keccak [7, 7, 7]
+pcs fold/0/0 native Some(21) raw 2^-110.0 bits 21
+pcs fold/0/1 native Some(20) raw 2^-110.0 bits 20
+pcs fold/0/2 native Some(19) raw 2^-110.0 bits 19
+pcs fold/0/3 native Some(18) raw 2^-110.0 bits 18
+pcs queries/0 native Some(0) raw 2^-124.7 bits 4
+pcs introduce/0 native None raw 2^-128.0 bits 0
+pcs fold/1/0 native Some(19) raw 2^-111.4 bits 19
+pcs fold/1/1 native Some(18) raw 2^-111.4 bits 18
+pcs fold/1/2 native Some(17) raw 2^-111.4 bits 17
+pcs queries/1 native Some(0) raw 2^-124.8 bits 4
+pcs introduce/1 native None raw 2^-128.0 bits 0
+pcs fold/2/0 native Some(17) raw 2^-113.2 bits 17
+pcs fold/2/1 native Some(16) raw 2^-113.2 bits 16
+pcs fold/2/2 native Some(15) raw 2^-113.2 bits 15
+pcs queries/2 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/2 native None raw 2^-128.0 bits 0
+pcs fold/3/0 native Some(15) raw 2^-115.1 bits 15
+pcs fold/3/1 native Some(14) raw 2^-115.1 bits 14
+pcs fold/3/2 native Some(13) raw 2^-115.1 bits 13
+pcs queries/3 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/3 native None raw 2^-128.0 bits 0
+pcs fold/4/0 native Some(13) raw 2^-117.0 bits 13
+pcs fold/4/1 native Some(12) raw 2^-117.0 bits 12
+pcs fold/4/2 native Some(11) raw 2^-117.0 bits 11
+pcs queries/4 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/4 native None raw 2^-128.0 bits 0
+pcs fold/5/0 native Some(11) raw 2^-118.0 bits 11
+pcs fold/5/1 native Some(10) raw 2^-118.0 bits 10
+pcs queries/5 native Some(0) raw 2^-124.7 bits 4
+        4.04 real         6.63 user         0.88 sys
+          1527218176  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              152203  page reclaims
+                   2  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+               19135  involuntary context switches
+        116562453148  instructions retired
+         28721714144  cycles elapsed
+          1367656008  peak memory footprint

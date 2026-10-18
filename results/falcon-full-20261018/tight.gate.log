@@ -1,0 +1,4 @@
+[bench_gate] full-falcon-tight: idle 90% (streak 1/3)
+[bench_gate] full-falcon-tight: idle 90% (streak 2/3)
+[bench_gate] full-falcon-tight: idle 90% (streak 3/3)
+[bench_gate] full-falcon-tight: starting (swap baseline 1.45 GB, guard +12 GB)

@@ -42,18 +42,48 @@ pub struct FalconSecurityNumerators {
 }
 
 impl FalconSecurityNumerators {
-    pub const fn for_layout(layout: &FalconSourceLayout) -> Self {
+    pub fn for_layout(layout: &FalconSourceLayout) -> Self {
         let d = layout.capacity().trailing_zeros() as usize;
         let rounds = REJECTION_ROW_LOG + d;
+        let linear_point = layout.linear_stride().ilog2() as usize + d;
         Self {
             norm_instances: d,
             relation_batching: 1,
             outer_point: rounds,
             integer_rounds: 3 * rounds,
-            linear: layout.linear_stride().ilog2() as usize + d + layout.batch() + 5,
+            linear: if tight_linear_numerator() {
+                linear_point + 6
+            } else {
+                linear_point + layout.batch() + 5
+            },
             binding: 2 * (layout.signature_stride().ilog2() as usize + d),
         }
     }
+}
+
+/// Bench-only accounting experiment (`BITZ_FALCON_LINEAR_NUMERATOR=tight`).
+/// The linear block draws one multilinear point over the linear rows and
+/// signatures (equality weights, total degree `m + d`), `eta` up to its fifth
+/// power and one merge coefficient, so its total degree is at most `m + d + 6`.
+/// The default numerator also counts the batch size.
+#[cfg(feature = "bench-internals")]
+fn tight_linear_numerator() -> bool {
+    static TIGHT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TIGHT.get_or_init(|| match std::env::var("BITZ_FALCON_LINEAR_NUMERATOR") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "default" => false,
+            "tight" => true,
+            _ => panic!("BITZ_FALCON_LINEAR_NUMERATOR must be default or tight"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FALCON_LINEAR_NUMERATOR must be valid Unicode")
+        }
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+fn tight_linear_numerator() -> bool {
+    false
 }
 
 /// Each prime-field stage receives at most 2^-(target+5) work-normalized error.

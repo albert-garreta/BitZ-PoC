@@ -1,0 +1,14 @@
+11:14:50 default-t13-r1 exit=0 ghz=3.87 rss=2489MiB 100%; charged
+11:15:07 tight-default-t13-r1 exit=0 ghz=3.85 rss=2481MiB 100%; charged
+11:15:23 tight-default-t16-r1 exit=0 ghz=3.83 rss=2490MiB 100%; charged
+11:15:39 tight-small-t13-r1 exit=0 ghz=3.87 rss=2486MiB 100%; charged
+11:15:56 tight-small-t16-r1 exit=0 ghz=3.79 rss=2526MiB 100%; charged
+11:16:12 default-t13-r2 exit=0 ghz=3.87 rss=2481MiB 100%; charged
+11:16:29 tight-default-t13-r2 exit=0 ghz=3.86 rss=2481MiB 100%; charged
+11:16:45 tight-default-t16-r2 exit=0 ghz=3.83 rss=2491MiB 100%; charged
+11:17:02 tight-small-t13-r2 exit=0 ghz=3.88 rss=2485MiB 100%; charged
+11:17:18 tight-small-t16-r2 exit=0 ghz=3.78 rss=2526MiB 100%; charged
+11:17:27 tight-default-t13-report exit=0 ghz=4.33 rss=1456MiB 100%; charged
+11:17:36 tight-small-t13-report exit=0 ghz=4.34 rss=1459MiB 100%; charged
+11:17:45 tight-small-t16-report exit=0 ghz=4.26 rss=1465MiB 100%; charged
+11:17:55 union-tight-report exit=0 ghz=4.35 rss=1459MiB 100%; charged

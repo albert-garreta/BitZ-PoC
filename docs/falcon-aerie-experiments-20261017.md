@@ -174,17 +174,21 @@ The hybrid (`benches/falcon_hybrid.rs`, which also proves SHAKE256 HashToPoint) 
 
 Its binder replay is on by default only on Linux x86-64. `BITZ_BENCH_BINDER_REPLAY=on` forces it, like `BINDING_STRATEGY=optimized` for the algebraic binder.
 
-Falcon-512 @128, 1024 signatures, 10 threads (pooled medians, `results/falcon-full-20261018`):
+Falcon-512 @128, 1024 signatures, 10 threads. The numbers are means over six input seeds, because with fixed inputs each large grinding site is a single draw (`results/falcon-full-20261018`, `seed_means.py`):
 
-| Configuration | Prove | Verify | Proof |
-|---|---|---|---|
-| as built on macOS | 542 ms | 28.0 ms | 697 KB |
-| + binder replay | 511 ms | 27.9 ms | 697 KB |
-| + per-site | 405 ms | 28.1 ms | 698 KB |
-| + 2^16 bridge rows | 411 ms | 27.9 ms | 556 KB |
-| + small prime | 3,089 ms | 27.9 ms | 550 KB |
-| per-site, small prime, 2^13 rows | 383 ms | 27.4 ms | 665 KB |
+| Configuration | Prove | Range | Verify | Proof |
+|---|---|---|---|---|
+| as built on macOS | 552 ms | 524-601 | 28.3 ms | 698 KB |
+| + binder replay | 516 ms | 497-540 | 28.2 ms | 698 KB |
+| + per-site | 408 ms | 382-437 | 28.1 ms | 698 KB |
+| + 2^16 bridge rows | 422 ms | 396-461 | 28.2 ms | 557 KB |
+| + small prime | 1,651 ms | 591-3,257 | 28.1 ms | 550 KB |
+| per-site, small prime, 2^13 rows | 434 ms | 383-519 | 27.4 ms | 665 KB |
+| tight linear numerator: small prime, 2^13 rows | 379 ms | 373-393 | 27.5 ms | 664 KB |
+| tight linear numerator: small prime, 2^16 rows | 468 ms | 446-495 | 28.4 ms | 551 KB |
 
-The small prime pays only at 2^13 rows. Every prime-field site grinds 11 to 14 bits more than with the default prime; at 2^16 rows, the integer rounds grind 19 bits each and the linear batch 28. The linear numerator (`FalconSecurityNumerators::linear`) includes the batch size.
+Every prime-field site grinds 11 to 14 bits more with the small prime. The linear batch is the largest site.
+
+Its numerator (`FalconSecurityNumerators::linear`, `m + d + B + 5`) includes the batch size `B`, but the block only draws a multilinear point over the linear rows and signatures (total degree `m + d`), `eta` (used up to its fifth power) and one merge coefficient. `BITZ_FALCON_LINEAR_NUMERATOR=tight` (bench-only) counts `m + d + 6` instead. At 1024 that takes the linear site from 19 to 13 bits under the union model and from 14 to 8 per site; with the small prime at 2^16 rows, from 28 to 22 bits.
 
 The keyed ring check is not ported. The hybrid's ring check commits `h` and `s2` and costs 7.8 ms prove, under 2 ms verify and 12.6 KB at 1024.

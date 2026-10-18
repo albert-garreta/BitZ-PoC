@@ -16,9 +16,35 @@ Raw data for the full-Falcon part of the Falcon note: John's `falcon_hybrid`, wh
 | Bridge row variables `t` | `BITZ_FALCON_BRIDGE_ROWS=13..16` |
 | Small prime: `[2^(127-t), 2^(128-t) - 2^(116-t)]`, unsplit bridge | `BITZ_FALCON_PRIME=small` |
 
-## Results
+## Seed-averaged results (use these)
 
-The tables below are pooled medians from `pooled.py`, over all measured proves of the clean runs. Prove includes the witness commitment.
+With fixed inputs, every trial of a run replays the same transcript, so each grinding site is a single geometric draw (mean `2^g` hashes). Many small sites average out, but a single large site does not.
+
+The bench reports the work actually spent per category (`grinding_diagnostics`, read with `nonces.py`). In the seed-42 runs, the 25-bit linear site of the small prime at 2^13 rows found its nonce after about 1M hashes, where 33.5M are expected. The 28-bit site at 2^16 rows took 896M hashes, against about 270M expected.
+
+`seeds/` (`seeds.zsh`) therefore repeats every configuration for input seeds 1 to 5. Each run is a warm-up plus three proves on 10 threads; `seed_means.py` averages each seed's median, including the seed-42 runs below. `seeds/S4-s1` and `seeds/S5-s1` are excluded as disturbed: the native check took 24 to 29 ms instead of 18, commit took 239 and 1,236 ms instead of about 80, and the clock was 3.2 to 3.3 GHz.
+
+| Configuration, 10 threads | Seeds | Prove (mean) | Range | Verify | Proof | Grinding work |
+|---|---:|---:|---:|---:|---:|---:|
+| As built on macOS (union, reference binder) | 6 | 552 ms | 524-601 | 28.3 ms | 698 kB | 32.3 M hashes |
+| + optimized binder | 6 | 516 ms | 497-540 | 28.2 ms | 698 kB | 32.3 M |
+| + per-site grinding | 6 | 408 ms | 382-437 | 28.1 ms | 698 kB | 4.6 M |
+| + 2^16 bridge rows | 6 | 422 ms | 396-461 | 28.2 ms | 557 kB | 5.1 M |
+| + small prime (2^16 rows) | 5 | 1,651 ms | 591-3,257 | 28.1 ms | 550 kB | 443 M |
+| Per-site, small prime, 2^13 rows | 5 | 434 ms | 383-519 | 27.4 ms | 665 kB | 30.1 M |
+| Per-site, tight linear numerator | 6 | 411 ms | 387-484 | 28.8 ms | 697 kB | 5.2 M |
+| Tight: small prime, 2^16 rows | 6 | 468 ms | 446-495 | 28.4 ms | 551 kB | 38.6 M |
+| Tight: small prime, 2^13 rows | 6 | 379 ms | 373-393 | 27.5 ms | 664 kB | 10.2 M |
+
+"Tight" is the bench-only accounting experiment `BITZ_FALCON_LINEAR_NUMERATOR=tight`. It counts the linear block's numerator as `m + d + 6` instead of `m + d + B + 5`.
+
+The block draws one multilinear point over the linear rows and signatures (equality weights of total degree `m + d`), then `eta` (used up to its fifth power), then one merge coefficient. No prover message intervenes, so its total degree is at most `m + d + 6`. We found no use of the batch size `B` in that block.
+
+With John's numerator the small prime does not pay at 1024 signatures. With the tight one it pays at 2^13 rows: 379 ms against 408 to 411 ms, with little spread.
+
+## Results with seed 42 only
+
+The tables below are pooled medians from `pooled.py`, over all measured proves of the clean seed-42 runs. Prove includes the witness commitment. The small-prime rows depend on the grinding luck described above.
 
 10 threads:
 
@@ -70,9 +96,13 @@ The `linear` numerator in `FalconSecurityNumerators::linear` includes the batch 
   - Small prime, per-site and 16 rows: 96/102.
 
   The failing tests pin the default prime families, two-limb column sums at 128 bits, or the union-bound accounting. The full proof round trips and mutation rejections pass under every setting. `test-1-*.log` is the first round, before the 100-bit family followed `t` and before the per-site projection site was clamped to one bit.
+- `tight/` (`tight.zsh`, binary `hybrid-tight`): built from `08dee73eb` plus the opt-in `BITZ_FALCON_LINEAR_NUMERATOR` switch (`build-tight.rev`). Contains the tight-numerator runs at seed 42 and their grinding reports, including the union model.
+- `seeds/` (`seeds.zsh`): seeds 1 to 5 for every configuration, with the same binary.
 - Scripts:
   - `summarize.py`: per-run medians, with `--breakdown` for proof sizes.
-  - `pooled.py`: the tables above.
+  - `pooled.py`: the seed-42 tables.
+  - `seed_means.py`: the seed-averaged table.
+  - `nonces.py`: grinding work actually spent per category.
   - `build.zsh`, `build-and-ladder.zsh` and `test.zsh`, plus the campaign scripts above.
 
   The scripts hold absolute paths to `bench_results/full-falcon-20261018` in the `falcon-flamegraph` worktree.
