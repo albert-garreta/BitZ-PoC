@@ -35,13 +35,43 @@ const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
 const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v5";
 
 /// Target 100 uses one unsplit bounded exponent. Target 128 retains the
-/// native prime family and its two bounded bridge limbs.
+/// native prime family and its two bounded bridge limbs, unless the bench-only
+/// small family is selected: with `t` bridge row variables,
+/// `2^(127-t) <= p <= 2^(128-t) - 2^(116-t)` keeps `(2^t + 1)(p - 1) < 2^128 - 1`,
+/// so the bridge runs unsplit at 128 bits too.
 pub(super) fn prime_bounds(target_bits: usize) -> Result<(u128, u128), FalconError> {
+    let rows = super::hybrid::requested_bridge_rows();
     match target_bits {
-        100 => Ok((1 << 114, (1 << 115) - (1 << 102) - 1)),
-        128 => Ok((1u128 << 125, (1u128 << 126) - 1)),
+        100 if rows == 13 => Ok((1 << 114, (1 << 115) - (1 << 102) - 1)),
+        128 if !small_prime() => Ok((1u128 << 125, (1u128 << 126) - 1)),
+        // Bench-only unsplit families: target 100 with more bridge rows, or
+        // the small family at target 128.
+        100 | 128 => {
+            let t = rows as u32;
+            Ok((1 << (127 - t), (1 << (128 - t)) - (1 << (116 - t))))
+        }
         _ => Err(error("unsupported shared prime security target")),
     }
+}
+
+/// Bench-only small prime family at 128 bits, read from the same variable as
+/// the algebraic protocol (`BITZ_FALCON_PRIME=small`).
+#[cfg(feature = "bench-internals")]
+pub(super) fn small_prime() -> bool {
+    static SMALL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SMALL.get_or_init(|| match std::env::var("BITZ_FALCON_PRIME") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "default" => false,
+            "small" => true,
+            _ => panic!("BITZ_FALCON_PRIME must be default or small"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => panic!("BITZ_FALCON_PRIME must be valid Unicode"),
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+pub(super) fn small_prime() -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -128,13 +158,15 @@ impl VerifierProjectedClaim {
 
 pub(super) fn projection_grinding_bits(target_bits: usize) -> u32 {
     if crate::piop::spartan::grinding::falcon_per_site_grinding() {
-        // One draw with numerator 2k-2 over the prime floor.
+        // One draw with numerator 2k-2 over the prime floor. The proof always
+        // carries this nonce, so the site grinds at least one bit.
         let floor = prime_bounds(target_bits).map_or(125, |(min, _)| min.ilog2());
         return crate::piop::spartan::grinding::site_grinding_bits(
             target_bits,
             2 * EXTENSION_DEGREE - 2,
             floor,
-        );
+        )
+        .max(1);
     }
     if target_bits == 128 { 14 } else { 2 }
 }

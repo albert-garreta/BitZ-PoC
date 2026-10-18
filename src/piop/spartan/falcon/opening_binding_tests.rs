@@ -1123,7 +1123,8 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
     };
     let mut prover = fresh_transcript();
     let (proof, row_weights, bridge_claim) =
-        prove_binding_prefix(&mut prover, &layout, &statement, &traces, &source, 100).unwrap();
+        prove_binding_prefix(&mut prover, &layout, &statement, &traces, &source, 100, layout.row_vars())
+            .unwrap();
     assert_eq!(bridge_claim.point.len(), source_rounds(&layout));
     let mut verifier = fresh_transcript();
     assert_eq!(

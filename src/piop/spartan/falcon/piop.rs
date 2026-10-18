@@ -69,9 +69,10 @@ pub struct FalconSecuritySchedule {
 
 impl FalconSecuritySchedule {
     pub fn for_layout(target_bits: usize, layout: &FalconSourceLayout) -> Option<Self> {
+        // The sampled prime's floor: 114 bits at target 100, 125 at 128, or the
+        // bench-only small family's floor.
         let floor = match target_bits {
-            100 => 114,
-            128 => 125,
+            100 | 128 => super::shared_ring::prime_bounds(target_bits).ok()?.0.ilog2(),
             _ => return None,
         };
         let n = FalconSecurityNumerators::for_layout(layout);

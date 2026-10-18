@@ -36,6 +36,48 @@ fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
 }
 
+/// Bench-only number of bridge row variables `t`, read from the same variable
+/// as the algebraic protocol (13 by default: one source row of 2^13 bits).
+#[cfg(feature = "bench-internals")]
+pub(super) fn requested_bridge_rows() -> usize {
+    static ROWS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *ROWS.get_or_init(|| match std::env::var("BITZ_FALCON_BRIDGE_ROWS") {
+        Err(std::env::VarError::NotPresent) => FalconSourceLayout::new(1).unwrap().row_vars(),
+        Ok(value) => match value.parse::<usize>() {
+            Ok(rows @ 13..=16) => rows,
+            _ => panic!("BITZ_FALCON_BRIDGE_ROWS must be 13, 14, 15 or 16"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FALCON_BRIDGE_ROWS must be valid Unicode")
+        }
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+pub(super) fn requested_bridge_rows() -> usize {
+    FalconSourceLayout::new(1).unwrap().row_vars()
+}
+
+/// The bridge matrix: `t` row variables, capped to leave one column variable.
+/// Larger `t` moves the lowest column variables into the rows, so the bridge
+/// sends `2^(n-t)` instead of `2^(n-13)` column sums.
+fn bridge_params(layout: &FalconSourceLayout) -> crate::pcs::IntegerMatrixLayout {
+    let source = layout.bitz_params();
+    let total = source.row_vars + source.col_vars;
+    let rows = requested_bridge_rows().min(total - 1).max(source.row_vars);
+    crate::pcs::IntegerMatrixLayout {
+        row_vars: rows,
+        col_vars: total - rows,
+    }
+}
+
+/// Concatenate `2^extra` consecutive source rows into one bridge column. Every
+/// bit keeps its index `row + 2^13 column`, so the bridge claims the same bits.
+fn bridge_columns(rows: &[Vec<u64>], extra: usize) -> Vec<Vec<u64>> {
+    crate::utils::cfg_chunks!(rows, 1 << extra)
+        .map(|group| group.concat())
+        .collect()
+}
+
 fn public_initial_bit_weight(messages: &[[u8; 32]], instances: &[Gf], bit: usize) -> Gf {
     match (bit / 8, bit % 8) {
         (byte @ 40..=71, shift) => {
@@ -124,7 +166,7 @@ fn allocated_terms(
         (
             "batched integer-to-binary forest",
             binary(
-                integer_bridge::error_numerator(&layout.bitz_params(), bridge_mode),
+                integer_bridge::error_numerator(&bridge_params(layout), bridge_mode),
                 grinding.bridge,
             ),
         ),
@@ -204,10 +246,10 @@ fn allocate_grinding(
     let mut groups = vec![
         GrindingGroup {
             raw_error: gf(integer_bridge::error_numerator(
-                &layout.bitz_params(),
+                &bridge_params(layout),
                 bridge_mode,
             )),
-            sites: integer_bridge::message_count(&layout.bitz_params()) as f64,
+            sites: integer_bridge::message_count(&bridge_params(layout)) as f64,
             min_bits: 0,
         },
         GrindingGroup {
@@ -264,7 +306,7 @@ fn bridge_site_numerator(
     layout: &FalconSourceLayout,
     bridge_mode: integer_bridge::BridgeMode,
 ) -> usize {
-    let params = layout.bitz_params();
+    let params = bridge_params(layout);
     3.max(params.col_vars + usize::from(bridge_mode == integer_bridge::BridgeMode::TwoLimbs))
 }
 
@@ -365,7 +407,8 @@ impl PreparedFalconHybrid {
             return Err(error("hybrid security must be 100 or 128 bits"));
         }
         let layout = FalconSourceLayout::new(batch)?;
-        let bridge_mode = if target_bits == 100 {
+        // The bench-only small prime family keeps the bridge unsplit at 128 bits.
+        let bridge_mode = if target_bits == 100 || super::shared_ring::small_prime() {
             integer_bridge::BridgeMode::Unsplit
         } else {
             integer_bridge::BridgeMode::TwoLimbs
@@ -416,7 +459,7 @@ impl PreparedFalconHybrid {
             scratch: Mutex::default(),
         };
         integer_bridge::validate_layout(
-            &prepared.layout.bitz_params(),
+            &bridge_params(&prepared.layout),
             bridge_mode,
             prepared.prime_modulus_bounds().1,
         )?;
@@ -572,7 +615,7 @@ impl PreparedFalconHybrid {
         out += &format!(
             "bridge {} bits x {} sites | links {} | joint {} | ring switch {} | keccak {:?}\n",
             self.grinding.bridge,
-            integer_bridge::message_count(&self.layout.bitz_params()),
+            integer_bridge::message_count(&bridge_params(&self.layout)),
             self.grinding.links,
             self.grinding.joint,
             self.grinding.opening,
@@ -771,7 +814,7 @@ impl PreparedFalconHybrid {
         h.update(&prime_min.to_le_bytes());
         h.update(&prime_max.to_le_bytes());
         h.update(self.integer_bridge_name().as_bytes());
-        let bridge_layout = self.layout.bitz_params();
+        let bridge_layout = bridge_params(&self.layout);
         h.update(&(bridge_layout.row_vars as u64).to_le_bytes());
         h.update(&(bridge_layout.col_vars as u64).to_le_bytes());
         h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
@@ -793,7 +836,7 @@ impl PreparedFalconHybrid {
         // The bridge schedule is public and deterministic, but bind it explicitly
         // so proofs cannot be replayed under a different bridge error budget.
         let bridge_numerator =
-            integer_bridge::error_numerator(&self.layout.bitz_params(), self.bridge_mode);
+            integer_bridge::error_numerator(&bridge_params(&self.layout), self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
         h.update(&self.grinding.bridge.to_le_bytes());
         if crate::piop::spartan::grinding::falcon_per_site_grinding() {
@@ -852,6 +895,7 @@ impl PreparedFalconHybrid {
         committed: CommittedFalconHybrid,
     ) -> Result<FalconHybridProof, FalconError> {
         let (mut t, digest) = self.transcript(&committed.statement)?;
+        let params = bridge_params(&self.layout);
         let arithmetic_span = tracing::info_span!("falcon_hybrid:arithmetic_prefix").entered();
         let (arithmetic, row_weights, bridge_claim) = prove_binding_prefix(
             &mut t,
@@ -860,14 +904,17 @@ impl PreparedFalconHybrid {
             &committed.traces,
             &committed.arithmetic,
             self.target_bits,
+            params.row_vars,
         )?;
         drop(committed.traces);
         drop(arithmetic_span);
         let bridge_span = tracing::info_span!("falcon_hybrid:binary_bridge").entered();
+        let extra = params.row_vars - self.layout.row_vars();
+        let grouped = (extra > 0).then(|| bridge_columns(committed.arithmetic.rows(), extra));
         let (bridge, a) = integer_bridge::prove(
             &mut t,
-            &committed.arithmetic.layout().bitz_params(),
-            committed.arithmetic.rows(),
+            &params,
+            grouped.as_deref().unwrap_or(committed.arithmetic.rows()),
             self.bridge_mode,
             &bridge_claim.point,
             bridge_claim.modulus,
@@ -976,7 +1023,7 @@ impl PreparedFalconHybrid {
         )?;
         let a = integer_bridge::verify(
             &mut t,
-            &self.layout.bitz_params(),
+            &bridge_params(&self.layout),
             self.bridge_mode,
             &bridge_claim.point,
             proof.arithmetic.binding_terminal[1],
@@ -1492,7 +1539,7 @@ mod tests {
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64 + margin - 1e-9);
                 let numerator = integer_bridge::error_numerator(
-                    &prepared.layout.bitz_params(),
+                    &bridge_params(&prepared.layout),
                     prepared.bridge_mode,
                 );
                 let bits = prepared.grinding.bridge;
@@ -1567,7 +1614,7 @@ mod tests {
                 let g = prepared.grinding;
                 let mut binary = vec![
                     (
-                        integer_bridge::error_numerator(&layout.bitz_params(), prepared.bridge_mode),
+                        integer_bridge::error_numerator(&bridge_params(&layout), prepared.bridge_mode),
                         g.bridge,
                     ),
                     (LINK_ERROR_NUMERATOR, g.links),
@@ -1687,7 +1734,12 @@ mod tests {
             assert!(proof.payload_size_bytes() > 0);
             assert_eq!(
                 proof.encode_integer_column_sums().len(),
-                prepared.layout.bitz_params().cols() * if target == 100 { 16 } else { 20 }
+                bridge_params(&prepared.layout).cols()
+                    * if prepared.bridge_mode == integer_bridge::BridgeMode::Unsplit {
+                        16
+                    } else {
+                        20
+                    }
             );
             assert_eq!(
                 proof

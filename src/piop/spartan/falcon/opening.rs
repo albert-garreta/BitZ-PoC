@@ -148,6 +148,8 @@ pub(super) struct BridgeClaim {
 
 /// The caller binds the commitments and statement before this call, proves SHAKE
 /// and its source links, and authenticates the returned source claim afterward.
+/// The returned row weights cover the bridge's `bridge_row_vars` lowest point
+/// coordinates (13, one source row, unless the bridge groups rows).
 pub(super) fn prove_binding_prefix(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -155,6 +157,7 @@ pub(super) fn prove_binding_prefix(
     traces: &[FalconVerificationTrace],
     source: &FalconSourceWitness,
     target_bits: usize,
+    bridge_row_vars: usize,
 ) -> Result<(FalconBindingPrefixProof, Vec<u128>, BridgeClaim), FalconError> {
     statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
@@ -247,7 +250,10 @@ pub(super) fn prove_binding_prefix(
         binding_terminal[1],
         &field,
     );
-    let row_weights = canonical_eq_weights(&output.point[..layout.row_vars()], &field)?;
+    if !(layout.row_vars()..output.point.len()).contains(&bridge_row_vars) {
+        return Err(piop("bridge row variables out of range"));
+    }
+    let row_weights = canonical_eq_weights(&output.point[..bridge_row_vars], &field)?;
     let bridge_claim = BridgeClaim {
         point: output.point,
         modulus: algebraic.modulus,
