@@ -358,7 +358,7 @@ impl BitZOpeningProof {
                     1 => Some(u64::from_le_bytes(read(Some(8))?.try_into().ok()?)),
                     _ => return None,
                 };
-                Some(OodRound { y, nonce })
+                Some(OodRound { y, y_ext: None, nonce })
             }
             _ => return None,
         };
@@ -479,7 +479,7 @@ pub(super) fn prove_direct<T: Transcript + Send, S: RelationSpec>(
             pcs,
             hint,
             &mut state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
     Ok(Proof::from_parts(
@@ -562,7 +562,7 @@ pub(super) fn verify_direct<T: Transcript + Send, S: RelationSpec>(
             pcs,
             Root(commitment.root),
             state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
@@ -696,7 +696,7 @@ pub fn prove_standalone(
             opener.pcs(),
             hint,
             &mut state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
     Ok(BitZOpeningProof {
@@ -734,7 +734,7 @@ pub fn verify_standalone(
             opener.pcs(),
             Root(commitment.root),
             build_verifier(STANDALONE_SESSION, &tag, &proof.transcript),
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
@@ -909,6 +909,7 @@ mod tests {
                 None => {
                     tampered.ood = Some(OodRound {
                         y: field::Gf128::ONE,
+                        y_ext: None,
                         nonce: None,
                     })
                 }
@@ -1422,7 +1423,7 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
             hint,
             &derived_rows,
             &mut state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
     Ok(Proof::from_parts(
@@ -1541,7 +1542,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
             &pcs,
             Root(commitment.root),
             state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
@@ -1614,7 +1615,7 @@ pub(crate) fn prove_virtual_opening<
             hint,
             derived_rows,
             &mut state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
     Ok(BitZOpeningProof {
@@ -1649,7 +1650,7 @@ pub(crate) fn verify_virtual_opening<
             pcs,
             Root(commitment.root),
             state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| claim.value.expect_base()),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }

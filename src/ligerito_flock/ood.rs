@@ -57,9 +57,7 @@ impl VerifierOod {
                 verify_optional(transcript, packed_vars, params, round)
             }
             VerifierState::Bound(Some((claim, bound))) => {
-                if claim.point.len() != packed_vars
-                    || !round.is_some_and(|round| round.y == bound.y && round.nonce == bound.nonce)
-                {
+                if claim.as_claim().vars() != packed_vars || round != Some(&bound) {
                     return Err(FlockRsError::OodRound);
                 }
                 Ok(Some(claim))

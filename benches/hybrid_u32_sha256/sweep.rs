@@ -401,7 +401,7 @@ mod reporting_tests {
         assert!(child_identity("", "all-binius").unwrap().is_none());
         for (mode, bits) in [("hybrid", 106), ("separate", 112)] {
             let resolved = LigeritoSelection::JOHNSON.resolve(22, bits).unwrap();
-            let value = resolved.report("custom:1:4", Some(OodRoundParams { grinding_bits: 0 }));
+            let value = resolved.report("custom:1:4", Some(OodRoundParams { grinding_bits: 0, extension: false }));
             let log = format!("LIGERITO_CONFIG {value}");
             assert_eq!(child_identity(&log, mode).unwrap(), Some(value));
             let other = if mode == "hybrid" {

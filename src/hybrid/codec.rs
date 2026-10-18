@@ -173,6 +173,7 @@ impl PreparedHybrid {
             }
             Some(OodRound {
                 y,
+                y_ext: None,
                 nonce: if has_nonce {
                     Some(u64::from_le_bytes(
                         r.take(8)?.try_into().expect("eight bytes"),

@@ -89,7 +89,7 @@ impl Round0Prover {
         self.0.round
     }
     pub fn y(&self) -> Gf {
-        self.0.y
+        self.0.value.expect_base().1
     }
 }
 
@@ -98,11 +98,11 @@ pub struct Round0Verifier(OodVerifierClaim);
 
 impl Round0Verifier {
     pub fn y(&self) -> Gf {
-        self.0.y
+        self.0.value.expect_base().1
     }
     /// The replayed point `ζ⃗`.
     pub fn point(&self) -> &[Gf] {
-        &self.0.point
+        self.0.value.expect_base().0
     }
 }
 
@@ -353,8 +353,9 @@ impl BinaryPcs {
             "basis must cover the packed witness"
         );
         let eta: Gf = t.get_field_challenge(&());
-        add_ood_basis(&mut basis, packed, &round0.0.point, eta, None);
-        let target = target + eta * round0.0.y;
+        let (point, y) = round0.0.value.expect_base();
+        add_ood_basis(&mut basis, packed, point, eta, None);
+        let target = target + eta * y;
         ligerito::recursive_prover_with_basis(
             &self.pc,
             packed,
@@ -379,9 +380,9 @@ impl BinaryPcs {
         proof: &LigeritoProof,
     ) -> Result<(), Error> {
         let eta: Gf = t.get_field_challenge(&());
-        let target = target + eta * round0.0.y;
+        let (point, y) = round0.0.value.expect_base();
+        let target = target + eta * y;
         self.check_shape(proof)?;
-        let point = &round0.0.point;
         let eval = |prefix: &[Gf128], log_y: usize| -> Vec<Gf128> {
             let prefix_gf: Vec<Gf> = prefix.iter().copied().collect();
             let mut out = eval_b(&prefix_gf, log_y);
@@ -502,7 +503,7 @@ pub fn read_round0(r: &mut Reader<'_>) -> Result<OodRound, CodecError> {
         1 => Some(r.len()? as u64),
         _ => return Err(CodecError::NonCanonical),
     };
-    Ok(OodRound { y, nonce })
+    Ok(OodRound { y, y_ext: None, nonce })
 }
 
 pub fn write_ring_switch(w: &mut Writer, ring: &RingSwitchProof) {

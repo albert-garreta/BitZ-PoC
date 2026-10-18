@@ -35,12 +35,14 @@ impl GrindingPlan {
         let source =
             *blake3::hash(&bincode::serialize(config).map_err(|e| e.to_string())?).as_bytes();
         let mut blocks: Vec<ChallengeBlock> = Vec::new();
-        let gf_error = 2f64.powi(-128);
+        // One draw's collision error over the config's challenge field.
+        let log_q = ligerito::analysis_log_q(&config.field)?;
+        let gf_error = 2f64.powf(-log_q);
         for (level, params) in config.levels.iter().enumerate() {
             if params.fold_grinding_bits > 32 || params.grinding_bits > 32 {
                 return Err("native Flock work exceeds the 32-bit grinding cap".into());
             }
-            let (pg, query) = params.paper_predicted_bits();
+            let (pg, query) = params.paper_predicted_bits_at(log_q);
             if !pg.is_finite() || !query.is_finite() {
                 return Err("nonfinite Flock soundness bound".into());
             }
@@ -82,7 +84,7 @@ impl GrindingPlan {
                     let mut single = next.clone();
                     single.ood_samples = 1;
                     let ood_bits = single
-                        .paper_predicted_ood_bits()
+                        .paper_predicted_ood_bits_at(log_q)
                         .ok_or("OOD without a Johnson bound")?;
                     if !ood_bits.is_finite() {
                         return Err("nonfinite Flock OOD bound".into());

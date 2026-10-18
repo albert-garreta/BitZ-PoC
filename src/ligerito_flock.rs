@@ -11,7 +11,7 @@ use crate::transcript::traits::Transcript;
 use crate::utils::{cfg_chunks_mut, cfg_into_iter};
 use anyhow::Context;
 use flock_core::challenger::Challenger;
-use flock_core::field::Gf128;
+use flock_core::field::{Gf128, Gf256};
 use flock_core::merkle::HashKind;
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
 use flock_core::pcs::ligerito::{
@@ -550,6 +550,42 @@ fn try_custom_johnson_config_bits(
     k0: usize,
     target_bits: Option<usize>,
 ) -> Result<LigeritoSecurityConfig, String> {
+    try_custom_johnson_ladder_bits(m, r0, k0, 3, 5, target_bits)
+}
+
+/// [`custom_johnson_config_bits`] with the ladder rule's two constants
+/// exposed: recursive levels fold `k_rec` variables until at most
+/// `final_log` remain (the crate's ladder is `k_rec = 3`, `final_log = 5`).
+/// Small commitments (the logarithmic scheme's fold bits) trade a level's
+/// Merkle openings against a larger final message. Every config is still
+/// gated by flock's `validate()`.
+pub(crate) fn try_custom_johnson_ladder_bits(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    k_rec: usize,
+    final_log: usize,
+    target_bits: Option<usize>,
+) -> Result<LigeritoSecurityConfig, String> {
+    try_custom_johnson_ladder_bits_in(m, r0, k0, k_rec, final_log, target_bits, "f128")
+}
+
+/// [`try_custom_johnson_ladder_bits`] with the challenge field named:
+/// `"f128"` (GF(2^128)) or `"f256"` (GF(2^256), the `ext:` profiles), which
+/// sets every level's field-size terms (proximity gaps, OOD binding).
+pub(crate) fn try_custom_johnson_ladder_bits_in(
+    m: usize,
+    r0: usize,
+    k0: usize,
+    k_rec: usize,
+    final_log: usize,
+    target_bits: Option<usize>,
+    field: &str,
+) -> Result<LigeritoSecurityConfig, String> {
+    let log_q = ligerito::analysis_log_q(field)?;
+    if k_rec == 0 {
+        return Err("custom recursive fold width must be positive".into());
+    }
     // Embedded production tables start at m=22. Only scalar/default fields
     // are borrowed from the template (header strings, `eta`, grinding
     // convention, target); `m`, `log_n`, every level shape, and the final
@@ -577,79 +613,107 @@ fn try_custom_johnson_config_bits(
     let mut shapes = vec![(log_n - k0, k0, k0, r0)];
     let mut n_run = log_n - k0;
     let mut rate = r0;
-    while n_run > 5 {
-        let kr = 3.min(n_run);
+    while n_run > final_log {
+        let kr = k_rec.min(n_run);
         rate += 1;
         shapes.push((n_run - kr, kr, kr, rate));
         n_run -= kr;
     }
     cfg.initial_k = k0;
     cfg.final_block.yr_log_n = n_run;
+    cfg.field = field.into();
     cfg.levels = shapes
         .iter()
         .enumerate()
-        .map(|(i, &(mc, il, kr, r))| -> Result<_, String> {
-            let mut lv = tmpl.clone();
-            if let Some(bits) = target_bits {
-                lv.target_security_bits = bits;
-            }
-            lv.log_inv_rate = r;
-            lv.log_msg_cols = mc;
-            lv.log_num_interleaved = il;
-            lv.k_recursive = kr;
-            lv.ood_samples = if i == 0 { 0 } else { 1 };
-            // Queries: smallest Q whose predicted query-phase bits cover
-            // target − query-grinding (validate()'s own gate).
-            let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
-            lv.queries = (1..=10_000)
-                .find(|&q| {
-                    lv.queries = q;
-                    lv.paper_predicted_bits().1 + 1e-3 >= need_q
-                })
-                .ok_or("Johnson query search did not converge")?;
-            // Every query is a distinct codeword position, so a level must be
-            // at least as wide as its query count (flock's prover asserts this
-            // at proving time; fail here, at configuration time, instead).
-            let positions = 1usize << (mc + r);
-            if lv.queries > positions {
-                return Err(format!(
-                    "custom Johnson level {i} is too thin: {} queries over {positions} positions \
-                     (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
-                    lv.queries
-                ));
-            }
-            let (pg, qb) = lv.paper_predicted_bits();
-            lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
-            lv.expected_eps_pg_bits = pg;
-            lv.expected_eps_query_bits = qb;
-            // OOD must clear the target on its own. Deeper levels escalate
-            // samples; L0 CANNOT (its s = 0 implicit post-commit binding is
-            // fixed at `128 − log₂(list) − log₂(μ)` bits — the hard,
-            // field-limited ceiling on the round-by-round target). Record
-            // L0's bits as-is and let `validate()` report honestly when a
-            // requested target exceeds them.
-            if i == 0 {
-                lv.expected_eps_ood_bits = Some(
-                    lv.paper_predicted_ood_bits()
-                        .expect("johnson_ood prediction"),
-                );
-            } else {
-                loop {
-                    let ood = lv
-                        .paper_predicted_ood_bits()
-                        .expect("johnson_ood prediction");
-                    if ood + 1e-3 >= lv.target_security_bits as f64 {
-                        lv.expected_eps_ood_bits = Some(ood);
-                        break;
-                    }
-                    lv.ood_samples += 1;
-                }
-            }
-            Ok(lv)
-        })
+        .map(|(i, &shape)| solve_custom_johnson_level_at(&tmpl, i, shape, target_bits, log_q))
         .collect::<Result<_, _>>()?;
     cfg.validate()?;
     Ok(cfg)
+}
+
+/// One level of [`try_custom_johnson_ladder_bits`]'s ladder: level `i` of
+/// shape `(log_msg_cols, log_num_interleaved, k_recursive, log_inv_rate)`,
+/// its queries, fold grinding and OOD samples solved against the paper's
+/// predictions from the template's scalar fields (`eta`, grinding, target).
+/// Exposed so a composed opening (the logarithmic scheme's merged ladder,
+/// whose levels after the merge carry one more variable) can size a level of
+/// a shape no single ladder produces; such ladders bypass `validate()`'s
+/// whole-chain shape check and must check their own chain.
+pub(crate) fn solve_custom_johnson_level(
+    tmpl: &ligerito::LigeritoLevelConfig,
+    i: usize,
+    shape: (usize, usize, usize, usize),
+    target_bits: Option<usize>,
+) -> Result<ligerito::LigeritoLevelConfig, String> {
+    solve_custom_johnson_level_at(tmpl, i, shape, target_bits, 128.0)
+}
+
+/// [`solve_custom_johnson_level`] over a challenge field of `2^log_q`
+/// elements.
+fn solve_custom_johnson_level_at(
+    tmpl: &ligerito::LigeritoLevelConfig,
+    i: usize,
+    (mc, il, kr, r): (usize, usize, usize, usize),
+    target_bits: Option<usize>,
+    log_q: f64,
+) -> Result<ligerito::LigeritoLevelConfig, String> {
+    let mut lv = tmpl.clone();
+    if let Some(bits) = target_bits {
+        lv.target_security_bits = bits;
+    }
+    lv.log_inv_rate = r;
+    lv.log_msg_cols = mc;
+    lv.log_num_interleaved = il;
+    lv.k_recursive = kr;
+    lv.ood_samples = if i == 0 { 0 } else { 1 };
+    // Queries: smallest Q whose predicted query-phase bits cover
+    // target − query-grinding (validate()'s own gate).
+    let need_q = (lv.target_security_bits - lv.grinding_bits) as f64;
+    lv.queries = (1..=10_000)
+        .find(|&q| {
+            lv.queries = q;
+            lv.paper_predicted_bits_at(log_q).1 + 1e-3 >= need_q
+        })
+        .ok_or("Johnson query search did not converge")?;
+    // Every query is a distinct codeword position, so a level must be
+    // at least as wide as its query count (flock's prover asserts this
+    // at proving time; fail here, at configuration time, instead).
+    let positions = 1usize << (mc + r);
+    if lv.queries > positions {
+        return Err(format!(
+            "custom Johnson level {i} is too thin: {} queries over {positions} positions \
+             (log_msg_cols {mc}, log_inv_rate {r}); use a larger m or a smaller initial_k",
+            lv.queries
+        ));
+    }
+    let (pg, qb) = lv.paper_predicted_bits_at(log_q);
+    lv.fold_grinding_bits = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+    lv.expected_eps_pg_bits = pg;
+    lv.expected_eps_query_bits = qb;
+    // OOD must clear the target on its own. Deeper levels escalate
+    // samples; L0 CANNOT (its s = 0 implicit post-commit binding is
+    // fixed at `128 − log₂(list) − log₂(μ)` bits — the hard,
+    // field-limited ceiling on the round-by-round target). Record
+    // L0's bits as-is and let `validate()` report honestly when a
+    // requested target exceeds them.
+    if i == 0 {
+        lv.expected_eps_ood_bits = Some(
+            lv.paper_predicted_ood_bits_at(log_q)
+                .expect("johnson_ood prediction"),
+        );
+    } else {
+        loop {
+            let ood = lv
+                .paper_predicted_ood_bits_at(log_q)
+                .expect("johnson_ood prediction");
+            if ood + 1e-3 >= lv.target_security_bits as f64 {
+                lv.expected_eps_ood_bits = Some(ood);
+                break;
+            }
+            lv.ood_samples += 1;
+        }
+    }
+    Ok(lv)
 }
 
 /// Queries-only security: a **UDR-regime** config at the
@@ -1343,9 +1407,12 @@ pub fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
     let q = arith.modulus_u128();
     let mut table = vec![1u128 % q];
     for &coord in r {
+        // One prepared factor per coordinate: the entries stay canonical, so
+        // each costs a single modular multiplication.
+        let factor = arith.prepare_multiplier_u128(coord);
         let mut next = Vec::with_capacity(table.len() * 2);
         for &v in &table {
-            let v1 = arith.mul_u128(v, coord);
+            let v1 = arith.mul_canonical_u128(v, &factor);
             let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
             next.push(v0);
             next.push(v1);
@@ -1363,13 +1430,21 @@ pub fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
 pub struct OodRoundParams {
     /// Proof-of-work bits before the `ζ` draw (`0` = no boundary).
     pub grinding_bits: u32,
+    /// `ζ` is drawn from GF(2^256) ([`Gf256`]) rather than GF(2^128): the
+    /// Round 0 of an opener whose Ligerito challenges live in the extension
+    /// (`field = "f256"`, the `ext:` profiles).
+    pub extension: bool,
 }
 
 /// The prover's Round-0 messages.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OodRound {
-    /// `y = MLE[P](ζ⃗)`, the packed message's out-of-domain evaluation.
+    /// `y = MLE[P](ζ⃗)`, the packed message's out-of-domain evaluation
+    /// (its base coordinate when the round runs over GF(2^256)).
     pub y: Gf,
+    /// The `Y` coordinate of `y` when `ζ` is drawn from GF(2^256)
+    /// ([`OodRoundParams::extension`]); `None` over GF(2^128).
+    pub y_ext: Option<Gf>,
     /// The proof-of-work nonce preceding the `ζ` draw (`Some` iff the
     /// round's difficulty is nonzero).
     pub nonce: Option<u64>,
@@ -1403,7 +1478,9 @@ pub fn ood_round_bits(cfg: &LigeritoSecurityConfig, packed_vars: usize) -> Optio
     let list = 1.0 / (2.0 * eta * rho.sqrt());
     let pairs = (list * (list - 1.0) / 2.0).max(1.0);
     let degree = ((packed_vars as f64).exp2() - 1.0).max(1.0);
-    Some(128.0 - pairs.log2() - degree.log2())
+    // `|K|` is the field `ζ` is drawn from: the config's challenge field.
+    let log_q = ligerito::analysis_log_q(&cfg.field).ok()?;
+    Some(log_q - pairs.log2() - degree.log2())
 }
 
 /// Round-0 parameters at target `lambda`: in the Johnson regime, the
@@ -1421,7 +1498,10 @@ pub fn ood_round_params(
     } else {
         deficit.ceil() as u32
     };
-    Some(OodRoundParams { grinding_bits })
+    Some(OodRoundParams {
+        grinding_bits,
+        extension: cfg.field == "f256",
+    })
 }
 
 /// Number of packed variables of a committed message (`2^{m_p}` elements).
@@ -1436,7 +1516,7 @@ fn packed_message_vars(p_msg: &[Gf128]) -> usize {
 /// The Round-0 evaluation point `ζ⃗ = (ζ^{2^0}, ζ^{2^1}, …)`: distinct
 /// multilinear monomials become distinct powers of `ζ`.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
+pub(crate) fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
     let mut point = Vec::with_capacity(vars);
     let mut cur = zeta;
     for _ in 0..vars {
@@ -1468,7 +1548,7 @@ fn build_eq_scaled(point: &[Gf], scalar: Gf) -> Vec<Gf> {
 /// `MLE[P](point)` for the packed message — block-parallel, deferred
 /// reduction inside each block.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
+pub(crate) fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
     use crate::utils::wide_mul::WideMulAcc;
     let vars = packed_message_vars(p_msg);
     assert_eq!(point.len(), vars, "OOD point dimension");
@@ -1505,15 +1585,163 @@ fn absorb_ood_round_header(
     transcript.absorb_slice(OOD_ROUND_DOMAIN);
     transcript.absorb_slice(&(packed_vars as u64).to_le_bytes());
     transcript.absorb_slice(&params.grinding_bits.to_le_bytes());
+    if params.extension {
+        transcript.absorb_slice(OOD_ROUND_EXT_DOMAIN);
+    }
+}
+
+/// Marks a Round 0 whose `ζ` is drawn from GF(2^256).
+const OOD_ROUND_EXT_DOMAIN: &[u8] = b"bitz/core/ood-round/gf2-256/v1";
+
+/// The Round-0 claim `MLE[P](point) = y`, borrowed: over GF(2^128), or over
+/// GF(2^256) for an opener whose Ligerito challenges live in the extension.
+#[derive(Clone, Copy, Debug)]
+pub enum OodClaim<'a> {
+    Base(&'a [Gf], Gf),
+    Ext(&'a [Gf256], Gf256),
+}
+
+impl<'a> OodClaim<'a> {
+    /// The point's number of coordinates (the packed message's variables).
+    pub(crate) fn vars(&self) -> usize {
+        match self {
+            Self::Base(point, _) => point.len(),
+            Self::Ext(point, _) => point.len(),
+        }
+    }
+
+    /// The base-field claim; `None` over the extension (for the openings
+    /// that only run GF(2^128) Ligerito).
+    pub(crate) fn base(self) -> Option<(&'a [Gf], Gf)> {
+        match self {
+            Self::Base(point, y) => Some((point, y)),
+            Self::Ext(..) => None,
+        }
+    }
+}
+
+impl<'a> From<(&'a [Gf], Gf)> for OodClaim<'a> {
+    fn from((point, y): (&'a [Gf], Gf)) -> Self {
+        Self::Base(point, y)
+    }
+}
+
+/// The Round-0 point and value, owned.
+#[derive(Clone, Debug)]
+pub(crate) enum OodPoint {
+    Base { point: Vec<Gf>, y: Gf },
+    Ext { point: Vec<Gf256>, y: Gf256 },
+}
+
+impl OodPoint {
+    /// The GF(2^128) point and value, for openers that only configure
+    /// GF(2^128) rounds (a round's field follows its parameters, and
+    /// [`verify_ood_round`] rejects a record of the other field).
+    pub(crate) fn expect_base(&self) -> (&[Gf], Gf) {
+        match self {
+            Self::Base { point, y } => (point, *y),
+            Self::Ext { .. } => panic!("Round 0 over GF(2^256) where GF(2^128) is configured"),
+        }
+    }
+
+    pub(crate) fn as_claim(&self) -> OodClaim<'_> {
+        match self {
+            Self::Base { point, y } => OodClaim::Base(point, *y),
+            Self::Ext { point, y } => OodClaim::Ext(point, *y),
+        }
+    }
+}
+
+/// `(ζ, ζ², ζ⁴, …)` over GF(2^256): [`ood_point`]'s point in the extension.
+pub(crate) fn ood_point_ext(zeta: Gf256, vars: usize) -> Vec<Gf256> {
+    let mut point = Vec::with_capacity(vars);
+    let mut cur = zeta;
+    for _ in 0..vars {
+        point.push(cur);
+        cur = cur.square();
+    }
+    point
+}
+
+/// `scalar·eq(·, point)` over the extension, [`build_eq_scaled`]'s order.
+fn build_eq_scaled_ext(point: &[Gf256], scalar: Gf256) -> Vec<Gf256> {
+    let mut table = vec![scalar];
+    for &z in point {
+        let mut next = Vec::with_capacity(table.len() * 2);
+        next.extend(table.iter().map(|&v| v + v * z));
+        next.extend(table.iter().map(|&v| v * z));
+        table = next;
+    }
+    table
+}
+
+/// `MLE[P](point)` at an extension point ([`ood_eval`] over GF(2^256)).
+pub(crate) fn ood_eval_ext(p_msg: &[Gf128], point: &[Gf256]) -> Gf256 {
+    let vars = packed_message_vars(p_msg);
+    assert_eq!(point.len(), vars, "OOD point dimension");
+    let lo = vars.min(OOD_BLOCK_LOG);
+    let block = 1usize << lo;
+    let tail = build_eq_scaled_ext(&point[..lo], Gf256::ONE);
+    let head = build_eq_scaled_ext(&point[lo..], Gf256::ONE);
+    let inner: Vec<Gf256> = cfg_into_iter!(0..head.len())
+        .map(|hi| {
+            let base = hi * block;
+            tail.iter()
+                .enumerate()
+                .fold(Gf256::ZERO, |acc, (j, &t)| acc + t.mul_base(p_msg[base + j]))
+        })
+        .collect();
+    inner
+        .iter()
+        .zip(head.iter())
+        .fold(Gf256::ZERO, |acc, (&i, &h)| acc + i * h)
+}
+
+/// Add `η·eq(·, point)` to an extension basis ([`add_ood_basis`] over
+/// GF(2^256), without the fused round-0 message).
+pub(crate) fn add_ood_basis_ext(b: &mut [Gf256], point: &[Gf256], eta: Gf) {
+    let vars = point.len();
+    assert_eq!(b.len(), 1usize << vars, "basis length must match the OOD point");
+    let lo = vars.min(OOD_BLOCK_LOG);
+    let block = 1usize << lo;
+    let tail = build_eq_scaled_ext(&point[..lo], Gf256::ONE);
+    let head = build_eq_scaled_ext(&point[lo..], Gf256::from_base(eta));
+    cfg_chunks_mut!(b, block).enumerate().for_each(|(hi, chunk)| {
+        let scale = head[hi];
+        for (slot, &t) in chunk.iter_mut().zip(tail.iter()) {
+            *slot += scale * t;
+        }
+    });
+}
+
+/// [`ood_residual_evals`] over GF(2^256): `η·eq(ris, point[..k])·eq(·, point[k..])`.
+pub(crate) fn ood_residual_evals_ext(
+    ris: &[Gf256],
+    remaining_vars: usize,
+    point: &[Gf256],
+    eta: Gf,
+) -> Vec<Gf256> {
+    let bound = ris.len();
+    assert_eq!(bound + remaining_vars, point.len(), "prefix + tail must cover the OOD point");
+    let mut scalar = Gf256::from_base(eta);
+    for (r, z) in ris.iter().zip(point.iter()) {
+        scalar *= Gf256::ONE + *r + *z;
+    }
+    build_eq_scaled_ext(&point[bound..], scalar)
 }
 
 /// The prover's view of the round: the point (kept, the eq table is
 /// rebuilt scaled by `η_ood` at batching time), the value, and the
 /// messages that go on the wire.
 pub(crate) struct OodProverClaim {
-    pub(crate) point: Vec<Gf>,
-    pub(crate) y: Gf,
+    pub(crate) value: OodPoint,
     pub(crate) round: OodRound,
+}
+
+impl OodProverClaim {
+    pub(crate) fn as_claim(&self) -> OodClaim<'_> {
+        self.value.as_claim()
+    }
 }
 
 /// Round 0 on the prover side: bind the parameters, grind, draw `ζ`,
@@ -1549,21 +1777,44 @@ pub(crate) fn prove_ood_round_packed(
             .expect("Round-0 grinding difficulty is validated by the profile"),
         )
     };
+    if params.extension {
+        let a: Gf = transcript.get_field_challenge(&());
+        let b: Gf = transcript.get_field_challenge(&());
+        let point = ood_point_ext(Gf256::new(a, b), vars);
+        let y = ood_eval_ext(p_msg, &point);
+        crate::ligerito::absorb_ood_value_ext(transcript, y);
+        return OodProverClaim {
+            value: OodPoint::Ext { point, y },
+            round: OodRound {
+                y: y.a,
+                y_ext: Some(y.b),
+                nonce,
+            },
+        };
+    }
     let zeta: Gf = transcript.get_field_challenge(&());
     let point = ood_point(zeta, vars);
     let y = ood_eval(p_msg, &point);
     crate::ligerito::absorb_ood_value(transcript, y);
     OodProverClaim {
-        point,
-        y,
-        round: OodRound { y, nonce },
+        value: OodPoint::Base { point, y },
+        round: OodRound {
+            y,
+            y_ext: None,
+            nonce,
+        },
     }
 }
 
 /// The verifier's view of the round: the point and the claimed value.
 pub(crate) struct OodVerifierClaim {
-    pub(crate) point: Vec<Gf>,
-    pub(crate) y: Gf,
+    pub(crate) value: OodPoint,
+}
+
+impl OodVerifierClaim {
+    pub(crate) fn as_claim(&self) -> OodClaim<'_> {
+        self.value.as_claim()
+    }
 }
 
 /// Round 0 on the verifier side: the same frame and draw, the proof's
@@ -1586,12 +1837,31 @@ pub(crate) fn verify_ood_round(
         )
         .map_err(|_| FlockRsError::OodRound)?,
     }
-    let zeta: Gf = transcript.get_field_challenge(&());
-    crate::ligerito::absorb_ood_value(transcript, round.y);
-    Ok(OodVerifierClaim {
-        point: ood_point(zeta, packed_vars),
-        y: round.y,
-    })
+    match (params.extension, round.y_ext) {
+        (true, Some(y_ext)) => {
+            let a: Gf = transcript.get_field_challenge(&());
+            let b: Gf = transcript.get_field_challenge(&());
+            let y = Gf256::new(round.y, y_ext);
+            crate::ligerito::absorb_ood_value_ext(transcript, y);
+            Ok(OodVerifierClaim {
+                value: OodPoint::Ext {
+                    point: ood_point_ext(Gf256::new(a, b), packed_vars),
+                    y,
+                },
+            })
+        }
+        (false, None) => {
+            let zeta: Gf = transcript.get_field_challenge(&());
+            crate::ligerito::absorb_ood_value(transcript, round.y);
+            Ok(OodVerifierClaim {
+                value: OodPoint::Base {
+                    point: ood_point(zeta, packed_vars),
+                    y: round.y,
+                },
+            })
+        }
+        _ => Err(FlockRsError::OodRound),
+    }
 }
 
 /// Add `η·eq(·, point)` to the η-combined Ligerito basis `b` (block-
@@ -1829,16 +2099,16 @@ mod support_tests {
         assert!((bits - (128.0 - 11.267 - 15.0)).abs() < 0.05, "{bits}");
         assert_eq!(
             ood_round_params(&johnson, 15, 100),
-            Some(OodRoundParams { grinding_bits: 0 })
+            Some(OodRoundParams { grinding_bits: 0, extension: false })
         );
         assert_eq!(
             ood_round_params(&johnson, 15, 110),
-            Some(OodRoundParams { grinding_bits: 9 })
+            Some(OodRoundParams { grinding_bits: 9, extension: false })
         );
         // The paper's schedule ⌈log ℓ − 23.7⌉ at ℓ = 2^30 (m_p = 23): 7 bits.
         assert_eq!(
             ood_round_params(&johnson, 23, 100),
-            Some(OodRoundParams { grinding_bits: 7 })
+            Some(OodRoundParams { grinding_bits: 7, extension: false })
         );
         let udr = custom_udr_config_bits(22, 3, 4, None);
         assert_eq!(ood_round_bits(&udr, 15), None);
@@ -1848,7 +2118,7 @@ mod support_tests {
         // config runs without the round.
         assert_eq!(
             sha_lig_ood_params(15),
-            Some(OodRoundParams { grinding_bits: 0 })
+            Some(OodRoundParams { grinding_bits: 0, extension: false })
         );
         assert!(sha_lig_configs(10).is_err());
     }
@@ -1860,6 +2130,7 @@ mod support_tests {
     fn an_opening_with_no_round_due_rejects_a_record() {
         let round = OodRound {
             y: Gf::one(),
+            y_ext: None,
             nonce: None,
         };
         let mut transcript = Blake3Transcript::new();

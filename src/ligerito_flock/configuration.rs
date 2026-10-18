@@ -12,6 +12,14 @@ pub enum LigeritoSelection {
         log_inv_rate: usize,
         initial_k: usize,
     },
+    /// [`Self::CustomJohnson`] with every Ligerito challenge in GF(2^256)
+    /// (`field = "f256"`): the field-size terms of the analysis (proximity
+    /// gaps, OOD binding, Round 0) gain 128 bits, so the Johnson regime
+    /// reaches 128-bit targets. Profile `ext:r:k`.
+    CustomJohnsonExt {
+        log_inv_rate: usize,
+        initial_k: usize,
+    },
     CustomUdr {
         log_inv_rate: usize,
         initial_k: usize,
@@ -53,9 +61,9 @@ impl LigeritoSelection {
             _ => {}
         }
         let parts: Vec<_> = request.split(':').collect();
-        if !(3..=4).contains(&parts.len()) || !matches!(parts[0], "custom" | "udr" | "udrg") {
+        if !(3..=4).contains(&parts.len()) || !matches!(parts[0], "custom" | "ext" | "udr" | "udrg") {
             return Err(format!(
-                "unknown Ligerito profile {request:?}; use custom:1:4 or udrg:1:4"
+                "unknown Ligerito profile {request:?}; use custom:1:4, ext:1:4 or udrg:1:4"
             ));
         }
         let parse = |part: &str| {
@@ -71,6 +79,11 @@ impl LigeritoSelection {
         }
         Ok(if parts[0] == "custom" {
             Self::CustomJohnson {
+                log_inv_rate,
+                initial_k,
+            }
+        } else if parts[0] == "ext" {
+            Self::CustomJohnsonExt {
                 log_inv_rate,
                 initial_k,
             }
@@ -90,6 +103,10 @@ impl LigeritoSelection {
                 log_inv_rate,
                 initial_k,
             } => format!("custom:{log_inv_rate}:{initial_k}"),
+            Self::CustomJohnsonExt {
+                log_inv_rate,
+                initial_k,
+            } => format!("ext:{log_inv_rate}:{initial_k}"),
             Self::CustomUdr {
                 log_inv_rate,
                 initial_k,
@@ -121,6 +138,13 @@ impl LigeritoSelection {
             } => {
                 validate_geometry(packed_vars, log_inv_rate, initial_k)?;
                 try_custom_johnson_config_bits(m, log_inv_rate, initial_k, Some(target))?
+            }
+            Self::CustomJohnsonExt {
+                log_inv_rate,
+                initial_k,
+            } => {
+                validate_geometry(packed_vars, log_inv_rate, initial_k)?;
+                try_custom_johnson_ladder_bits_in(m, log_inv_rate, initial_k, 3, 5, Some(target), "f256")?
             }
             Self::CustomUdr {
                 log_inv_rate,
@@ -169,9 +193,9 @@ impl LigeritoSelection {
 }
 
 fn validate_geometry(packed_vars: usize, rate: usize, initial_k: usize) -> Result<(), String> {
-    if !(1..=6).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
+    if !(1..=10).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
         return Err(
-            "Ligerito requires inverse-rate exponent 1..6 and 1 <= initial_k < packed variables"
+            "Ligerito requires inverse-rate exponent 1..10 and 1 <= initial_k < packed variables"
                 .into(),
         );
     }
@@ -205,6 +229,11 @@ impl ResolvedLigerito {
     pub fn ood_bits(&self) -> Option<f64> {
         self.ood_bits
     }
+    /// Whether the challenges live in GF(2^256) (`field = "f256"`, the
+    /// `ext:` profiles): the opening runs [`flock_core::pcs::ligerito::ext`].
+    pub fn extension(&self) -> bool {
+        self.security.field == "f256"
+    }
     pub fn round0(&self, target: u32) -> Result<Option<OodRoundParams>, String> {
         self.ood_bits
             .map(|bits| {
@@ -212,7 +241,7 @@ impl ResolvedLigerito {
                 if grinding_bits > crate::piop::spartan::profile::MAX_DERIVED_GRINDING_BITS {
                     return Err("Round 0 exceeds the 24-bit derived grinding cap".into());
                 }
-                Ok(OodRoundParams { grinding_bits })
+                Ok(OodRoundParams { grinding_bits, extension: self.extension() })
             })
             .transpose()
     }
@@ -281,6 +310,7 @@ impl ResolvedLigerito {
             }
             Some(OodRoundParams {
                 grinding_bits: grinding_bits as u32,
+                extension: resolved.extension(),
             })
         } else {
             None

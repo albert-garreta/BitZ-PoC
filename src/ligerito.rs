@@ -72,6 +72,12 @@ pub(crate) fn absorb_ood_value(transcript: &mut impl Transcript, y: Gf) {
     absorb_gf_slice(transcript, 0x50, &[y]);
 }
 
+/// [`absorb_ood_value`] for a GF(2^256) value (domain tag 0x51): both
+/// coordinates, `a` then `b`.
+pub(crate) fn absorb_ood_value_ext(transcript: &mut impl Transcript, y: flock_core::field::Gf256) {
+    absorb_gf_slice(transcript, 0x51, &[y.a, y.b]);
+}
+
 /// In-place multilinear bind of the LOWEST index bit:
 /// `tbl'[i] = tbl[2i] + r·(tbl[2i] + tbl[2i+1])`.
 #[allow(clippy::arithmetic_side_effects)]

@@ -704,6 +704,7 @@ mod tests {
             let (prefix, reduction, mut bitz) = proof.clone().into_parts();
             bitz.ood = Some(crate::ligerito_flock::OodRound {
                 y: field::Gf128::ONE,
+                y_ext: None,
                 nonce,
             });
             let bitz = BitZOpeningProof::from_bytes(&bitz.to_bytes()).unwrap();
