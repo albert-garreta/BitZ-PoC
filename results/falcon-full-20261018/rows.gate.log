@@ -1,0 +1,4 @@
+[bench_gate] full-falcon-rows: idle 86% (streak 1/3)
+[bench_gate] full-falcon-rows: idle 87% (streak 2/3)
+[bench_gate] full-falcon-rows: idle 88% (streak 3/3)
+[bench_gate] full-falcon-rows: starting (swap baseline 1.46 GB, guard +12 GB)

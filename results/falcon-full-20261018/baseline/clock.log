@@ -1,0 +1,8 @@
+10:04:53 U exit=0 ghz=3.86 rss=2508MiB 100%; charged
+10:05:10 UB exit=0 ghz=3.90 rss=2484MiB 100%; charged
+10:05:27 P exit=0 ghz=3.83 rss=2500MiB 100%; charged
+10:05:44 PB exit=0 ghz=3.90 rss=2489MiB 100%; charged
+10:06:01 U-r2 exit=0 ghz=3.85 rss=2494MiB 100%; charged
+10:06:18 PB-r2 exit=0 ghz=3.88 rss=2481MiB 100%; charged
+10:06:27 PB-report exit=0 ghz=4.31 rss=1459MiB 100%; charged
+10:06:42 PB-trace exit=0 ghz=4.09 rss=2224MiB 100%; charged

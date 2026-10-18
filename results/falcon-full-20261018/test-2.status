@@ -1,0 +1,5 @@
+default exit=0
+persite exit=101
+rows16 exit=101
+small16 exit=101
+DONE

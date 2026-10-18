@@ -1,0 +1,2 @@
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/bench_results/full-falcon-20261018/bin/hybrid-head acb590d510665df72a22965a60447619
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

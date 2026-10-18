@@ -1,0 +1,17 @@
+10:44:47 small-t13-r1 exit=0 ghz=3.91 rss=2485MiB 100%; charged
+10:45:05 small-t14-r1 exit=0 ghz=3.71 rss=2465MiB 100%; charged
+10:45:22 small-t15-r1 exit=0 ghz=3.73 rss=2455MiB 100%; charged
+10:45:40 default-t16-r1 exit=0 ghz=3.86 rss=2514MiB 100%; charged
+10:45:56 default-t13-r1 exit=0 ghz=3.85 rss=2480MiB 100%; charged
+10:46:29 small-t16-r1 exit=0 ghz=3.34 rss=2525MiB 100%; charged
+10:46:45 small-t13-r2 exit=0 ghz=3.88 rss=2485MiB 100%; charged
+10:47:03 small-t14-r2 exit=0 ghz=3.70 rss=2453MiB 100%; charged
+10:47:20 small-t15-r2 exit=0 ghz=3.73 rss=2447MiB 100%; charged
+10:47:37 default-t16-r2 exit=0 ghz=3.85 rss=2499MiB 100%; charged
+10:47:53 default-t13-r2 exit=0 ghz=3.86 rss=2490MiB 100%; charged
+10:48:25 small-t16-r2 exit=0 ghz=3.33 rss=2530MiB 100%; charged
+10:48:34 small-t13-report exit=0 ghz=4.31 rss=1455MiB 100%; charged
+10:48:43 small-t14-report exit=0 ghz=4.11 rss=1468MiB 100%; charged
+10:48:53 small-t15-report exit=0 ghz=4.11 rss=1468MiB 100%; charged
+10:49:04 small-t16-report exit=0 ghz=3.59 rss=1466MiB 100%; charged
+10:49:29 small-t13-t1 exit=0 ghz=4.39 rss=2211MiB 100%; charged

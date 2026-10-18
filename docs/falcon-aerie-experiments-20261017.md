@@ -164,3 +164,27 @@ Traced verifier at 32K (small, keyed, t=13), 26.5 ms in total:
 | Keyed ring | 2.2 ms |
 
 Prover phases, same configuration: forest 280 ms, binder 168 ms, integer outer 77 ms, keyed ring 159 ms (canonical: about 127 ms), PCS 49 ms, commit 80 ms.
+
+## Full Falcon (hybrid prover, `08dee73eb`)
+
+The hybrid (`benches/falcon_hybrid.rs`, which also proves SHAKE256 HashToPoint) reads the same variables:
+- `BITZ_FALCON_GRINDING_MODEL`: wired in since `17482040f`.
+- `BITZ_FALCON_BRIDGE_ROWS=13..16`: groups `2^(t-13)` source rows per bridge column and takes the row weights over the binder point's lowest `t` coordinates.
+- `BITZ_FALCON_PRIME=small`: at 128 bits samples `[2^(127-t), 2^(128-t) - 2^(116-t)]` and runs the bridge unsplit. The prime-field schedule floors follow the sampled family. With more rows the 100-bit family follows `t` too.
+
+Its binder replay is on by default only on Linux x86-64. `BITZ_BENCH_BINDER_REPLAY=on` forces it, like `BINDING_STRATEGY=optimized` for the algebraic binder.
+
+Falcon-512 @128, 1024 signatures, 10 threads (pooled medians, `results/falcon-full-20261018`):
+
+| Configuration | Prove | Verify | Proof |
+|---|---|---|---|
+| as built on macOS | 542 ms | 28.0 ms | 697 KB |
+| + binder replay | 511 ms | 27.9 ms | 697 KB |
+| + per-site | 405 ms | 28.1 ms | 698 KB |
+| + 2^16 bridge rows | 411 ms | 27.9 ms | 556 KB |
+| + small prime | 3,089 ms | 27.9 ms | 550 KB |
+| per-site, small prime, 2^13 rows | 383 ms | 27.4 ms | 665 KB |
+
+The small prime pays only at 2^13 rows. Every prime-field site grinds 11 to 14 bits more than with the default prime; at 2^16 rows, the integer rounds grind 19 bits each and the linear batch 28. The linear numerator (`FalconSecurityNumerators::linear`) includes the batch size.
+
+The keyed ring check is not ported. The hybrid's ring check commits `h` and `s2` and costs 7.8 ms prove, under 2 ms verify and 12.6 KB at 1024.
