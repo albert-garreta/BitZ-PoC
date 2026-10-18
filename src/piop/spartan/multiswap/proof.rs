@@ -551,6 +551,7 @@ fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
     h.update(&[match config.merkle_hash() {
         flock_core::merkle::HashKind::Sha256 => 0,
         flock_core::merkle::HashKind::Blake3 => 1,
+        flock_core::merkle::HashKind::Sha256Compress => 2,
     }]);
     *h.finalize().as_bytes()
 }

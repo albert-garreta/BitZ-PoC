@@ -143,7 +143,7 @@ impl LigeritoSelection {
                 config
             }
         };
-        security.hash = "blake3".into();
+        security.hash = super::MERKLE_HASH.as_str().into();
         security.validate()?;
         let ood_bits = ood_round_bits(&security, packed_vars);
         let johnson = security
@@ -169,9 +169,9 @@ impl LigeritoSelection {
 }
 
 fn validate_geometry(packed_vars: usize, rate: usize, initial_k: usize) -> Result<(), String> {
-    if !(1..=4).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
+    if !(1..=8).contains(&rate) || initial_k == 0 || initial_k >= packed_vars {
         return Err(
-            "Ligerito requires inverse-rate exponent 1..4 and 1 <= initial_k < packed variables"
+            "Ligerito requires inverse-rate exponent 1..8 and 1 <= initial_k < packed variables"
                 .into(),
         );
     }
@@ -331,7 +331,7 @@ mod tests {
                 let resolved = selection.resolve(m - LOG_PACKING, 100).unwrap();
                 assert_eq!(resolved.prover().initial_k, 4);
                 assert_eq!(resolved.prover().log_inv_rates[0], 1);
-                assert_eq!(resolved.prover().merkle_hash, HashKind::Blake3);
+                assert_eq!(resolved.prover().merkle_hash, super::MERKLE_HASH);
                 assert_eq!(
                     resolved.ood_bits().is_some(),
                     selection == LigeritoSelection::JOHNSON

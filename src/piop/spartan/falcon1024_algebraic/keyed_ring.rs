@@ -781,6 +781,50 @@ mod exact {
     }
 }
 
+/// The public steps of [`verify`] for the recursion circuit, which absorbs
+/// the (committed) quotient and checks its bounds itself.
+#[cfg(all(feature = "recursion", feature = "bench-internals"))]
+pub(super) mod recursion {
+    use super::*;
+
+    pub(crate) const QUOTIENT_LABEL: &[u8] = b"integer-batch-quotient";
+    pub(crate) const POINT_GRINDING_DOMAIN: &[u8] = <PointGrinding as crate::piop::spartan::grinding::GrindingDomain>::DOMAIN;
+
+    /// Everything [`verify`] does before absorbing the quotient.
+    pub(crate) fn begin(
+        transcript: &mut impl Transcript,
+        layout: &Layout,
+        public: &FalconAlgebraicStatement,
+        field: &Cfg,
+        grinding_bits: u32,
+        points: usize,
+    ) -> Result<Vec<[u16; BATCHING_COEFFICIENTS]>, FalconError> {
+        validate_context(layout, public, field, grinding_bits, points)?;
+        bind(transcript, layout, field, grinding_bits, points);
+        Ok(instance_polynomials(transcript, layout.batch()))
+    }
+
+    /// The projection points and merge coefficients.
+    pub(crate) fn points(transcript: &mut impl Transcript, field: &Cfg, points: usize) -> Result<(Vec<F>, Vec<F>), FalconError> {
+        sample_points(transcript, field, points)
+    }
+
+    /// The verifier claim with the quotient's contribution left out (the
+    /// target is linear in the quotient: the circuit adds
+    /// `Σ_k (Σ_p c_p q ξ_p^k) K_k` over the committed coefficients).
+    pub(crate) fn claim_without_quotient(
+        public: &FalconAlgebraicStatement,
+        polynomials: &[[u16; BATCHING_COEFFICIENTS]],
+        points: Vec<F>,
+        coefficients: &[F],
+        field: &Cfg,
+    ) -> VerifierClaim {
+        let zeros = vec![0i64; QUOTIENT_LEN];
+        let (rows, target) = rows_and_target(public, polynomials, &zeros, &points, coefficients, field);
+        VerifierClaim { points, rows, target }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

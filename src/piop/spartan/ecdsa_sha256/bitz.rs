@@ -87,6 +87,26 @@ fn block_weights(
     Ok((rows, cols))
 }
 
+/// The dense opening's session label (the circuit replays it).
+#[cfg(feature = "recursion")]
+pub(crate) const DENSE_SESSION: &[u8] = SESSION;
+
+/// The dense opening's parameters, committed shape, ladder and native claim
+/// weights (all public), for the verifier circuit.
+#[cfg(feature = "recursion")]
+pub(crate) fn dense_opening(
+    prepared: &PreparedSha256Ecdsa,
+    modulus: u128,
+    security: &Sha256EcdsaSecurity,
+    point: &[F],
+    scale: &F,
+    cfg: &Config,
+) -> Result<(BitZParams, Shape, Pcs, Vec<u128>, Vec<u128>)> {
+    let (params, committed, pcs) = dense_setup(prepared, modulus, security)?;
+    let (rows, cols) = native_weights(prepared, point, scale, cfg)?;
+    Ok((params, committed, pcs, rows, cols))
+}
+
 /// The claim grid, the committed grid and the ladder as the dense scheme
 /// sees them.
 fn dense_setup(

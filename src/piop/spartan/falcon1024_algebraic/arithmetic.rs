@@ -1822,6 +1822,91 @@ fn sample_point(
 ) -> Result<Vec<F>, FalconError> {
     (0..count).map(|_| sample(transcript, field)).collect()
 }
+
+/// The public pieces of [`verify_keyed_ring`] for the recursion circuit:
+/// domains, round counts, and every weight that depends only on the
+/// statement and the challenges.
+#[cfg(all(feature = "recursion", feature = "bench-internals"))]
+pub(super) mod recursion {
+    use super::*;
+    use crate::piop::spartan::grinding::GrindingDomain;
+
+    pub(crate) const NORM_DOMAIN: &[u8] = super::NORM_DOMAIN;
+    pub(crate) const NORM_INSTANCE_DOMAIN: &[u8] = <NormInstance as GrindingDomain>::DOMAIN;
+    pub(crate) const NORM_ROUND_DOMAIN: &[u8] = <NormRound as GrindingDomain>::DOMAIN;
+    pub(crate) const MERGE_DOMAIN: &[u8] = super::MERGE_DOMAIN;
+    pub(crate) const MERGE_GRINDING_DOMAIN: &[u8] = <Merge as GrindingDomain>::DOMAIN;
+    pub(crate) const BINDING_ROUND_DOMAIN: &[u8] = <BindingRound as GrindingDomain>::DOMAIN;
+    pub(crate) const BINDER_DOMAIN: &[u8] = word_binding::recursion::DOMAIN;
+    pub(crate) const BINDER_TERMINALS: &[u8] = word_binding::recursion::TERMINALS;
+    pub(crate) const TERMINAL_MERGE_DOMAIN: &[u8] = word_binding::recursion::TERMINAL_MERGE_DOMAIN;
+    pub(crate) const SOURCE_OPENING_LABEL: &[u8] = word_binding::recursion::SOURCE_OPENING_LABEL;
+
+    pub(crate) fn validate(layout: &Layout, field: &Cfg) -> Result<(), FalconError> {
+        validate_field(layout, field)
+    }
+
+    pub(crate) fn instance_vars(layout: &Layout) -> usize {
+        layout.capacity().ilog2() as usize
+    }
+
+    pub(crate) fn norm_rounds(layout: &Layout) -> usize {
+        COEFFICIENT_LOG + 1 + instance_vars(layout)
+    }
+
+    pub(crate) fn binder_rounds(layout: &Layout) -> usize {
+        word_binding::recursion::rounds(layout)
+    }
+
+    /// `β² Σ_{i < batch} eq(ρ, i)`, the norm sumcheck's claim before slack.
+    pub(crate) fn norm_target(layout: &Layout, instance_point: &[F], field: &Cfg) -> Result<F, FalconError> {
+        let weights = eq_table(instance_point, field).map_err(failure)?;
+        Ok(super::norm_target(layout, &weights, field))
+    }
+
+    /// The factor `f` of the norm terminal `claim = f · terminal²`.
+    pub(crate) fn norm_terminal_factor(instance_point: &[F], point: &[F], field: &Cfg) -> F {
+        falcon_integer::terminal(field, COEFFICIENT_LOG + 1, instance_point, None, field.zero(), point, &[field.one()])
+    }
+
+    /// The binder's terminal weights (see `word_binding::terminal_weights`)
+    /// for the keyed ring.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn binder_terminal_weights(
+        layout: &Layout,
+        field: &Cfg,
+        ring: &super::super::keyed_ring::VerifierClaim,
+        keys: &[[u16; N]],
+        instance_point: &[F],
+        norm_point: &[F],
+        eta: F,
+        binder_point: &[F],
+    ) -> Result<Vec<F>, FalconError> {
+        // The terminal and slack enter only the binder's target, not its form.
+        let norm = NormClaims {
+            instance_point: instance_point.to_vec(),
+            point: norm_point.to_vec(),
+            terminal: field.zero(),
+            slack: field.zero(),
+        };
+        let (form, _) = BindingForm::new_keyed(layout, field.zero(), &norm, eta, field)?;
+        let factors = word_binding::WordFactors {
+            s1: None,
+            norm: Some(word_binding::FactoredNorm::new(layout, &norm, eta, field)?),
+        };
+        let keyed = word_binding::KeyedRing {
+            points: &ring.points,
+            rows: &ring.rows,
+            keys,
+        };
+        word_binding::terminal_weights(layout, &form, &factors, Some(&keyed), binder_point, field)
+    }
+
+    pub(crate) fn bridge_claim(layout: &Layout, point: Vec<F>, zeta: F, field: &Cfg) -> Result<(Vec<F>, Vec<u128>), FalconError> {
+        word_binding::recursion::bridge_claim(layout, point, zeta, field)
+    }
+}
+
 #[cfg(test)]
 fn unsigned(value: u128, field: &Cfg) -> F {
     F::from_with_cfg(value, field)

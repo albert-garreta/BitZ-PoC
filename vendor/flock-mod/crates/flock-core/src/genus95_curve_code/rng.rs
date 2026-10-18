@@ -124,7 +124,9 @@ pub enum FsRng {
 impl FsRng {
     pub fn new(kind: crate::hash::HashKind, seed: [u8; 32]) -> Self {
         match kind {
-            crate::hash::HashKind::Sha256 => FsRng::Sha256(Sha256Rng::new(seed)),
+            crate::hash::HashKind::Sha256 | crate::hash::HashKind::Sha256Compress => {
+                FsRng::Sha256(Sha256Rng::new(seed))
+            }
             crate::hash::HashKind::Blake3 => FsRng::Blake3(Blake3Rng::new(seed)),
         }
     }

@@ -31,6 +31,8 @@ pub mod poly;
 pub mod prime_sampling;
 pub mod proof_codec;
 pub mod bitz;
+#[cfg(feature = "recursion")]
+pub mod recursion;
 
 pub mod transcript;
 pub mod utils;

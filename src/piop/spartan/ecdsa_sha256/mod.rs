@@ -4,6 +4,8 @@
 //! in one packed inner sumcheck. The terminal scaled claim is opened via BitZ.
 
 mod codec;
+#[cfg(feature = "recursion")]
+pub(crate) mod hooks;
 mod inner_reduction;
 mod proof;
 mod relation;
@@ -12,7 +14,7 @@ mod bitz;
 mod witness;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
@@ -28,7 +30,7 @@ pub use relation::{
 pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};
 pub use witness::{Sha256EcdsaWitness, generate_sha256_ecdsa_witness};
 
-use crate::piop::spartan::u32_mul_relation::SpartanBitzField as F;
+pub(crate) use crate::piop::spartan::u32_mul_relation::SpartanBitzField as F;
 
 #[cfg(test)]
 #[cfg(test)]
@@ -42,7 +44,7 @@ use std::fmt::Display;
 pub struct Sha256EcdsaError(pub String);
 
 pub(crate) type Result<T> = std::result::Result<T, Sha256EcdsaError>;
-type Config = <F as crate::piop::spartan::SpartanField>::Config;
+pub(crate) type Config = <F as crate::piop::spartan::SpartanField>::Config;
 
 pub(crate) fn error(value: impl Display) -> Sha256EcdsaError {
     Sha256EcdsaError(value.to_string())

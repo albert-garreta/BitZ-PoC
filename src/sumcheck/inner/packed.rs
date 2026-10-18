@@ -413,7 +413,11 @@ impl Sha256InnerSumcheckOutput {
 pub(crate) enum Sha256InnerGrinding {}
 
 impl GrindingDomain for Sha256InnerGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/spartan-sha256/grinding/inner/v1";
+    const DOMAIN: &'static [u8] = Self::DOMAIN_BYTES;
+}
+
+impl Sha256InnerGrinding {
+    pub(crate) const DOMAIN_BYTES: &'static [u8] = b"bitz/spartan-sha256/grinding/inner/v1";
 }
 
 fn validate_inputs<const K: usize, H: Sha256InnerBitSource + ?Sized>(

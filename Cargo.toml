@@ -82,6 +82,9 @@ tracing-perfetto-sdk = { version = "1.0.0", optional = true }
 csv = { version = "1.4", optional = true }
 
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
+# The `sha256-fs` protocol variant's duplex and proof-of-work (flock-core
+# pins the same version with `asm`).
+sha2 = { version = "0.10", features = ["asm", "compress"] }
 # BitZ's Fiat–Shamir sponge and wide integer fold reconstruction.
 spongefish = { version = "0.7.4" }
 crypto-bigint = { version = "=0.7.5", default-features = false }
@@ -118,6 +121,11 @@ required-features = ["falcon-hybrid"]
 name = "falcon_algebraic"
 harness = false
 required-features = ["falcon-hybrid"]
+
+[[bench]]
+name = "falcon_recursion"
+harness = false
+required-features = ["recursion", "falcon-hybrid", "bench-internals"]
 
 [[bench]]
 name = "falcon_field"
@@ -321,6 +329,13 @@ bench-perfetto = ["span-metrics", "dep:perfetto-sdk", "dep:tracing-perfetto-sdk"
 hybrid = ["span-metrics", "binius64-bench", "dep:csv", "dep:clap"]
 parallel = ["dep:rayon"]
 unchecked = []
+# The recursion-friendly protocol variant: every Fiat–Shamir transcript is
+# the SHA-256 compression duplex (`transcript::sha`), proof of work is one
+# SHA-256 block, and Ligerito Merkle trees hash with SHA-256.
+sha256-fs = []
+# BitZ's verifier as a BitZ circuit (`src/recursion`): verifies proofs of the
+# `sha256-fs` variant.
+recursion = ["sha256-fs", "ecdsa"]
 # Benchmark-only allocator instrumentation. The latency binary deliberately
 # omits this feature so allocation accounting cannot bias the timing gate.
 bench-peak-memory = []

@@ -33,21 +33,21 @@ use crate::ligerito_flock::{
 };
 use field::Gf128 as Gf;
 
-const MLE_STATEMENT_LABEL: &[u8] = b"bitz/pcs/mle-opening/v1";
-const INNER_PRODUCT_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product/v2";
+pub(crate) const MLE_STATEMENT_LABEL: &[u8] = b"bitz/pcs/mle-opening/v1";
+pub(crate) const INNER_PRODUCT_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product/v2";
 const INNER_PRODUCT_SUM_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product-sum/v1";
-const SUMCHECK_LABEL: &[u8] = b"bitz/pcs/inner-product-sumcheck/v1";
-const MLE_CLAIMS_LABEL: &[u8] = b"bitz/pcs/mle-claims/v1";
-const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
+pub(crate) const SUMCHECK_LABEL: &[u8] = b"bitz/pcs/inner-product-sumcheck/v1";
+pub(crate) const MLE_CLAIMS_LABEL: &[u8] = b"bitz/pcs/mle-claims/v1";
+pub(crate) const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
 /// The composed caller's Round-0 claim, batched into the Ligerito basis
 /// (this crate's addition; absent in their protocol).
-const OOD_CLAIM_LABEL: &[u8] = b"bitz/bitz/round0-claim/v1";
-const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
+pub(crate) const OOD_CLAIM_LABEL: &[u8] = b"bitz/bitz/round0-claim/v1";
+pub(crate) const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
 
-const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";
-const POW_TAG: &[u8] = b"pcs/flock/pow/v1";
-const LIGERITO_BASIS_LABEL: &[u8] = b"flock-ligerito-basis-v0";
-const MAX_OBSERVED_BYTES: usize = 32;
+pub(crate) const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";
+pub(crate) const POW_TAG: &[u8] = b"pcs/flock/pow/v1";
+pub(crate) const LIGERITO_BASIS_LABEL: &[u8] = b"flock-ligerito-basis-v0";
+pub(crate) const MAX_OBSERVED_BYTES: usize = 32;
 
 /// Errors from PCS configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -147,6 +147,12 @@ impl Pcs {
     }
 
     pub(crate) fn native_policy(&self) -> Policy { self.native_policy }
+
+    /// The final Ligerito level's residual dimension.
+    pub(crate) fn final_log_n(&self) -> usize { self.final_log_n }
+
+    /// Flock's atomic work plan, when the PCS carries one.
+    pub(crate) fn flock_plan(&self) -> Option<&GrindingPlan> { self.flock_plan.as_deref() }
 
     pub(crate) fn with_native_policy(mut self, policy: Policy) -> Self {
         self.native_policy = policy;
@@ -609,6 +615,7 @@ impl Encoding<[u8]> for Pcs {
         let hash_tag = match self.params.merkle_hash {
             HashKind::Sha256 => 0,
             HashKind::Blake3 => 1,
+            HashKind::Sha256Compress => 2,
         };
         let tags = [
             self.params.m as u64,
@@ -640,6 +647,7 @@ fn security_config(
     security.hash = match merkle_hash {
         HashKind::Sha256 => "sha256",
         HashKind::Blake3 => "blake3",
+        HashKind::Sha256Compress => "sha256-compress",
     }
     .to_owned();
     security
@@ -913,7 +921,7 @@ fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) {
 
 
 
-fn batch_claims(claims: &[Gf; CLAIM_COUNT], batching_weights: &[Gf]) -> Gf {
+pub(crate) fn batch_claims(claims: &[Gf; CLAIM_COUNT], batching_weights: &[Gf]) -> Gf {
     debug_assert_eq!(batching_weights.len(), CLAIM_COUNT);
     let transposed_claims = tensor_algebra_transpose(claims);
     inner_product(&transposed_claims, batching_weights)
@@ -944,7 +952,7 @@ impl<'a> RingSwitch<'a> {
 // The Ligerito proof as a hint
 // ---------------------------------------------------------------------
 
-fn proof_options() -> impl Options {
+pub(crate) fn proof_options() -> impl Options {
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .with_limit(PROOF_HINT_LIMIT as u64)
@@ -1271,28 +1279,15 @@ fn find_pow(seed: &[u8; 16], bits: u32) -> u64 {
 /// instead of the reference hash (their 31-byte prefix ran every query and
 /// fold grind on the scalar path: 2-3 ms per proof at any size, most of
 /// the opening below n = 24). Not byte-compatible with worldfnd's PoW.
-const POW_PREFIX: &[u8] = b"bitz-pcs-pow-v1\0";
+pub(crate) const POW_PREFIX: &[u8] = b"bitz-pcs-pow-v1\0";
 
 fn pow_valid(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
     if bits == 0 {
         return nonce == 0;
     }
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(POW_PREFIX);
-    hasher.update(seed);
-    hasher.update(&nonce.to_le_bytes());
-    let digest = hasher.finalize();
-    leading_zero_bits(digest.as_bytes()) >= bits
+    let mut prefix = [0u8; POW_PREFIX.len() + 16];
+    prefix[..POW_PREFIX.len()].copy_from_slice(POW_PREFIX);
+    prefix[POW_PREFIX.len()..].copy_from_slice(seed);
+    crate::utils::blake3x4::pow_ok(&prefix, nonce, bits)
 }
 
-fn leading_zero_bits(bytes: &[u8]) -> u32 {
-    let mut total = 0;
-    for byte in bytes {
-        let zeros = byte.leading_zeros();
-        total += zeros;
-        if zeros != 8 {
-            break;
-        }
-    }
-    total
-}

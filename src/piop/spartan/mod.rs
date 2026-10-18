@@ -33,6 +33,7 @@ mod falcon_bit_layout;
 pub mod falcon1024_algebraic;
 #[cfg(feature = "falcon-hybrid")]
 pub mod falcon512_algebraic;
+pub mod flockrec;
 pub mod grinding;
 pub mod matrix;
 pub mod mul;

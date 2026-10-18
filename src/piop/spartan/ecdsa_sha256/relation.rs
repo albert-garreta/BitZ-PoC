@@ -27,6 +27,14 @@ pub(crate) const SHA_H: usize = 20_457;
 pub(crate) const SHA_F: usize = 512 + sha256::COMPRESSION_HINT_BITS;
 pub(crate) const SHA_ROWS: usize = 184;
 pub(crate) const P_INPUT_ALIAS: usize = 257;
+/// The widest projection modulus whose residues one fold carries: `q < 2^113`.
+const MAX_MODULUS_BITS: u32 = 113;
+/// The most claim rows [`PreparedSha256Ecdsa::force_dense_opening`] takes:
+/// `q < 2^101`.
+const MAX_DENSE_CLAIM_LOG_ROWS: usize = 26;
+/// Every modulus [`PreparedSha256Ecdsa::modulus_bits`] can draw.
+pub(crate) const MODULUS_RANGE: core::ops::Range<u128> =
+    (1u128 << (126 - MAX_DENSE_CLAIM_LOG_ROWS))..(1u128 << MAX_MODULUS_BITS);
 
 /// Which original circuit rows participate in the outer sumcheck.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -427,6 +435,109 @@ impl VirtualMap for Sha256EcdsaMap {
             aliases: &self.aliases,
         })
     }
+    /// The transposition of [`Self::column_rows`] summed over every incidence
+    /// (pairs cancel by themselves in characteristic 2), instance by instance
+    /// on the thread pool. Instance `i`'s local row `r` is derived cell
+    /// `i + n·r`; its weight is formed once per row, and each committed cell
+    /// adds the weights of the rows reading it.
+    fn transpose_weights(&self, row_w: &[field::Gf128], col_w: &[field::Gf128], t: usize, cells: usize) -> Option<Vec<field::Gf128>> {
+        use field::Gf128 as Gf;
+        let n = self.n;
+        let derived = row_w.len().checked_mul(col_w.len())?;
+        if row_w.len() != 1 << t || derived < self.rows || cells < self.cols || n == 0 {
+            return None;
+        }
+        let mask = (1usize << t) - 1;
+        let weight = |d: usize| row_w[d & mask] * col_w[d >> t];
+        let local = &self.local;
+        fn rows_of(map: &PreparedVirtualMap, c: usize) -> &[usize] {
+            map.matrix().column_rows(c).unwrap_or(&[])
+        }
+        let local_weights = |i: usize, out: &mut Vec<Gf>| {
+            out.clear();
+            out.extend((0..SHA_H).map(|r| weight(i + n * r)));
+        };
+        let mut out = vec![Gf::ZERO; cells];
+        // Instance i's committed cells 1 + i·SHA_F + (c − 1): its own local
+        // rows and instance i + 1's previous-state rows.
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
+        let chunk = n.div_ceil(4 * threads).max(1);
+        let sums = |(k, cells): (usize, &mut [Gf])| -> Gf {
+            let start = k * chunk;
+            let mut constant = Gf::ZERO;
+            let (mut own, mut next) = (Vec::with_capacity(SHA_H), Vec::with_capacity(SHA_H));
+            local_weights(start, &mut own);
+            for (j, slot) in cells.chunks_mut(SHA_F).enumerate() {
+                let i = start + j;
+                let has_next = i + 1 < n;
+                if has_next {
+                    local_weights(i + 1, &mut next);
+                }
+                for &r in rows_of(&local.sha_local, 0) {
+                    constant += own[r];
+                }
+                for (c, dst) in slot.iter_mut().enumerate() {
+                    let mut acc = Gf::ZERO;
+                    for &r in rows_of(&local.sha_local, c + 1) {
+                        acc += own[r];
+                    }
+                    if has_next {
+                        for &r in rows_of(&local.sha_prev, c + 1) {
+                            acc += next[r];
+                        }
+                    }
+                    *dst = acc;
+                }
+                std::mem::swap(&mut own, &mut next);
+            }
+            constant
+        };
+        let blocks = &mut out[1..1 + n * SHA_F];
+        #[cfg(feature = "parallel")]
+        let constants: Vec<Gf> = {
+            use rayon::prelude::*;
+            blocks.par_chunks_mut(chunk * SHA_F).enumerate().map(sums).collect()
+        };
+        #[cfg(not(feature = "parallel"))]
+        let constants: Vec<Gf> = blocks.chunks_mut(chunk * SHA_F).enumerate().map(sums).collect();
+        let mut constant = constants.into_iter().fold(Gf::ZERO, |a, b| a + b);
+        // The first instance's constant rows, the last instance's own map.
+        for &r in rows_of(&local.sha_first, 0) {
+            constant += weight(n * r);
+        }
+        let last = n - 1;
+        for c in 0..=SHA_F {
+            let mut acc = Gf::ZERO;
+            for &r in rows_of(&self.last, c) {
+                acc += weight(last + n * r);
+            }
+            if c == 0 {
+                constant += acc;
+            } else {
+                out[1 + last * SHA_F + c - 1] += acc;
+            }
+        }
+        // The P-256 rows, onto their aliased sources.
+        for c in 0..local.p_map.cols() {
+            let rows = rows_of(&local.p_map, c);
+            if rows.is_empty() {
+                continue;
+            }
+            let acc = rows.iter().fold(Gf::ZERO, |a, &r| a + weight(self.h_offset + r));
+            let source = if c < P_INPUT_ALIAS { self.aliases[c] } else { self.f_offset + c - P_INPUT_ALIAS };
+            if source == 0 {
+                constant += acc;
+            } else {
+                out[source] += acc;
+            }
+        }
+        out[0] += constant;
+        Some(out)
+    }
+
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
         if column >= self.cols {
             return None;
@@ -572,6 +683,39 @@ impl PreparedSha256Ecdsa {
         Ok(self)
     }
 
+    /// Bit length `b` of the projection modulus, drawn from `[2^(b-1), 2^b)`:
+    /// the widest such interval, up to 113 bits, in which every `q` keeps the
+    /// opening's integer folds below the generator's order,
+    /// `(2^t + 1)(q - 1) < 2^128 - 1` for `2^t` claim rows, i.e. `b = 127 - t`.
+    /// The default grids (`t ≤ 14`) all take 113 bits.
+    pub(crate) fn modulus_bits(&self) -> u32 {
+        let t = match &self.bitz {
+            Some(chained) => chained.layout.row_vars,
+            None => self.h_layout.row_vars,
+        };
+        MAX_MODULUS_BITS.min(127 - t as u32)
+    }
+
+    /// Takes the dense (virtual) opening with `2^rows` claim rows (at most
+    /// 26 and one below the grid): the opening sends `2^{bits − rows}` column
+    /// folds and the projection modulus narrows to `q < 2^{127 − rows}`
+    /// (past 14 rows; the security accounting grinds the difference).
+    pub fn force_dense_opening(&mut self, rows: usize) -> Result<(), super::Sha256EcdsaError> {
+        let bits = self.h_layout.row_vars + self.h_layout.col_vars;
+        if !(7..=MAX_DENSE_CLAIM_LOG_ROWS).contains(&rows) || rows >= bits {
+            return Err(error(format!(
+                "claim rows {rows} outside 7..={MAX_DENSE_CLAIM_LOG_ROWS} for a 2^{bits} grid"
+            )));
+        }
+        self.bitz = None;
+        self.h_layout = IntegerMatrixLayout {
+            row_vars: rows,
+            col_vars: bits - rows,
+        };
+        self.security()?;
+        Ok(())
+    }
+
     /// The ECDSA verifier circuit this relation was prepared for.
     pub fn circuit(&self) -> EcdsaCircuit {
         self.local.circuit
@@ -596,7 +740,7 @@ impl PreparedSha256Ecdsa {
     pub fn outer_domain_size(&self) -> usize {
         1 << self.outer_sumcheck_num_vars()
     }
-    pub(super) fn outer_sumcheck_num_vars(&self) -> usize {
+    pub(crate) fn outer_sumcheck_num_vars(&self) -> usize {
         let rows = match self.mode {
             OuterMode::Split => self.local.nonlinear.len(),
             OuterMode::AllRows => 256 * self.compressions() + self.local.rows(),

@@ -358,18 +358,10 @@ const POW_PREFIX: &[u8] = b"bitz-native-pow1";
 
 pub(crate) fn valid(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
     if bits == 0 { return nonce == 0; }
-    let mut hash = blake3::Hasher::new();
-    hash.update(POW_PREFIX);
-    hash.update(seed);
-    hash.update(&nonce.to_le_bytes());
-    let digest = hash.finalize();
-    let mut zeros = 0;
-    for byte in digest.as_bytes() {
-        let n = byte.leading_zeros();
-        zeros += n;
-        if n < 8 { break; }
-    }
-    zeros >= bits
+    let mut prefix = [0u8; 32];
+    prefix[..16].copy_from_slice(POW_PREFIX);
+    prefix[16..].copy_from_slice(seed);
+    crate::utils::blake3x4::pow_ok(&prefix, nonce, bits)
 }
 
 pub(crate) fn grind(seed: &[u8; 16], bits: u32) -> u64 {

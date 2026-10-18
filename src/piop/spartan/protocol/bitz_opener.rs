@@ -9,7 +9,6 @@
 //! into the final binary opening. Native challenges use the profile's explicit
 //! grinding schedule, while Flock retains its own challenge stream and work.
 
-use flock_core::merkle::HashKind;
 use flock_core::pcs::ligerito::{LigeritoProfile, LigeritoSecurityConfig};
 
 use crate::{
@@ -100,7 +99,7 @@ impl BitZOpener {
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
         let (pcs, security, digest, resolved) = match ligerito {
             BitZLigerito::Fast => {
-                let pcs = BitzPcs::new(&shape, HashKind::Blake3).map_err(|error| {
+                let pcs = BitzPcs::new(&shape, crate::ligerito_flock::MERKLE_HASH).map_err(|error| {
                     ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}"))
                 })?;
                 let source = flock_core::pcs::ligerito::embedded_security_config(
@@ -1592,7 +1591,7 @@ pub(crate) fn opening_params(
 }
 
 // CM and linear SHA bind their relation and terminal claim before this fork.
-const VIRTUAL_SESSION: &[u8] = b"bitz/bitz-opener/virtual/v1";
+pub(crate) const VIRTUAL_SESSION: &[u8] = b"bitz/bitz-opener/virtual/v1";
 
 pub(crate) fn prove_virtual_opening<
     T: Transcript + Send,

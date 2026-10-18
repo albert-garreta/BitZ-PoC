@@ -28,7 +28,7 @@ use crate::sumcheck::bridge::composite::{evaluate_sha_factors, evaluate_tail_by_
 use field::Uint;
 
 /// Compact description of the equation checked by the inner sumcheck.
-pub(super) struct InnerSumcheckClaim {
+pub(crate) struct InnerSumcheckClaim {
     /// Final row-evaluation point returned by the outer sumcheck.
     outer_row_point: Vec<field::Fp<2>>,
     /// Challenge `c` combining the A/B/C claims with weights `1, c, c²`.
@@ -43,7 +43,7 @@ pub(super) struct InnerSumcheckClaim {
 
 /// Distinct integer matrix coefficients reduced modulo the sampled prime, and
 /// the P-256 circuit's reverse-mode tape prepared for that prime.
-pub(super) struct ModQCoefficients<'a> {
+pub(crate) struct ModQCoefficients<'a> {
     /// Arithmetic modulo the transcript-sampled prime.
     ctx: field::FpCtx<2>,
     /// One Montgomery residue per distinct `LocalRelation::coefficients` entry.
@@ -55,7 +55,7 @@ pub(super) struct ModQCoefficients<'a> {
 
 impl InnerSumcheckClaim {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn from_outer_claims(
+    pub(crate) fn from_outer_claims(
         relation: &PreparedSha256Ecdsa,
         statement: &Sha256EcdsaStatement,
         outer: &OuterSumcheckProof<field::Fp<2>>,
@@ -109,7 +109,7 @@ impl InnerSumcheckClaim {
         })
     }
 
-    pub(super) fn claimed_sum(&self) -> &field::Fp<2> {
+    pub(crate) fn claimed_sum(&self) -> &field::Fp<2> {
         &self.claimed_sum
     }
 }
@@ -128,7 +128,7 @@ fn matrix_weights(
 }
 
 impl<'a> ModQCoefficients<'a> {
-    pub(super) fn from_relation(relation: &'a PreparedSha256Ecdsa, cfg: &field::FpCtx<2>) -> Self {
+    pub(crate) fn from_relation(relation: &'a PreparedSha256Ecdsa, cfg: &field::FpCtx<2>) -> Self {
         let _scope = tracing::info_span!("ecdsa:matrix_projection").entered();
         let ctx = crate::piop::spartan::raw_monty::field_context(cfg);
         let projection = field::PreparedSignedProjection::new(
@@ -267,7 +267,7 @@ impl<'a> ModQCoefficients<'a> {
     /// reverse pass ([`Self::evaluate_batched_matrix_mle_reverse`], the test
     /// oracle) computes as the tape's column vector dotted with the equality
     /// weights; the forward pass never materializes that vector.
-    pub(super) fn evaluate_batched_matrix_mle(
+    pub(crate) fn evaluate_batched_matrix_mle(
         &mut self,
         relation: &PreparedSha256Ecdsa,
         claim: &InnerSumcheckClaim,

@@ -18,7 +18,7 @@ pub(super) fn fixture() -> (Sha256EcdsaStatement, Vec<u8>) {
 }
 
 /// The same test-only signature (d=1, k=1) over a `64·(2^exponent − 1)`-byte message.
-pub(super) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
+pub(crate) fn fixture_at(exponent: u8) -> (Sha256EcdsaStatement, Vec<u8>) {
     let hex = |s: &[u8]| BigUint::parse_bytes(s, 16).unwrap();
     let gx = hex(b"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
     let gy = hex(b"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");

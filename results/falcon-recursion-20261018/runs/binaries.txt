@@ -1,0 +1,52 @@
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d 6458a19e4891506fd1cf184a3f19778f
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-blake3/release/deps/falcon_algebraic-1a75e935008ed786 1889d1a19d353deb7fdbb9309ee866cb
+fa341d3ad506abb0cb6aa62fac9c442fc512e9ea
+ M Cargo.lock
+ M Cargo.toml
+ M crates/circuit/Cargo.lock
+ M crates/circuit/Cargo.toml
+ M crates/circuit/src/lib.rs
+ M crates/circuit/src/linear_map/binary.rs
+ M crates/circuit/src/sha256.rs
+ M crates/circuit/src/stats.rs
+ M crates/circuit/src/witgen.rs
+ M src/bitz/forest.rs
+ M src/bitz/grinding.rs
+ M src/bitz/pcs.rs
+ M src/bitz/sumcheck.rs
+ M src/bitz/transcript.rs
+ M src/bitz/virt.rs
+ M src/hybrid/integer_bridge.rs
+ M src/hybrid/joint_sumcheck.rs
+ M src/hybrid/opening.rs
+ M src/lib.rs
+ M src/ligerito_flock.rs
+ M src/ligerito_flock/configuration.rs
+ M src/piop/spartan/ecdsa_sha256/bitz.rs
+ M src/piop/spartan/ecdsa_sha256/codec.rs
+ M src/piop/spartan/ecdsa_sha256/inner_reduction.rs
+ M src/piop/spartan/ecdsa_sha256/mod.rs
+ M src/piop/spartan/ecdsa_sha256/proof.rs
+ M src/piop/spartan/ecdsa_sha256/relation.rs
+ M src/piop/spartan/ecdsa_sha256/security.rs
+ M src/piop/spartan/ecdsa_sha256/tests.rs
+ M src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+ M src/piop/spartan/falcon1024_algebraic/backend.rs
+ M src/piop/spartan/falcon1024_algebraic/keyed_ring.rs
+ M src/piop/spartan/falcon1024_algebraic/protocol.rs
+ M src/piop/spartan/falcon1024_algebraic/word_binding.rs
+ M src/piop/spartan/mod.rs
+ M src/piop/spartan/multiswap/proof.rs
+ M src/piop/spartan/protocol/binding.rs
+ M src/piop/spartan/protocol/bitz_opener.rs
+ M src/sumcheck/inner/packed.rs
+ M src/transcript/mod.rs
+ M src/utils/blake3x4.rs
+ M vendor/flock-mod/Cargo.toml
+ M vendor/flock-mod/crates/flock-core/src/challenger.rs
+ M vendor/flock-mod/crates/flock-core/src/genus95_curve_code/rng.rs
+ M vendor/flock-mod/crates/flock-core/src/genus95_curve_code/sampling.rs
+ M vendor/flock-mod/crates/flock-core/src/hash.rs
+ M vendor/flock-mod/crates/flock-core/src/merkle.rs
+ M vendor/flock-mod/crates/flock-core/src/pcs/ligerito.rs
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

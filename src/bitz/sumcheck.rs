@@ -156,6 +156,9 @@ pub(crate) fn prove(
     if rows_bits.len() != w2.len() || rows_bits.iter().any(|row| row.len() * 64 != w1.len()) {
         return Err(ProveError::PackedWitnessLengthMismatch);
     }
+    if w2.len() == 1 && packed_cols.is_empty() && w1.len() >= 1 << (BIT_ROUNDS + 1) {
+        return prove_single_column_bits(claim, &rows_bits[0], transcript);
+    }
     let layout = IntegerMatrixLayout {
         row_vars: w1.len().ilog2() as usize,
         col_vars: w2.len().ilog2() as usize,
@@ -195,6 +198,166 @@ pub(crate) fn prove(
     super::trace("    sc fold rows", started);
     let row_scalar = rows[0];
     let columns = w2.iter().map(|&w| row_scalar * w).collect();
+    prove_columns(folded, columns, target, point, transcript)
+}
+
+/// Rounds the single-column prover runs on the witness bits' F2 codes
+/// before switching to field tables.
+const BIT_ROUNDS: usize = 3;
+
+/// [`prove`] for a single-column claim (the virtual opening's transposed
+/// weights over every committed bit): byte-identical messages, but the
+/// witness is never a field table while it is still bits. After `k` folds a
+/// witness entry is `c·Σ_{S⊆[k]} code[S]·Π_{i∈S} r_i` with an F2 code of
+/// `2^k` bits, so the first rounds are XOR sums of weights selected by code
+/// bits plus one fold of the weights; the field tables start `2^{BIT_ROUNDS}`
+/// times smaller.
+fn prove_single_column_bits(
+    claim: &LinearClaimGf,
+    bits: &[u64],
+    transcript: &mut ProverState,
+) -> Result<MleClaim, ProveError> {
+    let c = claim.column_weights()[0];
+    let w = claim.row_weights();
+    let vars = w.len().ilog2() as usize;
+    let mut target = claim.target();
+    let mut point = Vec::with_capacity(vars);
+    const CHUNK: usize = 1 << 13;
+    let zero = Gf::zero();
+
+    // Round 1: codes are the bits themselves.
+    let pairs = w.len() / 2;
+    let bit = |j: usize| (bits[j / 64] >> (j % 64)) & 1;
+    let partials: Vec<[Gf; 3]> = cfg_into_iter!(0..pairs.div_ceil(CHUNK))
+        .map(|chunk| {
+            let (start, end) = (chunk * CHUNK, ((chunk + 1) * CHUNK).min(pairs));
+            let mut acc = [zero; 3];
+            for p in start..end {
+                let (b0, b1) = (bit(2 * p), bit(2 * p + 1));
+                let (w0, w1) = (w[2 * p], w[2 * p + 1]);
+                if b0 == 1 {
+                    acc[0] += w0;
+                }
+                if b1 == 1 {
+                    acc[1] += w1;
+                }
+                if b0 != b1 {
+                    acc[2] += w0 + w1;
+                }
+            }
+            acc
+        })
+        .collect();
+    let [s0, s1, sq] = partials.into_iter().fold([zero; 3], |[a, b, d], [x, y, z]| [a + x, b + y, d + z]);
+    let coefficients = [c * s0, c * (s0 + s1 + sq), c * sq];
+    if coefficients[1] + coefficients[2] != target {
+        return Err(ProveError::InvalidClaim);
+    }
+    transcript.prover_message(&coefficients);
+    let r = transcript.native_scalar(super::grinding::Stage::BinaryRound);
+    target = evaluate_round(coefficients, r);
+    point.push(r);
+    let mut weights: Vec<Gf> = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
+        .map(|p| w[2 * p] + r * (w[2 * p] + w[2 * p + 1]))
+        .collect();
+    let mut codes: Vec<u8> = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
+        .map(|p| {
+            let (b0, b1) = (bit(2 * p) as u8, bit(2 * p + 1) as u8);
+            b0 | ((b0 ^ b1) << 1)
+        })
+        .collect();
+    // products[S] = Π_{i∈S} r_i over the bound challenges.
+    let mut products = vec![Gf::one(), r];
+
+    // Rounds 2..=BIT_ROUNDS on the codes.
+    for k in 1..BIT_ROUNDS {
+        let width = 1usize << k;
+        let pairs = weights.len() / 2;
+        let partials: Vec<Vec<[Gf; 3]>> = cfg_into_iter!(0..pairs.div_ceil(CHUNK))
+            .map(|chunk| {
+                let (start, end) = (chunk * CHUNK, ((chunk + 1) * CHUNK).min(pairs));
+                let mut acc = vec![[zero; 3]; width];
+                for p in start..end {
+                    let (c0, c1) = (codes[2 * p], codes[2 * p + 1]);
+                    let (w0, w1) = (weights[2 * p], weights[2 * p + 1]);
+                    let mut x = c0;
+                    while x != 0 {
+                        acc[x.trailing_zeros() as usize][0] += w0;
+                        x &= x - 1;
+                    }
+                    let mut x = c1;
+                    while x != 0 {
+                        acc[x.trailing_zeros() as usize][1] += w1;
+                        x &= x - 1;
+                    }
+                    let mut x = c0 ^ c1;
+                    let sum = w0 + w1;
+                    while x != 0 {
+                        acc[x.trailing_zeros() as usize][2] += sum;
+                        x &= x - 1;
+                    }
+                }
+                acc
+            })
+            .collect();
+        let mut totals = [zero; 3];
+        for (subset, product) in products.iter().enumerate() {
+            let mut sums = [zero; 3];
+            for part in &partials {
+                for t in 0..3 {
+                    sums[t] += part[subset][t];
+                }
+            }
+            for t in 0..3 {
+                totals[t] += *product * sums[t];
+            }
+        }
+        let [a0, a1, aq] = totals;
+        let coefficients = [c * a0, c * (a0 + a1 + aq), c * aq];
+        if coefficients[1] + coefficients[2] != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let r = transcript.native_scalar(super::grinding::Stage::BinaryRound);
+        target = evaluate_round(coefficients, r);
+        point.push(r);
+        weights = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
+            .map(|p| weights[2 * p] + r * (weights[2 * p] + weights[2 * p + 1]))
+            .collect();
+        codes = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
+            .map(|p| {
+                let (c0, c1) = (codes[2 * p], codes[2 * p + 1]);
+                c0 | ((c0 ^ c1) << width)
+            })
+            .collect();
+        let extended: Vec<Gf> = products.iter().map(|&x| x * r).collect();
+        products.extend(extended);
+    }
+
+    // Field tables from here: entry = c·Σ_{S ∈ code} Π_{i∈S} r_i.
+    let mut table = vec![zero; 1 << (1 << BIT_ROUNDS)];
+    for code in 1..table.len() {
+        let low = code & (code - 1);
+        table[code] = table[low] + products[(code ^ low).trailing_zeros() as usize];
+    }
+    let mut combined: Vec<Gf> = cfg_into_iter!(0..codes.len(), PARALLEL_MIN_PAIRS)
+        .map(|j| c * table[codes[j] as usize])
+        .collect();
+    drop(codes);
+    while combined.len() > 1 {
+        let coefficients = round_polynomial(&combined, &weights);
+        if coefficients[1] + coefficients[2] != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        fold(&mut combined, challenge);
+        fold(&mut weights, challenge);
+    }
+    let folded = fold_rows_point(core::slice::from_ref(&bits.to_vec()), &point);
+    let columns = vec![weights[0] * c];
     prove_columns(folded, columns, target, point, transcript)
 }
 

@@ -116,9 +116,10 @@ impl Sha256EcdsaSecurity {
             });
             Ok(bits)
         };
-        let q_inv = 2f64.powi(-112);
-        let divisors = prepared.local.defect_bits / 112;
-        let bad_prime = f64::from(divisors) * 2f64.powf(-log2_prime_count_lower_bound(113));
+        let bits = prepared.modulus_bits();
+        let q_inv = 2f64.powi(1 - bits as i32);
+        let divisors = prepared.local.defect_bits / (bits - 1);
+        let bad_prime = f64::from(divisors) * 2f64.powf(-log2_prime_count_lower_bound(bits));
         // The maximum all-row arity keeps the two benchmark modes on one schedule.
         let max_outer = (256 * prepared.compressions() + prepared.local.rows())
             .next_power_of_two()

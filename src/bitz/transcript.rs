@@ -18,7 +18,19 @@ use field::Gf128 as Gf;
 use super::grinding::{self, Cursor, Schedule, Stage};
 
 /// What this protocol is. Changing it invalidates every existing proof.
+#[cfg(not(feature = "sha256-fs"))]
 pub const PROTOCOL_LABEL: &str = "bitz/v1";
+/// What this protocol is: the `sha256-fs` variant runs the same messages
+/// over the SHA-256 compression duplex.
+#[cfg(feature = "sha256-fs")]
+pub const PROTOCOL_LABEL: &str = "bitz/v1/sha256-duplex";
+
+/// The duplex sponge behind every BitZ transcript.
+#[cfg(not(feature = "sha256-fs"))]
+pub type Sponge = spongefish::StdHash;
+/// The duplex sponge behind every BitZ transcript.
+#[cfg(feature = "sha256-fs")]
+pub type Sponge = crate::transcript::ShaDuplex;
 
 /// A finished transcript: the narg string and the hint stream.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,7 +41,7 @@ pub struct Proof {
 
 /// The prover half of the transcript.
 pub struct ProverState {
-    inner: spongefish::ProverState,
+    inner: spongefish::ProverState<Sponge>,
     hints: Vec<u8>,
     native: Option<Cursor>,
     #[cfg(test)]
@@ -38,7 +50,7 @@ pub struct ProverState {
 
 /// The verifier half of the transcript.
 pub struct VerifierState<'a> {
-    inner: spongefish::VerifierState<'a>,
+    inner: spongefish::VerifierState<'a, Sponge>,
     hints: &'a [u8],
     native: Option<Cursor>,
     #[cfg(test)]
@@ -57,10 +69,13 @@ where
     S: Encoding<[u8]> + ?Sized,
     I: Encoding<[u8]> + ?Sized,
 {
-    let inner = DomainSeparator::new(protocol_id(format_args!("{PROTOCOL_LABEL}")))
+    let separator = DomainSeparator::new(protocol_id(format_args!("{PROTOCOL_LABEL}")))
         .session(session)
-        .instance(instance)
-        .std_prover();
+        .instance(instance);
+    #[cfg(not(feature = "sha256-fs"))]
+    let inner = separator.std_prover();
+    #[cfg(feature = "sha256-fs")]
+    let inner = separator.to_prover(Sponge::new());
     ProverState {
         inner,
         hints: Vec::new(),
@@ -76,10 +91,13 @@ where
     S: Encoding<[u8]> + ?Sized,
     I: Encoding<[u8]> + ?Sized,
 {
-    let inner = DomainSeparator::new(protocol_id(format_args!("{PROTOCOL_LABEL}")))
+    let separator = DomainSeparator::new(protocol_id(format_args!("{PROTOCOL_LABEL}")))
         .session(session)
-        .instance(instance)
-        .std_verifier(&proof.narg_string);
+        .instance(instance);
+    #[cfg(not(feature = "sha256-fs"))]
+    let inner = separator.std_verifier(&proof.narg_string);
+    #[cfg(feature = "sha256-fs")]
+    let inner = separator.to_verifier(Sponge::new(), &proof.narg_string);
     VerifierState {
         inner,
         hints: &proof.hints,

@@ -18,6 +18,8 @@ pub use protocol::{
     PreparedFalconAlgebraic,
 };
 pub use source::{FalconAlgebraicStatement, FalconAlgebraicWitness, check_algebraic_statement};
+#[cfg(all(feature = "recursion", feature = "bench-internals"))]
+pub use protocol::recursion_hooks;
 
 use super::{SpartanBitzField, SpartanField};
 use source::{Layout, Source, WitnessData};

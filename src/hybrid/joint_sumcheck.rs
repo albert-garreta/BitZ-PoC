@@ -818,7 +818,7 @@ impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
 }
 
 pub(crate) fn prove<const N: usize>(
-    t: &mut Blake3Transcript,
+    t: &mut impl Transcript,
     geometry: &Geometry<N>,
     sources: [&[F]; N],
     coefficients: [&Coefficients; N],
@@ -943,7 +943,7 @@ impl Coefficients {
 }
 
 pub(crate) fn verify<const N: usize>(
-    t: &mut Blake3Transcript,
+    t: &mut impl Transcript,
     geometry: &Geometry<N>,
     coefficients: [&Coefficients; N],
     target: F,
@@ -981,6 +981,40 @@ pub(crate) fn verify<const N: usize>(
     }
     observe(t, &[proof.value]);
     Ok(point)
+}
+
+/// The public steps of [`verify`] for the recursion circuit, which absorbs
+/// the (committed) target, round messages and terminal value itself, each
+/// as `observe` does: its low then its high word, one `absorb_slice` each.
+#[cfg(feature = "recursion")]
+pub(crate) mod recursion {
+    use super::*;
+
+    pub(crate) const GRINDING_DOMAIN: &[u8] = <JointGrinding as GrindingDomain>::DOMAIN;
+
+    pub(crate) fn validate<const N: usize>(geometry: &Geometry<N>, coefficients: [&Coefficients; N]) -> Result<(), Error> {
+        super::validate(geometry, coefficients)
+    }
+
+    /// `bind` up to (excluding) the target's observation.
+    pub(crate) fn bind_public<const N: usize>(t: &mut impl Transcript, geometry: &Geometry<N>, grinding_bits: u32) {
+        t.absorb_slice(b"bitz/falcon/joint-binary-sumcheck/v1");
+        for log in geometry.logs {
+            t.absorb_slice(&(log as u64).to_le_bytes());
+        }
+        geometry.bind_allocation(t);
+        t.absorb_slice(&grinding_bits.to_le_bytes());
+    }
+
+    /// The coefficient of the terminal check `value = coefficient · proof.value`.
+    pub(crate) fn terminal_coefficient<const N: usize>(geometry: &Geometry<N>, coefficients: [&Coefficients; N], point: &[F]) -> F {
+        let mut coefficient = F::ZERO;
+        for branch in 0..N {
+            let (original, padding) = geometry.project_point(branch, point);
+            coefficient += padding * coefficients[branch].evaluate(&original);
+        }
+        coefficient
+    }
 }
 #[cfg(test)]
 pub(crate) fn live_subcubes(point: &[F], live: usize) -> Vec<(Vec<F>, F)> {

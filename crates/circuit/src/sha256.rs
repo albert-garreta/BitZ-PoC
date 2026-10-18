@@ -69,7 +69,7 @@ where
         }
     }
 
-    fn from_repr(bits_le: BW::Repr<N, M>) -> Self {
+    pub(crate) fn from_repr(bits_le: BW::Repr<N, M>) -> Self {
         Self { bits_le }
     }
 
@@ -122,17 +122,17 @@ where
 #[derive(Clone)]
 pub struct UInt<ZW, BW: BoolWitness, const N: usize, const M: usize = 1> {
     pub word: Word<BW, N, M>,
-    z_values: ZValues<ZW>,
+    pub(crate) z_values: ZValues<ZW>,
 }
 
 #[derive(Clone)]
-struct ZValues<ZW> {
-    full: ZW,
-    low_32: ZW,
+pub(crate) struct ZValues<ZW> {
+    pub(crate) full: ZW,
+    pub(crate) low_32: ZW,
 }
 
 impl<ZW, BW: BoolWitness, const N: usize, const M: usize> UInt<ZW, BW, N, M> {
-    fn int_value(&self) -> ZW
+    pub(crate) fn int_value(&self) -> ZW
     where
         ZW: Clone,
     {
@@ -140,13 +140,13 @@ impl<ZW, BW: BoolWitness, const N: usize, const M: usize> UInt<ZW, BW, N, M> {
     }
 }
 
-type ShaZ<CS> = <CS as Circuit>::Z<SHA256_Z_LIMBS>;
+pub(crate) type ShaZ<CS> = <CS as Circuit>::Z<SHA256_Z_LIMBS>;
 
-type ShaCoefficient<CS> = <CS as Circuit>::Coefficient<SHA256_Z_LIMBS>;
+pub(crate) type ShaCoefficient<CS> = <CS as Circuit>::Coefficient<SHA256_Z_LIMBS>;
 
-type UInt32<CS> = UInt<ShaZ<CS>, <CS as Circuit>::Bool, 32>;
+pub(crate) type UInt32<CS> = UInt<ShaZ<CS>, <CS as Circuit>::Bool, 32>;
 
-fn uint_from_word<CS, const N: usize, const M: usize>(
+pub(crate) fn uint_from_word<CS, const N: usize, const M: usize>(
     circuit: &mut CS,
     word: Word<CS::Bool, N, M>,
 ) -> UInt<ShaZ<CS>, CS::Bool, N, M>
@@ -158,7 +158,7 @@ where
     UInt { word, z_values }
 }
 
-fn uint_constant<CS>(value: u64) -> UInt32<CS>
+pub(crate) fn uint_constant<CS>(value: u64) -> UInt32<CS>
 where
     CS: Circuit,
 {
@@ -199,14 +199,14 @@ where
     }
 }
 
-fn evaluate_word<ZW, BW: BoolWitness, C>(
+pub(crate) fn evaluate_word<ZW, BW: BoolWitness, C>(
     context: &dyn WitnessContext<ZW, BW, C>,
     word: &Word<BW, 32>,
 ) -> u64 {
     word.bits_le.evaluate(context).low_u64()
 }
 
-fn assert_zero<CS>(circuit: &mut CS, value: ShaZ<CS>)
+pub(crate) fn assert_zero<CS>(circuit: &mut CS, value: ShaZ<CS>)
 where
     CS: Circuit,
 {
@@ -215,7 +215,7 @@ where
 
 /// Decomposes a sum into `WIDTH` bits, constrains the decomposition, and
 /// returns its low 32 bits.
-fn sum_32<const WIDTH: usize, const TERMS: usize, CS>(
+pub(crate) fn sum_32<const WIDTH: usize, const TERMS: usize, CS>(
     circuit: &mut CS,
     terms: [UInt32<CS>; TERMS],
 ) -> UInt32<CS>
@@ -464,6 +464,43 @@ where
     });
     let output = compress(circuit, block, state);
     array::from_fn(|i| output[i / 32].word.bit(i % 32))
+}
+
+/// The block kind every [`compress_block`] instance records under.
+pub const COMPRESS_BLOCK: &str = "sha256-compress";
+
+/// [`compress`] as one repeated block ([`Circuit::begin_block`]): the 512
+/// block bits and the 256 state bits are the block's input slots (any F2
+/// combinations, constants included), the output words are its committed
+/// output sums, so every instance records the same local relation and a
+/// structured backend keeps one template.
+pub fn compress_block<CS>(
+    circuit: &mut CS,
+    block: &[Word<CS::Bool, 32>; 16],
+    state: &[Word<CS::Bool, 32>; 8],
+) -> [Word<CS::Bool, 32>; 8]
+where
+    CS: Circuit,
+{
+    let inputs: Vec<CS::Bool> = block
+        .iter()
+        .chain(state.iter())
+        .flat_map(|word| (0..32).map(move |bit| word.bit(bit)))
+        .collect();
+    let inputs = match circuit.try_replay_block(COMPRESS_BLOCK, inputs) {
+        Ok(global) => return array::from_fn(|w| Word::new(array::from_fn(|b| global[32 * w + b].clone()))),
+        Err(inputs) => inputs,
+    };
+    let local = circuit.begin_block(COMPRESS_BLOCK, inputs);
+    let block = array::from_fn(|w| Word::new(array::from_fn(|b| local[32 * w + b].clone())));
+    let state = array::from_fn(|w| Word::new(array::from_fn(|b| local[512 + 32 * w + b].clone())));
+    let output = compress(circuit, block, state);
+    let output_bits: Vec<CS::Bool> = output
+        .iter()
+        .flat_map(|word| (0..32).map(move |bit| word.word.bit(bit)))
+        .collect();
+    let global = circuit.end_block(output_bits);
+    array::from_fn(|w| Word::new(array::from_fn(|b| global[32 * w + b].clone())))
 }
 
 /// Returns the standard SHA-256 initial state as constant Boolean words.

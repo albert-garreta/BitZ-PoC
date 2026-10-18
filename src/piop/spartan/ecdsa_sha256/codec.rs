@@ -46,7 +46,7 @@ impl Sha256EcdsaProof {
             return Err(error("invalid proof version"));
         }
         let q = r.u128().map_err(error)?;
-        if !((1u128 << 112)..(1u128 << 113)).contains(&q) {
+        if !super::relation::MODULUS_RANGE.contains(&q) {
             return Err(error("invalid encoded modulus"));
         }
         let cfg = F::make_cfg(&Uint::from(q)).map_err(|_| error("invalid encoded field"))?;

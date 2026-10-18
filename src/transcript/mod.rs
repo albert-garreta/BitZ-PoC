@@ -4,7 +4,17 @@
 // on that one flag covers both.
 #[cfg(feature = "binius64-bench")]
 pub(crate) mod binius_channel;
+pub mod sha;
 pub mod traits;
+
+pub use sha::{ShaDuplex, Sha256Transcript};
+
+/// The Spartan-level transcript of the active protocol variant.
+#[cfg(feature = "sha256-fs")]
+pub type DefaultTranscript = Sha256Transcript;
+/// The Spartan-level transcript of the active protocol variant.
+#[cfg(not(feature = "sha256-fs"))]
+pub type DefaultTranscript = Blake3Transcript;
 
 use crate::poly::coefficient::PolynomialField;
 use crate::transcript::traits::{ConstTranscribable, GenTranscribable, Transcript};

@@ -253,7 +253,7 @@ impl FsChallenger {
     pub fn with_hash(domain: &[u8], kind: HashKind) -> Self {
         let mut c = Self {
             state: match kind {
-                HashKind::Sha256 => FsState::Sha256(Sha256::new()),
+                HashKind::Sha256 | HashKind::Sha256Compress => FsState::Sha256(Sha256::new()),
                 HashKind::Blake3 => FsState::Blake3(Box::new(blake3::Hasher::new())),
             },
             n_absorbed: 0,
@@ -564,7 +564,7 @@ fn pow_has_leading_zero_bits(
     #[cfg(feature = "hash-count")]
     fs_count::POW_SHA256.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     match kind {
-        HashKind::Sha256 => {
+        HashKind::Sha256 | HashKind::Sha256Compress => {
             let mut pre = [0u8; 40];
             pre[..32].copy_from_slice(state_digest);
             pre[32..].copy_from_slice(&nonce.to_le_bytes());
@@ -658,7 +658,7 @@ fn pow_scan(
 ) -> Option<u64> {
     match kind {
         HashKind::Blake3 => blake3_pow_scan(state_digest, start, len, bits),
-        HashKind::Sha256 => (start..start.saturating_add(len))
+        HashKind::Sha256 | HashKind::Sha256Compress => (start..start.saturating_add(len))
             .find(|&n| pow_has_leading_zero_bits(state_digest, n, bits, kind)),
     }
 }

@@ -18,8 +18,15 @@ use crate::{
     ligerito_flock::{LigeritoSelection, ResolvedLigerito, grinding_plan::GrindingPlan},
     pcs::IntegerMatrixLayout,
     piop::spartan::grinding::GrindingDomain,
-    transcript::{Blake3Transcript, traits::Transcript},
+    transcript::traits::Transcript,
 };
+
+/// The protocol's Fiat–Shamir transcript: Blake3, or under `sha256-fs` the
+/// SHA-256 compression duplex a verifier circuit replays.
+#[cfg(not(feature = "sha256-fs"))]
+pub(crate) type FalconTranscript = crate::transcript::Blake3Transcript;
+#[cfg(feature = "sha256-fs")]
+pub(crate) type FalconTranscript = crate::transcript::Sha256Transcript;
 use field::RingOps;
 use flock_core::field::Gf128 as Gf;
 use rayon::prelude::*;
@@ -27,6 +34,11 @@ use std::sync::Mutex;
 
 use super::F;
 use crate::piop::spartan::SpartanField;
+
+/// Native hooks of the verifier circuit (`crate::recursion::falcon_verifier`).
+#[cfg(all(feature = "recursion", feature = "bench-internals"))]
+#[path = "recursion_hooks.rs"]
+pub mod recursion_hooks;
 
 crate::piop::spartan::grinding::grinding_domains! {
     OpeningGrinding => b"bitz/falcon1024-algebraic/opening-grinding/v2";
@@ -1071,7 +1083,20 @@ impl PreparedFalconAlgebraic {
         public: &FalconAlgebraicStatement,
         root: &[u8; 32],
         exceptions: &[Vec<u16>],
-    ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
+    ) -> Result<(FalconTranscript, [u8; 32]), FalconError> {
+        let mut transcript = FalconTranscript::new();
+        let digest = self.transcript_into(public, root, exceptions, &mut transcript)?;
+        Ok((transcript, digest))
+    }
+
+    /// The statement binding onto a fresh `transcript`; returns the digest.
+    fn transcript_into(
+        &self,
+        public: &FalconAlgebraicStatement,
+        root: &[u8; 32],
+        exceptions: &[Vec<u16>],
+        transcript: &mut impl Transcript,
+    ) -> Result<[u8; 32], FalconError> {
         public.validate(self.batch())?;
         compact::validate_exceptions(&self.layout, exceptions)?;
         let mut h = blake3::Hasher::new();
@@ -1179,11 +1204,10 @@ impl PreparedFalconAlgebraic {
             h.update(&block.bits.to_le_bytes());
         }
         let digest = *h.finalize().as_bytes();
-        let mut transcript = Blake3Transcript::new();
         transcript.absorb_slice(self.protocol_id().as_bytes());
         transcript.absorb_slice(&digest);
-        self.ligerito.bind(&mut transcript);
-        Ok((transcript, digest))
+        self.ligerito.bind(transcript);
+        Ok(digest)
     }
 
     #[tracing::instrument(skip_all, name = "falcon_algebraic:prove")]
@@ -1197,7 +1221,7 @@ impl PreparedFalconAlgebraic {
     fn prove_observed(
         &self,
         committed: CommittedFalconAlgebraic,
-        observe: impl FnOnce(&mut Blake3Transcript),
+        observe: impl FnOnce(&mut FalconTranscript),
     ) -> Result<FalconAlgebraicProof, FalconError> {
         if committed.layout != self.layout || committed.target_bits != self.target_bits {
             return Err(error("algebraic commitment configuration mismatch"));
@@ -1464,7 +1488,7 @@ impl PreparedFalconAlgebraic {
         &self,
         public: &FalconAlgebraicStatement,
         proof: &FalconAlgebraicProof,
-        observe: impl FnOnce(&mut Blake3Transcript),
+        observe: impl FnOnce(&mut FalconTranscript),
     ) -> Result<(), FalconError> {
         let (mut t, digest) = {
             let _span = tracing::info_span!("falcon_algebraic:verify_statement").entered();

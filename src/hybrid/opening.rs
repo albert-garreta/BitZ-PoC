@@ -200,7 +200,7 @@ impl<const N: usize> Geometry<N> {
             log_inv_rate,
             log_batch_size: self.lane_logs[branch],
             profile: ligerito::LigeritoProfile::Secure,
-            merkle_hash: merkle::HashKind::Blake3,
+            merkle_hash: crate::ligerito_flock::MERKLE_HASH,
         }
     }
     /// H_r = eq(r,.) minus its restrictions to the disjoint logical supports.
@@ -688,7 +688,7 @@ mod geometry_tests {
                     log_inv_rate: rate,
                     log_batch_size: geometry.virtual_lane_log,
                     profile: ligerito::LigeritoProfile::Secure,
-                    merkle_hash: merkle::HashKind::Blake3,
+                    merkle_hash: crate::ligerito_flock::MERKLE_HASH,
                 };
                 let (dense, reference) = commit(&packed, &params);
                 assert_eq!(root, dense.root, "logs={logs:?}, rate={rate}");
@@ -747,7 +747,7 @@ mod geometry_tests {
                         geometry.lanes(),
                         &queries,
                         &full,
-                        merkle::HashKind::Blake3,
+                        crate::ligerito_flock::MERKLE_HASH,
                     )
                 })
             };
@@ -973,7 +973,7 @@ mod geometry_tests {
                 16,
                 &queries,
                 proof,
-                merkle::HashKind::Blake3,
+                crate::ligerito_flock::MERKLE_HASH,
             )
         };
         assert!(valid(&opening));
@@ -1011,7 +1011,7 @@ mod geometry_tests {
             16,
             &queries,
             &opening,
-            merkle::HashKind::Blake3
+            crate::ligerito_flock::MERKLE_HASH
         ));
     }
 
@@ -1533,7 +1533,7 @@ pub(crate) fn commit_sources<const N: usize>(
     let merkle_tree = merkle::merkle_tree_from_rows(
         positions,
         geometry.lanes() * 16,
-        merkle::HashKind::Blake3,
+        crate::ligerito_flock::MERKLE_HASH,
         |first, bytes| {
             bytes.fill(0);
             for (row_index, row) in bytes.chunks_exact_mut(geometry.lanes() * 16).enumerate() {
@@ -1767,7 +1767,7 @@ pub(crate) fn ood_parameters(
 }
 
 fn sample_padding<const N: usize>(
-    t: &mut (impl Transcript + Send),
+    t: &mut impl Transcript,
     geometry: &Geometry<N>,
 ) -> Vec<(Vec<Gf>, Gf)> {
     if N == 2 {
@@ -2336,5 +2336,62 @@ fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
         Ok(())
     } else {
         Err(Error::Invalid("shared Ligerito opening"))
+    }
+}
+
+/// The public steps of [`verify_joint_with_security`] for the recursion
+/// circuit (no Round 0): the geometry, padding bases and the basis
+/// evaluation at Ligerito's residual point.
+#[cfg(feature = "recursion")]
+pub(crate) mod recursion {
+    use super::*;
+
+    pub(crate) fn validate<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error> {
+        validate_geometry(geometry)
+    }
+
+    pub(crate) fn bind_allocation<const N: usize>(geometry: &Geometry<N>, t: &mut impl Transcript) {
+        geometry.bind_allocation(t);
+    }
+
+    /// The virtual lanes the sources occupy (the others are public zeros).
+    pub(crate) fn occupied_lanes<const N: usize>(geometry: &Geometry<N>) -> Vec<usize> {
+        super::occupied_lanes(geometry)
+    }
+
+    pub(crate) fn sample_padding<const N: usize>(t: &mut impl Transcript, geometry: &Geometry<N>) -> Vec<(Vec<Gf>, Gf)> {
+        super::sample_padding(t, geometry)
+    }
+
+    /// `verify_initial_with_security`'s basis evaluation at the residual.
+    pub(crate) fn residual(prefix: &[F], log_y: usize, point_hi: &[Gf], eq_r2: &[Gf], padding: &[(Vec<Gf>, Gf)]) -> Vec<F> {
+        let mut out = residual_b_evals(prefix, log_y, point_hi, eq_r2);
+        for (point, scale) in padding {
+            for (slot, term) in out.iter_mut().zip(ood_residual_evals(prefix, log_y, point, *scale)) {
+                *slot += term;
+            }
+        }
+        out
+    }
+
+    /// The Ligerito proof-shape checks of `verify_initial_with_security`.
+    pub(crate) fn check_shape(vc: &ligerito::VerifierConfig, proof: &LigeritoProof<Vec<F>>) -> Result<(), Error> {
+        let expected_ood_values: usize = vc.ood_samples.iter().skip(1).sum();
+        let level_ks = std::iter::once(vc.initial_k).chain(vc.recursive_ks.iter().copied());
+        let expected_fold_nonces: usize = vc
+            .fold_grinding_bits
+            .iter()
+            .zip(level_ks)
+            .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
+            .sum();
+        if proof.recursive_roots.len() != vc.recursive_steps
+            || proof.recursive_proofs.len() + 1 != vc.recursive_steps
+            || proof.grinding_nonces.len() != vc.recursive_steps + 1
+            || proof.ood_values.len() != expected_ood_values
+            || proof.fold_grinding_nonces.len() != expected_fold_nonces
+        {
+            return Err(Error::Invalid("Ligerito proof shape"));
+        }
+        Ok(())
     }
 }

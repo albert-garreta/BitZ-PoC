@@ -1622,6 +1622,34 @@ pub(super) fn verify_with_ring(
         .binding
         .verify_with_round_boundary(t, target, rounds(layout), f, &mut boundary)
         .map_err(failure)?;
+    let weights = terminal_weights(layout, form, factors, keyed, &point, f)?;
+    let v = &proof.binding_terminal;
+    let mut terminal = f.add(&f.mul(&weights[0], &v[0]), &f.mul(&weights[1], &v[1]));
+    if n == 3 {
+        terminal = f.add(&terminal, &f.mul(&weights[2], &v[2]));
+    }
+    if claim != terminal {
+        return Err(failure("word binding terminal mismatch"));
+    }
+    t.absorb_slice(TERMINALS);
+    absorb_field_elements(t, v, f);
+    verify_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits, proof.terminal_merge_nonce)?;
+    let zeta = sample(t, f)?;
+    Ok(bind_terminal(t, point, v, zeta, f))
+}
+
+/// The binder's terminal weights at `point`, all public: the coefficient
+/// value (keyed, factored and dense parts), the spare lane's weight and, for
+/// a padded batch, the count weight. The terminal claim is their inner
+/// product with the binding terminal messages.
+pub(super) fn terminal_weights(
+    layout: &Layout,
+    form: &BindingForm<'_>,
+    factors: &WordFactors,
+    keyed: Option<&KeyedRing<'_>>,
+    point: &[F],
+    f: &Cfg,
+) -> Result<Vec<F>, FalconError> {
     let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
     let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
     let reduction = f.prepare_product_reduction(2 * N);
@@ -1725,20 +1753,39 @@ pub(super) fn verify_with_ring(
     for (round, &r) in point.iter().enumerate() {
         weights.fold(round, r, f);
     }
-    let v = &proof.binding_terminal;
-    let mut terminal = f.add(
-        &f.mul(&coefficient_value, &v[0]),
-        &f.mul(&weights.spare(0, rounds(layout), f), &v[1]),
-    );
-    if n == 3 {
-        terminal = f.add(&terminal, &f.mul(&weights.count(0, f), &v[2]));
+    let mut out = vec![coefficient_value, weights.spare(0, rounds(layout), f)];
+    if layout.batch() < layout.capacity() {
+        out.push(weights.count(0, f));
     }
-    if claim != terminal {
-        return Err(failure("word binding terminal mismatch"));
+    Ok(out)
+}
+
+/// The binder's public constants and claim geometry for the recursion
+/// circuit.
+#[cfg(all(feature = "recursion", feature = "bench-internals"))]
+pub(super) mod recursion {
+    use super::*;
+
+    pub(crate) const DOMAIN: &[u8] = super::DOMAIN;
+    pub(crate) const TERMINALS: &[u8] = super::TERMINALS;
+    pub(crate) const TERMINAL_MERGE_DOMAIN: &[u8] =
+        <TerminalMerge as crate::piop::spartan::grinding::GrindingDomain>::DOMAIN;
+    pub(crate) const SOURCE_OPENING_LABEL: &[u8] = b"bitz/falcon-algebraic/word-source-opening/v1";
+
+    pub(crate) fn rounds(layout: &Layout) -> usize {
+        super::rounds(layout)
     }
-    t.absorb_slice(TERMINALS);
-    absorb_field_elements(t, v, f);
-    verify_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits, proof.terminal_merge_nonce)?;
-    let zeta = sample(t, f)?;
-    Ok(bind_terminal(t, point, v, zeta, f))
+
+    /// The bridge claim's column point and row weights for the binder point
+    /// and merge challenge (its value is the circuit's).
+    pub(crate) fn bridge_claim(layout: &Layout, point: Vec<F>, zeta: F, field: &Cfg) -> Result<(Vec<F>, Vec<u128>), FalconError> {
+        let claim = WordBridgeClaim {
+            point,
+            modulus: field.modulus_u128(),
+            value: field.zero(),
+            zeta,
+            with_padding: layout.batch() < layout.capacity(),
+        };
+        Ok((claim.column_point(layout).to_vec(), claim.row_weights(layout, field)?))
+    }
 }

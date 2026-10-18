@@ -719,6 +719,75 @@ fn verify_unsplit(
     Ok(claim)
 }
 
+/// The public steps of the unsplit [`verify_weighted`] for the recursion
+/// circuit, whose folds are public and whose forest messages are committed.
+#[cfg(feature = "recursion")]
+pub(crate) mod recursion {
+    use super::*;
+
+    pub(crate) const GRINDING_DOMAIN: &[u8] = <UnsplitBridgeGrinding as GrindingDomain>::DOMAIN;
+
+    /// Shape and magnitude checks of the public folds; returns their bound.
+    pub(crate) fn validate(
+        p: &IntegerMatrixLayout,
+        column_point: &[F],
+        field: &Cfg,
+        sums: &[u128],
+        forest_len: usize,
+        row_weights: &[u128],
+    ) -> Result<u128, FalconError> {
+        Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+        validate_point(column_point, p.col_vars, field)?;
+        validate_row_weights(p, row_weights, field.modulus_u128())?;
+        unsplit_shape(p, field.modulus_u128())?;
+        if forest_len != unsplit_message_count(p) || sums.len() != p.cols() {
+            return Err(err("unsplit bridge shape"));
+        }
+        let bound = checked_weight_sum(row_weights)?;
+        if sums.iter().any(|&sum| sum > bound) {
+            return Err(err("bridge integer fold magnitude"));
+        }
+        Ok(bound)
+    }
+
+    pub(crate) fn message_count(p: &IntegerMatrixLayout) -> usize {
+        unsplit_message_count(p)
+    }
+
+    /// `Σ_c sum_c eq(point, c) mod p`, the value the folds read off.
+    pub(crate) fn read_off(sums: &[u128], column_point: &[F], field: &Cfg) -> u128 {
+        let cols = weights(column_point, field);
+        sums.iter().zip(&cols).fold(0, |acc, (&sum, &weight)| field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight)))
+    }
+
+    pub(crate) fn bind(t: &mut impl Transcript, sums: &[u128]) {
+        bind_unsplit(t, sums);
+    }
+
+    pub(crate) fn root_point(t: &mut impl Transcript, p: &IntegerMatrixLayout) -> Vec<Gf> {
+        unsplit_root_point(t, p)
+    }
+
+    pub(crate) fn root_claim(sums: &[u128], zeta: &[Gf]) -> Gf {
+        let comb = generator_comb();
+        let eq = build_eq_x_r_vec(zeta, &()).expect("nonempty column point");
+        sums.iter().zip(eq).fold(Gf::zero(), |acc, (&sum, weight)| acc + weight * comb.pow(sum))
+    }
+
+    /// The binary claim of the forest's terminal `(point, value)`; its
+    /// `value` is `value + 1` (the circuit forms it itself).
+    pub(crate) fn binary_claim(
+        p: &IntegerMatrixLayout,
+        row_weights: &[u128],
+        point: &[Gf],
+        value: Gf,
+    ) -> Result<BinaryClaim, FalconError> {
+        let comb = generator_comb();
+        let images: Vec<_> = row_weights.iter().map(|&weight| comb.pow(weight)).collect();
+        unsplit_binary_claim(p, &images, point, value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

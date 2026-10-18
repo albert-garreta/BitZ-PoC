@@ -1968,7 +1968,7 @@ fn evaluate_scaled_basis_inplace(
 ///   `enforced_sum = Σ_i eq(α, i_bin) · ⟨opened_rows[i], eq(v_challenges, ·)⟩`
 /// Cheap: O(num_queries × num_interleaved). Verifier needs this at level
 /// intro time (before residual challenges are known).
-pub(crate) fn induce_sumcheck_enforced_sum(
+pub fn induce_sumcheck_enforced_sum(
     opened_rows: &[Vec<Gf128>],
     v_challenges: &[Gf128],
     queries: &[usize],
@@ -2013,7 +2013,7 @@ pub(crate) fn induce_sumcheck_enforced_sum(
 /// `⌈log₂ n⌉`. Number of bits needed to index `n` items. Used to size the
 /// per-level `alpha` slice for the eq-tensor basis-induction combination.
 #[inline]
-pub(crate) fn ceil_log2(n: usize) -> usize {
+pub fn ceil_log2(n: usize) -> usize {
     if n <= 1 {
         0
     } else {
@@ -2021,7 +2021,7 @@ pub(crate) fn ceil_log2(n: usize) -> usize {
     }
 }
 
-pub(crate) fn induce_sumcheck_evaluate_at_residual(
+pub fn induce_sumcheck_evaluate_at_residual(
     log_msg_cols: usize,
     sks_vks: &[Gf128],
     queries: &[usize],

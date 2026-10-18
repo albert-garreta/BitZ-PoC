@@ -13,6 +13,17 @@ use anyhow::Context;
 use flock_core::challenger::Challenger;
 use flock_core::field::Gf128;
 use flock_core::merkle::HashKind;
+
+/// The Merkle hash of every BitZ Ligerito commitment: BLAKE3, or SHA-256
+/// under the `sha256-fs` protocol variant.
+#[cfg(not(feature = "sha256-fs"))]
+pub const MERKLE_HASH: HashKind = HashKind::Blake3;
+/// The Merkle hash of every BitZ Ligerito commitment: BLAKE3, or under the
+/// `sha256-fs` protocol variant the raw SHA-256 compression function (a
+/// node is one compression, a fixed-length leaf its block chain; a verifier
+/// circuit pays one compression per node instead of two).
+#[cfg(feature = "sha256-fs")]
+pub const MERKLE_HASH: HashKind = HashKind::Sha256Compress;
 use flock_core::pcs::commit::{Commitment, PcsParams, ProverData, commit};
 use flock_core::pcs::ligerito::{
     self, LigeritoSecurityConfig, ProverConfig as LigProverConfig, SoundnessRegime,
@@ -414,7 +425,7 @@ pub fn validated_udr_lig_configs_with(
         security.analysis_version =
             "udr_maximal_radius_with_fold_grinding (unaudited custom target)".into();
     }
-    security.hash = "blake3".into();
+    security.hash = MERKLE_HASH.as_str().into();
     security.validate()?;
     security.to_prover_verifier_configs()
 }
@@ -1251,6 +1262,7 @@ const fn merkle_hash_code(hash: HashKind) -> u8 {
     match hash {
         HashKind::Sha256 => 0,
         HashKind::Blake3 => 1,
+        HashKind::Sha256Compress => 2,
     }
 }
 
@@ -1436,7 +1448,7 @@ fn packed_message_vars(p_msg: &[Gf128]) -> usize {
 /// The Round-0 evaluation point `ζ⃗ = (ζ^{2^0}, ζ^{2^1}, …)`: distinct
 /// multilinear monomials become distinct powers of `ζ`.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
+pub(crate) fn ood_point(zeta: Gf, vars: usize) -> Vec<Gf> {
     let mut point = Vec::with_capacity(vars);
     let mut cur = zeta;
     for _ in 0..vars {

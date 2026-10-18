@@ -36,8 +36,9 @@ use {
 
 enum OuterGrinding {}
 impl GrindingDomain for OuterGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/sha256-ecdsa/outer/v1";
+    const DOMAIN: &'static [u8] = OUTER_GRINDING_DOMAIN;
 }
+pub(crate) const OUTER_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/outer/v1";
 
 /// A single source commitment supports both PIOP reductions and the final opening.
 #[derive(Clone)]
@@ -85,7 +86,7 @@ pub fn commit_sha256_ecdsa(
     ))
 }
 
-fn bind_statement<T: Transcript>(
+pub(crate) fn bind_statement<T: Transcript>(
     t: &mut T,
     prepared: &PreparedSha256Ecdsa,
     statement: &Sha256EcdsaStatement,
@@ -141,7 +142,9 @@ fn derive_initial_challenges<T: Transcript>(
     nonce: Option<u64>,
 ) -> Result<InitialSpartanChallenges> {
     let grinding_nonce = boundary(t, INITIAL_GRINDING_DOMAIN, security.initial, nonce)?;
-    let modulus = sample_prime_in_interval(t, 1u128 << 112, (1u128 << 113) - 1).map_err(error)?;
+    let bits = prepared.modulus_bits();
+    let modulus =
+        sample_prime_in_interval(t, 1u128 << (bits - 1), (1u128 << bits) - 1).map_err(error)?;
     absorb_spartan_message(t, b"q", &modulus.to_le_bytes());
     let field_config =
         F::make_cfg(&Uint::from(modulus)).map_err(|_| error("invalid sampled modulus"))?;
@@ -156,7 +159,7 @@ fn derive_initial_challenges<T: Transcript>(
     })
 }
 
-fn sample_inner_batch_challenges<T: Transcript>(
+pub(crate) fn sample_inner_batch_challenges<T: Transcript>(
     t: &mut T,
     prepared: &PreparedSha256Ecdsa,
     cfg: &Config,
@@ -442,7 +445,9 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
 }
 
 const INITIAL_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/initial/v1";
+pub(crate) const INITIAL_GRINDING_DOMAIN_PUB: &[u8] = INITIAL_GRINDING_DOMAIN;
 const BATCH_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/batch/v1";
+pub(crate) const BATCH_GRINDING_DOMAIN_PUB: &[u8] = BATCH_GRINDING_DOMAIN;
 
 /// The shared protocol boundary (skipped at difficulty 0 with the canonical
 /// zero nonce): ground by the prover, checked by the verifier.

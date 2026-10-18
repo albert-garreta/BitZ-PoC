@@ -892,38 +892,45 @@ impl<'a> Forest<'a> {
             .for_each(|(q, out)| {
                 let p = q >> low_bits;
                 let y = q & ((1usize << low_bits) - 1);
-                let mut table = [Gf::zero(); 256];
-                let mut w = [Gf::zero(); 256];
+                // Built in place in `out` (no zeroed stack table, no copy):
+                // every entry read below was written before.
+                let read = |slots: &[MaybeUninit<Gf>], i: usize| -> Gf {
+                    // SAFETY: callers read only entries already written.
+                    unsafe { slots[i].assume_init() }
+                };
+                let mut w = [const { MaybeUninit::<Gf>::uninit() }; 256];
                 let mut filled = 1usize;
                 for v in 0..(1usize << kk) {
                     let base = y | (v << low_bits) | (p << (t - ell - 1));
                     // W_v[sub] = eq_v[v] · Π_{u ∈ sub} A(base + u·2^{t−ell}).
-                    w[0] = eq_v[v];
+                    w[0].write(eq_v[v]);
                     for u in 0..(1usize << ell) {
                         let a = self.images[base | (u << (t - ell))];
                         let lim = 1usize << u;
                         for sub in 0..lim {
-                            w[sub | lim] = w[sub] * a;
+                            let value = read(&w, sub) * a;
+                            w[sub | lim].write(value);
                         }
                     }
                     if v == 0 {
-                        table[..sub_entries].copy_from_slice(&w[..sub_entries]);
+                        for sub in 0..sub_entries {
+                            out[sub].write(read(&w, sub));
+                        }
                     } else {
                         // Outer sum: new[x | sub ≪ (v·2^ell)] = table[x] + w[sub],
                         // the highest `sub` first so every block reads the old
                         // first one.
                         for sub in (0..sub_entries).rev() {
+                            let ws = read(&w, sub);
                             for x in 0..filled {
-                                table[sub * filled + x] = table[x] + w[sub];
+                                let value = read(out, x) + ws;
+                                out[sub * filled + x].write(value);
                             }
                         }
                     }
                     filled *= sub_entries;
                 }
                 debug_assert_eq!(filled, len);
-                for (slot, &value) in out.iter_mut().zip(&table[..len]) {
-                    slot.write(value);
-                }
             });
         // SAFETY: every one of the `positions · len` slots was written above.
         unsafe { buf.set_len(positions * len) };

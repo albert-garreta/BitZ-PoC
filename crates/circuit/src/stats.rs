@@ -198,6 +198,96 @@ impl Circuit for Stats {
     }
 }
 
+/// [`Stats`] with a per-phase tally (see [`Circuit::phase`]).
+#[derive(Clone, Debug, Default)]
+pub struct PhaseStats {
+    pub total: Stats,
+    current: &'static str,
+    mark: Stats,
+    /// `(label, delta)` in first-seen order; repeated labels accumulate.
+    pub phases: Vec<(&'static str, Stats)>,
+}
+
+impl PhaseStats {
+    pub fn new() -> Self {
+        Self {
+            current: "(start)",
+            ..Self::default()
+        }
+    }
+
+    fn close(&mut self) {
+        let delta = Stats {
+            witnesses: self.total.witnesses - self.mark.witnesses,
+            bitz_calls: self.total.bitz_calls - self.mark.bitz_calls,
+            constraints: self.total.constraints - self.mark.constraints,
+        };
+        match self.phases.iter_mut().find(|(l, _)| *l == self.current) {
+            Some((_, s)) => {
+                s.witnesses += delta.witnesses;
+                s.bitz_calls += delta.bitz_calls;
+                s.constraints += delta.constraints;
+            }
+            None => self.phases.push((self.current, delta)),
+        }
+        self.mark = self.total;
+    }
+
+    /// Closes the open phase and returns the tally.
+    pub fn finish(mut self) -> Vec<(&'static str, Stats)> {
+        self.close();
+        self.phases.retain(|(_, s)| s.witnesses + s.bitz_calls + s.constraints > 0);
+        self.phases
+    }
+}
+
+impl Circuit for PhaseStats {
+    type Bool = Dummy;
+    type Coefficient<const LIMBS: usize> = Dummy;
+    type Z<const LIMBS: usize> = Dummy;
+
+    fn xor(&mut self, a: Dummy, b: Dummy) -> Dummy {
+        self.total.xor(a, b)
+    }
+
+    fn hint<const LIMBS: usize, const N: usize, const M: usize, H>(
+        &mut self,
+        hint: H,
+    ) -> ScalarBits<Dummy, N>
+    where
+        H: Fn(&dyn WitnessContext<Dummy, Dummy, Dummy>) -> HintResult<PackedBits<N, M>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.total.hint::<LIMBS, N, M, H>(hint)
+    }
+
+    fn bitz<const LIMBS: usize>(&mut self, v: Dummy) -> Dummy {
+        self.total.bitz::<LIMBS>(v)
+    }
+
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+        &mut self,
+        bits: &<Dummy as BoolWitness>::Repr<N, M>,
+    ) -> (Dummy, Dummy) {
+        self.total.bitz_unsigned::<LIMBS, N, M, LOW>(bits)
+    }
+
+    fn assert_r1c<const LIMBS: usize>(&mut self, a: Dummy, b: Dummy, c: Dummy) {
+        self.total.assert_r1c::<LIMBS>(a, b, c)
+    }
+
+    fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(&mut self, v: Dummy) -> Dummy {
+        self.total.sign_extend_z::<FROM_LIMBS, TO_LIMBS>(v)
+    }
+
+    fn phase(&mut self, label: &'static str) {
+        self.close();
+        self.current = label;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

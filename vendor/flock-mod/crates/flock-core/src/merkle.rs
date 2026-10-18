@@ -135,6 +135,7 @@ pub mod hash_count {
         match kind {
             HashKind::Sha256 => sha256_blocks(len),
             HashKind::Blake3 => blake3_blocks(len),
+            HashKind::Sha256Compress => len.div_ceil(64).max(1) as u64,
         }
     }
 
@@ -212,6 +213,7 @@ pub fn hash_leaf(data: &[u8], kind: HashKind) -> Hash {
     match kind {
         HashKind::Sha256 => Sha256::digest(data).into(),
         HashKind::Blake3 => blake3_leaf_cv(data),
+        HashKind::Sha256Compress => sha256_compress_chain(data),
     }
 }
 
@@ -228,7 +230,36 @@ pub fn hash_pair(left: &Hash, right: &Hash, kind: HashKind) -> Hash {
             h.finalize().into()
         }
         HashKind::Blake3 => blake3_parent_cv(left, right),
+        HashKind::Sha256Compress => {
+            let mut block = [0u8; 64];
+            block[..32].copy_from_slice(left);
+            block[32..].copy_from_slice(right);
+            sha256_compress_chain(&block)
+        }
     }
+}
+
+/// [`HashKind::Sha256Compress`]: the compression chain from the IV over the
+/// 64-byte blocks of `data` (the last zero-padded; an empty input is one
+/// zero block), its chaining value as the digest's big-endian words.
+#[allow(deprecated)] // sha2 0.10's block type is generic-array 0.14
+pub fn sha256_compress_chain(data: &[u8]) -> Hash {
+    use sha2::digest::generic_array::GenericArray;
+    let mut state = SHA256_IV;
+    let mut block = [0u8; 64];
+    if data.is_empty() {
+        sha2::compress256(&mut state, &[*GenericArray::from_slice(&block)]);
+    }
+    for chunk in data.chunks(64) {
+        block.fill(0);
+        block[..chunk.len()].copy_from_slice(chunk);
+        sha2::compress256(&mut state, &[*GenericArray::from_slice(&block)]);
+    }
+    let mut out = [0u8; 32];
+    for (bytes, word) in out.chunks_exact_mut(4).zip(state) {
+        bytes.copy_from_slice(&word.to_be_bytes());
+    }
+    out
 }
 
 /// SHA-256 of four equal-length inputs, four-way interleaved across the
@@ -416,6 +447,10 @@ fn hash_leaves(data: &[u8], leaf_size: usize, out: &mut [Hash], kind: HashKind) 
             .par_iter_mut()
             .zip(data.par_chunks(leaf_size))
             .for_each(|(o, leaf)| *o = blake3_leaf_cv(leaf)),
+        HashKind::Sha256Compress => out
+            .par_iter_mut()
+            .zip(data.par_chunks(leaf_size))
+            .for_each(|(o, leaf)| *o = sha256_compress_chain(leaf)),
         HashKind::Sha256 => {
             out.par_chunks_mut(4)
                 .zip(data.par_chunks(4 * leaf_size))
@@ -462,6 +497,14 @@ fn hash_pairs_level(read: &[Hash], write: &mut [Hash], kind: HashKind) {
     let serial = write.len() <= SERIAL_LEVEL_NODES;
 
     match kind {
+        HashKind::Sha256Compress => {
+            let pair = |(out, children): (&mut Hash, &[u8])| *out = sha256_compress_chain(children);
+            if serial {
+                write.iter_mut().zip(read_bytes.chunks(64)).for_each(pair);
+            } else {
+                write.par_iter_mut().zip(read_bytes.par_chunks(64)).for_each(pair);
+            }
+        }
         HashKind::Blake3 => {
             if serial {
                 blake3_hash_many_parents(read_bytes, write);

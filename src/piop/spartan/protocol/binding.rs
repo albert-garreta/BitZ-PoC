@@ -28,6 +28,7 @@ pub const fn hash_code(hash: HashKind) -> u8 {
     match hash {
         HashKind::Sha256 => 0,
         HashKind::Blake3 => 1,
+        HashKind::Sha256Compress => 2,
     }
 }
 

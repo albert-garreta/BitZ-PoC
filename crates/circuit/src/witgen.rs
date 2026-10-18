@@ -60,6 +60,18 @@ impl<const LIMBS: usize> WitnessContext<Z<LIMBS>, bool, Z<LIMBS>> for ValueConte
     }
 }
 
+/// [`Circuit::linear_maps_128`] on values: the XOR of the columns whose
+/// input bit is set (the same bits as the default per-bit fold).
+fn linear_maps_128_values(maps: &[(&[bool; 128], [u128; 128])], constant: u128) -> [bool; 128] {
+    let mut out = constant;
+    for (input, columns) in maps {
+        for (bit, column) in input.iter().zip(columns) {
+            out ^= column & 0u128.wrapping_sub(u128::from(*bit));
+        }
+    }
+    core::array::from_fn(|i| (out >> i) & 1 == 1)
+}
+
 /// A Boolean witness packed least-significant-bit first into `u64` words.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PackedWitness {
@@ -146,6 +158,17 @@ impl PackedWitness {
     }
 }
 
+/// Where one block ([`Circuit::begin_block`]) put its bits: its committed
+/// bits `hint_base..hint_base + hints` and its cells `cell_base..cell_base +
+/// cells` (cell `0` is the first `bitz` cell, after the constant entry).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BlockSpan {
+    pub hint_base: usize,
+    pub hints: usize,
+    pub cell_base: usize,
+    pub cells: usize,
+}
+
 /// Executes hints eagerly and accumulates the resulting packed Boolean witness.
 ///
 /// The runner supports every [`Z<LIMBS>`] width simultaneously; each gadget
@@ -154,6 +177,8 @@ impl PackedWitness {
 pub struct Witgen {
     witness: PackedWitness,
     integer_witness: PackedWitness,
+    /// The blocks run so far, in order (the recorder's instances).
+    blocks: Vec<BlockSpan>,
 }
 
 /// Executes hints and accumulates only the Boolean witness `w`.
@@ -240,6 +265,14 @@ impl Circuit for WitnessOnly {
     ) -> Z<TO_LIMBS> {
         value.sign_extend()
     }
+
+    fn xor_many(&mut self, bits: Vec<bool>) -> bool {
+        bits.into_iter().fold(false, |a, b| a ^ b)
+    }
+
+    fn linear_maps_128(&mut self, maps: &[(&[bool; 128], [u128; 128])], constant: u128) -> [bool; 128] {
+        linear_maps_128_values(maps, constant)
+    }
 }
 
 impl Witgen {
@@ -256,6 +289,7 @@ impl Witgen {
         Self {
             witness,
             integer_witness: Self::initial_integer_witness(),
+            blocks: Vec::new(),
         }
     }
 
@@ -282,6 +316,11 @@ impl Witgen {
         (self.witness, self.integer_witness)
     }
 
+    /// The blocks run so far, in order.
+    pub fn blocks(&self) -> &[BlockSpan] {
+        &self.blocks
+    }
+
     /// Constructs the fast witness-generation evaluator.
     pub fn new() -> Self {
         Self {
@@ -290,6 +329,7 @@ impl Witgen {
                 bit_len: 0,
             },
             integer_witness: Self::initial_integer_witness(),
+            blocks: Vec::new(),
         }
     }
 
@@ -315,6 +355,7 @@ impl Witgen {
         Self {
             witness,
             integer_witness: Self::initial_integer_witness(),
+            blocks: Vec::new(),
         }
     }
 }
@@ -378,6 +419,35 @@ impl Circuit for Witgen {
         value: Z<FROM_LIMBS>,
     ) -> Z<TO_LIMBS> {
         value.sign_extend()
+    }
+
+    fn try_eval(&self, bit: &bool) -> Option<bool> {
+        Some(*bit)
+    }
+
+    fn xor_many(&mut self, bits: Vec<bool>) -> bool {
+        bits.into_iter().fold(false, |a, b| a ^ b)
+    }
+
+    fn linear_maps_128(&mut self, maps: &[(&[bool; 128], [u128; 128])], constant: u128) -> [bool; 128] {
+        linear_maps_128_values(maps, constant)
+    }
+
+    fn begin_block(&mut self, _kind: &'static str, inputs: Vec<bool>) -> Vec<bool> {
+        self.blocks.push(BlockSpan {
+            hint_base: self.witness.bit_len,
+            hints: 0,
+            cell_base: self.integer_witness.bit_len - 1,
+            cells: 0,
+        });
+        inputs
+    }
+
+    fn end_block(&mut self, outputs: Vec<bool>) -> Vec<bool> {
+        let span = self.blocks.last_mut().expect("end_block without begin_block");
+        span.hints = self.witness.bit_len - span.hint_base;
+        span.cells = self.integer_witness.bit_len - 1 - span.cell_base;
+        outputs
     }
 }
 
@@ -494,6 +564,112 @@ impl Circuit for ProductWitgen {
         value: Z<FROM_LIMBS>,
     ) -> Z<TO_LIMBS> {
         value.sign_extend()
+    }
+}
+
+/// [`Witgen`] that also checks every rank-1 row `a·b = c` on the exact
+/// integers as it is asserted, without materializing any matrix: the
+/// satisfiability check for circuits too large for [`crate::constraints`].
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CheckingWitgen {
+    witgen: Witgen,
+    /// Rank-1 rows asserted so far.
+    pub rows: usize,
+    /// The first row whose integer identity failed, if any.
+    pub first_failure: Option<usize>,
+}
+
+impl CheckingWitgen {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_inputs(inputs: &[bool]) -> Self {
+        Self {
+            witgen: Witgen::with_inputs(inputs),
+            ..Self::default()
+        }
+    }
+
+    /// Packed Boolean witness accumulated so far.
+    pub fn witness(&self) -> &PackedWitness {
+        self.witgen.witness()
+    }
+
+    /// Packed `M * w` accumulated so far.
+    pub fn integer_witness(&self) -> &PackedWitness {
+        self.witgen.integer_witness()
+    }
+
+    pub fn into_witnesses(self) -> (PackedWitness, PackedWitness) {
+        self.witgen.into_witnesses()
+    }
+}
+
+impl Circuit for CheckingWitgen {
+    type Bool = bool;
+    type Coefficient<const LIMBS: usize> = Z<LIMBS>;
+    type Z<const LIMBS: usize> = Z<LIMBS>;
+
+    fn coefficient_from_le_words<const LIMBS: usize>(words: &[u64]) -> Z<LIMBS> {
+        integer_from_words(words)
+    }
+
+    fn xor(&mut self, lhs: bool, rhs: bool) -> bool {
+        lhs ^ rhs
+    }
+
+    fn hint<const LIMBS: usize, const N: usize, const M: usize, H>(
+        &mut self,
+        hint: H,
+    ) -> PackedBits<N, M>
+    where
+        H: Fn(&dyn WitnessContext<Z<LIMBS>, bool, Z<LIMBS>>) -> HintResult<PackedBits<N, M>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.witgen.hint(hint)
+    }
+
+    fn bitz<const LIMBS: usize>(&mut self, value: bool) -> Z<LIMBS> {
+        self.witgen.bitz(value)
+    }
+
+    fn bitz_unsigned<const LIMBS: usize, const N: usize, const M: usize, const LOW: usize>(
+        &mut self,
+        bits_le: &<bool as BoolWitness>::Repr<N, M>,
+    ) -> (Z<LIMBS>, Z<LIMBS>) {
+        self.witgen.bitz_unsigned::<LIMBS, N, M, LOW>(bits_le)
+    }
+
+    fn assert_r1c<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) {
+        use field::{CtEq, IntegerOps, WideMul};
+        let product = IntegerOps.mul_wide(&a, &b).checked_resize_ct::<LIMBS>();
+        let ok = (product.validity() & product.value().ct_eq(&c)).declassify();
+        if !ok && self.first_failure.is_none() {
+            self.first_failure = Some(self.rows);
+        }
+        self.rows += 1;
+    }
+
+    fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
+        &mut self,
+        value: Z<FROM_LIMBS>,
+    ) -> Z<TO_LIMBS> {
+        value.sign_extend()
+    }
+
+    fn try_eval(&self, bit: &bool) -> Option<bool> {
+        Some(*bit)
+    }
+
+    fn xor_many(&mut self, bits: Vec<bool>) -> bool {
+        bits.into_iter().fold(false, |a, b| a ^ b)
+    }
+
+    fn linear_maps_128(&mut self, maps: &[(&[bool; 128], [u128; 128])], constant: u128) -> [bool; 128] {
+        linear_maps_128_values(maps, constant)
     }
 }
 

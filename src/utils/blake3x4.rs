@@ -41,12 +41,18 @@ mod avx512;
 /// Longest prefix (bytes) that keeps `prefix ‖ nonce` inside one block.
 pub(crate) const MAX_PREFIX_LEN: usize = 56;
 
-/// `blake3(prefix ‖ nonce_le)` has at least `bits` leading zero bits.
+/// `blake3(prefix ‖ nonce_le)` has at least `bits` leading zero bits
+/// (`sha256(prefix ‖ nonce_le)`, one padded block, under `sha256-fs`).
 pub(crate) fn pow_ok(prefix: &[u8], nonce: u64, bits: u32) -> bool {
     assert!(
         prefix.len() <= MAX_PREFIX_LEN,
         "proof-of-work prefix exceeds one block"
     );
+    #[cfg(feature = "sha256-fs")]
+    {
+        return leading_zero_bits(&crate::transcript::sha::sha256_one_block(prefix, nonce)) >= bits;
+    }
+    #[allow(unreachable_code)]
     let mut buf = [0u8; 64];
     buf[..prefix.len()].copy_from_slice(prefix);
     buf[prefix.len()..prefix.len() + 8].copy_from_slice(&nonce.to_le_bytes());
@@ -76,6 +82,11 @@ pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) ->
         prefix.len() <= MAX_PREFIX_LEN,
         "proof-of-work prefix exceeds one block"
     );
+    #[cfg(feature = "sha256-fs")]
+    {
+        return sha256_first_pow_nonce(prefix, start, end, bits);
+    }
+    #[allow(unreachable_code)]
     #[cfg(target_arch = "aarch64")]
     if prefix.len() % 4 == 0 {
         // SAFETY: NEON is a baseline feature of every aarch64 target.
@@ -94,6 +105,28 @@ pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) ->
         }
     }
     (start..end).find(|&n| pow_ok(prefix, n, bits))
+}
+
+/// [`first_pow_nonce`] over SHA-256: the padded block is built once and
+/// only its nonce bytes change between attempts.
+#[cfg(feature = "sha256-fs")]
+fn sha256_first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) -> Option<u64> {
+    use crate::transcript::sha::{IV, compress, state_bytes};
+    let len = prefix.len() + 8;
+    assert!(len <= 55, "proof-of-work message exceeds one SHA-256 block");
+    let mut block = [0u8; 64];
+    block[..prefix.len()].copy_from_slice(prefix);
+    block[len] = 0x80;
+    block[56..].copy_from_slice(&((len as u64) * 8).to_be_bytes());
+    for nonce in start..end {
+        block[prefix.len()..len].copy_from_slice(&nonce.to_le_bytes());
+        let mut state = IV;
+        compress(&mut state, &block);
+        if leading_zero_bits(&state_bytes(&state)) >= bits {
+            return Some(nonce);
+        }
+    }
+    None
 }
 
 /// The smallest nonce whose `blake3(prefix ‖ nonce_le)` has at least `bits`

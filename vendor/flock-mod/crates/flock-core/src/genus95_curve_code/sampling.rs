@@ -43,7 +43,7 @@ pub fn evaluation_point_from_nonce(
 ) -> Option<EvaluationPoint> {
     let mut nonce_seed = [0u8; 32];
     match kind {
-        crate::hash::HashKind::Sha256 => {
+        crate::hash::HashKind::Sha256 | crate::hash::HashKind::Sha256Compress => {
             let mut h = Sha256::new();
             h.update(seed);
             h.update(nonce.to_le_bytes());

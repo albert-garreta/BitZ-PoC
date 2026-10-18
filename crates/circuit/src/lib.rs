@@ -13,11 +13,14 @@ use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 use num_traits::{One, Zero};
 
+pub mod blake3;
+pub mod compact;
 pub mod constraints;
 #[cfg(feature = "full")]
 pub mod ecdsa;
 #[cfg(feature = "full")]
 pub mod ecdsa_sha256;
+pub mod gf128;
 pub mod integer_storage;
 pub mod linear_map;
 pub mod matrix_products;
@@ -554,6 +557,73 @@ pub trait Circuit {
         &mut self,
         value: Self::Z<FROM_LIMBS>,
     ) -> Self::Z<TO_LIMBS>;
+
+    /// Marks the start of a named circuit phase. Accounting backends tally
+    /// their counts per phase; every other backend ignores it.
+    fn phase(&mut self, _label: &'static str) {}
+
+    /// The XOR of many bits at once (recording backends merge supports in
+    /// one pass instead of pairwise).
+    fn xor_many(&mut self, bits: Vec<Self::Bool>) -> Self::Bool {
+        let mut acc = Self::Bool::from(false);
+        for b in bits {
+            acc = self.xor(acc, b);
+        }
+        acc
+    }
+
+    /// `out[i] = constant_i ⊕ XOR_{(k, j) : bit i of maps[k].1[j]} maps[k].0[j]`:
+    /// the image of 128-bit inputs under F2-linear maps (column `j` of map `k`
+    /// is the image of its input bit `j`), formed in one pass.
+    fn linear_maps_128(&mut self, maps: &[(&[Self::Bool; 128], [u128; 128])], constant: u128) -> [Self::Bool; 128] {
+        let mut per_bit: Vec<Vec<Self::Bool>> = (0..128).map(|_| Vec::new()).collect();
+        for (input, columns) in maps {
+            for (j, &column) in columns.iter().enumerate() {
+                let mut col = column;
+                while col != 0 {
+                    let i = col.trailing_zeros() as usize;
+                    per_bit[i].push(input[j].clone());
+                    col &= col - 1;
+                }
+            }
+        }
+        let mut out: Vec<Self::Bool> = per_bit.into_iter().map(|bits| self.xor_many(bits)).collect();
+        for (i, o) in out.iter_mut().enumerate() {
+            if (constant >> i) & 1 == 1 {
+                *o = self.xor(o.clone(), Self::Bool::from(true));
+            }
+        }
+        core::array::from_fn(|i| out[i].clone())
+    }
+
+    /// Opens a repeated gadget instance (a "block") of kind `kind` whose only
+    /// view of the rest of the circuit is `inputs`. Returns the handles the
+    /// block body must use instead: recording backends substitute
+    /// placeholders so every instance of a kind records the same local
+    /// relation, and the wiring `slot → input` separately. Blocks do not nest.
+    fn begin_block(&mut self, _kind: &'static str, inputs: Vec<Self::Bool>) -> Vec<Self::Bool> {
+        inputs
+    }
+
+    /// Closes the current block; `outputs` are block-local handles, the
+    /// result their values in the enclosing circuit.
+    fn end_block(&mut self, outputs: Vec<Self::Bool>) -> Vec<Self::Bool> {
+        outputs
+    }
+
+    /// Before [`Circuit::begin_block`]: a backend that can produce a whole
+    /// block of kind `kind` without the gadget's body (a recorder that knows
+    /// the kind's local relation) does so and returns its outputs; otherwise
+    /// it hands `inputs` back and the gadget runs normally.
+    fn try_replay_block(&mut self, _kind: &'static str, inputs: Vec<Self::Bool>) -> Result<Vec<Self::Bool>, Vec<Self::Bool>> {
+        Err(inputs)
+    }
+
+    /// The value of `bit` when this backend computes values (witness
+    /// generation), `None` for symbolic backends.
+    fn try_eval(&self, _bit: &Self::Bool) -> Option<bool> {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -23,7 +23,6 @@
 
 use circuit::linear_map::binary::VirtualMap;
 use field::Gf128 as Gf;
-use flock_core::merkle::HashKind;
 use num_traits::{One, Zero};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -40,7 +39,7 @@ use super::{
 use crate::{cfg_into_iter, ligerito_flock::FlockCommitHint, pcs::IntegerMatrixLayout};
 
 /// The frame separating a virtual proof from a direct one.
-const VIRTUAL_STATEMENT_LABEL: &[u8] = b"bitz/virtual-statement/v2";
+pub(crate) const VIRTUAL_STATEMENT_LABEL: &[u8] = b"bitz/virtual-statement/v2";
 
 /// A statement or map the virtual opening cannot take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +128,7 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
 
     /// The bytes both roles bind after the root: the claim parameters, the
     /// committed shape, the map digest.
-    fn frame(&self) -> Vec<u8> {
+    pub(crate) fn frame(&self) -> Vec<u8> {
         let mut frame = Vec::with_capacity(48 + 16 + 32);
         frame.extend_from_slice(Encoding::<[u8]>::encode(&self.claim_params).as_ref());
         frame.extend_from_slice(&(self.committed.log_rows() as u64).to_le_bytes());
@@ -170,6 +169,12 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         let derived = 1usize << shape.log_bits();
         let cells = 1usize << self.committed.log_bits();
         let map = self.map;
+        if let Some(weights) = map.transpose_weights(row_w, col_w, t, cells) {
+            let single = Shape::new(self.committed.log_bits(), 0).map_err(VirtualError::Shape)?;
+            let claim = LinearClaimGf::from_shape(&single, weights, vec![Gf::one()], claim.target())
+                .map_err(VirtualError::Claim)?;
+            return Ok(OpeningQuery::InnerProduct { claim });
+        }
         let weights: Vec<Gf> = cfg_into_iter!(0..cells, 1 << 12)
             .map(|source| {
                 let mut acc = Gf::zero();
@@ -354,7 +359,7 @@ impl BitZVerifier {
 
 /// The scheme's Ligerito ladder for a committed shape, as shipped.
 pub fn committed_pcs(committed: &Shape) -> Result<Pcs, super::pcs::ConfigError> {
-    Pcs::new(committed, HashKind::Blake3)
+    Pcs::new(committed, crate::ligerito_flock::MERKLE_HASH)
 }
 
 #[cfg(test)]
@@ -592,6 +597,7 @@ mod tests {
             statement.bind(root, &pcs, &mut transcript);
             transcript.verifier_message::<Gf>()
         };
+        use flock_core::merkle::HashKind;
         assert_ne!(challenge(HashKind::Blake3), challenge(HashKind::Sha256));
     }
 

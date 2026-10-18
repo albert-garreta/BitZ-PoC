@@ -24,6 +24,12 @@ pub enum HashKind {
     #[default]
     Sha256,
     Blake3,
+    /// Merkle trees only: the raw SHA-256 compression function from the IV —
+    /// a node is one compression of `left ‖ right`, a (fixed-length) leaf the
+    /// compression chain over its 64-byte blocks, the last zero-padded, with
+    /// no length padding. Fiat–Shamir uses treat it as [`HashKind::Sha256`].
+    #[serde(rename = "sha256-compress")]
+    Sha256Compress,
 }
 
 impl HashKind {
@@ -33,6 +39,7 @@ impl HashKind {
         match self {
             HashKind::Sha256 => "sha256",
             HashKind::Blake3 => "blake3",
+            HashKind::Sha256Compress => "sha256-compress",
         }
     }
 
@@ -43,6 +50,7 @@ impl HashKind {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
             "sha256" | "sha-256" => Ok(HashKind::Sha256),
+            "sha256-compress" => Ok(HashKind::Sha256Compress),
             "blake3" => Ok(HashKind::Blake3),
             other => Err(format!(
                 "unknown hash {other:?}: expected \"sha256\" or \"blake3\""
