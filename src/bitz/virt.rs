@@ -170,6 +170,12 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         let derived = 1usize << shape.log_bits();
         let cells = 1usize << self.committed.log_bits();
         let map = self.map;
+        if let Some(weights) = map.transpose_weights(row_w, col_w, t, cells) {
+            let single = Shape::new(self.committed.log_bits(), 0).map_err(VirtualError::Shape)?;
+            let claim = LinearClaimGf::from_shape(&single, weights, vec![Gf::one()], claim.target())
+                .map_err(VirtualError::Claim)?;
+            return Ok(OpeningQuery::InnerProduct { claim });
+        }
         let weights: Vec<Gf> = cfg_into_iter!(0..cells, 1 << 12)
             .map(|source| {
                 let mut acc = Gf::zero();

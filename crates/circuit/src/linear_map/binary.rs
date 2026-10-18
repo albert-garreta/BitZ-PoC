@@ -61,6 +61,21 @@ pub trait VirtualMap: Sync {
     /// Derived row indices for one source column, in increasing order.
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>>;
 
+    /// The transposed weights of a factored claim on the derived grid:
+    /// `weight[s] = Σ_{d ∈ column_rows(s)} row[d mod 2^t] · col[d div 2^t]`
+    /// for the first `cells` source cells, when the map can form them faster
+    /// than column by column (for example from a repeated template). `None`:
+    /// use `column_rows`.
+    fn transpose_weights(
+        &self,
+        _row: &[field::Gf128],
+        _col: &[field::Gf128],
+        _t: usize,
+        _cells: usize,
+    ) -> Option<Vec<field::Gf128>> {
+        None
+    }
+
     /// The map's implicit tensor repetition, when it has one: the local
     /// map and the instance count, with global bit-cell indices laid out
     /// `global = local · instances + instance`. Lets the virtual-opening

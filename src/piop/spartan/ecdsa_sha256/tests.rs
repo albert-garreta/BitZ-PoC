@@ -919,6 +919,45 @@ fn chained_structured_weights_equal_the_dense_transpose() {
     }
 }
 
+/// The dense statement's transposed weights (`Sha256EcdsaMap::transpose_weights`,
+/// instance by instance) equal the generic sum over `column_rows` at every
+/// committed cell, for weights that are no tensor, on both circuits.
+#[test]
+fn dense_transpose_weights_match_the_column_rows() {
+    use field::Gf128 as Gf;
+    let mut state = 0x0f1e_2d3c_4b5a_6978u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut random = move || Gf::new(next(), next());
+    for (circuit, log_n, mode) in [
+        (EcdsaCircuit::P256Paper, 3, OuterMode::Split),
+        (EcdsaCircuit::P256Paper, 4, OuterMode::AllRows),
+        (EcdsaCircuit::Secp256k1BiniusMatched, 3, OuterMode::Split),
+    ] {
+        let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode).unwrap();
+        let map = &prepared.map;
+        let t = prepared.h_layout.row_vars;
+        let row_w: Vec<Gf> = (0..1usize << t).map(|_| random()).collect();
+        let col_w: Vec<Gf> = (0..1usize << prepared.h_layout.col_vars).map(|_| random()).collect();
+        let fast = map
+            .transpose_weights(&row_w, &col_w, t, map.cols())
+            .expect("the map transposes its own grid");
+        for (s, &w) in fast.iter().enumerate() {
+            let slow: Gf = map
+                .column_rows(s)
+                .into_iter()
+                .flatten()
+                .map(|d| row_w[d & ((1 << t) - 1)] * col_w[d >> t])
+                .sum();
+            assert_eq!(w, slow, "{circuit:?} 2^{log_n} {mode:?}: committed cell {s}");
+        }
+    }
+}
+
 /// A committed cell that holds no source cannot carry a derived bit: with
 /// the hole bit set in the commitment and the bit it mirrors flipped in the
 /// derived grid, the claim (true for the tampered grid, false for `M·f`) is

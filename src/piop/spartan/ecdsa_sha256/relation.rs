@@ -428,6 +428,109 @@ impl VirtualMap for Sha256EcdsaMap {
             aliases: &self.aliases,
         })
     }
+    /// The transposition of [`Self::column_rows`] summed over every incidence
+    /// (pairs cancel by themselves in characteristic 2), instance by instance
+    /// on the thread pool. Instance `i`'s local row `r` is derived cell
+    /// `i + n·r`; its weight is formed once per row, and each committed cell
+    /// adds the weights of the rows reading it.
+    fn transpose_weights(&self, row_w: &[field::Gf128], col_w: &[field::Gf128], t: usize, cells: usize) -> Option<Vec<field::Gf128>> {
+        use field::Gf128 as Gf;
+        let n = self.n;
+        let derived = row_w.len().checked_mul(col_w.len())?;
+        if row_w.len() != 1 << t || derived < self.rows || cells < self.cols || n == 0 {
+            return None;
+        }
+        let mask = (1usize << t) - 1;
+        let weight = |d: usize| row_w[d & mask] * col_w[d >> t];
+        let local = &self.local;
+        fn rows_of(map: &PreparedVirtualMap, c: usize) -> &[usize] {
+            map.matrix().column_rows(c).unwrap_or(&[])
+        }
+        let local_weights = |i: usize, out: &mut Vec<Gf>| {
+            out.clear();
+            out.extend((0..SHA_H).map(|r| weight(i + n * r)));
+        };
+        let mut out = vec![Gf::ZERO; cells];
+        // Instance i's committed cells 1 + i·SHA_F + (c − 1): its own local
+        // rows and instance i + 1's previous-state rows.
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
+        let chunk = n.div_ceil(4 * threads).max(1);
+        let sums = |(k, cells): (usize, &mut [Gf])| -> Gf {
+            let start = k * chunk;
+            let mut constant = Gf::ZERO;
+            let (mut own, mut next) = (Vec::with_capacity(SHA_H), Vec::with_capacity(SHA_H));
+            local_weights(start, &mut own);
+            for (j, slot) in cells.chunks_mut(SHA_F).enumerate() {
+                let i = start + j;
+                let has_next = i + 1 < n;
+                if has_next {
+                    local_weights(i + 1, &mut next);
+                }
+                for &r in rows_of(&local.sha_local, 0) {
+                    constant += own[r];
+                }
+                for (c, dst) in slot.iter_mut().enumerate() {
+                    let mut acc = Gf::ZERO;
+                    for &r in rows_of(&local.sha_local, c + 1) {
+                        acc += own[r];
+                    }
+                    if has_next {
+                        for &r in rows_of(&local.sha_prev, c + 1) {
+                            acc += next[r];
+                        }
+                    }
+                    *dst = acc;
+                }
+                std::mem::swap(&mut own, &mut next);
+            }
+            constant
+        };
+        let blocks = &mut out[1..1 + n * SHA_F];
+        #[cfg(feature = "parallel")]
+        let constants: Vec<Gf> = {
+            use rayon::prelude::*;
+            blocks.par_chunks_mut(chunk * SHA_F).enumerate().map(sums).collect()
+        };
+        #[cfg(not(feature = "parallel"))]
+        let constants: Vec<Gf> = blocks.chunks_mut(chunk * SHA_F).enumerate().map(sums).collect();
+        let mut constant = constants.into_iter().fold(Gf::ZERO, |a, b| a + b);
+        // The first instance's constant rows, the last instance's own map.
+        for &r in rows_of(&local.sha_first, 0) {
+            constant += weight(n * r);
+        }
+        let last = n - 1;
+        for c in 0..=SHA_F {
+            let mut acc = Gf::ZERO;
+            for &r in rows_of(&self.last, c) {
+                acc += weight(last + n * r);
+            }
+            if c == 0 {
+                constant += acc;
+            } else {
+                out[1 + last * SHA_F + c - 1] += acc;
+            }
+        }
+        // The ECDSA verifier's rows, onto their aliased sources.
+        for c in 0..local.p_map.cols() {
+            let rows = rows_of(&local.p_map, c);
+            if rows.is_empty() {
+                continue;
+            }
+            let acc = rows.iter().fold(Gf::ZERO, |a, &r| a + weight(self.h_offset + r));
+            let source = if c < P_INPUT_ALIAS { self.aliases[c] } else { self.f_offset + c - P_INPUT_ALIAS };
+            if source == 0 {
+                constant += acc;
+            } else {
+                out[source] += acc;
+            }
+        }
+        out[0] += constant;
+        Some(out)
+    }
+
     fn column_rows(&self, column: usize) -> Option<Self::ColumnRows<'_>> {
         if column >= self.cols {
             return None;
