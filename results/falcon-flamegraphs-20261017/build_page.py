@@ -179,6 +179,32 @@ def aerie_sizes(path: Path, common_salt: bool):
     }
 
 
+def pcs_parameters(here: Path):
+    """Resolved Ligerito shapes: the algebraic grinding report's "pcs shape" line
+    at 32,768 signatures, and the full-Falcon bench's pcs_query_shape at 1024."""
+    rows = []
+    shape = re.compile(r"pcs shape: committed 2\^(\d+) bits \| log_inv_rates \[([\d, ]*)\] \| queries \[([\d, ]*)\]"
+                       r" \| initial_k (\d+) \| recursive_ks \[[\d, ]*\] \| fold grinding \[([\d, ]*)\] \| ood \[([\d, ]*)\]")
+    ints = lambda s: [int(x) for x in s.split(",") if x.strip()]
+    for key, name, records in [("shipped", "BitZ, falcon-poc", "32,768 signatures"),
+                               ("t16", "BitZ, experiment", "32,768 signatures")]:
+        path = here / "rate" / f"{key}.err"
+        if not path.exists():
+            return None
+        m = shape.search(path.read_text())
+        rows.append({"name": name, "records": records, "log_bits": int(m[1]), "rates": ints(m[2]),
+                     "queries": ints(m[3]), "fold": ints(m[5]), "ood": ints(m[6])})
+    full = here.parent / "full-falcon-20261018" / "ladder" / "S0-t10-r1.jsonl"
+    if full.exists():
+        record = next(json.loads(l) for l in full.read_text().splitlines() if '"pcs_query_shape"' in l)
+        s = record["pcs_query_shape"]
+        rows.append({"name": "Full Falcon (hybrid)", "records": "1,024 signatures",
+                     "log_bits": s["initial_log_msg_cols"] + s["initial_log_num_interleaved"] + 7,
+                     "rates": s["log_inv_rates"], "queries": s["queries"], "fold": s["fold_grinding_bits"],
+                     "ood": s["ood_samples"]})
+    return rows
+
+
 def median(values):
     values = sorted(values)
     mid = len(values) // 2
@@ -283,6 +309,11 @@ if SIZES.exists():
     }
     size_notes = Path(__file__).parent / "size_notes.json"
     data["sizes"]["notes"] = json.loads(size_notes.read_text()) if size_notes.exists() else []
+    pcs = pcs_parameters(Path(__file__).parent)
+    if pcs:
+        data["sizes"]["pcs"] = pcs
+        for row in pcs:
+            print("pcs", row["name"], row["log_bits"], row["rates"], row["queries"])
     for row in data["sizes"]["rows"]:
         print(row["name"], row["total"], dict(zip([n for n, _ in SIZE_CATEGORIES], row["cats"])))
     proofs = {

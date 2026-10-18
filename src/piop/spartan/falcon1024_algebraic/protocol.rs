@@ -913,6 +913,17 @@ impl PreparedFalconAlgebraic {
                 block.bits,
             );
         }
+        let config = self.ligerito.prover();
+        out += &format!(
+            "pcs shape: committed 2^{} bits | log_inv_rates {:?} | queries {:?} | initial_k {} | recursive_ks {:?} | fold grinding {:?} | ood {:?}\n",
+            self.geometry.packed_log() + crate::ligerito::LOG_PACKING,
+            config.log_inv_rates,
+            config.queries,
+            config.initial_k,
+            config.recursive_ks,
+            config.fold_grinding_bits,
+            config.ood_samples,
+        );
         out
     }
 

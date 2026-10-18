@@ -224,6 +224,8 @@ details summary { cursor: pointer; color: var(--ink-2); }
     <div class="legend" id="size-legend"></div>
     <div class="bars" id="size-bars"></div>
     <div class="table-wrap"><table id="size-table" class="size-table"></table></div>
+    <h3 id="pcs-title" hidden>Ligerito parameters</h3>
+    <div class="table-wrap"><table id="pcs-table" class="full-table"></table></div>
     <div class="notes" id="size-notes"></div>
   </section>
 
@@ -413,6 +415,17 @@ details summary { cursor: pointer; color: var(--ink-2); }
     html += `<tr><td>Per signature</td>${ROWS.map((r) => `<td>${(r.total / records).toFixed(1)} B</td>`).join("")}</tr></tbody>`;
     document.getElementById("size-table").innerHTML = html;
     document.getElementById("size-notes").innerHTML = (SIZES.notes || []).map((n) => `<p>${n}</p>`).join("");
+    if (SIZES.pcs) {
+      document.getElementById("pcs-title").hidden = false;
+      const list = (xs) => xs.join(", ");
+      document.getElementById("pcs-table").innerHTML =
+        `<thead><tr><th>Prover</th><th>Committed</th><th>Regime</th><th>Rate per level</th>` +
+        `<th>Queries per level</th><th>Fold grinding, bits</th></tr></thead><tbody>` +
+        SIZES.pcs.map((r) => `<tr><td>${r.name}<small>${r.records}</small></td><td>2^${r.log_bits} bits</td>` +
+          `<td>${r.ood.every((o) => o === 0) ? "unique decoding" : "Johnson + out-of-domain"}</td>` +
+          `<td>${list(r.rates.map((l) => `1/${2 ** l}`))}</td><td>${list(r.queries)}</td><td>${list(r.fold)}</td></tr>`).join("") +
+        `</tbody>`;
+    }
   }
 
   // Full Falcon at 1024 signatures: mean prove time per configuration, the
