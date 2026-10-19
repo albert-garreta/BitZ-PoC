@@ -1,0 +1,59 @@
+model=per-site union_bits=120.82 per_site_bits=128.00
+prime: carry 18 | norm instance 21 | norm rounds 19 x25 | merge 19 | binder 18 x25 | terminal merge 17
+bridge[0] 4 bits x 360 sites (row 16 col 13)
+joint 1 bits x 29 | ring switch 8 bits x 30 | bridge merge 0
+pcs fold/0/0 native None raw 2^-212.0 bits 0
+pcs fold/0/1 native None raw 2^-213.0 bits 0
+pcs fold/0/2 native None raw 2^-214.0 bits 0
+pcs fold/0/3 native None raw 2^-215.0 bits 0
+pcs ood/1/0 native None raw 2^-241.5 bits 0
+pcs ood-beta/1/0 native None raw 2^-256.0 bits 0
+pcs queries/0 native Some(16) raw 2^-112.2 bits 16
+pcs introduce/0+fold0 native None raw 2^-215.8 bits 0
+pcs fold/1/1 native None raw 2^-216.8 bits 0
+pcs fold/1/2 native None raw 2^-217.8 bits 0
+pcs ood/2/0 native None raw 2^-240.8 bits 0
+pcs ood-beta/2/0 native None raw 2^-256.0 bits 0
+pcs queries/1 native Some(16) raw 2^-112.3 bits 16
+pcs introduce/1+fold0 native None raw 2^-218.8 bits 0
+pcs fold/2/1 native None raw 2^-219.8 bits 0
+pcs fold/2/2 native None raw 2^-220.8 bits 0
+pcs ood/3/0 native None raw 2^-240.1 bits 0
+pcs ood-beta/3/0 native None raw 2^-256.0 bits 0
+pcs queries/2 native Some(16) raw 2^-112.2 bits 16
+pcs introduce/2+fold0 native None raw 2^-221.1 bits 0
+pcs fold/3/1 native None raw 2^-222.1 bits 0
+pcs fold/3/2 native None raw 2^-223.1 bits 0
+pcs ood/4/0 native None raw 2^-239.5 bits 0
+pcs ood-beta/4/0 native None raw 2^-256.0 bits 0
+pcs queries/3 native Some(16) raw 2^-113.3 bits 16
+pcs introduce/3+fold0 native None raw 2^-223.8 bits 0
+pcs fold/4/1 native None raw 2^-224.8 bits 0
+pcs fold/4/2 native None raw 2^-225.8 bits 0
+pcs ood/5/0 native None raw 2^-239.1 bits 0
+pcs ood-beta/5/0 native None raw 2^-256.0 bits 0
+pcs queries/4 native Some(16) raw 2^-112.6 bits 16
+pcs introduce/4+fold0 native None raw 2^-225.7 bits 0
+pcs fold/5/1 native None raw 2^-226.7 bits 0
+pcs fold/5/2 native None raw 2^-227.7 bits 0
+pcs queries/5 native Some(16) raw 2^-114.2 bits 16
+pcs shape: committed 2^29 bits | log_inv_rates [1, 2, 3, 4, 5, 6] | queries [244, 119, 79, 60, 48, 41] | initial_k 4 | recursive_ks [3, 3, 3, 3, 3] | fold grinding [0, 0, 0, 0, 0, 0] | ood [0, 1, 1, 1, 1, 1]
+round 0: field GF(2^256) | raw 224.8 bits | grinding 0
+       29.40 real        54.66 user         1.72 sys
+          3099705344  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              424416  page reclaims
+                   1  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+               52318  involuntary context switches
+       1255679550487  instructions retired
+        212783656248  cycles elapsed
+          2882521752  peak memory footprint

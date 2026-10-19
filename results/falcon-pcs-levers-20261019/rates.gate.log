@@ -1,0 +1,7 @@
+[bench_gate] falcon-rates: idle 87% (streak 1/3)
+[bench_gate] falcon-rates: idle 91% (streak 2/3)
+[bench_gate] falcon-rates: idle 77% (streak 0/3)
+[bench_gate] falcon-rates: idle 93% (streak 1/3)
+[bench_gate] falcon-rates: idle 91% (streak 2/3)
+[bench_gate] falcon-rates: idle 90% (streak 3/3)
+[bench_gate] falcon-rates: starting (swap baseline 1.33 GB, guard +12 GB)

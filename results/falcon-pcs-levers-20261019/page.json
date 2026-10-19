@@ -1,0 +1,394 @@
+{
+ "figure": "M5 \u00b7 10 threads \u00b7 mean of two input seeds",
+ "subtitle": "Algebraic Falcon-512, 32,768 signatures, 128-bit, setup G (keyed ring, small prime, 2^16 bridge rows, per-site grinding). A: smaller Reed-Solomon rate. B: Johnson list decoding with every Ligerito challenge in GF(2^256), so Round 0 reaches 128 bits. C: polylog BitZ bridge, which commits the bridge's column sums instead of sending them.",
+ "parts": [
+  {
+   "name": "Coefficient exception counts",
+   "slot": 1
+  },
+  {
+   "name": "Commitment",
+   "slot": 3
+  },
+  {
+   "name": "Ring and norm messages",
+   "slot": 4
+  },
+  {
+   "name": "Bit-to-integer bridge",
+   "slot": 5
+  },
+  {
+   "name": "PCS opening",
+   "slot": 6
+  }
+ ],
+ "rows": [
+  {
+   "name": "UDR, rate 1/2",
+   "sub": "setup G as measured before",
+   "levers": "\u2013",
+   "seeds": 2,
+   "prove": 790.018354,
+   "min": 787.5132080000001,
+   "max": 792.5235,
+   "verify": 20.639354,
+   "proof": 593232.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    144840,
+    375352
+   ],
+   "bridge": null
+  },
+  {
+   "name": "UDR, rate 1/8",
+   "sub": "smaller rate only",
+   "levers": "A",
+   "seeds": 2,
+   "prove": 936.5966255,
+   "min": 932.0873339999999,
+   "max": 941.105917,
+   "verify": 20.925792,
+   "proof": 533600.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    144840,
+    315720
+   ],
+   "bridge": null
+  },
+  {
+   "name": "Johnson in GF(2^256), rate 1/2",
+   "sub": "larger field only",
+   "levers": "B",
+   "seeds": 2,
+   "prove": 856.1349795,
+   "min": 853.5302919999999,
+   "max": 858.739667,
+   "verify": 19.210291,
+   "proof": 512432.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    144840,
+    294552
+   ],
+   "bridge": null
+  },
+  {
+   "name": "UDR 1/2 + polylog bridge",
+   "sub": "polylog only \u00b7 folds at 1/32",
+   "levers": "C",
+   "seeds": 2,
+   "prove": 822.412333,
+   "min": 820.520208,
+   "max": 824.304458,
+   "verify": 23.752063,
+   "proof": 524032.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    74744,
+    376248
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     47016
+    ]
+   ]
+  },
+  {
+   "name": "Johnson in GF(2^256), rate 1/8",
+   "sub": "",
+   "levers": "A+B",
+   "seeds": 2,
+   "prove": 939.625625,
+   "min": 937.267792,
+   "max": 941.983458,
+   "verify": 18.983916999999998,
+   "proof": 385160.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    144840,
+    167280
+   ],
+   "bridge": null
+  },
+  {
+   "name": "Johnson in GF(2^256), rate 1/32",
+   "sub": "",
+   "levers": "A+B",
+   "seeds": 2,
+   "prove": 1371.7246460000001,
+   "min": 1368.55375,
+   "max": 1374.895542,
+   "verify": 19.010792000000002,
+   "proof": 351976.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    144840,
+    134096
+   ],
+   "bridge": null
+  },
+  {
+   "name": "UDR 1/8 + polylog bridge",
+   "sub": "",
+   "levers": "A+C",
+   "seeds": 2,
+   "prove": 943.7780835,
+   "min": 943.7641249999999,
+   "max": 943.792042,
+   "verify": 23.325583,
+   "proof": 463632.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    74840,
+    315752
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     47112
+    ]
+   ]
+  },
+  {
+   "name": "Johnson 1/2 + polylog bridge",
+   "sub": "",
+   "levers": "B+C",
+   "seeds": 2,
+   "prove": 892.0562705,
+   "min": 884.646666,
+   "max": 899.465875,
+   "verify": 22.7169375,
+   "proof": 443840.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    75576,
+    295224
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     47848
+    ]
+   ]
+  },
+  {
+   "name": "Johnson 1/8 + polylog bridge",
+   "sub": "",
+   "levers": "A+B+C",
+   "seeds": 2,
+   "prove": 976.881125,
+   "min": 971.900625,
+   "max": 981.861625,
+   "verify": 22.801000000000002,
+   "proof": 314872.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    74776,
+    167056
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     47048
+    ]
+   ]
+  },
+  {
+   "name": "Johnson 1/16 + polylog bridge",
+   "sub": "",
+   "levers": "A+B+C",
+   "seeds": 2,
+   "prove": 1097.7105835,
+   "min": 1090.410917,
+   "max": 1105.01025,
+   "verify": 22.3579795,
+   "proof": 294736.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    74904,
+    146792
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     47176
+    ]
+   ]
+  },
+  {
+   "name": "Johnson 1/32 + polylog bridge",
+   "sub": "",
+   "levers": "A+B+C",
+   "seeds": 2,
+   "prove": 1355.7137705,
+   "min": 1354.69325,
+   "max": 1356.734291,
+   "verify": 22.5876875,
+   "proof": 280632.0,
+   "cats": [
+    65536,
+    32,
+    7472,
+    74168,
+    133424
+   ],
+   "bridge": [
+    [
+     "fold_commitment",
+     64
+    ],
+    [
+     "source_forest",
+     14736
+    ],
+    [
+     "fold_forest",
+     3808
+    ],
+    [
+     "readoff",
+     8264
+    ],
+    [
+     "fold_sumcheck",
+     856
+    ],
+    [
+     "fold_opening",
+     46440
+    ]
+   ]
+  }
+ ],
+ "notes": [
+  "<b>A, smaller rate alone</b> barely helps under unique decoding: each query buys at most one bit (distance below 1/2), so the query count floors near 130 while the codewords and Merkle paths keep growing. The best UDR rate, 1/8, gives 534 kB (\u221210 %) for +19 % prove.",
+  "<b>B, Johnson over GF(2^256)</b>. Over GF(2^128), Johnson cannot reach 128 bits here. Round 0, the out-of-domain sample that pins the committed list element, is a polynomial of degree 2^22 \u2212 1 in its challenge, and it keeps 97 bits (flock's own level-0 check stops at 118). With every Ligerito challenge in GF(2^256), Round 0 has 225 bits, fold grinding disappears, and queries fall with the rate: 244, 119, 79, 60 and 48 at the first level for rates 1/2 to 1/32 (UDR: 309 to 134). Extension messages take 32 bytes. At rate 1/2 alone: 512 kB (\u221214 %) for +8 % prove.",
+  "<b>C, polylog bridge</b>. The bridge used to send its 8,192 column sums (131 kB). Now the prover commits them, shifted by one so that no fold can alias 0 with 2^128 \u2212 1 in the exponent. It then sends one root value, checked by a second product tree over the sums' bits, and proves the prime read-off with a small recursive bridge (16 sums in the clear). The sums are opened by their own Ligerito run at rate 1/32. The bridge falls from 145 to 75 kB; 46 kB of the 75 is that opening. Prove time changes by +7 to +37 ms and verify by +3 to 4 ms.",
+  "<b>Together</b>, Johnson at 1/8 with the polylog bridge gives 315 kB (\u221247 %) for +24 % prove. At 1/32 it gives 281 kB (\u221253 %) for +72 %, almost all of it commitment (76 \u2192 490 ms). What remains at 1/32: PCS opening 133 kB, bridge 74 kB, and 66 kB of coefficient exception counts, two bytes per signature even when empty.",
+  "Caveats: the GF(2^256) profiles inherit 16-bit query grinding per level from flock's template (UDR has none; the per-site plan adds 4 bits). The extension opener is a direct implementation without the base opener's fused passes, so it costs about 60 ms more at the same rate. The polylog bridge opens its sums in a second Ligerito run rather than the single merged run of the polylog note. Two input seeds (42, 1), within 4 % of each other on every row."
+ ]
+}

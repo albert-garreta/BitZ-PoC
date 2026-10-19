@@ -331,6 +331,11 @@ if FULL.exists():
     data["full"] = json.loads(FULL.read_text())
     for row in data["full"]["rows"]:
         print("full", row["key"], row["prove"], row["min"], row["max"], row["proof"])
+LEVERS = Path(__file__).parent.parent / "pcs-levers-20261019" / "page.json"
+if LEVERS.exists():
+    data["levers"] = json.loads(LEVERS.read_text())
+    for row in data["levers"]["rows"]:
+        print("levers", row["levers"], row["name"], round(row["prove"]), round(row["proof"]))
 html = TEMPLATE.read_text().replace("/*DATA*/", json.dumps(data, separators=(",", ":")).replace("</", "<\\/"))
 INDEX.parent.mkdir(parents=True, exist_ok=True)
 INDEX.write_text(html)

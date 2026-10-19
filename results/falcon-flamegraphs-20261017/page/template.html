@@ -243,6 +243,18 @@ details summary { cursor: pointer; color: var(--ink-2); }
     <div class="notes" id="full-notes"></div>
   </section>
 
+  <section class="panel" aria-labelledby="levers-title" id="levers-panel" hidden>
+    <div class="panel-head">
+      <h2 id="levers-title">Proof-size levers at 32,768 signatures</h2>
+      <span class="figure" id="levers-figure"></span>
+    </div>
+    <p class="meta" id="levers-subtitle"></p>
+    <div class="legend" id="levers-legend"></div>
+    <div class="bars" id="levers-bars"></div>
+    <div class="table-wrap"><table id="levers-table" class="full-table"></table></div>
+    <div class="notes" id="levers-notes"></div>
+  </section>
+
   <section class="panel" aria-labelledby="graphs-title">
     <div class="panel-head">
       <h2 id="graphs-title">Flamegraphs</h2>
@@ -480,6 +492,53 @@ details summary { cursor: pointer; color: var(--ink-2); }
     sizes += `<tr class="total"><td><b>Total</b></td>${parts.map((b) => `<td><b>${exact(b.total)}</b></td>`).join("")}</tr></tbody>`;
     document.getElementById("full-size-table").innerHTML = sizes;
     document.getElementById("full-notes").innerHTML = FULL.notes.map((n) => `<p>${n}</p>`).join("");
+  }
+
+  // Proof-size levers: each configuration's proof split into the size panel's
+  // categories, one bytes scale; timings and seed ranges in the table.
+  const LEVERS = DATA.levers;
+  if (LEVERS) {
+    document.getElementById("levers-panel").hidden = false;
+    document.getElementById("levers-figure").textContent = LEVERS.figure;
+    document.getElementById("levers-subtitle").textContent = LEVERS.subtitle;
+    const LP = LEVERS.parts;
+    document.getElementById("levers-legend").innerHTML = LP.map((p) =>
+      `<span><i class="chip" style="background:var(--c${p.slot})"></i>${p.name}</span>`).join("");
+    const kb = (b) => `${Math.round(b / 1e3)} kB`;
+    const maxB = Math.max(...LEVERS.rows.map((r) => r.proof));
+    const sub = (r) => (r.levers === "–" ? "baseline" : `levers ${r.levers}`) + (r.sub ? ` · ${r.sub}` : "");
+    const leverBars = document.getElementById("levers-bars");
+    const leverTicks = [];
+    for (let t = 0; t <= maxB; t += 100000) leverTicks.push(t);
+    leverBars.innerHTML = LEVERS.rows.map((r) => {
+      let x = 0;
+      const segs = r.cats.map((b, i) => {
+        if (b <= 0) return "";
+        const left = 100 * x / maxB, width = Math.max(0.15, 100 * b / maxB);
+        x += b;
+        return `<div class="seg" style="left:${left}%;width:${width}%;background:var(--c${LP[i].slot})" data-tip="${LP[i].name}|${kb(b)}|${pct(b, r.proof)} of this proof"></div>`;
+      }).join("");
+      return `<div class="bar-row"><div class="label">${r.name}<small>${sub(r)}</small></div>
+        <div class="bar-track">${segs}</div><span class="total">${kb(r.proof)}</span></div>`;
+    }).join("") + `<div class="axis-row"><div></div><div class="axis-ticks">${leverTicks.map((t, i) =>
+      `<span style="left:${100 * t / maxB}%">${t / 1000}${i === leverTicks.length - 1 ? " kB" : ""}</span>`).join("")}</div><div></div></div>`;
+    leverBars.addEventListener("mousemove", (ev) => {
+      const seg = ev.target.closest(".seg");
+      if (!seg) return hideTip();
+      const [name, size, share] = seg.dataset.tip.split("|");
+      showTip(`<div><b>${name}</b></div><div class="row"><span><b>${size}</b></span><span>${share}</span></div>`, ev);
+    });
+    leverBars.addEventListener("mouseleave", hideTip);
+    const pcsAt = LP.findIndex((p) => p.name === "PCS opening");
+    const bridgeAt = LP.findIndex((p) => p.name === "Bit-to-integer bridge");
+    document.getElementById("levers-table").innerHTML =
+      `<thead><tr><th>Configuration</th><th>Prove</th><th>Lowest to highest seed</th><th>Verify</th>` +
+      `<th>Proof</th><th>PCS opening</th><th>Bridge</th></tr></thead><tbody>` +
+      LEVERS.rows.map((r) => `<tr><td>${r.name}<small>${sub(r)}</small></td>
+        <td><b>${fmt(r.prove)}</b></td><td>${fmt(r.min)} to ${fmt(r.max)}</td><td>${fmt(r.verify)}</td>
+        <td><b>${kb(r.proof)}</b></td><td>${kb(r.cats[pcsAt])}</td><td>${kb(r.cats[bridgeAt])}</td></tr>`).join("") +
+      `</tbody>`;
+    document.getElementById("levers-notes").innerHTML = LEVERS.notes.map((n) => `<p>${n}</p>`).join("");
   }
 
   // Flatten trees: x0 in ms from the left of the root, depth, parent.

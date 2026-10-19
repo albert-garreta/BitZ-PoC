@@ -1,0 +1,51 @@
+model=per-site union_bits=120.69 per_site_bits=128.00
+prime: carry 18 | norm instance 21 | norm rounds 19 x25 | merge 19 | binder 18 x25 | terminal merge 17
+bridge[0] 4 bits x 360 sites (row 16 col 13)
+joint 1 bits x 29 | ring switch 8 bits x 30 | bridge merge 0
+pcs fold/0/0 native Some(20) raw 2^-111.0 bits 20
+pcs fold/0/1 native Some(19) raw 2^-111.0 bits 19
+pcs fold/0/2 native Some(18) raw 2^-111.0 bits 18
+pcs fold/0/3 native Some(17) raw 2^-111.0 bits 17
+pcs queries/0 native Some(0) raw 2^-124.7 bits 4
+pcs introduce/0 native None raw 2^-128.0 bits 0
+pcs fold/1/0 native Some(18) raw 2^-112.4 bits 18
+pcs fold/1/1 native Some(17) raw 2^-112.4 bits 17
+pcs fold/1/2 native Some(16) raw 2^-112.4 bits 16
+pcs queries/1 native Some(0) raw 2^-124.8 bits 4
+pcs introduce/1 native None raw 2^-128.0 bits 0
+pcs fold/2/0 native Some(16) raw 2^-114.2 bits 16
+pcs fold/2/1 native Some(15) raw 2^-114.2 bits 15
+pcs fold/2/2 native Some(14) raw 2^-114.2 bits 14
+pcs queries/2 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/2 native None raw 2^-128.0 bits 0
+pcs fold/3/0 native Some(14) raw 2^-116.1 bits 14
+pcs fold/3/1 native Some(13) raw 2^-116.1 bits 13
+pcs fold/3/2 native Some(12) raw 2^-116.1 bits 12
+pcs queries/3 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/3 native None raw 2^-128.0 bits 0
+pcs fold/4/0 native Some(12) raw 2^-118.0 bits 12
+pcs fold/4/1 native Some(11) raw 2^-118.0 bits 11
+pcs fold/4/2 native Some(10) raw 2^-118.0 bits 10
+pcs queries/4 native Some(0) raw 2^-124.9 bits 4
+pcs introduce/4 native None raw 2^-128.0 bits 0
+pcs fold/5/0 native Some(10) raw 2^-118.0 bits 10
+pcs queries/5 native Some(0) raw 2^-124.7 bits 4
+pcs shape: committed 2^29 bits | log_inv_rates [1, 2, 3, 4, 5, 6] | queries [309, 189, 155, 141, 135, 132] | initial_k 4 | recursive_ks [3, 3, 3, 3, 1] | fold grinding [20, 18, 16, 14, 12, 10] | ood [0, 0, 0, 0, 0, 0]
+       29.26 real        52.62 user         1.49 sys
+          2589212672  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              363076  page reclaims
+                   2  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+               55185  involuntary context switches
+       1234985676366  instructions retired
+        205545769115  cycles elapsed
+          2381105456  peak memory footprint

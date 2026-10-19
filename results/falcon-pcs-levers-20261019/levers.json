@@ -1,0 +1,1532 @@
+[
+ {
+  "label": "UDR 1/2 (setup G)",
+  "levers": "-",
+  "seeds": 2,
+  "prove_ms": 790.018354,
+  "verify_ms": 20.639354,
+  "proof_bytes": 593232.0,
+  "pcs_bytes": 374176.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 2475.09375,
+  "prove_ms_runs": [
+   792.5235,
+   787.5132080000001
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    0
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    64272
+   ],
+   [
+    "initial_merkle_paths",
+    97216
+   ],
+   [
+    "recursive_opened_rows",
+    79360
+   ],
+   [
+    "recursive_merkle_paths",
+    121152
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    7568
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/4",
+  "levers": "A",
+  "seeds": 2,
+  "prove_ms": 861.2622289999999,
+  "verify_ms": 19.676458,
+  "proof_bytes": 540264.0,
+  "pcs_bytes": 321208.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 2725.09375,
+  "prove_ms_runs": [
+   862.928042,
+   859.596416
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    39312
+   ],
+   [
+    "initial_merkle_paths",
+    70176
+   ],
+   [
+    "recursive_opened_rows",
+    72064
+   ],
+   [
+    "recursive_merkle_paths",
+    128896
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    6152
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/8",
+  "levers": "A",
+  "seeds": 2,
+  "prove_ms": 936.5966255,
+  "verify_ms": 20.925792,
+  "proof_bytes": 533600.0,
+  "pcs_bytes": 314544.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 3011.9296875,
+  "prove_ms_runs": [
+   932.0873339999999,
+   941.105917
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    32240
+   ],
+   [
+    "initial_merkle_paths",
+    64608
+   ],
+   [
+    "recursive_opened_rows",
+    68608
+   ],
+   [
+    "recursive_merkle_paths",
+    138816
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    5664
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/16",
+  "levers": "A",
+  "seeds": 2,
+  "prove_ms": 1078.3261255000002,
+  "verify_ms": 19.9750205,
+  "proof_bytes": 542704.0,
+  "pcs_bytes": 323648.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 3657.6953125,
+  "prove_ms_runs": [
+   1067.9229590000002,
+   1088.729292
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    29328
+   ],
+   [
+    "initial_merkle_paths",
+    63360
+   ],
+   [
+    "recursive_opened_rows",
+    67072
+   ],
+   [
+    "recursive_merkle_paths",
+    153824
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    5456
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/32",
+  "levers": "A",
+  "seeds": 2,
+  "prove_ms": 1368.632938,
+  "verify_ms": 20.0587295,
+  "proof_bytes": 555072.0,
+  "pcs_bytes": 336016.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 4885.0859375,
+  "prove_ms_runs": [
+   1362.9245839999999,
+   1374.341292
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    27872
+   ],
+   [
+    "initial_merkle_paths",
+    64064
+   ],
+   [
+    "recursive_opened_rows",
+    66432
+   ],
+   [
+    "recursive_merkle_paths",
+    167680
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    5360
+   ]
+  ]
+ },
+ {
+  "label": "Johnson GF(2^256) 1/2",
+  "levers": "B",
+  "seeds": 2,
+  "prove_ms": 856.1349795,
+  "verify_ms": 19.210291,
+  "proof_bytes": 512432.0,
+  "pcs_bytes": 293376.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 2954.640625,
+  "prove_ms_runs": [
+   858.739667,
+   853.5302919999999
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    50752
+   ],
+   [
+    "initial_merkle_paths",
+    79680
+   ],
+   [
+    "recursive_opened_rows",
+    78336
+   ],
+   [
+    "recursive_merkle_paths",
+    73280
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    4536
+   ]
+  ]
+ },
+ {
+  "label": "Johnson GF(2^256) 1/4",
+  "levers": "A+B",
+  "seeds": 2,
+  "prove_ms": 878.9717085,
+  "verify_ms": 18.8769375,
+  "proof_bytes": 421544.0,
+  "pcs_bytes": 202488.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 3121.125,
+  "prove_ms_runs": [
+   876.5754999999999,
+   881.3679169999999
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    24752
+   ],
+   [
+    "initial_merkle_paths",
+    46528
+   ],
+   [
+    "recursive_opened_rows",
+    58368
+   ],
+   [
+    "recursive_merkle_paths",
+    63136
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    2912
+   ]
+  ]
+ },
+ {
+  "label": "Johnson GF(2^256) 1/8",
+  "levers": "A+B",
+  "seeds": 2,
+  "prove_ms": 939.625625,
+  "verify_ms": 18.983916999999998,
+  "proof_bytes": 385160.0,
+  "pcs_bytes": 166104.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 3461.65625,
+  "prove_ms_runs": [
+   941.983458,
+   937.267792
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    16432
+   ],
+   [
+    "initial_merkle_paths",
+    35008
+   ],
+   [
+    "recursive_opened_rows",
+    47104
+   ],
+   [
+    "recursive_merkle_paths",
+    58528
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    2240
+   ]
+  ]
+ },
+ {
+  "label": "Johnson GF(2^256) 1/16",
+  "levers": "A+B",
+  "seeds": 2,
+  "prove_ms": 1104.6937085,
+  "verify_ms": 19.932271,
+  "proof_bytes": 365024.0,
+  "pcs_bytes": 145968.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 4176.671875,
+  "prove_ms_runs": [
+   1128.737584,
+   1080.6498330000002
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    12480
+   ],
+   [
+    "initial_merkle_paths",
+    28864
+   ],
+   [
+    "recursive_opened_rows",
+    39936
+   ],
+   [
+    "recursive_merkle_paths",
+    56032
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1864
+   ]
+  ]
+ },
+ {
+  "label": "Johnson GF(2^256) 1/32",
+  "levers": "A+B",
+  "seeds": 2,
+  "prove_ms": 1371.7246460000001,
+  "verify_ms": 19.010792000000002,
+  "proof_bytes": 351976.0,
+  "pcs_bytes": 132920.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 5572.703125,
+  "prove_ms_runs": [
+   1368.55375,
+   1374.895542
+  ],
+  "bridge_breakdown": null,
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    9984
+   ],
+   [
+    "initial_merkle_paths",
+    25536
+   ],
+   [
+    "recursive_opened_rows",
+    35072
+   ],
+   [
+    "recursive_merkle_paths",
+    53920
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1616
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/2 + polylog",
+  "levers": "C",
+  "seeds": 2,
+  "prove_ms": 822.412333,
+  "verify_ms": 23.752063,
+  "proof_bytes": 524032.0,
+  "pcs_bytes": 375072.0,
+  "bridge_bytes": 74744.0,
+  "rss_mib": 2477.359375,
+  "prove_ms_runs": [
+   824.304458,
+   820.520208
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    47016
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    0
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    64272
+   ],
+   [
+    "initial_merkle_paths",
+    97216
+   ],
+   [
+    "recursive_opened_rows",
+    79360
+   ],
+   [
+    "recursive_merkle_paths",
+    122048
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    7568
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/8 + polylog",
+  "levers": "A+C",
+  "seeds": 2,
+  "prove_ms": 943.7780835,
+  "verify_ms": 23.325583,
+  "proof_bytes": 463632.0,
+  "pcs_bytes": 314576.0,
+  "bridge_bytes": 74840.0,
+  "rss_mib": 3004.6015625,
+  "prove_ms_runs": [
+   943.7641249999999,
+   943.792042
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    47112
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    0
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    32240
+   ],
+   [
+    "initial_merkle_paths",
+    63552
+   ],
+   [
+    "recursive_opened_rows",
+    68608
+   ],
+   [
+    "recursive_merkle_paths",
+    139904
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    5664
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/2 + polylog",
+  "levers": "B+C",
+  "seeds": 2,
+  "prove_ms": 892.0562705,
+  "verify_ms": 22.7169375,
+  "proof_bytes": 443840.0,
+  "pcs_bytes": 294048.0,
+  "bridge_bytes": 75576.0,
+  "rss_mib": 2963.8125,
+  "prove_ms_runs": [
+   899.465875,
+   884.646666
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    47848
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    50752
+   ],
+   [
+    "initial_merkle_paths",
+    80448
+   ],
+   [
+    "recursive_opened_rows",
+    78336
+   ],
+   [
+    "recursive_merkle_paths",
+    73184
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    4536
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/8 + polylog",
+  "levers": "A+B+C",
+  "seeds": 2,
+  "prove_ms": 976.881125,
+  "verify_ms": 22.801000000000002,
+  "proof_bytes": 314872.0,
+  "pcs_bytes": 165880.0,
+  "bridge_bytes": 74776.0,
+  "rss_mib": 3470.28125,
+  "prove_ms_runs": [
+   971.900625,
+   981.861625
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    47048
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    16432
+   ],
+   [
+    "initial_merkle_paths",
+    34464
+   ],
+   [
+    "recursive_opened_rows",
+    47104
+   ],
+   [
+    "recursive_merkle_paths",
+    58848
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    2240
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/16 + polylog",
+  "levers": "A+B+C",
+  "seeds": 2,
+  "prove_ms": 1097.7105835,
+  "verify_ms": 22.3579795,
+  "proof_bytes": 294736.0,
+  "pcs_bytes": 145616.0,
+  "bridge_bytes": 74904.0,
+  "rss_mib": 4190.65625,
+  "prove_ms_runs": [
+   1090.410917,
+   1105.01025
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    47176
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    12480
+   ],
+   [
+    "initial_merkle_paths",
+    28800
+   ],
+   [
+    "recursive_opened_rows",
+    39936
+   ],
+   [
+    "recursive_merkle_paths",
+    55744
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1864
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/32 + polylog",
+  "levers": "A+B+C",
+  "seeds": 2,
+  "prove_ms": 1355.7137705,
+  "verify_ms": 22.5876875,
+  "proof_bytes": 280632.0,
+  "pcs_bytes": 132248.0,
+  "bridge_bytes": 74168.0,
+  "rss_mib": 5584.3515625,
+  "prove_ms_runs": [
+   1356.734291,
+   1354.69325
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    46440
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    9984
+   ],
+   [
+    "initial_merkle_paths",
+    24832
+   ],
+   [
+    "recursive_opened_rows",
+    35072
+   ],
+   [
+    "recursive_merkle_paths",
+    53952
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1616
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/32 + polylog, folds 1/8",
+  "levers": "A+B+C",
+  "seeds": 2,
+  "prove_ms": 1349.9486665,
+  "verify_ms": 22.336875,
+  "proof_bytes": 292200.0,
+  "pcs_bytes": 133368.0,
+  "bridge_bytes": 84616.0,
+  "rss_mib": 5578.203125,
+  "prove_ms_runs": [
+   1353.8577919999998,
+   1346.039541
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    56888
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    9984
+   ],
+   [
+    "initial_merkle_paths",
+    24992
+   ],
+   [
+    "recursive_opened_rows",
+    35072
+   ],
+   [
+    "recursive_merkle_paths",
+    54912
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1616
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/32 + polylog, folds 1/128",
+  "levers": "A+B+C",
+  "seeds": 2,
+  "prove_ms": 1390.2770205000002,
+  "verify_ms": 22.5819585,
+  "proof_bytes": 277320.0,
+  "pcs_bytes": 132952.0,
+  "bridge_bytes": 70152.0,
+  "rss_mib": 5602.515625,
+  "prove_ms_runs": [
+   1388.109958,
+   1392.444083
+  ],
+  "bridge_breakdown": [
+   [
+    "fold_commitment",
+    64
+   ],
+   [
+    "source_forest",
+    14736
+   ],
+   [
+    "fold_forest",
+    3808
+   ],
+   [
+    "readoff",
+    8264
+   ],
+   [
+    "fold_sumcheck",
+    856
+   ],
+   [
+    "fold_opening",
+    42424
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    9984
+   ],
+   [
+    "initial_merkle_paths",
+    25312
+   ],
+   [
+    "recursive_opened_rows",
+    35072
+   ],
+   [
+    "recursive_merkle_paths",
+    54176
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1616
+   ]
+  ]
+ },
+ {
+  "label": "UDR 1/2 (same binary as polylog)",
+  "levers": "-",
+  "seeds": 2,
+  "prove_ms": 787.464729,
+  "verify_ms": 20.790958,
+  "proof_bytes": 593232.0,
+  "pcs_bytes": 374176.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 2472.421875,
+  "prove_ms_runs": [
+   794.669458,
+   780.26
+  ],
+  "bridge_breakdown": [
+   [
+    "column_sums",
+    131072
+   ],
+   [
+    "forest",
+    11008
+   ],
+   [
+    "nonces",
+    2760
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    0
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    64272
+   ],
+   [
+    "initial_merkle_paths",
+    97216
+   ],
+   [
+    "recursive_opened_rows",
+    79360
+   ],
+   [
+    "recursive_merkle_paths",
+    121152
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    1024
+   ],
+   [
+    "sumcheck_messages",
+    736
+   ],
+   [
+    "ood_values",
+    0
+   ],
+   [
+    "nonces",
+    608
+   ],
+   [
+    "framing",
+    7568
+   ]
+  ]
+ },
+ {
+  "label": "Johnson 1/32 (same binary as polylog)",
+  "levers": "A+B",
+  "seeds": 2,
+  "prove_ms": 1348.6507084999998,
+  "verify_ms": 18.9624375,
+  "proof_bytes": 351976.0,
+  "pcs_bytes": 132920.0,
+  "bridge_bytes": 144840.0,
+  "rss_mib": 5572.078125,
+  "prove_ms_runs": [
+   1347.4932499999998,
+   1349.808167
+  ],
+  "bridge_breakdown": [
+   [
+    "column_sums",
+    131072
+   ],
+   [
+    "forest",
+    11008
+   ],
+   [
+    "nonces",
+    2760
+   ]
+  ],
+  "pcs_breakdown": [
+   [
+    "round0",
+    32
+   ],
+   [
+    "ring_switch_values",
+    2048
+   ],
+   [
+    "initial_opened_rows",
+    9984
+   ],
+   [
+    "initial_merkle_paths",
+    25536
+   ],
+   [
+    "recursive_opened_rows",
+    35072
+   ],
+   [
+    "recursive_merkle_paths",
+    53920
+   ],
+   [
+    "roots",
+    192
+   ],
+   [
+    "final_message",
+    2048
+   ],
+   [
+    "sumcheck_messages",
+    1920
+   ],
+   [
+    "ood_values",
+    160
+   ],
+   [
+    "nonces",
+    392
+   ],
+   [
+    "framing",
+    1616
+   ]
+  ]
+ }
+]

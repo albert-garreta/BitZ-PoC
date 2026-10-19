@@ -1,0 +1,12 @@
+02:26:10 udr1-s42 exit=0 ghz=3.91 rss=2473MiB 100%; charged
+02:26:55 ext1-s42 exit=0 ghz=3.90 rss=2953MiB 100%; charged
+02:27:39 ext2-s42 exit=0 ghz=3.89 rss=3122MiB 100%; charged
+02:28:24 ext3-s42 exit=0 ghz=3.88 rss=3462MiB 100%; charged
+02:29:09 ext4-s42 exit=0 ghz=3.85 rss=4175MiB 100%; charged
+02:29:56 ext5-s42 exit=0 ghz=3.79 rss=5573MiB 100%; charged
+02:30:40 udr1-s1 exit=0 ghz=3.90 rss=2477MiB 100%; charged
+02:31:25 ext1-s1 exit=0 ghz=3.89 rss=2956MiB 100%; charged
+02:32:09 ext2-s1 exit=0 ghz=3.88 rss=3121MiB 100%; charged
+02:32:54 ext3-s1 exit=0 ghz=3.87 rss=3461MiB 100%; charged
+02:33:39 ext4-s1 exit=0 ghz=3.87 rss=4178MiB 100%; charged
+02:34:26 ext5-s1 exit=0 ghz=3.79 rss=5573MiB 100%; charged
