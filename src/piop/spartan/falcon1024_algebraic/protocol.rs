@@ -15,7 +15,10 @@ use crate::{
         },
         sumcheck::Scratch,
     },
-    ligerito_flock::{LigeritoSelection, ResolvedLigerito, grinding_plan::GrindingPlan},
+    ligerito_flock::{
+        LigeritoSelection, OodProverClaim, OodRound, OodRoundParams, ResolvedLigerito,
+        grinding_plan::GrindingPlan,
+    },
     pcs::IntegerMatrixLayout,
     piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
@@ -314,6 +317,9 @@ pub struct PreparedFalconAlgebraic {
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
     grinding: BinaryGrinding,
+    /// Round 0 (the out-of-domain sample) of the Johnson profiles, right
+    /// after the statement; `None` under unique decoding.
+    round0: Option<OodRoundParams>,
     compact_binding: bool,
     compute_variant: &'static str,
     ring_mode: RingMode,
@@ -354,7 +360,9 @@ pub struct FalconAlgebraicProof {
     bridges: Vec<bridge::Proof>,
     bridge_merge_nonces: Vec<u64>,
     joint: joint::Proof,
-    opening: shared::JointProof,
+    /// Round 0's `y` and nonce (Johnson profiles only).
+    ood: Option<OodRound>,
+    opening: shared::JointOpening,
     opening_nonces: Vec<u64>,
     pcs_nonces: Vec<u64>,
 }
@@ -385,6 +393,7 @@ impl std::fmt::Debug for FalconAlgebraicProof {
         }
         proof
             .field("joint", &self.joint)
+            .field("ood", &self.ood)
             .field("opening", &self.opening)
             .field("opening_nonces", &self.opening_nonces)
             .field("pcs_nonces", &self.pcs_nonces)
@@ -452,44 +461,78 @@ impl FalconAlgebraicProof {
             ),
             (
                 "pcs",
-                16 * self.opening.ring.s_v.len()
-                    + bincode::serialized_size(&self.opening.ligerito)
-                        .expect("proof serialization size") as usize
+                self.round0_bytes()
+                    + 16 * self.opening_ring().s_v.len()
+                    + match &self.opening {
+                        shared::JointOpening::Base(opening) => {
+                            bincode::serialized_size(&opening.ligerito)
+                        }
+                        shared::JointOpening::Ext(opening) => {
+                            bincode::serialized_size(&opening.ligerito)
+                        }
+                    }
+                    .expect("proof serialization size") as usize
                     + 8 * (self.opening_nonces.len() + self.pcs_nonces.len()),
             ),
         ]
     }
 
+    fn opening_ring(&self) -> &crate::ligerito::RingSwitchProof {
+        match &self.opening {
+            shared::JointOpening::Base(opening) => &opening.ring,
+            shared::JointOpening::Ext(opening) => &opening.ring,
+        }
+    }
+
+    /// Round 0's `y` (one or two GF(2^128) coordinates) and its nonce.
+    fn round0_bytes(&self) -> usize {
+        self.ood.as_ref().map_or(0, |round| {
+            16 * (1 + usize::from(round.y_ext.is_some())) + 8 * usize::from(round.nonce.is_some())
+        })
+    }
+
     /// Diagnostic split of the `pcs` entry above; the parts sum to it, with
-    /// bincode's length prefixes as `framing`.
+    /// bincode's length prefixes as `framing`. Extension elements (every
+    /// message after level 0 under an `ext:` profile) take 32 bytes.
     pub fn pcs_size_breakdown(&self) -> Vec<(&'static str, usize)> {
-        let l = &self.opening.ligerito;
-        let row_bytes = |rows: &Vec<Vec<Gf>>| rows.iter().map(|r| 16 * r.len()).sum::<usize>();
-        let hash = std::mem::size_of_val(&l.initial_root);
-        let mut parts = vec![
-            ("ring_switch_values", 16 * self.opening.ring.s_v.len()),
-            ("initial_opened_rows", row_bytes(&l.initial_proof.opened_rows)),
-            ("initial_merkle_paths", hash * l.initial_proof.merkle_proof.len()),
-            (
-                "recursive_opened_rows",
-                l.recursive_proofs.iter().map(|p| row_bytes(&p.opened_rows)).sum(),
-            ),
-            (
-                "recursive_merkle_paths",
-                l.recursive_proofs.iter().map(|p| hash * p.merkle_proof.len()).sum(),
-            ),
-            ("roots", hash * (1 + l.recursive_roots.len())),
-            ("final_message", 16 * l.final_proof.len()),
-            ("sumcheck_messages", 32 * l.sumcheck_transcript.len()),
-            ("ood_values", 16 * l.ood_values.len()),
-            (
-                "nonces",
-                8 * (l.grinding_nonces.len()
-                    + l.fold_grinding_nonces.len()
-                    + self.opening_nonces.len()
-                    + self.pcs_nonces.len()),
-            ),
-        ];
+        let hash = 32;
+        fn rows<T>(rows: &[Vec<T>], elem: usize) -> usize {
+            rows.iter().map(|r| elem * r.len()).sum()
+        }
+        macro_rules! parts {
+            ($l:expr, $elem:expr) => {{
+                let l = $l;
+                vec![
+                    ("round0", self.round0_bytes()),
+                    ("ring_switch_values", 16 * self.opening_ring().s_v.len()),
+                    ("initial_opened_rows", rows(&l.initial_proof.opened_rows, 16)),
+                    ("initial_merkle_paths", hash * l.initial_proof.merkle_proof.len()),
+                    (
+                        "recursive_opened_rows",
+                        l.recursive_proofs.iter().map(|p| rows(&p.opened_rows, $elem)).sum(),
+                    ),
+                    (
+                        "recursive_merkle_paths",
+                        l.recursive_proofs.iter().map(|p| hash * p.merkle_proof.len()).sum(),
+                    ),
+                    ("roots", hash * (1 + l.recursive_roots.len())),
+                    ("final_message", $elem * l.final_proof.len()),
+                    ("sumcheck_messages", 2 * $elem * l.sumcheck_transcript.len()),
+                    ("ood_values", $elem * l.ood_values.len()),
+                    (
+                        "nonces",
+                        8 * (l.grinding_nonces.len()
+                            + l.fold_grinding_nonces.len()
+                            + self.opening_nonces.len()
+                            + self.pcs_nonces.len()),
+                    ),
+                ]
+            }};
+        }
+        let mut parts = match &self.opening {
+            shared::JointOpening::Base(opening) => parts!(&opening.ligerito, 16),
+            shared::JointOpening::Ext(opening) => parts!(&opening.ligerito, 32),
+        };
         let total = self
             .payload_size_breakdown()
             .into_iter()
@@ -607,12 +650,49 @@ impl PreparedFalconAlgebraic {
         )
     }
 
+    /// The word binder with an explicit Ligerito profile (e.g. `ext:3:4`),
+    /// for tests that must not read the benchmark environment.
+    #[cfg(any(test, feature = "bench-internals"))]
+    #[doc(hidden)]
+    pub fn new_with_ligerito(
+        batch: usize,
+        target_bits: usize,
+        selection: LigeritoSelection,
+    ) -> Result<Self, FalconError> {
+        Self::with_ligerito_configuration(
+            batch,
+            target_bits,
+            "padding",
+            FalconAlgebraicBinding::Words,
+            RingMode::Canonical,
+            selection,
+        )
+    }
+
     fn with_ring_configuration(
         batch: usize,
         target_bits: usize,
         compute_variant: &'static str,
         binding: FalconAlgebraicBinding,
         ring_mode: RingMode,
+    ) -> Result<Self, FalconError> {
+        Self::with_ligerito_configuration(
+            batch,
+            target_bits,
+            compute_variant,
+            binding,
+            ring_mode,
+            ligerito_selection(target_bits),
+        )
+    }
+
+    fn with_ligerito_configuration(
+        batch: usize,
+        target_bits: usize,
+        compute_variant: &'static str,
+        binding: FalconAlgebraicBinding,
+        ring_mode: RingMode,
+        selection: LigeritoSelection,
     ) -> Result<Self, FalconError> {
         if ring_mode != RingMode::Canonical
             && (binding != FalconAlgebraicBinding::Words || compute_variant != "padding")
@@ -668,10 +748,10 @@ impl PreparedFalconAlgebraic {
             }
         };
         let geometry = SourceGeometry::new(&layout)?;
-        let ligerito = ligerito_selection(target_bits)
+        let ligerito = selection
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
-        let (grinding, pcs_grinding) = allocate_grinding(
+        let (grinding, pcs_grinding, round0) = allocate_grinding(
             &layout,
             compact_binding,
             &geometry,
@@ -691,6 +771,7 @@ impl PreparedFalconAlgebraic {
             ligerito,
             pcs_grinding,
             grinding,
+            round0,
             compact_binding,
             compute_variant,
             ring_mode,
@@ -852,6 +933,9 @@ impl PreparedFalconAlgebraic {
                     .sum(),
             ),
         ]);
+        if let Some(error) = self.round0_error() {
+            terms.push(("Round 0 (OOD)", error));
+        }
         let algebraic_bits = if per_site_grinding() {
             -self.largest_site_error().log2()
         } else {
@@ -930,6 +1014,14 @@ impl PreparedFalconAlgebraic {
             config.fold_grinding_bits,
             config.ood_samples,
         );
+        if let (Some(params), Some(ood)) = (self.round0, self.ligerito.ood_bits()) {
+            out += &format!(
+                "round 0: field {} | raw {:.1} bits | grinding {}\n",
+                if params.extension { "GF(2^256)" } else { "GF(2^128)" },
+                ood,
+                params.grinding_bits,
+            );
+        }
         out
     }
 
@@ -975,7 +1067,15 @@ impl PreparedFalconAlgebraic {
                 .iter()
                 .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32))),
         );
+        sites.extend(self.round0_error());
         sites.into_iter().fold(0.0, f64::max)
+    }
+
+    /// Round 0's collision error after its work, `2^-(ood_bits + grinding)`.
+    fn round0_error(&self) -> Option<f64> {
+        let ood = self.ligerito.ood_bits()?;
+        let params = self.round0?;
+        Some(2f64.powf(-ood - f64::from(params.grinding_bits)))
     }
 
     fn carry_grinding(&self) -> u32 {
@@ -1224,6 +1324,18 @@ impl PreparedFalconAlgebraic {
             &committed.source_root,
             &committed.exceptions,
         )?;
+        // Round 0 pins the committed sources to one Johnson list element
+        // before the prime or any other challenge.
+        let ood = self.round0.and_then(|params| {
+            let _span = tracing::info_span!("falcon_algebraic:round0").entered();
+            let packed = match &self.geometry {
+                SourceGeometry::Single(g) => g.virtual_packed([committed.packed[0].as_slice()]),
+                SourceGeometry::Split(g) => {
+                    g.virtual_packed(committed.packed.each_ref().map(Vec::as_slice))
+                }
+            };
+            shared::prove_ood(&mut t, Some(params), &packed)
+        });
         let field = sample_field(&mut t)?;
         let (ring, ring_claim) = {
             let _span = tracing::info_span!("falcon_algebraic:ring").entered();
@@ -1426,11 +1538,12 @@ impl PreparedFalconAlgebraic {
             ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(&mut t, self.grinding.opening);
         let opening = match (&self.geometry, &committed.data) {
             (SourceGeometry::Single(g), SourceProverData::Single(data)) => {
-                shared::prove_joint_sources_with_security(
+                shared::prove_joint_opening(
                     &mut opening_t,
                     g,
                     &digest,
                     [committed.packed[0].as_slice()],
+                    ood.as_ref(),
                     &self.ligerito,
                     data,
                     &point,
@@ -1438,11 +1551,12 @@ impl PreparedFalconAlgebraic {
                 )
             }
             (SourceGeometry::Split(g), SourceProverData::Split(data)) => {
-                shared::prove_joint_sources_with_security(
+                shared::prove_joint_opening(
                     &mut opening_t,
                     g,
                     &digest,
                     committed.packed.each_ref().map(Vec::as_slice),
+                    ood.as_ref(),
                     &self.ligerito,
                     data,
                     &point,
@@ -1462,6 +1576,7 @@ impl PreparedFalconAlgebraic {
             bridges,
             bridge_merge_nonces,
             joint,
+            ood: ood.map(|claim: OodProverClaim| claim.round),
             opening,
             opening_nonces,
             pcs_nonces,
@@ -1487,6 +1602,11 @@ impl PreparedFalconAlgebraic {
             let _span = tracing::info_span!("falcon_algebraic:verify_statement").entered();
             self.transcript(public, &proof.source_root, &proof.exceptions)?
         };
+        let ood = match &self.geometry {
+            SourceGeometry::Single(g) => shared::verify_ood(&mut t, g, self.round0, proof.ood.as_ref()),
+            SourceGeometry::Split(g) => shared::verify_ood(&mut t, g, self.round0, proof.ood.as_ref()),
+        }
+        .map_err(error)?;
         let field = {
             let _span = tracing::info_span!("falcon_algebraic:verify_sample_field").entered();
             sample_field(&mut t)?
@@ -1669,24 +1789,26 @@ impl PreparedFalconAlgebraic {
             &proof.opening_nonces,
         );
         match &self.geometry {
-            SourceGeometry::Single(g) => shared::verify_joint_with_security(
+            SourceGeometry::Single(g) => shared::verify_joint_opening(
                 &mut opening_t,
                 g,
                 &digest,
                 &proof.source_root,
                 &point,
                 proof.joint.value,
+                ood.as_ref(),
                 &self.ligerito,
                 &proof.opening,
                 Some(&mut pcs),
             ),
-            SourceGeometry::Split(g) => shared::verify_joint_with_security(
+            SourceGeometry::Split(g) => shared::verify_joint_opening(
                 &mut opening_t,
                 g,
                 &digest,
                 &proof.source_root,
                 &point,
                 proof.joint.value,
+                ood.as_ref(),
                 &self.ligerito,
                 &proof.opening,
                 Some(&mut pcs),
@@ -1930,7 +2052,7 @@ fn allocate_grinding(
     schedule: &Schedule,
     target_bits: usize,
     ring_mode: RingMode,
-) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+) -> Result<(BinaryGrinding, GrindingPlan, Option<OodRoundParams>), FalconError> {
     use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
     // Block structure, raw errors and native Flock work do not depend on the
     // plan's target; its difficulties are replaced below.
@@ -1939,6 +2061,16 @@ fn allocate_grinding(
     let bit_log = geometry.bit_log();
     let matrices = bridge_matrices(layout, compact_binding);
     let bridge_count = matrices.len();
+    // Round 0 is one site: its collision error is `2^-ood_bits` before work.
+    let round0 = |bits: u32| -> Result<OodRoundParams, FalconError> {
+        if bits > crate::piop::spartan::profile::MAX_DERIVED_GRINDING_BITS {
+            return Err(error("Round 0 exceeds the derived grinding cap"));
+        }
+        Ok(OodRoundParams {
+            grinding_bits: bits,
+            extension: ligerito.extension(),
+        })
+    };
     if per_site_grinding() {
         // Every site on its own: bridge layer rounds and column point, the
         // quadratic joint rounds, the ring switch's largest numerator, and
@@ -1948,6 +2080,10 @@ fn allocate_grinding(
             let needed = (target_bits as f64 + block.raw_error.log2()).ceil().max(0.0) as u32;
             block.bits = needed.max(block.native_bits.unwrap_or(0));
         }
+        let round0 = ligerito
+            .ood_bits()
+            .map(|ood| round0((target_bits as f64 - ood).ceil().max(0.0) as u32))
+            .transpose()?;
         return Ok((
             BinaryGrinding {
                 bridge: std::array::from_fn(|index| {
@@ -1960,6 +2096,7 @@ fn allocate_grinding(
                 opening: bits(256),
             },
             pcs,
+            round0,
         ));
     }
     let mut groups: Vec<_> = matrices
@@ -1994,15 +2131,24 @@ fn allocate_grinding(
         sites: 1.0,
         min_bits: block.native_bits.unwrap_or(0),
     }));
+    let round0_index = groups.len();
+    if let Some(ood) = ligerito.ood_bits() {
+        groups.push(GrindingGroup {
+            raw_error: 2f64.powf(-ood),
+            sites: 1.0,
+            min_bits: 0,
+        });
+    }
     let fixed: f64 = fixed_terms(layout, compact_binding, target_bits, schedule, ring_mode)
         .iter()
         .map(|(_, error)| error)
         .sum();
     let budget = ALLOCATION_BUDGET * 2f64.powi(-(target_bits as i32)) - fixed;
     let bits = allocate(&groups, budget).map_err(error)?;
-    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[pcs_start..]) {
+    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[pcs_start..round0_index]) {
         block.bits = b;
     }
+    let round0 = bits.get(round0_index).map(|&b| round0(b)).transpose()?;
     Ok((
         BinaryGrinding {
             bridge: std::array::from_fn(|index| if index < bridge_count { bits[index] } else { 0 }),
@@ -2015,6 +2161,7 @@ fn allocate_grinding(
             opening: bits[joint_index + 1],
         },
         pcs,
+        round0,
     ))
 }
 
@@ -2482,6 +2629,94 @@ mod tests {
             let other =
                 PreparedFalconAlgebraic::new(batch, if target == 100 { 128 } else { 100 }).unwrap();
             assert!(other.verify(&public, &proof).is_err());
+        }
+    }
+
+    /// Johnson openings run Round 0 right after the statement: over
+    /// GF(2^256) with every Ligerito challenge there (`ext:`, 128 bits),
+    /// and over GF(2^128) (`custom:`, 100 bits). Both transcripts continue
+    /// in step, and each Round-0 and terminal record is bound.
+    #[test]
+    fn johnson_openings_run_round0_and_reject_tampering() {
+        use flock_core::field::Gf256;
+
+        for (target, profile, batches) in [
+            (128, "ext:3:4", &[1usize, 3, 65][..]),
+            (128, "ext:1:4", &[65][..]),
+            (100, "custom:1:4", &[1, 65][..]),
+        ] {
+            let selection = LigeritoSelection::parse(profile, target).unwrap();
+            for &batch in batches {
+                let prepared =
+                    PreparedFalconAlgebraic::new_with_ligerito(batch, target, selection).unwrap();
+                assert_eq!(
+                    prepared.round0.map(|params| params.extension),
+                    Some(profile.starts_with("ext:"))
+                );
+                assert!(prepared.security().algebraic_bits >= target as f64);
+                let (public, witness) = fixture(batch);
+                let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
+                let mut prover_next = [0u64; 4];
+                let proof = prepared
+                    .prove_observed(committed, |t| {
+                        prover_next = std::array::from_fn(|_| t.get_challenge());
+                    })
+                    .unwrap();
+                let mut verifier_next = [0u64; 4];
+                prepared
+                    .verify_observed(&public, &proof, |t| {
+                        verifier_next = std::array::from_fn(|_| t.get_challenge());
+                    })
+                    .unwrap();
+                assert_eq!(prover_next, verifier_next, "{profile} batch {batch}");
+                let round = proof.ood.expect("Johnson proofs carry Round 0");
+                assert_eq!(round.y_ext.is_some(), profile.starts_with("ext:"));
+                assert_eq!(
+                    proof.payload_size_bytes(),
+                    proof.payload_size_breakdown().iter().map(|(_, n)| n).sum::<usize>()
+                );
+                let pcs: usize = proof.pcs_size_breakdown().iter().map(|(_, n)| n).sum();
+                assert_eq!(
+                    Some(pcs),
+                    proof
+                        .payload_size_breakdown()
+                        .into_iter()
+                        .find(|(name, _)| *name == "pcs")
+                        .map(|(_, n)| n)
+                );
+
+                // The unique-decoding preparation rejects the Johnson proof.
+                let udr = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                assert!(udr.verify(&public, &proof).is_err());
+
+                for mutation in 0..5 {
+                    let mut bad = proof.clone();
+                    match (mutation, &mut bad.opening) {
+                        (0, _) => bad.ood.as_mut().unwrap().y += Gf::ONE,
+                        (1, _) => bad.ood = None,
+                        (2, _) => match &mut bad.ood.as_mut().unwrap().y_ext {
+                            Some(y) => *y += Gf::ONE,
+                            None => bad.ood.as_mut().unwrap().y_ext = Some(Gf::ONE),
+                        },
+                        (3, shared::JointOpening::Ext(opening)) => {
+                            opening.ligerito.final_proof[0] += Gf256::new(Gf::ZERO, Gf::ONE)
+                        }
+                        (3, shared::JointOpening::Base(opening)) => {
+                            opening.ligerito.final_proof[0] += Gf::ONE
+                        }
+                        (_, shared::JointOpening::Ext(opening)) => {
+                            opening.ligerito.ood_values[0] += Gf256::new(Gf::ZERO, Gf::ONE)
+                        }
+                        (_, shared::JointOpening::Base(opening)) => {
+                            opening.ligerito.ood_values[0] += Gf::ONE
+                        }
+                    }
+                    assert!(
+                        prepared.verify(&public, &bad).is_err(),
+                        "{profile} batch {batch} mutation {mutation}"
+                    );
+                }
+            }
         }
     }
 

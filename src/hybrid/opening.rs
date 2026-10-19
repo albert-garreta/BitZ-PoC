@@ -23,8 +23,9 @@ use crate::{
         ring_switch_prove_marginal, ring_switch_prove_with, ring_switch_verify, sv_fold_eq_tiled,
     },
     ligerito_flock::{
-        OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger, add_ood_basis,
-        ood_residual_evals, prove_ood_round_packed, verify_ood_round,
+        OodPoint, OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger,
+        add_ood_basis, add_ood_basis_ext, ood_residual_evals, ood_residual_evals_ext,
+        prove_ood_round_packed, verify_ood_round,
     },
     piop::spartan::profile::{IopSecurityProfile, MAX_DERIVED_GRINDING_BITS},
     transcript::traits::Transcript,
@@ -1594,12 +1595,85 @@ impl<const N: usize> JointProverData<N> {
     }
 }
 
+/// The joint opening's two transports: GF(2^128) challenges, or every
+/// Ligerito challenge in GF(2^256) (the `ext:` profiles, whose Round 0
+/// is drawn there too).
+#[derive(Clone, Debug)]
+pub(crate) enum JointOpening {
+    Base(JointProof),
+    Ext(JointProofExt),
+}
+
+/// [`JointProof`] over GF(2^256): the same ring switch, and a compact
+/// extension Ligerito proof whose level 0 stays the base codeword.
+#[derive(Clone, Debug)]
+pub(crate) struct JointProofExt {
+    pub ring: RingSwitchProof,
+    pub ligerito: ligerito::ext::CompactLigeritoProofExt,
+}
+
+/// The joint opening in the Ligerito profile's field. In the Johnson
+/// regimes the caller ran Round 0 right after the statement and passes its
+/// claim, which rides this opening (one batching draw, as in [`prove`]).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_joint_opening<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: &JointProverData<N>,
+    point: &[Gf],
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointOpening, Error> {
+    if ood.is_some() != resolved.ood_bits().is_some() {
+        return Err(Error::Invalid(
+            "Round-0 presence disagrees with Ligerito regime",
+        ));
+    }
+    if resolved.extension() {
+        prove_joint_sources_ext(
+            t, geometry, statement, sources, ood, resolved, data, point, security,
+        )
+        .map(JointOpening::Ext)
+    } else {
+        prove_joint_sources_base(
+            t, geometry, statement, sources, ood, resolved, data, point, security,
+        )
+        .map(JointOpening::Base)
+    }
+}
+
+/// The unique-decoding joint opening (no Round 0). A Johnson profile needs
+/// Round 0 before the first PIOP challenge: such callers use
+/// [`prove_joint_opening`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_joint_sources_with_security<const N: usize>(
     t: &mut (impl Transcript + Send),
     geometry: &Geometry<N>,
     statement: &Hash,
     sources: [&[F]; N],
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: &JointProverData<N>,
+    point: &[Gf],
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointProof, Error> {
+    if resolved.ood_bits().is_some() || resolved.extension() {
+        return Err(Error::Invalid("Johnson joint opening without Round 0"));
+    }
+    prove_joint_sources_base(
+        t, geometry, statement, sources, None, resolved, data, point, security,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_joint_sources_base<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: &JointProverData<N>,
     point: &[Gf],
@@ -1618,7 +1692,7 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
         geometry,
         statement,
         sources,
-        None,
+        ood,
         resolved,
         |positions, lanes, queries| data.open(positions, lanes, queries),
         point,
@@ -1626,6 +1700,85 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
     )?;
     compact_initial_rows(geometry, &mut proof.ligerito.initial_proof)?;
     Ok(proof)
+}
+
+/// [`prove_joint_sources_base`] with the Ligerito challenges in GF(2^256).
+/// The ring switch and padding are the base opener's; the base basis is
+/// lifted, Round 0's `η·eq(·, ζ⃗)` (an extension point) joins it, and the
+/// extension prover opens the same level-0 codewords.
+#[allow(clippy::too_many_arguments)]
+fn prove_joint_sources_ext<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: &JointProverData<N>,
+    point: &[Gf],
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointProofExt, Error> {
+    use flock_core::field::Gf256;
+
+    validate_geometry(geometry)?;
+    if *geometry != data.geometry
+        || data.log_inv_rate != resolved.prover().log_inv_rates[0]
+        || point.len() != geometry.bit_log()
+        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
+    {
+        return Err(Error::Invalid("joint source opening shape"));
+    }
+    let Some(OodPoint::Ext { point: zeta, y }) = ood.map(|claim| &claim.value) else {
+        return Err(Error::Invalid("GF(2^256) opening without its Round 0"));
+    };
+    geometry.bind_allocation(t);
+    let ring_scope = tracing::info_span!("op:ring_switch").entered();
+    let marginal = geometry.ring_marginal(sources, &point[7..]);
+    let (ring, eq_r2, target) = ring_switch_prove_marginal(t, marginal);
+    drop(ring_scope);
+    let basis_scope = tracing::info_span!("op:extra_bases").entered();
+    // The base opener's draws in its order: `η_ood`, then the padding claim.
+    let eta: Gf = t.get_field_challenge(&());
+    let padding = sample_padding(t, geometry);
+    let (padding_point, padding_scale) = &padding[0];
+    let tables = geometry.initial_tables(
+        sources,
+        &point[7..],
+        &eq_r2,
+        (padding_point, *padding_scale),
+        None,
+    );
+    let mut basis: Vec<Gf256> = tables.basis.iter().map(|&v| Gf256::from_base(v)).collect();
+    add_ood_basis_ext(&mut basis, zeta, eta);
+    let target = Gf256::from_base(target) + y.mul_base(eta);
+    drop(basis_scope);
+    let _lig_scope = tracing::info_span!("op:ligerito").entered();
+    let pc = resolved.prover();
+    macro_rules! run {
+        ($challenger:expr) => {
+            ligerito::ext::recursive_prover_with_basis_initial_compact_ext(
+                &pc,
+                &tables.packed,
+                basis,
+                target,
+                *statement,
+                |positions, lanes, queries| data.open(positions, lanes, queries),
+                $challenger,
+            )
+        };
+    }
+    let mut ligerito = if let Some(security) = security {
+        let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
+        let proof = run!(&mut challenger);
+        if !challenger.finish() {
+            return Err(Error::Invalid("shared Ligerito grinding schedule"));
+        }
+        proof
+    } else {
+        run!(&mut ZincChallenger(t))
+    };
+    compact_initial_rows(geometry, &mut ligerito.initial_proof)?;
+    Ok(JointProofExt { ring, ligerito })
 }
 
 fn authenticate_joint<const N: usize>(
@@ -1670,6 +1823,39 @@ fn authenticate_joint<const N: usize>(
     )
 }
 
+/// Verify [`prove_joint_opening`]: the proof's field must be the profile's.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_joint_opening<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    root: &Hash,
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    proof: &JointOpening,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<(), Error> {
+    if ood.is_some() != resolved.ood_bits().is_some() {
+        return Err(Error::Invalid(
+            "Round-0 presence disagrees with Ligerito regime",
+        ));
+    }
+    match (proof, resolved.extension()) {
+        (JointOpening::Base(proof), false) => verify_joint_base(
+            t, geometry, statement, root, point, value, ood, resolved, proof, security,
+        ),
+        (JointOpening::Ext(proof), true) => verify_joint_ext(
+            t, geometry, statement, root, point, value, ood, resolved, proof, security,
+        ),
+        _ => Err(Error::Invalid(
+            "joint opening field disagrees with Ligerito profile",
+        )),
+    }
+}
+
+/// Verify [`prove_joint_sources_with_security`] (unique decoding only).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn verify_joint_with_security<const N: usize>(
     t: &mut (impl Transcript + Send),
@@ -1678,6 +1864,138 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
     root: &Hash,
     point: &[Gf],
     value: F,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    proof: &JointProof,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<(), Error> {
+    if resolved.ood_bits().is_some() || resolved.extension() {
+        return Err(Error::Invalid("Johnson joint opening without Round 0"));
+    }
+    verify_joint_base(
+        t, geometry, statement, root, point, value, None, resolved, proof, security,
+    )
+}
+
+/// [`verify_joint_base`] for [`prove_joint_sources_ext`]: the ring switch,
+/// `η_ood` and padding draws as in the base opener, then the extension
+/// Ligerito verifier with the residual basis evaluated at extension points
+/// (the ring-switch tensor, Round 0's term and the padding terms).
+#[allow(clippy::too_many_arguments)]
+fn verify_joint_ext<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    root: &Hash,
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    proof: &JointProofExt,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<(), Error> {
+    use crate::ligerito::residual_b_evals_ext;
+    use flock_core::field::Gf256;
+
+    validate_geometry(geometry)?;
+    if point.len() != geometry.bit_log() {
+        return Err(Error::Invalid("joint source opening point"));
+    }
+    let Some(OodPoint::Ext { point: zeta, y }) = ood.map(|claim| &claim.value) else {
+        return Err(Error::Invalid("GF(2^256) opening without its Round 0"));
+    };
+    let vc = resolved.verifier();
+    let lig = &proof.ligerito;
+    let initial = expand_initial_rows(geometry, &lig.initial_proof, vc.queries[0], vc.log_inv_rates[0])?;
+    geometry.bind_allocation(t);
+    let (eq_r2, target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
+        .map_err(|_| Error::Invalid("ring switch"))?;
+    let eta: Gf = t.get_field_challenge(&());
+    let target = Gf256::from_base(target) + y.mul_base(eta);
+    let padding: Vec<(Vec<Gf256>, Gf)> = sample_padding(t, geometry)
+        .into_iter()
+        .map(|(point, scale)| (point.into_iter().map(Gf256::from_base).collect(), scale))
+        .collect();
+    // The shape checks of the base verifier (see `verify_initial_with_security`).
+    let expected_ood_values: usize = vc.ood_samples.iter().skip(1).sum();
+    let level_ks = std::iter::once(vc.initial_k).chain(vc.recursive_ks.iter().copied());
+    let expected_fold_nonces: usize = vc
+        .fold_grinding_bits
+        .iter()
+        .zip(level_ks)
+        .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
+        .sum();
+    if lig.recursive_roots.len() != vc.recursive_steps
+        || lig.recursive_proofs.len() + 1 != vc.recursive_steps
+        || lig.grinding_nonces.len() != vc.recursive_steps + 1
+        || lig.ood_values.len() != expected_ood_values
+        || lig.fold_grinding_nonces.len() != expected_fold_nonces
+    {
+        return Err(Error::Invalid("Ligerito proof shape"));
+    }
+    let r_hi = &point[7..];
+    let eval = |prefix: &[Gf256], log_y: usize| -> Vec<Gf256> {
+        if prefix.len() + log_y != r_hi.len() {
+            return Vec::new();
+        }
+        let mut out = residual_b_evals_ext(prefix, log_y, r_hi, &eq_r2);
+        for (slot, term) in out
+            .iter_mut()
+            .zip(ood_residual_evals_ext(prefix, log_y, zeta, eta))
+        {
+            *slot += term;
+        }
+        for (point, scale) in &padding {
+            for (slot, term) in out
+                .iter_mut()
+                .zip(ood_residual_evals_ext(prefix, log_y, point, *scale))
+            {
+                *slot += term;
+            }
+        }
+        out
+    };
+    let authenticate = |positions, lanes, queries: &[usize], opening: &RecursiveProof| {
+        positions == 1 << (geometry.position_log + vc.log_inv_rates[0])
+            && authenticate_joint(geometry, root, positions, lanes, queries, opening, vc.merkle_hash)
+    };
+    macro_rules! run {
+        ($challenger:expr) => {
+            ligerito::ext::recursive_verifier_with_basis_initial_compact_ext(
+                &vc,
+                lig,
+                &initial,
+                geometry.packed_log(),
+                target,
+                statement,
+                eval,
+                authenticate,
+                $challenger,
+            )
+        };
+    }
+    let valid = if let Some(security) = security {
+        let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
+        let valid = run!(&mut challenger);
+        valid && challenger.finish()
+    } else {
+        run!(&mut ZincChallenger(t))
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::Invalid("shared Ligerito opening"))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_joint_base<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    root: &Hash,
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &JointProof,
     security: Option<&mut grinding::GrindingContext<'_>>,
@@ -1699,7 +2017,7 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
         statement,
         point,
         value,
-        None,
+        ood,
         resolved,
         &proof.ring,
         &proof.ligerito,
