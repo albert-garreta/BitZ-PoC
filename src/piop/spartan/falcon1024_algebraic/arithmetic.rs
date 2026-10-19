@@ -55,6 +55,7 @@ const SMALL_BATCH_MAX: usize = (1 << 19) / (64 * N);
 const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
 const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
 const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+const MERGED_NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merged-norm/v1";
 
 crate::piop::spartan::grinding::grinding_domains! {
     NormInstance => b"bitz/falcon1024-algebraic/grinding/norm-instance/v2";
@@ -72,11 +73,68 @@ pub(super) struct NormProof {
     pub grinding_nonces: Vec<u64>,
 }
 
+/// The binder's round messages: quadratic throughout, or cubic once the norm's
+/// square sums are merged in (the coefficient rounds then send a zero cubic
+/// term and the instance rounds a genuine one).
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum BindingProof {
+    Quadratic(SumcheckProof<F, 3>),
+    Cubic(SumcheckProof<F, 4>),
+}
+
+// Transparent, so quadratic proofs keep their existing debug digests.
+impl std::fmt::Debug for BindingProof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Quadratic(proof) => proof.fmt(f),
+            Self::Cubic(proof) => proof.fmt(f),
+        }
+    }
+}
+
+impl BindingProof {
+    pub(super) fn rounds(&self) -> usize {
+        match self {
+            Self::Quadratic(proof) => proof.round_polynomials.len(),
+            Self::Cubic(proof) => proof.round_polynomials.len(),
+        }
+    }
+    fn coefficients(&self) -> usize {
+        match self {
+            Self::Quadratic(_) => 3,
+            Self::Cubic(_) => 4,
+        }
+    }
+    pub(super) fn quadratic(&self) -> Result<&SumcheckProof<F, 3>, FalconError> {
+        match self {
+            Self::Quadratic(proof) => Ok(proof),
+            Self::Cubic(_) => Err(failure("cubic binder messages in a quadratic binder")),
+        }
+    }
+    pub(super) fn cubic(&self) -> Result<&SumcheckProof<F, 4>, FalconError> {
+        match self {
+            Self::Cubic(proof) => Ok(proof),
+            Self::Quadratic(_) => Err(failure("quadratic binder messages in a merged binder")),
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn pop(&mut self) {
+        match self {
+            Self::Quadratic(proof) => {
+                proof.round_polynomials.pop();
+            }
+            Self::Cubic(proof) => {
+                proof.round_polynomials.pop();
+            }
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Proof {
     pub norm: NormProof,
     pub merge_nonce: Option<u64>,
-    pub binding: SumcheckProof<F, 3>,
+    pub binding: BindingProof,
     pub binding_terminal: Vec<F>,
     pub binding_nonces: Vec<u64>,
     pub terminal_merge_nonce: Option<u64>,
@@ -103,9 +161,12 @@ impl Proof {
     pub(super) fn payload_size_bytes(&self) -> usize {
         // Canonical field words, round coefficients, terminal messages and
         // present nonces. Container framing is excluded from this payload size.
-        16 * (2
-            + 4 * self.norm.sumcheck.round_polynomials.len()
-            + 3 * self.binding.round_polynomials.len()
+        // The norm terminal is sent only with a separate integer outer sumcheck.
+        let norm_words = 1
+            + usize::from(!self.norm.sumcheck.round_polynomials.is_empty())
+            + 4 * self.norm.sumcheck.round_polynomials.len();
+        16 * (norm_words
+            + self.binding.coefficients() * self.binding.rounds()
             + self.binding_terminal.len())
             + 8 * (usize::from(self.norm.instance_nonce.is_some())
                 + self.norm.grinding_nonces.len()
@@ -317,6 +378,11 @@ fn prove_with_ring_and_scratch(
         return Err(failure("algebraic source layout mismatch"));
     }
     validate_field(layout, field)?;
+    if schedule.merged_norm {
+        return prove_merged_with_ring(
+            transcript, layout, data, source, field, ring, None, schedule, scratch,
+        );
+    }
     let (norm, norm_claims) = prove_norm(transcript, layout, data, field, schedule)?;
     let _binding_span = tracing::info_span!("falcon_algebraic:binding").entered();
     transcript.absorb_slice(MERGE_DOMAIN);
@@ -454,7 +520,7 @@ fn prove_with_ring_and_scratch(
         Proof {
             norm,
             merge_nonce,
-            binding: output.proof,
+            binding: BindingProof::Quadratic(output.proof),
             binding_terminal: binding_terminal.to_vec(),
             binding_nonces,
             terminal_merge_nonce: None,
@@ -476,6 +542,9 @@ pub(super) fn verify_factored_ring(
         return Err(failure("factored ring requires word binding"));
     }
     validate_field(layout, field)?;
+    if schedule.merged_norm {
+        return Err(failure("merged norm requires dense ring weights"));
+    }
     let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
     transcript.absorb_slice(MERGE_DOMAIN);
     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
@@ -516,6 +585,39 @@ pub(super) fn verify_keyed_ring(
         return Err(failure("keyed ring binding dimensions"));
     }
     validate_field(layout, field)?;
+    if schedule.merged_norm {
+        let context = verify_merged_context(transcript, layout, proof, field, schedule)?;
+        let (form, target) = BindingForm::new_keyed_merged(layout, ring.target, &context, field)?;
+        let merged = word_binding::MergedNorm::new(
+            layout,
+            context.eta,
+            context.instance_point.clone(),
+            &context.instance_weights,
+            field,
+        )?;
+        let keyed = word_binding::KeyedRing {
+            points: &ring.points,
+            rows: &ring.rows,
+            keys,
+        };
+        let claim = word_binding::verify_merged(
+            transcript,
+            layout,
+            &form,
+            Some(&keyed),
+            &merged,
+            target,
+            proof,
+            schedule,
+            field,
+        )?;
+        return Ok(BridgeClaim {
+            column_point: claim.column_point(layout).to_vec(),
+            row_weights: claim.row_weights(layout, field)?,
+            modulus: claim.modulus,
+            value: claim.value,
+        });
+    }
     let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
     transcript.absorb_slice(MERGE_DOMAIN);
     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
@@ -558,6 +660,9 @@ pub(super) fn verify(
     schedule: &Schedule,
 ) -> Result<BridgeClaim, FalconError> {
     validate_field(layout, field)?;
+    if schedule.merged_norm {
+        return verify_merged_dense(transcript, layout, field, ring, proof, schedule);
+    }
     let norm = verify_norm(transcript, layout, &proof.norm, field, schedule)?;
     transcript.absorb_slice(MERGE_DOMAIN);
     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
@@ -586,6 +691,7 @@ pub(super) fn verify(
     );
     let (point, final_claim) = proof
         .binding
+        .quadratic()?
         .verify_with_round_boundary(
             transcript,
             target,
@@ -608,6 +714,270 @@ pub(super) fn verify(
         proof.binding_terminal[1],
         field,
     )
+}
+
+/// Transcript prefix shared by the merged norm's prover and verifier: the
+/// instance point `rho`, the claimed weighted slack `sum_i eq(rho,i) slack_i`,
+/// and the merge coefficient `eta`. The square sums themselves are a cubic term
+/// of the word binder, so no integer-outer sumcheck runs.
+struct MergedContext {
+    instance_point: Vec<F>,
+    instance_weights: Vec<F>,
+    slack: F,
+    /// `beta^2 * sum_{i < batch} eq(rho, i)`.
+    norm_target: F,
+    eta: F,
+}
+
+fn prove_merged_context(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    field: &Cfg,
+    schedule: &Schedule,
+) -> Result<(MergedContext, NormProof, Option<u64>), FalconError> {
+    let _span = tracing::info_span!("falcon_algebraic:merged_norm").entered();
+    transcript.absorb_slice(MERGED_NORM_DOMAIN);
+    let instance_nonce = prove_nonce::<NormInstance>(transcript, schedule.norm_instance_bits)?;
+    let instance_point = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
+    let instance_weights = eq_table(&instance_point, field).map_err(failure)?;
+    let mut slack = FpLinearAcc::<2, 1>::default();
+    for (value, weight) in data.slacks.iter().zip(&instance_weights) {
+        field.mul_acc(&mut slack, weight, value);
+    }
+    let slack = field.reduce(slack);
+    absorb_field_elements(transcript, &[slack], field);
+    let norm_target = norm_target(layout, &instance_weights, field);
+    transcript.absorb_slice(MERGE_DOMAIN);
+    let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
+    let eta = sample(transcript, field)?;
+    Ok((
+        MergedContext {
+            instance_point,
+            instance_weights,
+            slack,
+            norm_target,
+            eta,
+        },
+        NormProof {
+            instance_nonce,
+            slack,
+            sumcheck: SumcheckProof {
+                round_polynomials: Vec::new(),
+            },
+            terminal: field.zero(),
+            grinding_nonces: Vec::new(),
+        },
+        merge_nonce,
+    ))
+}
+
+fn verify_merged_context(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    proof: &Proof,
+    field: &Cfg,
+    schedule: &Schedule,
+) -> Result<MergedContext, FalconError> {
+    if !schedule.word_binding {
+        return Err(failure("merged norm requires word binding"));
+    }
+    if !proof.norm.sumcheck.round_polynomials.is_empty()
+        || proof.norm.terminal != field.zero()
+        || !proof.norm.grinding_nonces.is_empty()
+    {
+        return Err(failure("merged norm proof carries an integer outer sumcheck"));
+    }
+    transcript.absorb_slice(MERGED_NORM_DOMAIN);
+    verify_nonce::<NormInstance>(
+        transcript,
+        schedule.norm_instance_bits,
+        proof.norm.instance_nonce,
+    )?;
+    let instance_point = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
+    let instance_weights = eq_table(&instance_point, field).map_err(failure)?;
+    validate_field_elements(&[proof.norm.slack], field).map_err(failure)?;
+    absorb_field_elements(transcript, &[proof.norm.slack], field);
+    let norm_target = norm_target(layout, &instance_weights, field);
+    transcript.absorb_slice(MERGE_DOMAIN);
+    verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
+    let eta = sample(transcript, field)?;
+    Ok(MergedContext {
+        instance_point,
+        instance_weights,
+        slack: proof.norm.slack,
+        norm_target,
+        eta,
+    })
+}
+
+/// The merged binder's target and public weights. With `eta` the merge
+/// coefficient: ring target, then `eta * (beta^2 E - slack(rho))` for the
+/// square sums (`E = sum_{i<batch} eq(rho,i)`), `eta^2 * slack(rho)` for the
+/// committed slack bits and `eta^3` for the padding counts.
+fn merged_target_and_weights(
+    layout: &Layout,
+    ring_target: F,
+    context: &MergedContext,
+    field: &Cfg,
+) -> (F, Vec<F>, F) {
+    let eta2 = field.mul(&context.eta, &context.eta);
+    let eta3 = field.mul(&eta2, &context.eta);
+    let squares = field.mul(
+        &context.eta,
+        &field.sub(&context.norm_target, &context.slack),
+    );
+    let target = field.add(
+        &field.add(&ring_target, &squares),
+        &field.mul(&eta2, &context.slack),
+    );
+    let slacks = context.instance_weights[..layout.batch()]
+        .iter()
+        .map(|weight| field.mul(&eta2, weight))
+        .collect();
+    (target, slacks, eta3)
+}
+
+/// Merged binder with the keyed ring's s1 weights left in factored form
+/// (`ring.weights_s1` is empty); proofs are identical to the dense ones.
+#[cfg(any(test, feature = "bench-internals"))]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn prove_owned_with_s1_factors(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: PreparedClaim,
+    s1: super::keyed_ring::S1Factors,
+    schedule: &Schedule,
+    scratch: &BindingScratch,
+) -> Result<(Proof, BridgeClaim), FalconError> {
+    if source.layout() != layout {
+        return Err(failure("algebraic source layout mismatch"));
+    }
+    validate_field(layout, field)?;
+    if !schedule.merged_norm {
+        return Err(failure("factored s1 weights require the merged norm"));
+    }
+    let s1 = word_binding::MergedS1::new(layout, s1.rows, s1.columns, field)?;
+    prove_merged_with_ring(
+        transcript,
+        layout,
+        data,
+        source,
+        field,
+        RingInput::Owned(ring),
+        Some(s1),
+        schedule,
+        Some(scratch),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_merged_with_ring(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    data: &WitnessData,
+    source: &Source,
+    field: &Cfg,
+    ring: RingInput<'_>,
+    s1: Option<word_binding::MergedS1>,
+    schedule: &Schedule,
+    scratch: Option<&BindingScratch>,
+) -> Result<(Proof, BridgeClaim), FalconError> {
+    if !schedule.word_binding {
+        return Err(failure("merged norm requires word binding"));
+    }
+    if data.witness.s1.len() != layout.batch()
+        || data.witness.s2.len() != layout.batch()
+        || data.slacks.len() != layout.batch()
+    {
+        return Err(failure("integer witness shape mismatch"));
+    }
+    let ring = match ring {
+        RingInput::Borrowed(ring) => ring.clone(),
+        RingInput::Owned(ring) => ring,
+        #[cfg(any(test, feature = "bench-internals"))]
+        RingInput::Factored(_) => {
+            return Err(failure("merged norm requires dense ring weights"));
+        }
+    };
+    let (context, norm_proof, merge_nonce) =
+        prove_merged_context(transcript, layout, data, field, schedule)?;
+    let _binding_span = tracing::info_span!("falcon_algebraic:binding").entered();
+    let (form, target) = {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        BindingForm::new_merged(layout, ring, &context, s1.is_some(), field)?
+    };
+    let MergedContext {
+        instance_point,
+        instance_weights,
+        eta,
+        ..
+    } = context;
+    let merged =
+        word_binding::MergedNorm::new(layout, eta, instance_point, &instance_weights, field)?;
+    drop(instance_weights);
+    let prove = |workspace: &mut word_binding::WordWorkspace| {
+        word_binding::prove_merged(
+            transcript,
+            layout,
+            source,
+            form,
+            merged,
+            s1,
+            target,
+            norm_proof,
+            merge_nonce,
+            schedule,
+            field,
+            workspace,
+        )
+    };
+    let (proof, row_weights, claim) =
+        if let Some(scratch) = scratch.filter(|_| word_binding::workspace_reuse_enabled()) {
+            scratch.with_workspace(prove)
+        } else {
+            prove(&mut word_binding::WordWorkspace::default())
+        }?;
+    Ok((
+        proof,
+        BridgeClaim {
+            column_point: claim.column_point(layout).to_vec(),
+            row_weights,
+            modulus: claim.modulus,
+            value: claim.value,
+        },
+    ))
+}
+
+fn verify_merged_dense(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    field: &Cfg,
+    ring: &PreparedClaim,
+    proof: &Proof,
+    schedule: &Schedule,
+) -> Result<BridgeClaim, FalconError> {
+    let context = verify_merged_context(transcript, layout, proof, field, schedule)?;
+    let (form, target) = BindingForm::new_merged(layout, ring.clone(), &context, false, field)?;
+    let merged = word_binding::MergedNorm::new(
+        layout,
+        context.eta,
+        context.instance_point.clone(),
+        &context.instance_weights,
+        field,
+    )?;
+    let claim = word_binding::verify_merged(
+        transcript, layout, &form, None, &merged, target, proof, schedule, field,
+    )?;
+    Ok(BridgeClaim {
+        column_point: claim.column_point(layout).to_vec(),
+        row_weights: claim.row_weights(layout, field)?,
+        modulus: claim.modulus,
+        value: claim.value,
+    })
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic:integer_outer")]
@@ -959,6 +1329,77 @@ impl<'a> BindingForm<'a> {
             false,
             false,
         )
+    }
+
+    /// Dense ring coefficients only: with the norm merged into the binder the
+    /// square sums are a cubic term, not a weight.
+    fn new_merged(
+        layout: &'a Layout,
+        ring: PreparedClaim,
+        context: &MergedContext,
+        factored_s1: bool,
+        field: &'a Cfg,
+    ) -> Result<(Self, F), FalconError> {
+        let len = layout.batch() * N;
+        if ring.weights_s1.len() != if factored_s1 { 0 } else { len }
+            || ring.weights_s2.len() != len
+            || context.instance_weights.len() != layout.capacity()
+        {
+            return Err(failure("algebraic binder claim dimension mismatch"));
+        }
+        validate_field_elements(&[ring.target], field).map_err(failure)?;
+        for weights in [&ring.weights_s1, &ring.weights_s2] {
+            #[cfg(feature = "parallel")]
+            weights
+                .par_chunks(1 << 16)
+                .try_for_each(|chunk| validate_field_elements(chunk, field))
+                .map_err(failure)?;
+            #[cfg(not(feature = "parallel"))]
+            validate_field_elements(weights, field).map_err(failure)?;
+        }
+        let (target, slacks, padding) =
+            merged_target_and_weights(layout, ring.target, context, field);
+        Ok((
+            Self {
+                layout,
+                field,
+                coefficients: [ring.weights_s1, ring.weights_s2],
+                slacks,
+                padding,
+                options: BindingOptions::default(),
+                folded_decoder: Default::default(),
+            },
+            target,
+        ))
+    }
+
+    /// Verifier form of the merged binder for keyed ring weights: no dense
+    /// coefficients; the caller evaluates the ring weights from the public keys.
+    #[cfg(any(test, feature = "bench-internals"))]
+    fn new_keyed_merged(
+        layout: &'a Layout,
+        ring_target: F,
+        context: &MergedContext,
+        field: &'a Cfg,
+    ) -> Result<(Self, F), FalconError> {
+        if context.instance_weights.len() != layout.capacity() {
+            return Err(failure("algebraic binder claim dimension mismatch"));
+        }
+        validate_field_elements(&[ring_target], field).map_err(failure)?;
+        let (target, slacks, padding) =
+            merged_target_and_weights(layout, ring_target, context, field);
+        Ok((
+            Self {
+                layout,
+                field,
+                coefficients: [Vec::new(), Vec::new()],
+                slacks,
+                padding,
+                options: BindingOptions::default(),
+                folded_decoder: Default::default(),
+            },
+            target,
+        ))
     }
 
     /// Verifier form for keyed ring weights: the same target, slack and padding
@@ -1859,6 +2300,15 @@ mod tests {
             binding_bits: 0,
             word_binding: true,
             terminal_merge_bits: 0,
+            merged_norm: false,
+            cubic_binding_bits: 0,
+        }
+    }
+
+    fn schedule_merged() -> Schedule {
+        Schedule {
+            merged_norm: true,
+            ..schedule()
         }
     }
 
@@ -2682,7 +3132,7 @@ mod tests {
                 });
             assert_eq!(claim.value, opened);
             assert_eq!(
-                proof.binding.round_polynomials.len(),
+                proof.binding.rounds(),
                 source_rounds(&layout) - 4
             );
             assert_eq!(
@@ -2836,7 +3286,7 @@ mod tests {
         altered.norm.sumcheck.round_polynomials.pop();
         rejects(&altered);
         let mut altered = proof.clone();
-        altered.binding.round_polynomials.pop();
+        altered.binding.pop();
         rejects(&altered);
         let mut altered = proof.clone();
         altered.binding_terminal[1] = field.add(&altered.binding_terminal[1], &field.one());
@@ -2937,6 +3387,8 @@ mod tests {
             binding_bits: 2,
             word_binding: true,
             terminal_merge_bits: 2,
+            merged_norm: false,
+            cubic_binding_bits: 0,
         };
         let (mut proof, claim) = prove(
             &mut Blake3Transcript::new(),
@@ -3066,4 +3518,381 @@ mod tests {
             .is_err()
         );
     }
+    #[test]
+    fn merged_norm_round_trips_and_matches_the_verifier_transcript() {
+        let f = field();
+        // Capacity 1 has no instance rounds; capacity 4 pads one instance.
+        for batch in [1, 3, 4] {
+            let layout = Layout::new(batch).unwrap();
+            let data = data(batch);
+            let source = Source::new(layout, &data);
+            let ring = ring(&data, &f);
+            let mut prover = Blake3Transcript::new();
+            let (proof, claim) = prove_with_ring(
+                &mut prover,
+                &layout,
+                &data,
+                &source,
+                &f,
+                RingInput::Owned(ring.clone()),
+                &schedule_merged(),
+            )
+            .unwrap();
+            assert!(proof.norm.sumcheck.round_polynomials.is_empty());
+            assert_eq!(proof.binding.rounds(), source_rounds(&layout) - 4);
+            let cubic = proof.binding.cubic().unwrap();
+            for (round, message) in cubic.round_polynomials.iter().enumerate() {
+                if round <= COEFFICIENT_LOG {
+                    assert_eq!(message[3], f.zero(), "batch {batch} round {round}");
+                }
+            }
+            if layout.capacity() > 1 {
+                assert!(
+                    cubic.round_polynomials[COEFFICIENT_LOG + 1..]
+                        .iter()
+                        .any(|message| message[3] != f.zero())
+                );
+            }
+            let mut borrowed = Blake3Transcript::new();
+            let again = prove(
+                &mut borrowed,
+                &layout,
+                &data,
+                &source,
+                &f,
+                &ring,
+                &schedule_merged(),
+            )
+            .unwrap();
+            assert_eq!(again, (proof.clone(), claim.clone()));
+            assert_eq!(borrowed.state_digest(), prover.state_digest());
+            let mut verifier = Blake3Transcript::new();
+            assert_eq!(
+                verify(&mut verifier, &layout, &f, &ring, &proof, &schedule_merged()).unwrap(),
+                claim
+            );
+            assert_eq!(verifier.state_digest(), prover.state_digest());
+            // The separate-norm verifier must not accept a merged proof, nor
+            // the merged verifier a separate one.
+            assert!(
+                verify(&mut Blake3Transcript::new(), &layout, &f, &ring, &proof, &schedule())
+                    .is_err()
+            );
+            let (separate, _) = prove(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &data,
+                &source,
+                &f,
+                &ring,
+                &schedule(),
+            )
+            .unwrap();
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &f,
+                    &ring,
+                    &separate,
+                    &schedule_merged()
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn merged_norm_rejects_witness_and_proof_tampering() {
+        let field = field();
+        let layout = Layout::new(2).unwrap();
+        let data = data(2);
+        let source = Source::new(layout, &data);
+        let dense = ring(&data, &field);
+        let fails = |data: &WitnessData, source: &Source| {
+            prove(
+                &mut Blake3Transcript::new(),
+                &layout,
+                data,
+                source,
+                &field,
+                &dense,
+                &schedule_merged(),
+            )
+            .is_err()
+        };
+        let mut wrong_slack = data.clone();
+        wrong_slack.slacks[0] += 1;
+        assert!(fails(&wrong_slack, &source));
+        // The merged binder reads the committed source, never the host
+        // witness's coefficients, so a host witness that disagrees with the
+        // source surfaces through the ring claim computed from it.
+        let mut other_witness = data.clone();
+        other_witness.witness.s1[0][0] *= -1;
+        let other_ring = ring(&other_witness, &field);
+        assert!(
+            prove(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &other_witness,
+                &source,
+                &field,
+                &other_ring,
+                &schedule_merged(),
+            )
+            .is_err()
+        );
+        // Norm budget cannot move between signatures: the batch total is
+        // exactly 2B while the first signature exceeds B.
+        let excessive = (BETA_SQUARED.isqrt() + 1) as i16;
+        let excessive_norm = (excessive as u64).pow(2);
+        let mut borrowed = WitnessData {
+            witness: FalconAlgebraicWitness {
+                s1: vec![[0; N]; 2],
+                s2: vec![[0; N]; 2],
+            },
+            slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
+        };
+        borrowed.witness.s2[0][0] = excessive;
+        let borrowed_source = Source::new(layout, &borrowed);
+        let borrowed_ring = ring(&borrowed, &field);
+        assert!(
+            prove(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &borrowed,
+                &borrowed_source,
+                &field,
+                &borrowed_ring,
+                &schedule_merged(),
+            )
+            .is_err()
+        );
+        let mut altered = source.clone();
+        altered.flip(coefficient_bit(N, 1, 0, 14));
+        assert!(fails(&data, &altered));
+
+        let (proof, _) = prove(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &data,
+            &source,
+            &field,
+            &dense,
+            &schedule_merged(),
+        )
+        .unwrap();
+        let rejects = |proof: &Proof| {
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &field,
+                    &dense,
+                    proof,
+                    &schedule_merged()
+                )
+                .is_err()
+            )
+        };
+        let mut altered = proof.clone();
+        altered.norm.slack = field.add(&altered.norm.slack, &field.one());
+        rejects(&altered);
+        let mut altered = proof.clone();
+        altered.binding.pop();
+        rejects(&altered);
+        let mut altered = proof.clone();
+        altered.binding_terminal[0] = field.add(&altered.binding_terminal[0], &field.one());
+        rejects(&altered);
+        // A cubic message in a coefficient round exceeds that round's degree.
+        let mut altered = proof.clone();
+        if let BindingProof::Cubic(sumcheck) = &mut altered.binding {
+            let message = &mut sumcheck.round_polynomials[0];
+            message[3] = field.one();
+            message[1] = field.sub(&message[1], &field.one());
+        }
+        rejects(&altered);
+        // The ring target is bound through the initial claim.
+        let mut other_ring = dense.clone();
+        other_ring.target = field.add(&other_ring.target, &field.one());
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &other_ring,
+                &proof,
+                &schedule_merged()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn merged_norm_grinds_quadratic_and_cubic_rounds_separately() {
+        let field = field();
+        let layout = Layout::new(3).unwrap();
+        let data = data(3);
+        let source = Source::new(layout, &data);
+        let ring = ring(&data, &field);
+        for (binding_bits, cubic_bits) in [(2, 3), (0, 2), (2, 0)] {
+            let schedule = Schedule {
+                norm_instance_bits: 2,
+                norm_round_bits: 0,
+                merge_bits: 2,
+                binding_bits,
+                word_binding: true,
+                terminal_merge_bits: 2,
+                merged_norm: true,
+                cubic_binding_bits: cubic_bits,
+            };
+            let (proof, claim) = prove(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &data,
+                &source,
+                &field,
+                &ring,
+                &schedule,
+            )
+            .unwrap();
+            let quadratic_rounds = COEFFICIENT_LOG + 1;
+            let cubic_rounds = layout.capacity().ilog2() as usize;
+            assert_eq!(
+                proof.binding_nonces.len(),
+                usize::from(binding_bits > 0) * quadratic_rounds
+                    + usize::from(cubic_bits > 0) * cubic_rounds
+            );
+            assert!(proof.norm.grinding_nonces.is_empty());
+            assert_eq!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &field,
+                    &ring,
+                    &proof,
+                    &schedule
+                )
+                .unwrap(),
+                claim
+            );
+            let mut altered = proof.clone();
+            altered.binding_nonces.pop();
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &field,
+                    &ring,
+                    &altered,
+                    &schedule
+                )
+                .is_err()
+            );
+            if let Some(last) = proof.binding_nonces.last().copied() {
+                let mut altered = proof.clone();
+                *altered.binding_nonces.last_mut().unwrap() = last.wrapping_add(1);
+                assert!(
+                    verify(
+                        &mut Blake3Transcript::new(),
+                        &layout,
+                        &field,
+                        &ring,
+                        &altered,
+                        &schedule
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+    #[test]
+    fn merged_binder_factored_s1_matches_dense_weights() {
+        let f = field();
+        let layout = Layout::new(3).unwrap();
+        let data = data(3);
+        let source = Source::new(layout, &data);
+        let rows: Vec<Vec<F>> = (0..2)
+            .map(|p| {
+                (0..3)
+                    .map(|i| unsigned((7 + 5 * p + 3 * i) as u128, &f))
+                    .collect()
+            })
+            .collect();
+        let columns: Vec<Vec<F>> = (0..2)
+            .map(|p| {
+                (0..N)
+                    .map(|j| unsigned((31 * p + j % 29 + 1) as u128, &f))
+                    .collect()
+            })
+            .collect();
+        let mut dense = ring(&data, &f);
+        for i in 0..3 {
+            for j in 0..N {
+                dense.weights_s1[i * N + j] = (0..2).fold(f.zero(), |sum, p| {
+                    f.add(&sum, &f.mul(&rows[p][i], &columns[p][j]))
+                });
+            }
+        }
+        dense.target = [&data.witness.s1, &data.witness.s2]
+            .into_iter()
+            .zip([&dense.weights_s1, &dense.weights_s2])
+            .fold(f.zero(), |sum, (values, weights)| {
+                values
+                    .iter()
+                    .flatten()
+                    .zip(weights)
+                    .fold(sum, |sum, (&value, weight)| {
+                        f.add(&sum, &f.mul(weight, &signed(value as i128, &f)))
+                    })
+            });
+        let mut factored = dense.clone();
+        factored.weights_s1 = Vec::new();
+        let s1 = word_binding::MergedS1::new(&layout, rows, columns, &f).unwrap();
+        let mut dense_transcript = Blake3Transcript::new();
+        let expected = prove_merged_with_ring(
+            &mut dense_transcript,
+            &layout,
+            &data,
+            &source,
+            &f,
+            RingInput::Owned(dense.clone()),
+            None,
+            &schedule_merged(),
+            None,
+        )
+        .unwrap();
+        let mut factored_transcript = Blake3Transcript::new();
+        let actual = prove_merged_with_ring(
+            &mut factored_transcript,
+            &layout,
+            &data,
+            &source,
+            &f,
+            RingInput::Owned(factored),
+            Some(s1),
+            &schedule_merged(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            factored_transcript.state_digest(),
+            dense_transcript.state_digest()
+        );
+        assert_eq!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &f,
+                &dense,
+                &actual.0,
+                &schedule_merged()
+            )
+            .unwrap(),
+            actual.1
+        );
+    }
 }
+
+

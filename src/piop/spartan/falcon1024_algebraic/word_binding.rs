@@ -1,7 +1,7 @@
 //! Word sumcheck with one dense product and sparse/factored auxiliary terms.
 use super::*;
 use crate::piop::spartan::SpartanField;
-use crate::sumcheck::boundary::RoundBoundaryPolicy;
+use crate::sumcheck::boundary::{RoundBoundaryPolicy, SplitRoundBoundary};
 use field::{FpProductAcc, PreparedLinearCombination};
 
 #[cfg(test)]
@@ -10,6 +10,7 @@ mod tests;
 
 const DOMAIN: &[u8] = b"bitz/falcon-algebraic/word-binding/v1";
 const TERMINALS: &[u8] = b"bitz/falcon-algebraic/word-terminals/v1";
+const MERGED_DOMAIN: &[u8] = b"bitz/falcon-algebraic/word-binding-merged-norm/v1";
 crate::piop::spartan::grinding::grinding_domains! {
     TerminalMerge => b"bitz/falcon-algebraic/grinding/word-terminals/v1";
 }
@@ -1251,6 +1252,738 @@ fn bind_terminal(
     }
 }
 
+
+/// The dense coefficient's multilinear extension at the terminal point:
+/// dense ring weights, factored s1 columns, or keyed ring weights evaluated
+/// from the public keys, plus the deferred norm correction when that is
+/// factored. Shared by the separate-norm and merged-norm verifiers.
+fn terminal_coefficient_value(
+    layout: &Layout,
+    form: &BindingForm<'_>,
+    factors: &WordFactors,
+    keyed: Option<&KeyedRing<'_>>,
+    point: &[F],
+    f: &Cfg,
+) -> Result<F, FalconError> {
+    let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
+    let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
+    let reduction = f.prepare_product_reduction(2 * N);
+    let s1_local = factors.s1.as_ref().map(|s1| {
+        let mut sum = FpProductAcc::<2>::default();
+        for (a, b) in s1.columns.iter().zip(&local[..N]) {
+            f.mul_acc(&mut sum, a, b);
+        }
+        reduction.reduce(sum)
+    });
+    #[cfg(any(test, feature = "bench-internals"))]
+    let keyed_factors = keyed.map(|ring| {
+        (
+            ring,
+            super::super::keyed_ring::coefficient_factors(ring.points, &local[..N], &local[N..2 * N], f),
+        )
+    });
+    #[cfg(not(any(test, feature = "bench-internals")))]
+    let _ = keyed;
+    let evaluate_instance = |instance: usize| {
+        #[cfg(any(test, feature = "bench-internals"))]
+        if let Some((ring, coefficient_factors)) = &keyed_factors {
+            return super::super::keyed_ring::instance_value(
+                ring.rows,
+                coefficient_factors,
+                &ring.keys[instance],
+                instance,
+                f,
+            );
+        }
+        let mut sum = FpProductAcc::<2>::default();
+        for side in 0..2 {
+            if side == 0 && factors.s1.is_some() {
+                continue;
+            }
+            for (coefficient, weight) in form.coefficients[side][instance * N..(instance + 1) * N]
+                .iter()
+                .zip(&local[side * N..(side + 1) * N])
+            {
+                f.mul_acc(&mut sum, coefficient, weight);
+            }
+        }
+        let value = reduction.reduce(sum);
+        if let (Some(s1), Some(column)) = (&factors.s1, s1_local) {
+            f.add(&value, &f.mul(&s1.rows[instance], &column))
+        } else {
+            value
+        }
+    };
+    // Keyed ring values read one public key each; spread them whenever there
+    // are workers, independently of the dense binder's qualified worker counts.
+    #[cfg(feature = "parallel")]
+    let values: Option<Vec<_>> =
+        if binding_parallel(binding_strategy(layout.batch(), BindingKernel::Evaluation))
+            || (keyed.is_some() && rayon::current_num_threads() > 1)
+        {
+            Some(
+                (0..layout.batch())
+                    .into_par_iter()
+                    .map(evaluate_instance)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+    #[cfg(not(feature = "parallel"))]
+    let values: Option<Vec<F>> = None;
+    let mut coefficient_sum = FpProductAcc::<2>::default();
+    for (instance, weight) in instances.iter().take(layout.batch()).enumerate() {
+        let value = values
+            .as_ref()
+            .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
+        f.mul_acc(&mut coefficient_sum, &value, weight);
+    }
+    let mut coefficient_value = f.reduce(coefficient_sum);
+    if let Some(norm) = &factors.norm {
+        let mut correction = f.zero();
+        for side in 0..2 {
+            let mut row_sum = FpProductAcc::<2>::default();
+            for (a, b) in norm.rows[side].iter().zip(&instances) {
+                f.mul_acc(&mut row_sum, a, b);
+            }
+            let mut column_sum = FpProductAcc::<2>::default();
+            for (j, weight) in local[side * N..(side + 1) * N].iter().enumerate() {
+                let first = if j & 1 == 0 {
+                    f.sub(&f.one(), &norm.first)
+                } else {
+                    norm.first
+                };
+                let coefficient = f.mul(&first, &norm.columns[j / 2]);
+                f.mul_acc(&mut column_sum, &coefficient, weight);
+            }
+            correction = f.add(
+                &correction,
+                &f.mul(&f.reduce(row_sum), &f.reduce(column_sum)),
+            );
+        }
+        coefficient_value = f.add(&coefficient_value, &correction);
+    }
+    Ok(coefficient_value)
+}
+
+/// The norm's term of the merged binder, `eta * eq(rho, instance) * D^2`:
+/// `weights[i]` is the per-instance factor over the whole capacity (inactive
+/// instances hold zero words, so their weight is immaterial).
+pub(super) struct MergedNorm {
+    pub eta: F,
+    pub instance_point: Vec<F>,
+    pub weights: Vec<F>,
+}
+
+impl MergedNorm {
+    pub(super) fn new(
+        layout: &Layout,
+        eta: F,
+        instance_point: Vec<F>,
+        instance_weights: &[F],
+        f: &Cfg,
+    ) -> Result<Self, FalconError> {
+        if instance_point.len() != layout.capacity().ilog2() as usize
+            || instance_weights.len() != layout.capacity()
+        {
+            return Err(failure("merged norm dimensions"));
+        }
+        Ok(Self {
+            eta,
+            instance_point,
+            weights: instance_weights.iter().map(|w| f.mul(&eta, w)).collect(),
+        })
+    }
+
+    /// `eta * eq(rho, r)` at the binder's instance coordinates.
+    fn terminal_weight(&self, instance_point: &[F], f: &Cfg) -> F {
+        debug_assert_eq!(instance_point.len(), self.instance_point.len());
+        let mut value = self.eta;
+        for (rho, r) in self.instance_point.iter().zip(instance_point) {
+            let both = f.mul(rho, r);
+            // (1 - rho)(1 - r) + rho r
+            let e = f.add(
+                &f.sub(&f.sub(&f.one(), rho), r),
+                &f.add(&both, &both),
+            );
+            value = f.mul(&value, &e);
+        }
+        value
+    }
+}
+
+/// The s1 weights of the merged binder in factored form: the weight of
+/// `s1[i][j]` is `sum_p rows[p][i] * columns[p][j]` (one rank per ring
+/// projection point). The binder never materializes them.
+pub(super) struct MergedS1 {
+    rows: Vec<Vec<F>>,
+    columns: Vec<Vec<F>>,
+}
+
+impl MergedS1 {
+    pub(super) fn new(
+        layout: &Layout,
+        rows: Vec<Vec<F>>,
+        columns: Vec<Vec<F>>,
+        f: &Cfg,
+    ) -> Result<Self, FalconError> {
+        if rows.is_empty()
+            || rows.len() != columns.len()
+            || rows.iter().any(|rows| rows.len() != layout.batch())
+            || columns.iter().any(|columns| columns.len() != N)
+        {
+            return Err(failure("factored s1 weight dimensions"));
+        }
+        for values in rows.iter().chain(&columns) {
+            validate_field_elements(values, f).map_err(failure)?;
+        }
+        Ok(Self { rows, columns })
+    }
+
+    /// Column factors after the first challenge, `lerp` over adjacent pairs.
+    fn folded_columns(&self, r: F, f: &Cfg) -> Vec<Vec<F>> {
+        self.columns
+            .iter()
+            .map(|columns| {
+                columns
+                    .chunks_exact(2)
+                    .map(|pair| lerp(pair[0], pair[1], r, f))
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+/// Round-zero sums of the merged binder: the ring products read dense
+/// coefficients (or the s1 factors) against signed15 words, and each
+/// instance's square sums are native integers scaled by its norm weight.
+/// Returns `([c0, c2, c3], total)` with `c3 = 0` (coefficient rounds are
+/// quadratic) and `total` the Boolean sum of the dense and norm terms.
+fn first_round_merged(
+    form: &BindingForm<'_>,
+    source: &Source,
+    norm: &MergedNorm,
+    s1: Option<&MergedS1>,
+    f: &Cfg,
+) -> ([F; 3], F) {
+    let parts: Vec<[F; 3]> = crate::cfg_into_iter!(0..form.layout.batch())
+        .map(|instance| {
+            let mut ring = [[FpLinearAcc::<2, 1>::default(); 2]; 3];
+            // sum a^2, sum (b-a)^2, sum a^2 + b^2: at most 2N * 2^30 < 2^41.
+            let mut squares = [0u64; 3];
+            let mut factored = [f.zero(); 3];
+            for side in 0..2 {
+                if side == 0 && let Some(s1) = s1 {
+                    // sum_j (sum_p rows_p columns_p[j]) D_j = sum_p rows_p (sum_j columns_p[j] D_j)
+                    let mut sums = vec![[[FpLinearAcc::<2, 1>::default(); 2]; 3]; s1.rows.len()];
+                    for j in 0..N / 2 {
+                        let i = instance * 2 * N + 2 * j;
+                        let a = decode(word(source, i));
+                        let b = decode(word(source, i + 1));
+                        let d = b - a;
+                        for (sums, columns) in sums.iter_mut().zip(&s1.columns) {
+                            let (c0, c1) = (columns[2 * j], columns[2 * j + 1]);
+                            signed_acc(&mut sums[0], &c0, a, f);
+                            signed_acc(&mut sums[1], &f.sub(&c1, &c0), d, f);
+                            // The Boolean total is c0 plus the odd half, added below.
+                            signed_acc(&mut sums[2], &c1, b, f);
+                        }
+                        squares[0] += (a * a) as u64;
+                        squares[1] += (d * d) as u64;
+                        squares[2] += (a * a + b * b) as u64;
+                    }
+                    for (sums, rows) in sums.into_iter().zip(&s1.rows) {
+                        let row = rows[instance];
+                        let [c0, c2, odd] = sums.map(|sum| reduce_signed(sum, f));
+                        let total = f.add(&c0, &odd);
+                        for (k, value) in [c0, c2, total].into_iter().enumerate() {
+                            factored[k] = f.add(&factored[k], &f.mul(&row, &value));
+                        }
+                    }
+                    continue;
+                }
+                for j in 0..N / 2 {
+                    let i = instance * 2 * N + side * N + 2 * j;
+                    let a = decode(word(source, i));
+                    let b = decode(word(source, i + 1));
+                    let w0 = coefficient(form, i);
+                    let w1 = coefficient(form, i + 1);
+                    signed_acc(&mut ring[0], &w0, a, f);
+                    signed_acc(&mut ring[1], &f.sub(&w1, &w0), b - a, f);
+                    signed_acc(&mut ring[2], &w1, b, f);
+                    let d = b - a;
+                    squares[0] += (a * a) as u64;
+                    squares[1] += (d * d) as u64;
+                    squares[2] += (a * a + b * b) as u64;
+                }
+            }
+            let weight = norm.weights[instance];
+            let [c0, c2, odd] = ring.map(|sum| reduce_signed(sum, f));
+            let dense = [c0, c2, f.add(&c0, &odd)];
+            std::array::from_fn(|k| {
+                f.add(
+                    &f.add(&dense[k], &factored[k]),
+                    &f.reduce(f.mul_wide(&weight, &squares[k])),
+                )
+            })
+        })
+        .collect();
+    let [c0, c2, total] = parts.into_iter().fold([f.zero(); 3], |a, b| {
+        std::array::from_fn(|k| f.add(&a[k], &b[k]))
+    });
+    ([c0, c2, f.zero()], total)
+}
+
+const MERGED_INSTANCES_PER_TASK: usize = 4;
+
+/// The merged binder's first fold: `[Lambda', D']` per word pair, with the
+/// s1 weights from their factors when given (`sum_p rows_p[i] columns'_p[j]`)
+/// and dense coefficients otherwise. Returns the next round's ring sums.
+fn first_fold_merged(
+    form: &BindingForm<'_>,
+    source: &Source,
+    r: F,
+    s1: Option<&MergedS1>,
+    f: &Cfg,
+    options: WordOptions,
+    values: &mut Vec<[F; 2]>,
+) -> [F; 2] {
+    let _span = tracing::info_span!("falcon_algebraic:word_first_fold").entered();
+    let Some(s1) = s1 else {
+        return first_fold_into(form, source, r, &WordFactors::default(), f, options, values);
+    };
+    let prepared = <Cfg as PreparedLinearCombination<u64>>::prepare_linear_combination(
+        f,
+        [f.sub(&f.one(), &r), r, f.neg(&small(1 << 14, f))],
+    );
+    let columns = s1.folded_columns(r, f);
+    let slot = |index: usize| {
+        let i = 2 * index;
+        let instance = i / (2 * N);
+        let side = (i / N) & 1;
+        let weight = if side == 0 {
+            if instance < form.layout.batch() {
+                let j = (i % N) / 2;
+                s1.rows
+                    .iter()
+                    .zip(&columns)
+                    .fold(f.zero(), |sum, (rows, columns)| {
+                        f.add(&sum, &f.mul(&rows[instance], &columns[j]))
+                    })
+            } else {
+                f.zero()
+            }
+        } else {
+            lerp(coefficient(form, i), coefficient(form, i + 1), r, f)
+        };
+        let words = [word(source, i), word(source, i + 1)];
+        [
+            weight,
+            <Cfg as PreparedLinearCombination<u64>>::linear_combination(&prepared, |k| {
+                if k == 2 {
+                    1
+                } else {
+                    u64::from((words[k] ^ 0x4000) & 0x7fff)
+                }
+            }),
+        ]
+    };
+    initialize_dense(
+        values,
+        form.layout.source_bits() / 32,
+        f,
+        options.direct_init,
+        options.fused_fold,
+        slot,
+    )
+}
+
+/// Weighted square sums of the next coefficient round over a dense table whose
+/// instances own `N` consecutive slots, reading pairs `(pos, pos + stride)`.
+fn norm_sums_strided(values: &[[F; 2]], stride: usize, norm: &MergedNorm, f: &Cfg) -> [F; 2] {
+    debug_assert_eq!(values.len() % N, 0);
+    let task = |(chunk, block): (usize, &[[F; 2]])| -> [F; 2] {
+        let mut sums = [f.zero(); 2];
+        for (local, block) in block.chunks_exact(N).enumerate() {
+            let mut squares = [FpProductAcc::<2>::default(); 2];
+            for pair in block.chunks_exact(2 * stride) {
+                let a = pair[0][1];
+                let d = f.sub(&pair[stride][1], &a);
+                f.mul_acc(&mut squares[0], &a, &a);
+                f.mul_acc(&mut squares[1], &d, &d);
+            }
+            let weight = norm.weights[chunk * MERGED_INSTANCES_PER_TASK + local];
+            for k in 0..2 {
+                sums[k] = f.add(&sums[k], &f.mul(&weight, &f.reduce(squares[k])));
+            }
+        }
+        sums
+    };
+    #[cfg(feature = "parallel")]
+    if values.len() / N >= 2 * MERGED_INSTANCES_PER_TASK && rayon::current_num_threads() > 1 {
+        return values
+            .par_chunks(MERGED_INSTANCES_PER_TASK * N)
+            .enumerate()
+            .map(task)
+            .reduce(|| [f.zero(); 2], |a, b| add_pair(a, b, f));
+    }
+    values
+        .chunks(MERGED_INSTANCES_PER_TASK * N)
+        .enumerate()
+        .map(task)
+        .fold([f.zero(); 2], |a, b| add_pair(a, b, f))
+}
+
+/// Fold the dense `[Lambda, D]` table by `r` at `stride` and return the next
+/// coefficient round's sums `[c0, c2, 0]`: ring products over the surviving
+/// pairs plus each instance's weighted square sums. Instances own `N`
+/// consecutive slots, so an instance's survivors never mix with another's.
+fn dense_fold_merged(
+    values: &mut [[F; 2]],
+    stride: usize,
+    r: F,
+    norm: &MergedNorm,
+    f: &Cfg,
+) -> [F; 3] {
+    let _span = tracing::info_span!("falcon_algebraic:word_dense_fold", stride).entered();
+    debug_assert_eq!(values.len() % N, 0);
+    let next = 2 * stride;
+    let task = |(chunk, block): (usize, &mut [[F; 2]])| -> [F; 3] {
+        let mut ring = [FpProductAcc::<2>::default(); 2];
+        let mut sums = [f.zero(); 2];
+        for (local, block) in block.chunks_exact_mut(N).enumerate() {
+            for pair in block.chunks_exact_mut(2 * stride) {
+                pair[0] = std::array::from_fn(|k| lerp(pair[0][k], pair[stride][k], r, f));
+            }
+            if 2 * next > N {
+                // One survivor per instance: the instance rounds sum their own pairs.
+                continue;
+            }
+            let mut squares = [FpProductAcc::<2>::default(); 2];
+            for pair in block.chunks_exact(2 * next) {
+                let [w0, a] = pair[0];
+                let [w1, b] = pair[next];
+                let d = f.sub(&b, &a);
+                f.mul_acc(&mut ring[0], &w0, &a);
+                f.mul_acc(&mut ring[1], &f.sub(&w1, &w0), &d);
+                f.mul_acc(&mut squares[0], &a, &a);
+                f.mul_acc(&mut squares[1], &d, &d);
+            }
+            let weight = norm.weights[chunk * MERGED_INSTANCES_PER_TASK + local];
+            for k in 0..2 {
+                sums[k] = f.add(&sums[k], &f.mul(&weight, &f.reduce(squares[k])));
+            }
+        }
+        [
+            f.add(&sums[0], &f.reduce(ring[0])),
+            f.add(&sums[1], &f.reduce(ring[1])),
+            f.zero(),
+        ]
+    };
+    let combine = |a: [F; 3], b: [F; 3]| -> [F; 3] { std::array::from_fn(|k| f.add(&a[k], &b[k])) };
+    #[cfg(feature = "parallel")]
+    if values.len() / N >= 2 * MERGED_INSTANCES_PER_TASK && rayon::current_num_threads() > 1 {
+        return values
+            .par_chunks_mut(MERGED_INSTANCES_PER_TASK * N)
+            .enumerate()
+            .map(task)
+            .reduce(|| [f.zero(); 3], combine);
+    }
+    values
+        .chunks_mut(MERGED_INSTANCES_PER_TASK * N)
+        .enumerate()
+        .map(task)
+        .fold([f.zero(); 3], combine)
+}
+
+/// Sums `[c0, c2, c3]` of one instance round before its challenge: the cubic
+/// `Lambda(x) D(x) + e(x) D(x)^2` over pairs of live entries, with `e` the
+/// folded norm weights (`eq` has one entry per live table entry).
+fn instance_round_sums(values: &[[F; 2]], stride: usize, eq: &[F], f: &Cfg) -> [F; 3] {
+    let live = values.len() / stride;
+    debug_assert_eq!(live, eq.len());
+    let mut sums = [f.zero(); 3];
+    for m in 0..live / 2 {
+        let [l0, d0] = values[2 * m * stride];
+        let [l1, d1] = values[(2 * m + 1) * stride];
+        let (e0, e1) = (eq[2 * m], eq[2 * m + 1]);
+        let dl = f.sub(&l1, &l0);
+        let dd = f.sub(&d1, &d0);
+        let de = f.sub(&e1, &e0);
+        let d0d0 = f.mul(&d0, &d0);
+        let dddd = f.mul(&dd, &dd);
+        let cross = f.mul(&d0, &dd);
+        let cross2 = f.add(&cross, &cross);
+        sums[0] = f.add(&sums[0], &f.add(&f.mul(&l0, &d0), &f.mul(&e0, &d0d0)));
+        sums[1] = f.add(
+            &sums[1],
+            &f.add(
+                &f.mul(&dl, &dd),
+                &f.add(&f.mul(&e0, &dddd), &f.mul(&de, &cross2)),
+            ),
+        );
+        sums[2] = f.add(&sums[2], &f.mul(&de, &dddd));
+    }
+    sums
+}
+
+fn fold_pairs(values: &mut [[F; 2]], stride: usize, r: F, f: &Cfg) {
+    for pair in values.chunks_exact_mut(2 * stride) {
+        pair[0] = std::array::from_fn(|k| lerp(pair[0][k], pair[stride][k], r, f));
+    }
+}
+
+/// The word binder with the norm's square sums as a cubic term: coefficient
+/// and side rounds are quadratic (the instance weight is constant within a
+/// signature), instance rounds are cubic. Messages carry four coefficients
+/// throughout; the verifier requires a zero cubic term in the quadratic rounds.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn prove_merged(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    source: &Source,
+    form: BindingForm<'_>,
+    norm: MergedNorm,
+    s1: Option<MergedS1>,
+    target: F,
+    norm_proof: NormProof,
+    merge_nonce: Option<u64>,
+    schedule: &Schedule,
+    f: &Cfg,
+    workspace: &mut WordWorkspace,
+) -> Result<(Proof, Vec<u128>, WordBridgeClaim), FalconError> {
+    let _span = tracing::info_span!("falcon_algebraic:merged_sumcheck").entered();
+    if s1.is_some() != form.coefficients[0].is_empty() {
+        return Err(failure("merged binder s1 weights must be dense or factored"));
+    }
+    t.absorb_slice(MERGED_DOMAIN);
+    let options = WordOptions::configured(layout, f);
+    let mut weights = PublicWeights::new(&form);
+    let mut spare = Sparse::from_source(source, layout, f)?;
+    let aggregate_spare = AggregateSpare::new(&spare, &weights, f);
+    let (mut next, initial) = {
+        let _span = tracing::info_span!("falcon_algebraic:word_initial_sums").entered();
+        first_round_merged(&form, source, &norm, s1.as_ref(), f)
+    };
+    let spare_initial = aggregate_spare.initial(&weights, f);
+    if f.add(&initial, &spare_initial) != target {
+        return Err(failure("merged word binding initial claim"));
+    }
+    let mut aggregate_spare = Some(aggregate_spare);
+    let mut form = Some(form);
+    let mut local_workspace = WordWorkspace::default();
+    let dense = if options.scratch {
+        &mut workspace.dense
+    } else {
+        &mut local_workspace.dense
+    };
+    let mut stride = 1;
+    let mut eq = norm.weights.clone();
+    let mut count = None;
+    let with_padding = layout.batch() < layout.capacity();
+    let rounds = rounds(layout);
+    let quadratic_rounds = COEFFICIENT_LOG + 1;
+    let mut point = Vec::with_capacity(rounds);
+    let mut proof = SumcheckProof {
+        round_polynomials: Vec::with_capacity(rounds),
+    };
+    let mut boundary = SplitRoundBoundary {
+        split: quadratic_rounds,
+        first: ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(
+            schedule.binding_bits,
+            0,
+        ),
+        second: ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(
+            schedule.cubic_binding_bits,
+            quadratic_rounds,
+        ),
+    };
+    let mut claim = target;
+    for round in 0..rounds {
+        if with_padding && round == COEFFICIENT_LOG + 1 {
+            count = Some(counts(source, layout, &point, f)?);
+        }
+        if round >= quadratic_rounds {
+            next = instance_round_sums(&dense[..], stride, &eq, f);
+        }
+        let spare_sums = aggregate_spare.as_ref().map_or_else(
+            || spare.sums(&weights, round, f),
+            |aggregate| aggregate.sums(&weights, round, f),
+        );
+        let mut c0 = f.add(&next[0], &spare_sums[0]);
+        let mut c2 = f.add(&next[1], &spare_sums[1]);
+        let c3 = next[2];
+        if let Some(c) = &count {
+            let sums = count_sums(c, &weights, f);
+            c0 = f.add(&c0, &sums[0]);
+            c2 = f.add(&c2, &sums[1]);
+        }
+        let c1 = f.sub(&f.sub(&f.sub(&claim, &f.add(&c0, &c0)), &c2), &c3);
+        let polynomial = [c0, c1, c2, c3];
+        absorb_field_elements(t, &polynomial, f);
+        proof.round_polynomials.push(polynomial);
+        {
+            let _span =
+                tracing::info_span!("falcon_algebraic:word_round_grinding", round).entered();
+            boundary.after_round(t, round).map_err(failure)?;
+        }
+        let r = sample(t, f)?;
+        claim = f.add(
+            &c0,
+            &f.mul(&r, &f.add(&c1, &f.mul(&r, &f.add(&c2, &f.mul(&r, &c3))))),
+        );
+        point.push(r);
+        if round == 0 {
+            let initial_form = form.take().unwrap();
+            let ring = first_fold_merged(&initial_form, source, r, s1.as_ref(), f, options, dense);
+            let squares = norm_sums_strided(&dense[..], 1, &norm, f);
+            next = [
+                f.add(&ring[0], &squares[0]),
+                f.add(&ring[1], &squares[1]),
+                f.zero(),
+            ];
+        } else if round < quadratic_rounds {
+            next = dense_fold_merged(&mut dense[..], stride, r, &norm, f);
+            stride *= 2;
+        } else {
+            fold_pairs(&mut dense[..], stride, r, f);
+            stride *= 2;
+            fold_small(&mut eq, r, f);
+        }
+        {
+            let _span =
+                tracing::info_span!("falcon_algebraic:word_auxiliary_fold", round).entered();
+            if round < COEFFICIENT_LOG {
+                aggregate_spare.as_mut().unwrap().fold(r, f);
+            } else if round == COEFFICIENT_LOG {
+                spare.project_instances(&point, f)?;
+                aggregate_spare = None;
+            } else {
+                spare.fold(r, f);
+            }
+            if let Some(c) = &mut count {
+                fold_small(c, r, f);
+            }
+            weights.fold(round, r, f);
+        }
+    }
+    debug_assert_eq!(eq.len(), 1);
+    let dense_terminal = dense[0];
+    let mut values = vec![dense_terminal[1], spare.terminal(f)];
+    let mut terminal = f.add(
+        &f.mul(&dense_terminal[0], &values[0]),
+        &f.mul(&weights.spare(0, rounds, f), &values[1]),
+    );
+    terminal = f.add(&terminal, &f.mul(&eq[0], &f.mul(&values[0], &values[0])));
+    if let Some(c) = count {
+        values.push(c[0]);
+        terminal = f.add(&terminal, &f.mul(&weights.count(0, f), &c[0]));
+    }
+    if claim != terminal {
+        return Err(failure("merged word binding terminal mismatch"));
+    }
+    t.absorb_slice(TERMINALS);
+    absorb_field_elements(t, &values, f);
+    let terminal_merge_nonce = {
+        let _span = tracing::info_span!("falcon_algebraic:word_terminal_grinding").entered();
+        prove_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits)?
+    };
+    let zeta = sample(t, f)?;
+    let claim = bind_terminal(t, point, &values, zeta, f);
+    let row_weights = claim.row_weights(layout, f)?;
+    let mut binding_nonces = boundary.first.into_nonces();
+    binding_nonces.extend(boundary.second.into_nonces());
+    Ok((
+        Proof {
+            norm: norm_proof,
+            merge_nonce,
+            binding: BindingProof::Cubic(proof),
+            binding_terminal: values,
+            binding_nonces,
+            terminal_merge_nonce,
+        },
+        row_weights,
+        claim,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn verify_merged(
+    t: &mut impl Transcript,
+    layout: &Layout,
+    form: &BindingForm<'_>,
+    keyed: Option<&KeyedRing<'_>>,
+    norm: &MergedNorm,
+    target: F,
+    proof: &Proof,
+    schedule: &Schedule,
+    f: &Cfg,
+) -> Result<WordBridgeClaim, FalconError> {
+    let n = 2 + usize::from(layout.batch() < layout.capacity());
+    if proof.binding_terminal.len() != n {
+        return Err(failure("word binding terminal count"));
+    }
+    validate_field_elements(&proof.binding_terminal, f).map_err(failure)?;
+    let sumcheck = proof.binding.cubic()?;
+    let rounds = rounds(layout);
+    let quadratic_rounds = COEFFICIENT_LOG + 1;
+    if sumcheck.round_polynomials.len() != rounds {
+        return Err(failure("merged word binding round count"));
+    }
+    // Coefficient and side rounds are quadratic; a cubic message there would
+    // exceed the error those rounds are budgeted for.
+    if sumcheck.round_polynomials[..quadratic_rounds.min(rounds)]
+        .iter()
+        .any(|message| message[3] != f.zero())
+    {
+        return Err(failure("cubic message in a quadratic binder round"));
+    }
+    t.absorb_slice(MERGED_DOMAIN);
+    let split_at = if schedule.binding_bits == 0 {
+        0
+    } else {
+        quadratic_rounds.min(proof.binding_nonces.len())
+    };
+    let (first_nonces, second_nonces) = proof.binding_nonces.split_at(split_at);
+    let mut boundary = SplitRoundBoundary {
+        split: quadratic_rounds,
+        first: VerifierGrindingRoundBoundary::<BindingRound>::new(schedule.binding_bits, first_nonces),
+        second: VerifierGrindingRoundBoundary::<BindingRound>::with_round_offset(
+            schedule.cubic_binding_bits,
+            second_nonces,
+            quadratic_rounds,
+        ),
+    };
+    let (point, claim) = sumcheck
+        .verify_with_round_boundary(t, target, rounds, f, &mut boundary)
+        .map_err(failure)?;
+    let coefficient_value =
+        terminal_coefficient_value(layout, form, &WordFactors::default(), keyed, &point, f)?;
+    let norm_weight = norm.terminal_weight(&point[quadratic_rounds.min(rounds)..], f);
+    let mut weights = PublicWeights::new(form);
+    for (round, &r) in point.iter().enumerate() {
+        weights.fold(round, r, f);
+    }
+    let v = &proof.binding_terminal;
+    let mut terminal = f.add(
+        &f.mul(&coefficient_value, &v[0]),
+        &f.mul(&weights.spare(0, rounds, f), &v[1]),
+    );
+    terminal = f.add(&terminal, &f.mul(&norm_weight, &f.mul(&v[0], &v[0])));
+    if n == 3 {
+        terminal = f.add(&terminal, &f.mul(&weights.count(0, f), &v[2]));
+    }
+    if claim != terminal {
+        return Err(failure("merged word binding terminal mismatch"));
+    }
+    t.absorb_slice(TERMINALS);
+    absorb_field_elements(t, v, f);
+    verify_nonce::<TerminalMerge>(t, schedule.terminal_merge_bits, proof.terminal_merge_nonce)?;
+    let zeta = sample(t, f)?;
+    Ok(bind_terminal(t, point, v, zeta, f))
+}
+
 #[cfg(test)]
 pub(super) fn prove(
     t: &mut impl Transcript,
@@ -1538,7 +2271,7 @@ fn prove_with_options_and_initial(
         Proof {
             norm,
             merge_nonce,
-            binding: proof,
+            binding: BindingProof::Quadratic(proof),
             binding_terminal: values,
             binding_nonces: boundary.into_nonces(),
             terminal_merge_nonce,
@@ -1620,107 +2353,10 @@ pub(super) fn verify_with_ring(
     );
     let (point, claim) = proof
         .binding
+        .quadratic()?
         .verify_with_round_boundary(t, target, rounds(layout), f, &mut boundary)
         .map_err(failure)?;
-    let local = eq_table(&point[..COEFFICIENT_LOG + 1], f).map_err(failure)?;
-    let instances = eq_table(&point[COEFFICIENT_LOG + 1..], f).map_err(failure)?;
-    let reduction = f.prepare_product_reduction(2 * N);
-    let s1_local = factors.s1.as_ref().map(|s1| {
-        let mut sum = FpProductAcc::<2>::default();
-        for (a, b) in s1.columns.iter().zip(&local[..N]) {
-            f.mul_acc(&mut sum, a, b);
-        }
-        reduction.reduce(sum)
-    });
-    #[cfg(any(test, feature = "bench-internals"))]
-    let keyed_factors = keyed.map(|ring| {
-        (
-            ring,
-            super::super::keyed_ring::coefficient_factors(ring.points, &local[..N], &local[N..2 * N], f),
-        )
-    });
-    #[cfg(not(any(test, feature = "bench-internals")))]
-    let _ = keyed;
-    let evaluate_instance = |instance: usize| {
-        #[cfg(any(test, feature = "bench-internals"))]
-        if let Some((ring, coefficient_factors)) = &keyed_factors {
-            return super::super::keyed_ring::instance_value(
-                ring.rows,
-                coefficient_factors,
-                &ring.keys[instance],
-                instance,
-                f,
-            );
-        }
-        let mut sum = FpProductAcc::<2>::default();
-        for side in 0..2 {
-            if side == 0 && factors.s1.is_some() {
-                continue;
-            }
-            for (coefficient, weight) in form.coefficients[side][instance * N..(instance + 1) * N]
-                .iter()
-                .zip(&local[side * N..(side + 1) * N])
-            {
-                f.mul_acc(&mut sum, coefficient, weight);
-            }
-        }
-        let value = reduction.reduce(sum);
-        if let (Some(s1), Some(column)) = (&factors.s1, s1_local) {
-            f.add(&value, &f.mul(&s1.rows[instance], &column))
-        } else {
-            value
-        }
-    };
-    // Keyed ring values read one public key each; spread them whenever there
-    // are workers, independently of the dense binder's qualified worker counts.
-    #[cfg(feature = "parallel")]
-    let values: Option<Vec<_>> =
-        if binding_parallel(binding_strategy(layout.batch(), BindingKernel::Evaluation))
-            || (keyed.is_some() && rayon::current_num_threads() > 1)
-        {
-            Some(
-                (0..layout.batch())
-                    .into_par_iter()
-                    .map(evaluate_instance)
-                    .collect(),
-            )
-        } else {
-            None
-        };
-    #[cfg(not(feature = "parallel"))]
-    let values: Option<Vec<F>> = None;
-    let mut coefficient_sum = FpProductAcc::<2>::default();
-    for (instance, weight) in instances.iter().take(layout.batch()).enumerate() {
-        let value = values
-            .as_ref()
-            .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
-        f.mul_acc(&mut coefficient_sum, &value, weight);
-    }
-    let mut coefficient_value = f.reduce(coefficient_sum);
-    if let Some(norm) = &factors.norm {
-        let mut correction = f.zero();
-        for side in 0..2 {
-            let mut row_sum = FpProductAcc::<2>::default();
-            for (a, b) in norm.rows[side].iter().zip(&instances) {
-                f.mul_acc(&mut row_sum, a, b);
-            }
-            let mut column_sum = FpProductAcc::<2>::default();
-            for (j, weight) in local[side * N..(side + 1) * N].iter().enumerate() {
-                let first = if j & 1 == 0 {
-                    f.sub(&f.one(), &norm.first)
-                } else {
-                    norm.first
-                };
-                let coefficient = f.mul(&first, &norm.columns[j / 2]);
-                f.mul_acc(&mut column_sum, &coefficient, weight);
-            }
-            correction = f.add(
-                &correction,
-                &f.mul(&f.reduce(row_sum), &f.reduce(column_sum)),
-            );
-        }
-        coefficient_value = f.add(&coefficient_value, &correction);
-    }
+    let coefficient_value = terminal_coefficient_value(layout, form, factors, keyed, &point, f)?;
     let mut weights = PublicWeights::new(form);
     for (round, &r) in point.iter().enumerate() {
         weights.fold(round, r, f);

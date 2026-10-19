@@ -89,6 +89,29 @@ fn small_prime() -> bool {
     false
 }
 
+/// Bench-only `BITZ_ARITHMETIC_NORM=merged`: prove the per-signature square
+/// sums inside the word binder (cubic instance rounds) instead of a separate
+/// integer-outer sumcheck.
+#[cfg(feature = "bench-internals")]
+fn merged_norm() -> bool {
+    static MERGED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *MERGED.get_or_init(|| match std::env::var("BITZ_ARITHMETIC_NORM") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value) => match value.as_str() {
+            "separate" => false,
+            "merged" => true,
+            _ => panic!("BITZ_ARITHMETIC_NORM must be separate or merged"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_NORM must be valid Unicode")
+        }
+    })
+}
+#[cfg(not(feature = "bench-internals"))]
+fn merged_norm() -> bool {
+    false
+}
+
 /// Bench-only number of bridge row variables `t` (13 by default: one source
 /// row of 2^13 bits). Larger `t` moves the lowest column variables into the
 /// rows, so the bridge sends `2^(n-t)` instead of `2^(n-13)` column sums.
@@ -781,9 +804,17 @@ impl PreparedFalconAlgebraic {
         if small_prime() && !per_site_grinding() {
             return Err(error("the small prime family requires per-site grinding"));
         }
+        let merged = merged_norm();
+        if merged && !word_binding {
+            return Err(error("merged norm requires the word binder"));
+        }
+        if merged && !per_site_grinding() {
+            return Err(error("merged norm requires per-site grinding"));
+        }
         let schedule = if per_site_grinding() {
             // Per-site numerators: one d-coordinate instance point, cubic
-            // norm rounds, the degree-3 merge, quadratic binder rounds.
+            // norm rounds, the degree-3 merge, quadratic binder rounds (and
+            // cubic instance rounds when the norm is merged into the binder).
             Schedule {
                 norm_instance_bits: site_bits(target_bits, d, prime_domain_bits()),
                 norm_round_bits: site_bits(target_bits, 3, prime_domain_bits()),
@@ -795,6 +826,8 @@ impl PreparedFalconAlgebraic {
                     terminal_merge_numerator(&layout, word_binding),
                     prime_domain_bits(),
                 ),
+                merged_norm: merged,
+                cubic_binding_bits: site_bits(target_bits, 3, prime_domain_bits()),
             }
         } else {
             let (binding_bits, terminal_merge_bits) =
@@ -806,6 +839,8 @@ impl PreparedFalconAlgebraic {
                 binding_bits,
                 word_binding,
                 terminal_merge_bits,
+                merged_norm: false,
+                cubic_binding_bits: 0,
             }
         };
         let geometry = SourceGeometry::new(&layout)?;
@@ -1065,6 +1100,15 @@ impl PreparedFalconAlgebraic {
             binding_rounds(&self.layout, s.word_binding),
             s.terminal_merge_bits,
         );
+        if s.merged_norm {
+            out += &format!(
+                "merged norm: no integer outer sumcheck | binder quadratic {} x{} | cubic {} x{}\n",
+                s.binding_bits,
+                COEFFICIENT_LOG + 1,
+                s.cubic_binding_bits,
+                d
+            );
+        }
         for (index, matrix) in self.bridge_layouts().iter().enumerate() {
             out += &format!(
                 "bridge[{index}] {} bits x {} sites (row {} col {})\n",
@@ -1142,9 +1186,18 @@ impl PreparedFalconAlgebraic {
             (N - 1 + d) as f64 * 2f64.powi(-149),
             prime(self.ring_mode.projection_degree(), self.carry_grinding()),
             prime(d, s.norm_instance_bits),
-            prime(3, s.norm_round_bits),
+            if s.merged_norm {
+                0.0
+            } else {
+                prime(3, s.norm_round_bits)
+            },
             prime(3, s.merge_bits),
             prime(2, s.binding_bits),
+            if s.merged_norm {
+                prime(3, s.cubic_binding_bits)
+            } else {
+                0.0
+            },
             prime(
                 terminal_merge_numerator(&self.layout, s.word_binding),
                 s.terminal_merge_bits,
@@ -1390,6 +1443,10 @@ impl PreparedFalconAlgebraic {
         if self.schedule.word_binding {
             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
         }
+        if self.schedule.merged_norm {
+            h.update(b"word-binder:merged-norm;cubic-instance-rounds/v1");
+            h.update(&self.schedule.cubic_binding_bits.to_le_bytes());
+        }
         if let Some(polylog) = &self.polylog {
             polylog.bind(&mut h);
         }
@@ -1453,6 +1510,8 @@ impl PreparedFalconAlgebraic {
             shared::prove_ood(&mut t, Some(params), &packed)
         });
         let field = sample_field(&mut t)?;
+        #[cfg(any(test, feature = "bench-internals"))]
+        let mut keyed_s1: Option<super::keyed_ring::S1Factors> = None;
         let (ring, ring_claim) = {
             let _span = tracing::info_span!("falcon_algebraic:ring").entered();
             match self.ring_mode {
@@ -1483,7 +1542,8 @@ impl PreparedFalconAlgebraic {
                 }
                 #[cfg(any(test, feature = "bench-internals"))]
                 RingMode::Keyed => {
-                    let (proof, claim) = super::keyed_ring::prove(
+                    // The merged binder reads the s1 weights from their factors.
+                    let (proof, claim, s1) = super::keyed_ring::prove_with_s1_factors(
                         &mut t,
                         &self.layout,
                         &committed.statement,
@@ -1491,7 +1551,9 @@ impl PreparedFalconAlgebraic {
                         &field,
                         self.carry_grinding(),
                         keyed_points(),
+                        self.schedule.merged_norm,
                     )?;
+                    keyed_s1 = s1;
                     (RingProof::Keyed(proof), RingClaim::Canonical(claim))
                 }
             }
@@ -1564,6 +1626,20 @@ impl PreparedFalconAlgebraic {
                 let (proof, claim) = {
                     let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
                     match ring_claim {
+                        #[cfg(any(test, feature = "bench-internals"))]
+                        RingClaim::Canonical(claim) if keyed_s1.is_some() => {
+                            arithmetic::prove_owned_with_s1_factors(
+                                &mut t,
+                                &self.layout,
+                                &committed.witness,
+                                source,
+                                &field,
+                                claim,
+                                keyed_s1.take().unwrap(),
+                                &self.schedule,
+                                &self.binding_scratch,
+                            )?
+                        }
                         RingClaim::Canonical(claim) => arithmetic::prove_owned_with_scratch(
                             &mut t,
                             &self.layout,
@@ -2167,17 +2243,31 @@ fn fixed_terms(
         ),
         (
             "integer outer sumcheck",
-            prime(3 * (COEFFICIENT_LOG + 1 + d), schedule.norm_round_bits),
+            if schedule.merged_norm {
+                0.0
+            } else {
+                prime(3 * (COEFFICIENT_LOG + 1 + d), schedule.norm_round_bits)
+            },
         ),
         ("claim merge", prime(3, schedule.merge_bits)),
         (
             "source binding sumcheck",
-            prime(
-                binding_numerator(layout, compact_binding, schedule.word_binding),
-                schedule.binding_bits,
-            ),
+            if schedule.merged_norm {
+                prime(2 * (COEFFICIENT_LOG + 1), schedule.binding_bits)
+            } else {
+                prime(
+                    binding_numerator(layout, compact_binding, schedule.word_binding),
+                    schedule.binding_bits,
+                )
+            },
         ),
     ];
+    if schedule.merged_norm {
+        terms.push((
+            "merged norm cubic instance rounds",
+            prime(3 * d, schedule.cubic_binding_bits),
+        ));
+    }
     if schedule.word_binding {
         terms.push((
             "word terminal claim merge",
@@ -2716,7 +2806,7 @@ mod tests {
                 panic!("production must use word binding")
             };
             assert_eq!(
-                arithmetic.binding.round_polynomials.len(),
+                arithmetic.binding.rounds(),
                 COEFFICIENT_LOG + 1 + prepared.arithmetic_capacity().ilog2() as usize
             );
             assert_eq!(
@@ -3055,7 +3145,7 @@ mod tests {
                 panic!()
             };
             assert_eq!(
-                arithmetic.binding.round_polynomials.len(),
+                arithmetic.binding.rounds(),
                 binding_rounds(&words.layout, true)
             );
             assert!(bits.verify(&public, &proof).is_err());
@@ -3080,7 +3170,7 @@ mod tests {
                             if target == 128 { None } else { Some(0) };
                     }
                     _ => {
-                        arithmetic.binding.round_polynomials.pop();
+                        arithmetic.binding.pop();
                     }
                 }
                 assert!(

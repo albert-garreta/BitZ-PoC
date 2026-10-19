@@ -1,0 +1,10 @@
+22:31:33 t1-baseline exit=0 ghz=4.39 80%; AC attached
+22:32:09 t10-baseline exit=0 ghz=3.83 rss=2481MiB
+22:44:14 t1-A exit=0 ghz=4.41 80%; AC attached
+22:44:50 t10-A exit=0 ghz=3.80 rss=2475MiB
+23:02:07 t1-B exit=0 ghz=4.37 80%; AC attached
+23:02:43 t10-B exit=0 ghz=3.82 rss=2090MiB
+23:07:59 t1-C exit=0 ghz=4.37 80%; AC attached
+23:08:33 t10-C exit=0 ghz=3.81 rss=1830MiB
+23:20:00 t1-D exit=0 ghz=4.38 80%; AC attached
+23:20:35 t10-D exit=0 ghz=3.84 rss=1834MiB

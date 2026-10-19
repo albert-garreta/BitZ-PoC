@@ -1223,6 +1223,8 @@ mod tests {
             binding_bits: 0,
             word_binding: false,
             terminal_merge_bits: 0,
+            merged_norm: false,
+            cubic_binding_bits: 0,
         };
         let mut prover = Blake3Transcript::new();
         let (proof, claims) = prove_compact(

@@ -92,16 +92,53 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for ProverGrindingRoundBoundary<D> {
 
 pub struct VerifierGrindingRoundBoundary<'a, D> {
     bits: u32,
+    round_offset: usize,
     nonces: &'a [u64],
     _domain: core::marker::PhantomData<fn() -> D>,
 }
 
 impl<'a, D> VerifierGrindingRoundBoundary<'a, D> {
     pub fn new(bits: u32, nonces: &'a [u64]) -> Self {
+        Self::with_round_offset(bits, nonces, 0)
+    }
+
+    /// Mirror of the prover's `with_round_offset`: round `i` of this boundary
+    /// is ground in the domain of round `round_offset + i`.
+    pub fn with_round_offset(bits: u32, nonces: &'a [u64], round_offset: usize) -> Self {
         Self {
             bits,
+            round_offset,
             nonces,
             _domain: core::marker::PhantomData,
+        }
+    }
+}
+
+/// Two policies over one sumcheck: rounds below `split` go to `first`, the
+/// rest to `second` (renumbered from zero). The halves can differ in
+/// difficulty, which suits a sumcheck whose rounds change degree.
+pub struct SplitRoundBoundary<A, B> {
+    pub split: usize,
+    pub first: A,
+    pub second: B,
+}
+
+impl<A: RoundBoundaryPolicy, B: RoundBoundaryPolicy> RoundBoundaryPolicy for SplitRoundBoundary<A, B> {
+    fn validate(&self, expected_rounds: usize) -> Result<(), SumcheckError> {
+        self.first.validate(self.split.min(expected_rounds))?;
+        self.second
+            .validate(expected_rounds.saturating_sub(self.split))
+    }
+
+    fn after_round<T: Transcript>(
+        &mut self,
+        transcript: &mut T,
+        round: usize,
+    ) -> Result<(), SumcheckError> {
+        if round < self.split {
+            self.first.after_round(transcript, round)
+        } else {
+            self.second.after_round(transcript, round - self.split)
         }
     }
 }
@@ -134,8 +171,11 @@ impl<D: GrindingDomain> RoundBoundaryPolicy for VerifierGrindingRoundBoundary<'_
             return Ok(());
         }
         let _scope = tracing::info_span!("spartan:round_grinding_verify").entered();
-        let round_index =
-            u64::try_from(round).expect("an in-memory sumcheck round index fits in u64");
+        let round_index = self
+            .round_offset
+            .checked_add(round)
+            .and_then(|round| u64::try_from(round).ok())
+            .expect("an in-memory sumcheck round index fits in u64");
         verify_and_absorb::<D, _>(
             transcript,
             GrindingRound::new(round_index),

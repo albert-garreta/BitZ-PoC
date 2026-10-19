@@ -76,6 +76,8 @@ fn test_schedule(grinding: u32) -> Schedule {
         binding_bits: grinding,
         word_binding: true,
         terminal_merge_bits: grinding,
+        merged_norm: false,
+        cubic_binding_bits: 0,
     }
 }
 
@@ -193,7 +195,7 @@ fn word_proof_matches_dense_reference_rounds_and_terminals() {
         replay.absorb_slice(DOMAIN);
         let mut boundary =
             ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(grinding, 0);
-        for (round, polynomial) in proof.binding.round_polynomials.iter().enumerate() {
+        for (round, polynomial) in proof.binding.quadratic().unwrap().round_polynomials.iter().enumerate() {
             assert_eq!(
                 *polynomial,
                 reference.polynomial(&f),
@@ -209,7 +211,7 @@ fn word_proof_matches_dense_reference_rounds_and_terminals() {
         let terminal_count = if batch == 1 { 2 } else { 3 };
         assert_eq!(proof.binding_terminal.len(), terminal_count);
         assert_eq!(
-            proof.binding.round_polynomials.len(),
+            proof.binding.rounds(),
             COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
         );
         for k in 0..terminal_count {

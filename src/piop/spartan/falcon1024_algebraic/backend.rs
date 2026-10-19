@@ -71,6 +71,13 @@ struct Schedule {
     binding_bits: u32,
     word_binding: bool,
     terminal_merge_bits: u32,
+    /// Prove the per-signature square sums as a cubic term of the word binder
+    /// (over the instance variables) instead of a separate integer-outer
+    /// sumcheck. Requires `word_binding`.
+    merged_norm: bool,
+    /// Grinding difficulty of the merged binder's cubic instance rounds; its
+    /// quadratic coefficient rounds keep `binding_bits`.
+    cubic_binding_bits: u32,
 }
 
 fn error(e: impl std::fmt::Display) -> FalconError {

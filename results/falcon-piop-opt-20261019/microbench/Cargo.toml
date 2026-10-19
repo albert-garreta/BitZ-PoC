@@ -1,0 +1,13 @@
+[package]
+name = "fpbench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+field = { path = "/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-flamegraph/vendor/field" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false

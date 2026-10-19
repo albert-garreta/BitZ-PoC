@@ -105,6 +105,13 @@ pub(super) fn no_wrap_bound(batch: usize) -> u128 {
         + Q as u128 * quotient_bound(batch)
 }
 
+/// The s1 weights in factored form, one rank per projection point: the weight
+/// of `s1[i][j]` is `sum_p rows[p][i] * columns[p][j]` with `columns[p][j] = xi_p^j`.
+pub(super) struct S1Factors {
+    pub rows: Vec<Vec<F>>,
+    pub columns: Vec<Vec<F>>,
+}
+
 // Kept out of line (with the helpers below) so sampled prover profiles show the
 // keyed ring as its own frames; LTO otherwise folds it into the caller. Each is
 // called once per proof.
@@ -119,6 +126,34 @@ pub(super) fn prove(
     grinding_bits: u32,
     points: usize,
 ) -> Result<(Proof, PreparedClaim), FalconError> {
+    prove_with_s1_factors(
+        transcript,
+        layout,
+        public,
+        data,
+        field,
+        grinding_bits,
+        points,
+        false,
+    )
+    .map(|(proof, claim, _)| (proof, claim))
+}
+
+/// With `factored_s1`, the dense s1 weights are not materialized: the claim's
+/// `weights_s1` is empty and the factors are returned for a binder that reads
+/// them directly (the merged word binder does).
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+pub(super) fn prove_with_s1_factors(
+    transcript: &mut impl Transcript,
+    layout: &Layout,
+    public: &FalconAlgebraicStatement,
+    data: &WitnessData,
+    field: &Cfg,
+    grinding_bits: u32,
+    points: usize,
+    factored_s1: bool,
+) -> Result<(Proof, PreparedClaim, Option<S1Factors>), FalconError> {
     validate_context(layout, public, field, grinding_bits, points)?;
     if data.witness.s1.len() != layout.batch() || data.witness.s2.len() != layout.batch() {
         return Err(error("keyed ring witness dimensions"));
@@ -147,7 +182,11 @@ pub(super) fn prove(
     let _span = tracing::info_span!("falcon_keyed_ring:weights").entered();
     let (rows, target) =
         rows_and_target(public, &polynomials, &quotient, &points, &coefficients, field);
-    let (weights_s1, weights_s2) = weights(public, &rows, &points, field);
+    let (weights_s1, weights_s2) = weights(public, &rows, &points, field, !factored_s1);
+    let factors = factored_s1.then(|| S1Factors {
+        columns: points.iter().map(|x| powers(x, N, field)).collect(),
+        rows,
+    });
     Ok((
         Proof {
             quotient,
@@ -158,6 +197,7 @@ pub(super) fn prove(
             weights_s2,
             target,
         },
+        factors,
     ))
 }
 
@@ -311,10 +351,12 @@ fn calculate_quotient(
                     &data.witness.s2[i],
                     &public.targets[i],
                 )?;
+                // `K[a + m] += A_{i,a} k_i[m]`: both factors are 32-bit, so the
+                // products are widening multiplies and the inner loop vectorizes.
                 for (a, &coefficient) in polynomials[i].iter().enumerate() {
-                    let coefficient = i64::from(coefficient);
+                    let coefficient = i32::from(coefficient);
                     for (total, &value) in sum[a..a + N].iter_mut().zip(k.iter()) {
-                        *total += coefficient * i64::from(value);
+                        *total += i64::from(coefficient) * i64::from(value);
                     }
                 }
                 Ok((sum, workspace))
@@ -463,12 +505,19 @@ fn rows_and_target(
 /// `V_{j+1} = xi V_j - rows[p][i] (xi^N + 1) h_i[N-1-j]` from
 /// `V_0 = rows[p][i] h_i(xi)`, since multiplying by `X` modulo `X^N+1` moves the
 /// top coefficient to the constant term with a sign change.
+///
+/// A thread advances `LANES` instances' recurrences in lockstep (the chains are
+/// independent, so their multiplications overlap); the values written are
+/// those of the one-instance recurrence. The residues of `h` are multiplied in
+/// Montgomery form from a table, which is faster than a mixed-width product.
 fn weights(
     public: &FalconAlgebraicStatement,
     rows: &[Vec<F>],
     points: &[F],
     field: &Cfg,
+    materialize_s1: bool,
 ) -> (Vec<F>, Vec<F>) {
+    const LANES: usize = 8;
     let batch = public.public_keys.len();
     let powers: Vec<Vec<F>> = points.iter().map(|x| powers(x, N + 1, field)).collect();
     let wraps: Vec<F> = powers
@@ -480,33 +529,75 @@ fn weights(
         .iter()
         .map(|powers| LimbVector::new(&powers[..N], field))
         .collect();
-    let mut weights_s1 = vec![field.zero(); batch * N];
+    let mut weights_s1 = vec![field.zero(); if materialize_s1 { batch * N } else { 0 }];
     let mut weights_s2 = vec![field.zero(); batch * N];
-    weights_s1
-        .par_chunks_mut(N)
-        .zip(weights_s2.par_chunks_mut(N))
-        .enumerate()
-        .for_each(|(i, (s1, s2))| {
-            let h = &public.public_keys[i];
-            for (p, powers) in powers.iter().enumerate() {
-                let row = rows[p][i];
-                let first = p == 0;
+    // One group's s2 chains, `lanes` of them (the last group may be short).
+    let chains = |first_instance: usize, lanes: usize, p: usize, s2: &mut [F]| {
+        let powers = &powers[p];
+        let first = p == 0;
+        let x = powers[1];
+        let mut value = [field.zero(); LANES];
+        let mut wrap = [field.zero(); LANES];
+        for lane in 0..lanes {
+            let instance = first_instance + lane;
+            let row = rows[p][instance];
+            value[lane] = field.mul(&row, &limbs[p].dot(&public.public_keys[instance], field));
+            wrap[lane] = field.mul(&row, &wraps[p]);
+        }
+        let step = |value: &mut [F; LANES], wrap: &[F; LANES], j: usize, lane: usize| {
+            let h = public.public_keys[first_instance + lane][N - 1 - j];
+            let carry = field.mul(&wrap[lane], &residues[usize::from(h)]);
+            value[lane] = field.sub(&field.mul(&x, &value[lane]), &carry);
+        };
+        for j in 0..N {
+            if lanes == LANES {
+                for lane in 0..LANES {
+                    let slot = &mut s2[lane * N + j];
+                    *slot = if first { value[lane] } else { field.add(slot, &value[lane]) };
+                }
+                if j + 1 < N {
+                    for lane in 0..LANES {
+                        step(&mut value, &wrap, j, lane);
+                    }
+                }
+            } else {
+                for lane in 0..lanes {
+                    let slot = &mut s2[lane * N + j];
+                    *slot = if first { value[lane] } else { field.add(slot, &value[lane]) };
+                    if j + 1 < N {
+                        step(&mut value, &wrap, j, lane);
+                    }
+                }
+            }
+        }
+    };
+    let fill = |group: usize, s1: &mut [F], s2: &mut [F]| {
+        let first_instance = group * LANES;
+        let lanes = s2.len() / N;
+        for (p, powers) in powers.iter().enumerate() {
+            let first = p == 0;
+            for (lane, s1) in s1.chunks_exact_mut(N).enumerate() {
+                let row = rows[p][first_instance + lane];
                 for (weight, power) in s1.iter_mut().zip(&powers[..N]) {
                     let term = field.mul(&row, power);
                     *weight = if first { term } else { field.add(weight, &term) };
                 }
-                let mut value = field.mul(&row, &limbs[p].dot(h, field));
-                let wrap = field.mul(&row, &wraps[p]);
-                let x = powers[1];
-                for j in 0..N {
-                    s2[j] = if first { value } else { field.add(&s2[j], &value) };
-                    if j + 1 < N {
-                        let carry = field.mul(&wrap, &residues[usize::from(h[N - 1 - j])]);
-                        value = field.sub(&field.mul(&x, &value), &carry);
-                    }
-                }
             }
-        });
+            chains(first_instance, lanes, p, s2);
+        }
+    };
+    if materialize_s1 {
+        weights_s1
+            .par_chunks_mut(LANES * N)
+            .zip(weights_s2.par_chunks_mut(LANES * N))
+            .enumerate()
+            .for_each(|(group, (s1, s2))| fill(group, s1, s2));
+    } else {
+        weights_s2
+            .par_chunks_mut(LANES * N)
+            .enumerate()
+            .for_each(|(group, s2)| fill(group, &mut [], s2));
+    }
     (weights_s1, weights_s2)
 }
 
@@ -590,23 +681,26 @@ mod exact {
     }
     const NEGATIVE_INVERSE: u32 = negative_inverse();
 
+    // Branchless reductions: `min` with the wrapped alternative selects the
+    // canonical value, which lets the butterfly loops below vectorize.
     #[inline(always)]
     fn mul(a: u32, b: u32) -> u32 {
         let t = u64::from(a) * u64::from(b);
         let m = (t as u32).wrapping_mul(NEGATIVE_INVERSE);
         let u = ((t + u64::from(m) * u64::from(P)) >> 32) as u32;
-        if u >= P { u - P } else { u }
+        u.min(u.wrapping_sub(P))
     }
 
     #[inline(always)]
     fn add(a: u32, b: u32) -> u32 {
         let sum = a + b;
-        if sum >= P { sum - P } else { sum }
+        sum.min(sum.wrapping_sub(P))
     }
 
     #[inline(always)]
     fn sub(a: u32, b: u32) -> u32 {
-        if a >= b { a - b } else { a + P - b }
+        let difference = a.wrapping_sub(b);
+        difference.min(difference.wrapping_add(P))
     }
 
     fn pow(base: u64, mut exponent: u64) -> u64 {
@@ -659,6 +753,8 @@ mod exact {
             }
         }
 
+        // Each butterfly block is two disjoint halves walked in lockstep, a
+        // shape the compiler vectorizes (about 1.6x the indexed loop).
         fn forward(&self, a: &mut [u32; N]) {
             let mut k = 0;
             let mut len = N / 2;
@@ -667,10 +763,11 @@ mod exact {
                 while start < N {
                     k += 1;
                     let zeta = self.zetas[k];
-                    for j in start..start + len {
-                        let t = mul(zeta, a[j + len]);
-                        a[j + len] = sub(a[j], t);
-                        a[j] = add(a[j], t);
+                    let (low, high) = a[start..start + 2 * len].split_at_mut(len);
+                    for (x, y) in low.iter_mut().zip(high.iter_mut()) {
+                        let t = mul(zeta, *y);
+                        *y = sub(*x, t);
+                        *x = add(*x, t);
                     }
                     start += 2 * len;
                 }
@@ -686,10 +783,11 @@ mod exact {
                 while start < N {
                     k -= 1;
                     let zeta = P - self.zetas[k];
-                    for j in start..start + len {
-                        let t = a[j];
-                        a[j] = add(t, a[j + len]);
-                        a[j + len] = mul(zeta, sub(t, a[j + len]));
+                    let (low, high) = a[start..start + 2 * len].split_at_mut(len);
+                    for (x, y) in low.iter_mut().zip(high.iter_mut()) {
+                        let t = *x;
+                        *x = add(t, *y);
+                        *y = mul(zeta, sub(t, *y));
                     }
                     start += 2 * len;
                 }
@@ -831,7 +929,7 @@ mod tests {
                     .collect()
             })
             .collect();
-        let (s1, s2) = weights(&public, &rows, &points, &f);
+        let (s1, s2) = weights(&public, &rows, &points, &f, true);
         let e_s1: Vec<F> = (0..N)
             .map(|j| F::from_with_cfg(pseudo(5, j) as u128, &f))
             .collect();
@@ -879,7 +977,7 @@ mod tests {
         };
         let x = F::from_with_cfg(31337u128, &f);
         let rows = vec![vec![f.one()]];
-        let (_, s2) = weights(&public, &rows, std::slice::from_ref(&x), &f);
+        let (_, s2) = weights(&public, &rows, std::slice::from_ref(&x), &f, true);
         let powers = powers(&x, N, &f);
         for j in [0, 1, 7, N / 2, N - 1] {
             // (h X^j mod X^N+1)(x) from its coefficients.
