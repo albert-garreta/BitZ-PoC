@@ -242,6 +242,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "proof_debug_digest": proof_debug_digest,
                         "proof_payload_breakdown": proof.payload_size_breakdown(),
                         "pcs_breakdown": proof.pcs_size_breakdown(),
+                        "bridge_breakdown": proof.bridge_size_breakdown(),
                         "live_bits_per_signature": prepared.live_bits_per_signature(),
                         "source_bits_per_signature": prepared.source_bits_per_signature(),
                         "capacity": prepared.capacity(),

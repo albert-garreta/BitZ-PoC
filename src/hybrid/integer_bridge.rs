@@ -25,6 +25,8 @@ use field::Uint;
 use rayon::prelude::*;
 use std::sync::OnceLock;
 
+pub(crate) mod polylog;
+
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
