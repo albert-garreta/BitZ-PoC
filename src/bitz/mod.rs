@@ -32,6 +32,7 @@ pub mod forest;
 pub mod gkr;
 pub(crate) mod grinding;
 pub(crate) mod kernels;
+pub mod logarithmic;
 pub mod params;
 pub mod pool;
 pub mod pcs;

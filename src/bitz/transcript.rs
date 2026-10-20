@@ -289,6 +289,12 @@ macro_rules! native_schedule {
         pub(crate) fn finish_native(&self) -> Result<(), grinding::Error> {
             self.native.ok_or(grinding::Error::Incomplete)?.finish()
         }
+
+        /// Checks the running schedule is complete and clears it, so the
+        /// next sub-protocol can start its own.
+        pub(crate) fn end_native(&mut self) -> Result<(), grinding::Error> {
+            self.native.take().ok_or(grinding::Error::Incomplete)?.finish()
+        }
     };
 }
 

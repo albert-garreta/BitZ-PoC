@@ -73,6 +73,18 @@ pub(crate) const DOMAIN_INITIAL: &[u8] = b"bitz/flockrec/initial-grinding/v1";
 pub(crate) const DOMAIN_PRIME: &[u8] = b"bitz/flockrec/prime/v1";
 pub(crate) const DOMAIN_TERMINAL: &[u8] = b"bitz/flockrec/terminal-grinding/v1";
 const DOMAIN_CLAIM: &[u8] = b"bitz/flockrec/opening-claim/v1";
+const LOG_OPENER: &[u8] = b"bitz/flockrec/opener/bitz-log/v1";
+
+/// How the relation's terminal claim on `h` is opened through `f`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlockRecOpener {
+    /// Standard BitZ: the column folds are sent.
+    Standard,
+    /// BitZ logarithmic ([`crate::bitz::logarithmic`]): the folds' bits are
+    /// committed under `mu` and proved. Without explicit opening rows, the
+    /// derived grid takes the reference split `t = ⌈0.6 n⌉ − 1`.
+    Logarithmic { mu: LigeritoSelection },
+}
 
 /// A local column of the template: block-local cells reading it.
 struct TemplateColumns {
@@ -950,12 +962,14 @@ fn xor_at(words: &[std::sync::atomic::AtomicU64], k: usize, w: Gf) {
 }
 
 /// Facts about the circuit's integer rows the security profile consumes.
-fn instance_facts(log_rows: u32, opening_t: u32) -> IopInstanceFacts {
+/// `lift_log2`: the fold's lift arity (`opening_t`, one more for the
+/// logarithmic opening's 127-bit slots).
+fn instance_facts(log_rows: u32, opening_t: u32, lift_log2: u32) -> IopInstanceFacts {
     IopInstanceFacts {
         // Every row value is below 2^66 in magnitude (64-bit zero checks,
         // 32-bit additions with their carries).
         defect_log2_bound: 66,
-        lift_arity_log2: opening_t,
+        lift_arity_log2: lift_log2,
         opening_t,
         direct_opening: false,
         tau_arity: log_rows,
@@ -981,6 +995,9 @@ pub struct FlockRecRelation {
     pub(crate) security: IopSecurityParams,
     pub(crate) ligerito: ResolvedLigerito,
     source_digest: [u8; 32],
+    /// The logarithmic opening ([`FlockRecOpener::Logarithmic`]); `None`
+    /// opens with standard BitZ.
+    log: Option<crate::bitz::logarithmic::LogOpener>,
 }
 
 /// The 8×64 bit transpose: byte `p` of the result has bit `k` = bit `p` of
@@ -1139,6 +1156,18 @@ impl FlockRecRelation {
         selection: LigeritoSelection,
         opening_row_vars: Option<usize>,
     ) -> Result<Self, ProtocolError> {
+        Self::new_with_opener::<P>(st, source_digest, selection, opening_row_vars, FlockRecOpener::Standard)
+    }
+
+    /// [`FlockRecRelation::new_with_profile`] with the terminal claim opened
+    /// by `opener`.
+    pub fn new_with_opener<P: IopSecurityProfile>(
+        st: Arc<StructuredCircuit>,
+        source_digest: [u8; 32],
+        selection: LigeritoSelection,
+        opening_row_vars: Option<usize>,
+        opener: FlockRecOpener,
+    ) -> Result<Self, ProtocolError> {
         let geometry = |msg: &str| ProtocolError::LigeritoConfig(format!("flockrec geometry: {msg}"));
         if st.templates.len() != 1 {
             return Err(geometry("exactly one block template"));
@@ -1188,7 +1217,11 @@ impl FlockRecRelation {
         // Derived grid.
         let h_tail = regions.end(n);
         let h_live = h_tail + 1 + st.tail_cells.len();
-        let hr = opening_row_vars.unwrap_or(regions.ha);
+        // The logarithmic opening pays nothing per column: the reference
+        // split `t = ⌈0.6 n⌉ − 1` of the derived grid.
+        let logarithmic = matches!(opener, FlockRecOpener::Logarithmic { .. });
+        let reference = crate::bitz::params::reference_log_rows(ceil_log2(h_live).max(regions.ha + 1)).max(regions.ha);
+        let hr = opening_row_vars.unwrap_or(if logarithmic { reference } else { regions.ha });
         if hr < regions.ha {
             return Err(geometry("opening columns lower than a block's region"));
         }
@@ -1330,13 +1363,30 @@ impl FlockRecRelation {
         };
         let tail_rows_local = st.tail_cells.clone();
 
-        let mut security = P::instantiate(&instance_facts((rt + inst_vars) as u32, hr as u32))?;
+        // The logarithmic opening commits each fold in 127 live bit slots:
+        // `(q − 1)·2^t < 2^127`, one more lift bit than the standard fold.
+        let lift = hr + usize::from(logarithmic);
+        let mut security = P::instantiate(&instance_facts((rt + inst_vars) as u32, hr as u32, lift as u32))?;
         let ligerito = selection
             .resolve(f_vars - LOG_PACKING, security.ligerito_target_bits)
             .map_err(ProtocolError::LigeritoConfig)?;
         security.adopt_ood_round(ligerito.ood_bits())?;
         let geom = crate::bitz::grinding::Geometry::opening(&h_layout, &f_layout, false);
         security.adopt_native_opening(geom)?;
+        let log = match opener {
+            FlockRecOpener::Standard => None,
+            FlockRecOpener::Logarithmic { mu } => Some(
+                crate::bitz::logarithmic::LogOpener::new(
+                    &opening_shape(&h_layout)?,
+                    mu,
+                    None,
+                    None,
+                    security.ligerito_target_bits,
+                    security.native_policy()?,
+                )
+                .map_err(|e| ProtocolError::LigeritoConfig(format!("flockrec log opener: {e:?}")))?,
+            ),
+        };
         Ok(Self {
             st,
             map,
@@ -1350,6 +1400,7 @@ impl FlockRecRelation {
             security,
             ligerito,
             source_digest,
+            log,
         })
     }
 
@@ -1538,7 +1589,7 @@ impl FlockRecRelation {
     }
 
     pub(crate) fn statement_frames(&self, commitment: &Commitment) -> Result<Vec<(&'static [u8], Vec<u8>)>, ProtocolError> {
-        Ok(vec![
+        let mut frames = vec![
             (b"protocol".as_slice(), PROTOCOL.to_vec()),
             (b"relation".as_slice(), self.map.digest.to_vec()),
             (b"source".as_slice(), self.source_digest.to_vec()),
@@ -1547,7 +1598,13 @@ impl FlockRecRelation {
                 b"commitment".as_slice(),
                 bincode::serialize(commitment).map_err(|e| ProtocolError::LigeritoConfig(e.to_string()))?,
             ),
-        ])
+        ];
+        // The logarithmic opening's geometry and fold-commitment ladder
+        // (absent for the standard opening, whose frames are unchanged).
+        if let Some(log) = &self.log {
+            frames.push((b"opener".as_slice(), [LOG_OPENER, log.frame().as_slice()].concat()));
+        }
+        Ok(frames)
     }
 
     /// `c` in the runtime field, powers of two from `pow2` (`2^0..2^{len−1}`).
@@ -2015,7 +2072,13 @@ impl FlockRecRelation {
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
         let pcs = pcs_from_config(&committed, self.ligerito.prover())?.with_native_policy(security.native_policy()?);
-        let bitz = bitz_opener::prove_virtual_opening(transcript, &opening, &pcs, hint, &witness.h_rows, ood)?;
+        let bitz = match &self.log {
+            Some(log) => {
+                let statement = self.log_statement(&inner.point, &v_at, &inner.final_claim, cfg);
+                bitz_opener::prove_virtual_log_opening(transcript, log, &statement, &opening, &pcs, hint, &witness.h_rows, ood)?
+            }
+            None => bitz_opener::prove_virtual_opening(transcript, &opening, &pcs, hint, &witness.h_rows, ood)?,
+        };
         trace("virtual opening", started);
         Ok(FlockRecProof { initial_nonce, terminal_nonce, inner: inner.proof, inner_nonces, bitz })
     }
@@ -2074,7 +2137,30 @@ impl FlockRecRelation {
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
         let pcs = pcs_from_config(&committed, self.ligerito.verifier())?.with_native_policy(security.native_policy()?);
-        bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+        match &self.log {
+            Some(log) => {
+                let statement = self.log_statement(&point, &v_at, &final_claim, cfg);
+                bitz_opener::verify_virtual_log_opening(transcript, log, &statement, &opening, &pcs, commitment, &proof.bitz, ood)
+            }
+            None => bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood),
+        }
+    }
+
+    /// The terminal claim by its point, for the logarithmic opening: `r₁`
+    /// the derived grid's row coordinates, `r₂` its column coordinates (most
+    /// significant first: [`crate::ligerito_flock::eq_table_mod_q`]'s order,
+    /// the reverse of [`eq_table`]'s), the column weights scaled by `V(r)` —
+    /// the claim [`opening_claim`] expands.
+    fn log_statement(&self, point: &[F], v_at: &F, final_claim: &F, cfg: &Config) -> crate::bitz::logarithmic::LogStatement {
+        let hr = self.map.hr;
+        let coordinates = |part: &[F]| part.iter().rev().map(|x| canonical(x, cfg)).collect();
+        crate::bitz::logarithmic::LogStatement {
+            q: cfg.modulus_u128(),
+            r1: coordinates(&point[..hr]),
+            r2: coordinates(&point[hr..]),
+            scale: canonical(v_at, cfg),
+            target: canonical(final_claim, cfg),
+        }
     }
 
     /// The derived rows recomputed from the committed rows through the map
@@ -2172,6 +2258,15 @@ mod tests {
     }
 
     fn relation(n: usize, t: usize) -> (FlockRecRelation, FlockRecWitness) {
+        relation_with::<Lambda100>(n, Some(t), "custom:3:4", FlockRecOpener::Standard)
+    }
+
+    fn relation_with<P: IopSecurityProfile>(
+        n: usize,
+        t: Option<usize>,
+        lig: &str,
+        opener: FlockRecOpener,
+    ) -> (FlockRecRelation, FlockRecWitness) {
         let mut w = CheckingWitgen::new();
         chain(&mut w, n);
         assert_eq!(w.first_failure, None);
@@ -2180,14 +2275,15 @@ mod tests {
         let st = rec.finish_structured();
         assert_eq!(st.templates.len(), 1);
         let external_start = external_hints_start(&st.templates[0]);
-        let selection = LigeritoSelection::parse("custom:3:4", 100).unwrap();
-        let rel = FlockRecRelation::new(Arc::new(st), [7; 32], selection, Some(t)).unwrap();
+        let selection = LigeritoSelection::parse(lig, P::LIGERITO_TARGET_BITS).unwrap();
+        let rel = FlockRecRelation::new_with_opener::<P>(Arc::new(st), [7; 32], selection, t, opener).unwrap();
         let (g, h) = w.into_witnesses();
         let wit = rel.witness(&g, &h).unwrap();
         // The witness pass's own block spans give the same committed side.
         let mut fast = circuit::witgen::Witgen::new();
         chain(&mut fast, n);
-        let early = FlockRecRelation::early_committed(fast.witness(), fast.blocks(), selection, Some(external_start)).unwrap();
+        let early =
+            FlockRecRelation::early_committed_with_profile::<P>(fast.witness(), fast.blocks(), selection, Some(external_start)).unwrap();
         assert!(rel.matches_early(&early));
         assert_eq!(early.rows, wit.f_rows, "early committed rows");
         (rel, wit)
@@ -2271,6 +2367,38 @@ mod tests {
             let mut tv = crate::transcript::Sha256Transcript::new();
             rel.verify(&mut tv, &hint.commitment, &pi).expect("the split relation verifies");
         }
+    }
+
+    /// The logarithmic opening at the reference split, at 100 bits (Johnson
+    /// ladders, the fold commitment's Round 0) and 128 bits (unique
+    /// decoding, every native challenge ground): the relation proves and
+    /// verifies, and a flipped proof byte (narg or hint) is rejected.
+    #[test]
+    fn logarithmic_opening_proves_and_verifies() {
+        use super::super::profile::Lambda128;
+        fn run<P: IopSecurityProfile>(lig: &str) {
+            let mu = LigeritoSelection::parse(lig, P::LIGERITO_TARGET_BITS).unwrap();
+            let (rel, wit) = relation_with::<P>(131, None, lig, FlockRecOpener::Logarithmic { mu });
+            let h_vars = rel.h_layout.row_vars + rel.h_layout.col_vars;
+            let reference = crate::bitz::params::reference_log_rows(h_vars).max(rel.map.regions.ha);
+            assert_eq!(rel.map.hr, reference, "{lig}: the reference split");
+            assert_eq!(rel.derive_rows(&wit.f_rows), wit.h_rows, "{lig}: h = M·f");
+            let hint = rel.commit(&wit);
+            let mut tp = crate::transcript::Sha256Transcript::new();
+            let pi = rel.prove(&mut tp, &wit, &hint).unwrap();
+            let mut tv = crate::transcript::Sha256Transcript::new();
+            rel.verify(&mut tv, &hint.commitment, &pi).expect("the logarithmic relation verifies");
+            for hints in [false, true] {
+                let mut bad = pi.clone();
+                let bytes = if hints { &mut bad.bitz.transcript.hints } else { &mut bad.bitz.transcript.narg_string };
+                let at = bytes.len() / 2;
+                bytes[at] ^= 0x10;
+                let mut tv = crate::transcript::Sha256Transcript::new();
+                assert!(rel.verify(&mut tv, &hint.commitment, &bad).is_err(), "{lig}: tampered {}", if hints { "hint" } else { "narg" });
+            }
+        }
+        run::<Lambda100>("custom:3:4");
+        run::<Lambda128>("udrg:2:4");
     }
 
     #[test]

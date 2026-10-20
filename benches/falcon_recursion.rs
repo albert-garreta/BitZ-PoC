@@ -12,8 +12,11 @@
 //!
 //! Knobs: `BITZ_REC_FALCON_BATCH` (1024), `BITZ_REC_REPS` (3),
 //! `BITZ_REC_SECURITY` (128: the base and the outer proof), `BITZ_REC_LIG`
-//! (the outer opening: `udrg:3:4` at 128, `custom:6:4` at 100), `BITZ_REC_T`
-//! (outer opening rows: 18 at 128, 19 at 100), `BITZ_REC_SEED` (42) and
+//! (the outer opening: `udrg:3:4` at 128, `custom:6:4` at 100),
+//! `BITZ_REC_OPENER` (`log`: BitZ logarithmic, its fold commitment under
+//! `BITZ_REC_MU_LIG`, default the outer selection; `std`: standard BitZ),
+//! `BITZ_REC_T` (outer opening rows; default the reference split with `log`,
+//! 18 at 128 and 19 at 100 with `std`), `BITZ_REC_SEED` (42) and
 //! `BITZ_FALCON_CASE_CACHE`.
 
 #[path = "common/falcon_degree_inputs.rs"]
@@ -45,7 +48,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let security = env("BITZ_REC_SECURITY", 128usize);
     let selection = std::env::var("BITZ_REC_LIG")
         .unwrap_or_else(|_| if security == 128 { "udrg:3:4" } else { "custom:6:4" }.into());
-    let opening_t = Some(env("BITZ_REC_T", if security == 128 { 18usize } else { 19 }));
+    let log = std::env::var("BITZ_REC_OPENER").map_or(true, |v| v != "std");
+    let opening_t = std::env::var("BITZ_REC_T")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or((!log).then_some(if security == 128 { 18 } else { 19 }));
     let seed = env("BITZ_REC_SEED", 42u64);
     let threads = rayon::current_num_threads();
 
@@ -144,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pi = rel.prove(&mut tp, &wit, &hint).map_err(|e| format!("{e:?}"))?;
         let t4 = Instant::now();
         let bits = |l: &bitz::pcs::IntegerMatrixLayout| l.row_vars + l.col_vars;
-        let outer_shape = [bits(rel.committed_layout()), bits(rel.derived_layout())];
+        let outer_shape = [bits(rel.committed_layout()), bits(rel.derived_layout()), rel.derived_layout().row_vars];
         drop((wit, rel, passes.g, passes.h));
         rec.push([
             passes.witness_s,
@@ -183,6 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "security": security,
         "outer_ligerito": selection,
         "outer_t": opening_t,
+        "opener": if log { "log" } else { "std" },
         "setup_s": setup_s,
         "base_commit_s": colb(0),
         "base_prove_s": colb(1),
@@ -202,7 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "public_stream_bytes": stream.bytes(),
         "public_input_bytes": fv::public_input_bytes(&proof),
         "public_top": by_label.iter().take(8).map(|(l, n, b)| format!("{l}:{n}:{b}")).collect::<Vec<_>>(),
-        "circuit": {"committed": shape[0], "cells": shape[1], "rows": shape[2], "blocks": shape[3], "outer_f_bits": outer_shape[0], "outer_h_bits": outer_shape[1]},
+        "circuit": {"committed": shape[0], "cells": shape[1], "rows": shape[2], "blocks": shape[3], "outer_f_bits": outer_shape[0], "outer_h_bits": outer_shape[1], "outer_rows": outer_shape[2]},
         "counts": format!("{counts:?}"),
         "base_runs": base,
         "rec_runs": rec,

@@ -1480,7 +1480,7 @@ fn build_eq_scaled(point: &[Gf], scalar: Gf) -> Vec<Gf> {
 /// `MLE[P](point)` for the packed message — block-parallel, deferred
 /// reduction inside each block.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
+pub(crate) fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
     use crate::utils::wide_mul::WideMulAcc;
     let vars = packed_message_vars(p_msg);
     assert_eq!(point.len(), vars, "OOD point dimension");

@@ -502,6 +502,20 @@ impl Pcs {
         self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
     }
 
+    /// The challenges flock's Ligerito verifier draws after the prover's last
+    /// message (the last level's `α` vector and `β`): a prover that goes on
+    /// using the transcript after an opening draws them too.
+    pub(crate) fn replay_verifier_tail(&self, transcript: &mut ProverState) {
+        let queries = self.verifier_config.queries.last().copied().unwrap_or(0);
+        let n = if queries <= 1 { 0 } else { (queries - 1).ilog2() as usize + 1 };
+        transcript.public_message(VECTOR_SQUEEZE_TAG);
+        transcript.public_message(&(n as u64));
+        for _ in 0..n {
+            let _: Gf = transcript.verifier_message();
+        }
+        let _: Gf = transcript.verifier_message();
+    }
+
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching
     /// challenges, the dense packed basis, then Ligerito.
     fn prove_mle(

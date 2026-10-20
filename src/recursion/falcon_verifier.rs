@@ -622,12 +622,29 @@ pub fn outer_relation(
         h.update(&[*w]);
     }
     let (st, digest, lig) = (std::sync::Arc::new(st), *h.finalize().as_bytes(), LigeritoSelection::parse(selection, security)?);
+    let opener = outer_opener(selection, security)?;
     match security {
-        100 => FlockRecRelation::new_with_profile::<Lambda100>(st, digest, lig, opening_row_vars),
-        128 => FlockRecRelation::new_with_profile::<Lambda128>(st, digest, lig, opening_row_vars),
+        100 => FlockRecRelation::new_with_opener::<Lambda100>(st, digest, lig, opening_row_vars, opener),
+        128 => FlockRecRelation::new_with_opener::<Lambda128>(st, digest, lig, opening_row_vars, opener),
         _ => return Err(format!("outer security {security}: 100 or 128")),
     }
     .map_err(|e| format!("{e:?}"))
+}
+
+/// The outer proof's opener: `BITZ_REC_OPENER` = `log` (the default: BitZ
+/// logarithmic, the fold bits committed under `BITZ_REC_MU_LIG`, by default
+/// the outer selection) or `std` (standard BitZ, the folds sent).
+pub fn outer_opener(selection: &str, security: usize) -> Result<crate::piop::spartan::flockrec::FlockRecOpener, String> {
+    use crate::ligerito_flock::LigeritoSelection;
+    use crate::piop::spartan::flockrec::FlockRecOpener;
+    match std::env::var("BITZ_REC_OPENER").as_deref() {
+        Ok("std") => Ok(FlockRecOpener::Standard),
+        Ok("log") | Err(_) => {
+            let mu = std::env::var("BITZ_REC_MU_LIG").unwrap_or_else(|_| selection.to_string());
+            Ok(FlockRecOpener::Logarithmic { mu: LigeritoSelection::parse(&mu, security)? })
+        }
+        Ok(other) => Err(format!("BITZ_REC_OPENER={other}: log or std")),
+    }
 }
 
 /// The final verifier's view: the circuit recorded on the public stream
@@ -822,7 +839,11 @@ pub(super) mod tests {
         use std::time::Instant;
         let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(16, |v| v.parse().unwrap());
         let selection = std::env::var("BITZ_REC_LIG").unwrap_or_else(|_| "udrg:2:4".into());
-        let opening_t: Option<usize> = Some(std::env::var("BITZ_REC_T").ok().map_or(18, |v| v.parse().unwrap()));
+        // Standard BitZ at T = 18 rows; BitZ logarithmic (the default opener)
+        // at the reference split.
+        let standard = std::env::var("BITZ_REC_OPENER").is_ok_and(|v| v == "std");
+        let opening_t: Option<usize> =
+            std::env::var("BITZ_REC_T").ok().map(|v| v.parse().unwrap()).or(standard.then_some(18));
         let security = security();
         let (prepared, public, proof) = proof_at(batch);
         let circuit = FalconCircuit::new(&prepared, &public, &proof);

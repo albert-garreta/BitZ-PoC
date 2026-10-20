@@ -1622,6 +1622,80 @@ pub(crate) fn prove_virtual_opening<
     })
 }
 
+pub(crate) const VIRTUAL_LOG_SESSION: &[u8] = b"bitz/bitz-opener/virtual-log/v1";
+
+/// [`prove_virtual_opening`] with the logarithmic scheme
+/// ([`crate::bitz::logarithmic`]): the claim by its point (`statement`),
+/// the folds committed and proved instead of sent.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_virtual_log_opening<
+    T: Transcript + Send,
+    M: circuit::linear_map::binary::VirtualMap,
+>(
+    transcript: &mut T,
+    opener: &crate::bitz::logarithmic::LogOpener,
+    statement: &crate::bitz::logarithmic::LogStatement,
+    map: &crate::bitz::VirtualStatement<'_, M>,
+    pcs: &BitzPcs,
+    hint: &FlockCommitHint,
+    derived_rows: &[Vec<u64>],
+    ood: crate::ligerito_flock::ProverOod,
+) -> Result<BitZOpeningProof, ProtocolError> {
+    let ood = ood.opening_claim(transcript, hint);
+    let mut state = build_prover(VIRTUAL_LOG_SESSION, &fork_tag(transcript));
+    crate::bitz::logarithmic::prove(
+        opener,
+        statement,
+        map,
+        pcs,
+        hint,
+        derived_rows,
+        &mut state,
+        ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+    )
+    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ log prove: {error:?}")))?;
+    Ok(BitZOpeningProof {
+        transcript: state.finish(),
+        ood: ood.map(|claim| claim.round),
+    })
+}
+
+/// [`verify_virtual_opening`] with the logarithmic scheme.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_virtual_log_opening<
+    T: Transcript + Send,
+    M: circuit::linear_map::binary::VirtualMap,
+>(
+    transcript: &mut T,
+    opener: &crate::bitz::logarithmic::LogOpener,
+    statement: &crate::bitz::logarithmic::LogStatement,
+    map: &crate::bitz::VirtualStatement<'_, M>,
+    pcs: &BitzPcs,
+    commitment: &Commitment,
+    proof: &BitZOpeningProof,
+    ood: crate::ligerito_flock::VerifierOod,
+) -> Result<(), ProtocolError> {
+    let packed_vars = map
+        .committed_shape()
+        .log_bits()
+        .checked_sub(crate::ligerito::LOG_PACKING)
+        .ok_or(ProtocolError::InvalidGeometry)?;
+    let ood = ood
+        .opening_claim(transcript, packed_vars, proof.ood.as_ref())
+        .map_err(ProtocolError::Bitz)?;
+    let state = build_verifier(VIRTUAL_LOG_SESSION, &fork_tag(transcript), &proof.transcript);
+    crate::bitz::logarithmic::verify(
+        opener,
+        statement,
+        map,
+        pcs,
+        &commitment.root,
+        state,
+        ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+    )
+    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ log verify: {error:?}")))
+}
+
 pub(crate) fn verify_virtual_opening<
     T: Transcript + Send,
     M: circuit::linear_map::binary::VirtualMap,

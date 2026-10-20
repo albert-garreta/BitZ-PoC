@@ -138,6 +138,10 @@ pub(crate) struct Schedule {
     policy: Policy,
     geometry: Geometry,
     work: [u32; 6],
+    /// The integer reduction starts from a fold point drawn under an
+    /// earlier schedule (the logarithmic scheme's second tree): no
+    /// fold-point block.
+    shared_point: bool,
 }
 
 impl Schedule {
@@ -161,14 +165,21 @@ impl Schedule {
             policy.work(Stage::RingBatch, 7)?,
             policy.work(Stage::OodBatch, 1)?,
         ];
-        Ok(Self { policy, geometry, work })
+        Ok(Self { policy, geometry, work, shared_point: false })
+    }
+
+    /// This schedule without its fold-point block: the reduction starts from
+    /// a point an earlier schedule drew.
+    pub(crate) fn sharing_fold_point(mut self) -> Self {
+        self.shared_point = true;
+        self
     }
 
     pub(crate) fn terms(self) -> impl Iterator<Item = Term> {
         let (t, s) = self.geometry.integer.unwrap_or((0, 0));
         let (r, c) = self.geometry.binary.unwrap_or((0, 0));
         [
-            (Stage::FoldPoint, s, usize::from(s > 0)),
+            (Stage::FoldPoint, s, usize::from(s > 0 && !self.shared_point)),
             (Stage::GkrRound, 1, t * s + t * t.saturating_sub(1) / 2),
             (Stage::GkrClose, 1, t),
             (Stage::BinaryRound, 1, r + c),
@@ -196,7 +207,7 @@ impl Schedule {
          self.policy.reduction_minimum as u8, self.policy.ring_minimum as u8,
          u8::from(self.geometry.integer.is_some()), t as u8, s as u8,
          u8::from(self.geometry.binary.is_some()), r as u8, c as u8,
-         u8::from(self.geometry.ring), u8::from(self.geometry.ood), 0, 0, 0, 0]
+         u8::from(self.geometry.ring), u8::from(self.geometry.ood), u8::from(self.shared_point), 0, 0, 0]
     }
 
     pub(crate) fn cursor(self) -> Cursor {
@@ -236,7 +247,7 @@ impl Cursor {
         let (r, c) = self.schedule.geometry.binary.unwrap_or((0, 0));
         loop {
             let position = match self.phase {
-                0 if s > 0 => Some((Stage::FoldPoint, 0, 0, s)),
+                0 if s > 0 && !self.schedule.shared_point => Some((Stage::FoldPoint, 0, 0, s)),
                 1 if self.layer < t && self.round < s + self.layer => Some((Stage::GkrRound, self.layer, self.round, 1)),
                 2 if self.layer < t => Some((Stage::GkrClose, self.layer, 0, 1)),
                 3 if self.round < r => Some((Stage::BinaryRound, 0, self.round, 1)),

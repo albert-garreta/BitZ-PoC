@@ -197,7 +197,7 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
 
 /// The committed rows as the one row of the single-column claim shape:
 /// column after column, cell `c · 2^t + b` at bit `c · 2^t + b`.
-fn flatten_rows(rows: &[Vec<u64>]) -> Vec<u64> {
+pub(crate) fn flatten_rows(rows: &[Vec<u64>]) -> Vec<u64> {
     let mut flat = Vec::with_capacity(rows.iter().map(Vec::len).sum());
     for row in rows {
         flat.extend_from_slice(row);
