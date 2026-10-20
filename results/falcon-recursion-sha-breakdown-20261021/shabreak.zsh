@@ -5,6 +5,7 @@
 # binary of the Reproduce section. usage: zsh shabreak.zsh [out dir]
 W=/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion
 OUT=${1:-$(dirname $0)}
+mkdir -p $OUT
 D=$W/target-dev/release/deps
 BIN=$D/$(ls -t $D | grep -E '^bitz-[0-9a-f]+$' | head -1)
 export BITZ_FALCON_GRINDING_MODEL=per-site BITZ_FALCON_PRIME=small BITZ_ARITHMETIC_RING=keyed

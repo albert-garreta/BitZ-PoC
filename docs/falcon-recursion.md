@@ -5,8 +5,12 @@ recursion step: a batch proof of the algebraic Falcon-512 relation
 (configuration G: per-site grinding, small prime, keyed ring, 16 bridge rows,
 optimized word binder) is verified by a BitZ circuit, and that circuit is
 proved with FlockRec. Campaign data: `results/falcon-recursion-20261018/`
-(baseline) and `results/falcon-recursion-20261020/` (after the prover and
-verifier optimizations, A/B against the baseline binary); results below.
+(baseline), `results/falcon-recursion-20261020/` (after the prover and
+verifier optimizations, A/B against the baseline binary),
+`results/falcon-recursion-polylog-20261020/` (polylog BitZ for the outer
+proof), `results/falcon-recursion-sha-breakdown-20261021/` (the circuit's
+SHA-256 compressions per stage) and `results/falcon-recursion-ext-20261021/`
+(Johnson over GF(2^256) for the outer proof at λ=128); results below.
 
 ## The circuit
 
@@ -52,6 +56,76 @@ Validation (lib tests, ignored, need the configuration-G environment):
 to the native verifier's: 9,996 at batch 16, 14,614 at batch 1,024),
 `falcon_circuit_rejects_tampered_proofs` (19 altered parts, each rejected by
 the circuit and the native verifier), `falcon_recursion_step_proves_and_verifies`.
+
+### Where the SHA-256 compressions come from (2026-10-21)
+
+A hash over proof data is an in-circuit SHA-256 compression (one over public
+data only is computed natively and enters as a public value). Three sources:
+the Fiat–Shamir duplex (*transcript*: proof messages absorbed, challenges
+squeezed), the proof-of-work predicates (*proof of work*, one compression per
+nonce check), and the Ligerito opening's Merkle hashing (*Merkle*: the opened
+rows' leaves, the multi-proofs' nodes, the final level's complete tree).
+`BITZ_REC_STAGES=1` prints them per verifier stage, and per opening level the
+Merkle split into leaves and nodes (d3eb249de). One recording per cell of the
+test fixture (`falcon_record_profile`; the bench instance has 8,952 blocks at
+λ=128 and 1K against the fixture's 9,028),
+`results/falcon-recursion-sha-breakdown-20261021/`:
+
+| stage | λ128 1K | λ128 4K | λ128 32K | λ100 1K | λ100 4K | λ100 32K |
+|---|---|---|---|---|---|---|
+| keyed ring | 79 | 76 | 79 | 73 | 73 | 73 |
+| norm sumcheck | 270 | 249 | 267 | 119 | 116 | 131 |
+| binder sumcheck | 258 | 275 | 293 | 133 | 135 | 153 |
+| bridge (product forest) | 1,325 | 1,485 | 1,725 | 529 | 593 | 689 |
+| joint sumcheck | 218 | 236 | 263 | 74 | 80 | 89 |
+| opening: ring switch + L0 folds | 104 | 104 | 104 | 53 | 53 | 53 |
+| opening: level 0 | 3,243 | 3,784 | 4,777 | 2,631 | 3,073 | 3,796 |
+| opening: recursive levels | 2,373 | 3,892 | 6,274 | 1,879 | 3,067 | 4,908 |
+| opening: final level | 1,158 | 2,160 | 4,204 | 1,112 | 2,121 | 4,168 |
+| **total** | **9,028** | **12,261** | **17,986** | **6,603** | **9,311** | **14,060** |
+| of which transcript | 2,485 (28 %) | 2,714 (22 %) | 3,069 (17 %) | 1,376 (21 %) | 1,503 (16 %) | 1,710 (12 %) |
+| of which proof of work | 386 (4 %) | 434 (4 %) | 504 (3 %) | 0 | 0 | 0 |
+| of which Merkle | 6,157 (68 %) | 9,113 (74 %) | 14,413 (80 %) | 5,227 (79 %) | 7,808 (84 %) | 12,350 (88 %) |
+
+The Merkle hashing per opening level: opened rows × elements per row, then
+leaf + node compressions (a compression block holds four GF(2^128) elements;
+a node is one block):
+
+| level | λ128 1K | λ128 4K | λ128 32K | λ100 1K | λ100 4K | λ100 32K |
+|---|---|---|---|---|---|---|
+| 0 | 309×16: 1,236 + 1,838 | 309×16: 1,236 + 2,379 | 309×16: 1,236 + 3,372 | 242×16: 968 + 1,536 | 242×16: 968 + 1,979 | 241×16: 964 + 2,706 |
+| 1 | 190×8: 380 + 897 | 189×8: 378 + 1,261 | 189×8: 378 + 1,820 | 148×8: 296 + 750 | 148×8: 296 + 1,038 | 148×8: 296 + 1,447 |
+| 2 | 156×8: 312 + 471 | 155×8: 310 + 761 | 155×8: 310 + 1,248 | 122×8: 244 + 410 | 121×8: 242 + 627 | 121×8: 242 + 995 |
+| 3 | – | 142×8: 284 + 457 | 141×8: 282 + 858 | – | 111×8: 222 + 389 | 110×8: 220 + 684 |
+| 4 | – | – | 135×8: 270 + 544 | – | – | 106×8: 212 + 489 |
+| final (complete tree) | 512×4: 512 + 511 | 1,024×2: 1,024 + 1,023 | 2,048×2: 2,048 + 2,047 | 512×4: 512 + 511 | 1,024×2: 1,024 + 1,023 | 2,048×2: 2,048 + 2,047 |
+
+1. The base proof's opening is 76–85 % of the compressions at λ=128 and
+   86–92 % at λ=100; its Merkle hashing alone is 68–80 % and 79–88 %, the
+   nodes 60–69 % of it.
+2. The query counts are unique decoding's: level 0 at rate 1/2 opens 309 rows
+   at λ=128 (0.415 bits per query) and 242 at λ=100, and the recursive levels
+   (rates 1/4 to 1/32) 135–190 and 106–148. A level-0 query costs four leaf
+   compressions (16 elements) and its share of the path, 6–11 nodes as the tree
+   deepens with the batch.
+3. The opening carries the growth with the batch: at λ=128 it goes from
+   6,878 to 15,359 compressions (1K → 32K) while the stages before it go from
+   2,150 to 2,627. Each step (1K → 4K → 32K) adds a recursive level (880–950
+   compressions when added), deepens the existing trees, and doubles the final
+   level's complete tree (1,023 → 2,047 → 4,095 compressions): the compact
+   final level ships the message, and the circuit re-encodes it and rebuilds
+   the whole tree.
+4. Outside the opening the bridge's product forest is the largest stage
+   (1,325–1,725 at λ=128, 265–345 of them proof of work). At λ=100 no site
+   grinds, and the transcript is 55 % of the λ=128 count.
+
+Levers on the circuit (not done): Johnson over GF(2^256) for the base
+opening as well (`origin/falcon-pcs-levers`: 79 level-0 queries at rate 1/8
+instead of 309; the circuit would need GF(2^256) arithmetic for the extension
+levels), and a final level opened at its 131–141 queried rows instead of
+rebuilt (an estimate from the expected multi-proof: ~455 instead of 1,023
+compressions at 1K, ~670 instead of 4,095 at 32K, for ~15 KB more base
+proof). The base opening is `MATCHED_UDR` (`udrg:1:4`).
 
 ## Prover and verifier optimizations (2026-10-20)
 
@@ -201,8 +275,88 @@ Findings:
    level of `f`'s ladder, a level-0 branch of ~12–16 KB instead of their own
    run) needs a Johnson ladder for `f`: unavailable at 128 bits over
    GF(2^128), and at 100 bits it would leave π ≈ 110 KB, still above the
-   standard opener's. With Johnson over GF(2^256) (the proof-size lever above)
-   both would apply at 128 bits.
+   standard opener's. Johnson over GF(2^256) (next section) makes `f`'s
+   Johnson ladder available at 128 bits, but the polylog opener's fold-bit run
+   is GF(2^128) only, so neither the merged run nor polylog with an `ext:`
+   ladder is wired.
+
+## Johnson over GF(2^256) for the outer proof (2026-10-21)
+
+`BITZ_REC_LIG=ext:R:K` (5872fe8e7) opens the outer proof with a Johnson
+ladder at rate 2^−R whose Round 0 and levels past the first run over
+GF(2^256) = GF(2^128)[Y]/(Y² + Y + c); level 0's rows stay GF(2^128)
+elements. The GF(2^128) Round 0 reaches 116 bits, this one ~225, so 128-bit
+Johnson becomes available. Ported pieces: flock's GF(2^256) field, extension
+Ligerito (prover, verifier, proof type) and the `ext:R:K` selections, applied
+from 411977004 (`falcon-pcs-levers`); the BitZ PCS extension path
+(`Pcs::with_extension`, `prove_mle_ext` / `verify_mle_ext`, the Round-0 claim
+as `OodClaim::{Base, Ext}` through the virtual, chained and logarithmic
+openers) from the SHA+ECDSA proof-size line. FlockRec switches the PCS and
+Round 0 to the extension when the selection asks for it, and the BitZ opening
+codec carries `y_ext`. An `ext:` ladder runs with the standard opener (the
+step's default opener, polylog, refuses it: see above). Test:
+`extension_johnson_opening_proves_and_verifies` (codec roundtrip; altered
+narg, hint and `y_ext` rejected).
+
+λ=128, standard opener at T = 18, one gated campaign with the four ladders
+interleaved per cell on one binary (built at 5872fe8e7), AC power,
+3.8–4.0 GHz at 10 threads and 4.4–4.55 GHz at 1;
+`results/falcon-recursion-ext-20261021/`. Medians of 3 runs at 10 threads (2
+at 32K, where the median is the slower one), 2 (1K) or 1 at 1 thread. base\*
+is the `sha256-fs` base proof the circuit verifies (223.8 / 313.6 / 593.1 KB;
+the production Blake3 proof is 226.8 / 313.0 / 593.2 KB).
+
+10 threads:
+
+| batch | outer ladder | π | π + public | ÷ base\* | rec step | FlockRec prove | early commit | final verify | RSS |
+|---|---|---|---|---|---|---|---|---|---|
+| 1,024 | udrg:3:4 | 308.5 KB | 329.5 KB | 1.47 | 0.83 s | 0.49 s | 0.04 s | 0.37 s | 3.6 GiB |
+| 1,024 | ext:3:4 | 187.6 KB | 208.5 KB | 0.93 | 0.76 s | 0.42 s | 0.04 s | 0.39 s | 3.6 GiB |
+| 1,024 | ext:5:4 | 157.5 KB | 178.5 KB | 0.80 | 0.83 s | 0.44 s | 0.11 s | 0.37 s | 4.2 GiB |
+| 1,024 | ext:6:4 | 150.1 KB | 171.1 KB | 0.76 | 1.01 s | 0.53 s | 0.23 s | 0.37 s | 5.0 GiB |
+| 4,096 | udrg:3:4 | 305.9 KB | 341.3 KB | 1.09 | 0.82 s | 0.43 s | 0.04 s | 0.41 s | 4.1 GiB |
+| 4,096 | ext:3:4 | 188.2 KB | 223.6 KB | 0.71 | 0.82 s | 0.44 s | 0.04 s | 0.41 s | 4.1 GiB |
+| 4,096 | ext:5:4 | 157.9 KB | 193.3 KB | 0.62 | 0.89 s | 0.43 s | 0.13 s | 0.41 s | 4.6 GiB |
+| 4,096 | ext:6:4 | 151.2 KB | 186.6 KB | 0.60 | 0.96 s | 0.45 s | 0.23 s | 0.41 s | 5.5 GiB |
+| 32,768 | udrg:3:4 | 352.0 KB | 505.7 KB | 0.85 | 1.34 s | 0.66 s | 0.10 s | 0.73 s | 6.9 GiB |
+| 32,768 | ext:3:4 | 214.5 KB | 368.1 KB | 0.62 | 1.31 s | 0.64 s | 0.09 s | 0.71 s | 6.9 GiB |
+| 32,768 | ext:5:4 | 180.5 KB | 334.1 KB | 0.56 | 1.58 s | 0.78 s | 0.34 s | 0.71 s | 8.1 GiB |
+| 32,768 | ext:6:4 | 173.0 KB | 326.7 KB | 0.55 | 1.78 s | 0.77 s | 0.55 s | 0.72 s | 9.6 GiB |
+
+1 thread (rec step / FlockRec prove / early commit / final verify):
+
+| batch | udrg:3:4 | ext:3:4 | ext:5:4 | ext:6:4 |
+|---|---|---|---|---|
+| 1,024 | 2.92 / 2.24 / 0.13 / 0.61 s | 2.38 / 1.71 / 0.13 / 0.61 s | 2.81 / 1.77 / 0.49 / 0.61 s | 3.70 / 2.17 / 0.98 / 0.61 s |
+| 4,096 | 2.60 / 1.79 / 0.13 / 0.72 s | 2.57 / 1.76 / 0.13 / 0.72 s | 2.82 / 1.65 / 0.50 / 0.72 s | 3.40 / 1.74 / 0.98 / 0.73 s |
+| 32,768 | 4.18 / 2.70 / 0.27 / 1.24 s | 3.91 / 2.43 / 0.27 / 1.23 s | 5.66 / 3.42 / 1.03 / 1.24 s | 6.49 / 3.24 / 2.03 / 1.24 s |
+
+Findings:
+
+1. π drops 38–39 % at rate 1/8 (ext:3:4: 187.6–214.5 KB against
+   305.9–352.0 KB) and 48–51 % at rates 1/32 and 1/64; rate 1/64 saves only
+   7–8 KB more than 1/32. With the public part, recursion is now smaller than
+   the base proof at every batch at λ=128: 0.80 / 0.62 / 0.56 of base\* with
+   ext:5:4 (unique decoding: 1.47 / 1.09 / 0.85). At 32K the public bridge
+   folds (131 KB) are now about 40 % of the recursive bytes.
+2. ext:3:4 has unique decoding's rate, so the early commitment is the same,
+   and the step is no slower: 0.76 / 0.82 / 1.31 s against
+   0.83 / 0.82 / 1.34 s at 10 threads (FlockRec prove 0.42 against 0.49 s at
+   1K: fewer queries). The 1-thread gap (2.38 against 2.92 s at 1K) includes
+   different proof-of-work draws (one per site per transcript).
+3. Lower rates move cost into the early commitment: 0.11–0.34 s at rate 1/32
+   and 0.23–0.55 s at 1/64 (10 threads; 0.49–1.03 and 0.98–2.03 s at
+   1 thread). At 10 threads it runs beside the recording and slows it
+   (0.19–0.21 → 0.31–0.35 s at 1K with ext:6:4), and at 32K it is the
+   critical path (passes 0.62–0.67 s). Against unique decoding the step costs
+   +0–18 % with ext:5:4 and +17–33 % with ext:6:4 (10 threads), RSS +14–18 %
+   and +34–41 %.
+4. The final verifier is unchanged: the replay of the circuit dominates it.
+5. Where ext:6:4's bytes go (dev build, 1K): narg 36.5 KB (folds 16.4 KB,
+   GKR 14 KB), opened rows 42 KB, Merkle siblings 65.7 KB.
+
+The defaults are unchanged (`udrg:3:4` with the polylog opener at 128 bits).
+ext:3:4 costs nothing and ext:5:4 is the size sweet spot.
 
 ## Results (2026-10-18 baseline)
 
@@ -281,9 +435,10 @@ Findings:
 6. The production proofs are byte-identical to configuration G's before the
    hooks (`proof_debug_digest` 964daab7… at 1K, dcb4c8cf… at 32K).
 
-Levers not pursued: Johnson at λ=128 (a level-0 binding beyond GF(2^128):
-a certified Round-0 sample with grinding, or GF(2^256) out-of-domain
-samples); fewer bridge columns or a bridge whose root claim does not take the
+Levers not pursued on 10-18: Johnson at λ=128 (a level-0 binding beyond
+GF(2^128): a certified Round-0 sample with grinding, or GF(2^256)
+out-of-domain samples; the GF(2^256) one is done since 10-21, above); fewer
+bridge columns or a bridge whose root claim does not take the
 folds as public exponents; sparse exception counts in the base proof.
 
 Why π is ~310 KB at λ=128: about 85 % of it is the outer Ligerito opening's
@@ -296,10 +451,9 @@ GF(2^256) is built for the BitZ opener in `~/f2z-pcs-ecdsa-size`
 (uncommitted) and for the base Falcon opening on `origin/falcon-pcs-levers`:
 its Round 0 reaches ~225 bits and λ=128 needs 79, 60, 48 queries at rates
 1/8, 1/16, 1/32. On SHA+ECDSA its λ=128 proofs were 0.48–0.52× the best
-unique-decoding ones and 1.4–1.6× the λ=100 Johnson ones, which suggests
-π ≈ 130–150 KB at 1K and 150–175 KB at 32K here (an estimate; porting it to
-the virtual opening, structured prover and lazy verifier included, is not
-done).
+unique-decoding ones and 1.4–1.6× the λ=100 Johnson ones, which suggested
+π ≈ 130–150 KB at 1K and 150–175 KB at 32K here. Measured after the port
+(above): 150–158 KB at 1K and 173–181 KB at 32K at rates 1/64 and 1/32.
 
 ## Reproduce
 
@@ -327,6 +481,15 @@ python3 results/falcon-recursion-20261020/summarize.py bench_results/falcon-recu
 # standard against polylog BitZ (one binary, BITZ_REC_OPENER=std|log)
 zsh results/falcon-recursion-polylog-20261020/launch.zsh
 python3 results/falcon-recursion-polylog-20261020/summarize.py bench_results/falcon-recursion-polylog-20261020/runs
+
+# unique decoding against Johnson over GF(2^256) at λ=128 (one binary,
+# BITZ_REC_LIG=udrg:3:4|ext:3:4|ext:5:4|ext:6:4, standard opener at T = 18)
+zsh results/falcon-recursion-ext-20261021/launch.zsh
+python3 results/falcon-recursion-ext-20261021/summarize.py bench_results/falcon-recursion-ext-20261021/runs
+
+# the circuit's SHA-256 compressions per stage (the dev test binary above)
+zsh results/falcon-recursion-sha-breakdown-20261021/shabreak.zsh /tmp/shabreak
+python3 results/falcon-recursion-sha-breakdown-20261021/shabreak_table.py /tmp/shabreak
 ```
 
 `campaign.zsh` writes to `bench_results/falcon-recursion-20261018/` and

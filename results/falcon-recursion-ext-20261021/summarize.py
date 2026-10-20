@@ -7,6 +7,7 @@ rec step     = witness + recording (concurrent) + early commitment + outer
                rep; at 32K with two reps, the slower one)
 final verify = the recording replayed from the public stream + relation +
                FlockRec verify
+base*        = the sha256-fs base proof the circuit verifies (payload bytes)
 
 usage: python3 summarize.py <runs dir>
 """
@@ -35,8 +36,8 @@ def rec_row(name):
 for threads in (10, 1):
     print(f"{threads} thread{'s' if threads > 1 else ''}:")
     print()
-    print("| batch | ladder | π | π + public | rec step | FlockRec prove | early commit | final verify | GHz | RSS |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("| batch | ladder | π | π + public | base* | rec step | FlockRec prove | early commit | final verify | GHz | RSS |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
     for batch in (1024, 4096, 32768):
         for lig in configs:
             name = f"rec-{lig.replace(':', '_')}-b{batch}-t{threads}"
@@ -47,6 +48,7 @@ for threads in (10, 1):
             public = r["public_stream_bytes"] + r["public_input_bytes"]
             print(
                 f"| {batch:,} | {lig} | {r['pi_bytes'] / 1000:.1f} KB | {(r['pi_bytes'] + public) / 1000:.1f} KB "
+                f"| {r['base_proof_bytes'] / 1000:.1f} KB "
                 f"| {r['rec_prove_s']:.2f} s | {r['rec_protocol_s']:.2f} s | {r['rec_early_commit_s']:.2f} s "
                 f"| {r['final_verify_s']:.2f} s | {c.get('ghz', '?')} | {c.get('rss', '?')} |"
             )

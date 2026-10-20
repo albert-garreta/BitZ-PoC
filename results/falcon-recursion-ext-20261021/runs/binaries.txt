@@ -1,0 +1,4 @@
+bin /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d 16e5e4dc1011e1ecc4eb8799c7dd2810
+d3eb249deb1d37dc52af52fc020b8e559180e6d3
+ M docs/falcon-recursion.md
+ -InternalBattery-0 (id=36110435)	80%; AC attached; not charging present: true

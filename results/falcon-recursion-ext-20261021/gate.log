@@ -1,0 +1,8 @@
+[bench_gate] falcon-recursion-ext: idle 96% (streak 1/6)
+[bench_gate] falcon-recursion-ext: idle 93% (streak 2/6)
+[bench_gate] falcon-recursion-ext: idle 95% (streak 3/6)
+[bench_gate] falcon-recursion-ext: idle 98% (streak 4/6)
+[bench_gate] falcon-recursion-ext: idle 97% (streak 5/6)
+[bench_gate] falcon-recursion-ext: idle 94% (streak 6/6)
+[bench_gate] falcon-recursion-ext: starting (swap baseline 2.31 GB, guard +12 GB)
+01:18:00 gate exit 0
