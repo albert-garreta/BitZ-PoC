@@ -143,6 +143,67 @@ Notes:
    early commitment at rate 1/64 takes 0.14–0.44 s and is on the critical
    path at 32K (passes 0.55 s against recording 0.37 s).
 
+## Polylog BitZ at the reference split (2026-10-20)
+
+`BITZ_REC_OPENER=log` (the Falcon step's default since 46592ddfb; `std`
+restores the opener above) opens the outer proof with BitZ logarithmic
+(`src/bitz/logarithmic.rs`, the virtual two-run path ported from the
+SHA+ECDSA proof-size line): the derived grid takes the reference split
+`t = ⌈0.6 n⌉ − 1` (ℓ₁ = 2^16–2^17 factors per grand product, ℓ₂ = 2^11–2^12
+products, against 2^18–2^19 × 2^8–2^11 for the standard opener at T = 18/19),
+the column folds are committed (127 live bit slots each) and proved by a
+second product tree and one recursive BitZ instance instead of sent, `f` is
+opened through the map as before, and the fold bits in a second Ligerito
+run under `BITZ_REC_MU_LIG` (default: the outer selection). Every native
+challenge, including the fold-bit tree's, is ground to the target, so it also
+runs at 128 bits.
+
+Proof bytes per part (one traced run per cell, `bytes/breakdown.md`):
+
+| λ | batch | ℓ₁ × ℓ₂ | GKR on h | fold-bit tree | recursive instance | open f | open fold bits | π (std) |
+|---|---|---|---|---|---|---|---|---|
+| 128 | 1,024 | 2^16 × 2^12 | 13.1 KB | 4.5 KB | 8.5 KB | 275.7 KB | 110.4 KB | 414.0 KB (308.5) |
+| 128 | 4,096 | 2^16 × 2^12 | 13.1 KB | 4.5 KB | 8.5 KB | 278.8 KB | 110.9 KB | 417.5 KB (305.9) |
+| 128 | 32,768 | 2^17 × 2^12 | 14.3 KB | 4.5 KB | 8.5 KB | 302.6 KB | 110.5 KB | 442.1 KB (352.0) |
+| 100 | 1,024 | 2^16 × 2^11 | 10.0 KB | 3.4 KB | 6.6 KB | 74.6 KB | 39.3 KB | 135.4 KB (91.5) |
+| 100 | 4,096 | 2^16 × 2^12 | 10.5 KB | 3.6 KB | 7.2 KB | 77.5 KB | 39.3 KB | 139.6 KB (99.5) |
+| 100 | 32,768 | 2^17 × 2^12 | 11.4 KB | 3.6 KB | 7.2 KB | 78.8 KB | 39.4 KB | 142.1 KB (108.4) |
+
+Timings (one gated campaign, std and log interleaved on the same binary, AC
+power, 3.7–4.6 GHz; `results/falcon-recursion-polylog-20261020/`), 10 threads:
+
+| λ | batch | rec step std → log | FlockRec prove std → log | final verify std → log |
+|---|---|---|---|---|
+| 128 | 1,024 | 0.83 → 0.67 s | 0.50 → 0.33 s | 0.36 → 0.37 s |
+| 128 | 4,096 | 0.83 → 0.75 s | 0.45 → 0.37 s | 0.42 → 0.41 s |
+| 128 | 32,768 | 1.34 → 1.44 s | 0.67 → 0.71 s | 0.73 → 0.72 s |
+| 100 | 1,024 | 0.63 → 0.56 s | 0.28 → 0.21 s | 0.33 → 0.32 s |
+| 100 | 4,096 | 0.91 → 0.80 s | 0.41 → 0.32 s | 0.40 → 0.36 s |
+| 100 | 32,768 | 1.45 → 1.30 s | 0.67 → 0.50 s | 0.67 → 0.65 s |
+
+At 1 thread the step is 2.95 → 1.93, 2.62 → 2.24, 4.18 → 4.43 s (λ=128) and
+1.84 → 1.61, 2.93 → 2.68, 4.15 → 3.95 s (λ=100); the two transcripts draw
+different proof of work (one draw per site), which at 1 thread moves a step by
+up to ~0.8 s (`results/falcon-recursion-20261020/trace1-*.out`).
+
+Findings:
+
+1. The proofs grow: +106–112 KB at λ=128 (+34–36 %), +34–44 KB at λ=100
+   (+31–48 %). The grand-product part is about the standard one's size
+   (26–27 against 30–48 KB at 128 bits, 20–22 against 15–29 KB at 100); the
+   second commitment's own Ligerito run is the difference (110 KB under unique
+   decoding at 128 bits, 39 KB at 100).
+2. The recursion step is 10–19 % faster, except at λ=128, 32K (+7 %, where
+   t = 17); FlockRec prove alone 18–34 % faster in those cells (0.50 → 0.33 s
+   at λ=128, 1K), likely because the low-entropy tables have ℓ₁ + 1 = 2^16 + 1
+   values instead of 2^18 + 1 (not profiled). The verifier is unchanged.
+3. The polylog note's single merged Ligerito run (the fold bits joining a
+   level of `f`'s ladder, a level-0 branch of ~12–16 KB instead of their own
+   run) needs a Johnson ladder for `f`: unavailable at 128 bits over
+   GF(2^128), and at 100 bits it would leave π ≈ 110 KB, still above the
+   standard opener's. With Johnson over GF(2^256) (the proof-size lever above)
+   both would apply at 128 bits.
+
 ## Results (2026-10-18 baseline)
 
 M5 (10 cores, 24 GiB), AC power, one gated campaign (2026-10-18 15:54–16:07,
@@ -262,6 +323,10 @@ python3 scripts/bench_gate.py run --label falcon-recursion -- zsh results/falcon
 # waits for AC power, then takes the gate
 zsh results/falcon-recursion-20261020/launch.zsh
 python3 results/falcon-recursion-20261020/summarize.py bench_results/falcon-recursion-20261020/runs
+
+# standard against polylog BitZ (one binary, BITZ_REC_OPENER=std|log)
+zsh results/falcon-recursion-polylog-20261020/launch.zsh
+python3 results/falcon-recursion-polylog-20261020/summarize.py bench_results/falcon-recursion-polylog-20261020/runs
 ```
 
 `campaign.zsh` writes to `bench_results/falcon-recursion-20261018/` and

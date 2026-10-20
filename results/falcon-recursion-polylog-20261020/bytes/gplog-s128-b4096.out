@@ -1,0 +1,189 @@
+bitz:     nibble rows            373.1µs   301.4 MB faulted
+bitz:     L3 value tables        665.0µs     0.2 MB faulted
+bitz:     levels 5..15 build       2.8ms     0.2 MB faulted
+bitz:   levels ≥4                  4.1ms     0.0 MB faulted
+bitz:   level 15                  30.9µs     0.1 MB faulted
+bitz:   level 14                  23.9µs     0.0 MB faulted
+bitz:   level 13                  52.4µs     0.0 MB faulted
+bitz:   level 12                  95.0µs     0.0 MB faulted
+bitz:   level 11                 123.6µs     0.0 MB faulted
+bitz:   level 10                 173.9µs     0.0 MB faulted
+bitz:   level 9                  252.8µs     0.0 MB faulted
+bitz:   level 8                  306.9µs     0.0 MB faulted
+bitz:   level 7                  482.0µs     0.0 MB faulted
+bitz:   level 6                  748.9µs     0.0 MB faulted
+bitz:   level 5                    1.3ms     0.0 MB faulted
+bitz:     L4 rebuild               1.4ms     0.0 MB faulted
+bitz:   level 4                    4.0ms     0.0 MB faulted
+bitz:     L3 tables                1.8µs     0.0 MB faulted
+bitz:     L3 jit round             1.4ms     0.3 MB faulted
+bitz:     L3 jit fold              1.9ms     0.0 MB faulted
+bitz:     L3 dense tail            2.2ms     0.0 MB faulted
+bitz:   level 3                    7.0ms     0.0 MB faulted
+bitz:     L2 bit round 1           2.5ms     0.7 MB faulted
+bitz:     L2 tables              511.8µs     0.0 MB faulted
+bitz:     L2 jit round             1.5ms     0.0 MB faulted
+bitz:     L2 jit fold              1.9ms     0.0 MB faulted
+bitz:     L2 dense tail            1.8ms     0.0 MB faulted
+bitz:   level 2                    8.6ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds     2.1ms     2.5 MB faulted
+bitz:     L1 tables              489.3µs     0.0 MB faulted
+bitz:     L1 jit round             1.4ms     0.0 MB faulted
+bitz:     L1 jit fold              1.7ms     0.0 MB faulted
+bitz:     L1 dense tail            2.1ms     0.0 MB faulted
+bitz:   level 1                    8.1ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds     2.2ms     0.0 MB faulted
+bitz:     L0 tables              505.5µs     0.0 MB faulted
+bitz:     L0 jit round             1.6ms     0.0 MB faulted
+bitz:     L0 jit fold              1.9ms     0.0 MB faulted
+bitz:     L0 dense tail            1.9ms     0.0 MB faulted
+bitz:   level 0                    8.5ms     0.0 MB faulted
+flockrec: statement + round 0          7.0µs
+flockrec: prime + batching            32.5ms
+flockrec: inner sumcheck              97.1ms
+bitz: log: bind+weights            1.5ms  2827.1 MB faulted
+bitz: log: folds                   8.8ms     4.4 MB faulted
+bitz: log: commit fold bits      355.1µs     0.2 MB faulted
+bitz: log: images                300.9µs     0.0 MB faulted
+bitz: bytes log head                 56
+bitz:     nibble rows              2.4ms    35.2 MB faulted
+bitz:     L3 value tables          2.2ms    32.3 MB faulted
+bitz:     levels 5..15 build      14.7ms   255.9 MB faulted
+bitz:   levels ≥4                 19.6ms     0.0 MB faulted
+bitz:   level 15                 345.8µs     0.0 MB faulted
+bitz:   level 14                 368.9µs     0.0 MB faulted
+bitz:   level 13                 410.4µs     0.0 MB faulted
+bitz:   level 12                 558.6µs     0.0 MB faulted
+bitz:   level 11                 632.8µs     0.0 MB faulted
+bitz:   level 10                 752.8µs     0.0 MB faulted
+bitz:   level 9                  905.7µs     0.0 MB faulted
+bitz:   level 8                    1.2ms     0.0 MB faulted
+bitz:   level 7                    1.9ms     0.0 MB faulted
+bitz:   level 6                    3.5ms     0.0 MB faulted
+bitz:   level 5                    6.0ms     0.0 MB faulted
+bitz:     L4 rebuild               4.8ms     0.1 MB faulted
+bitz:   level 4                   16.2ms     0.0 MB faulted
+bitz:     L3 tables                7.2µs     0.0 MB faulted
+bitz:     L3 jit round             4.2ms     0.1 MB faulted
+bitz:     L3 jit fold              5.8ms     0.0 MB faulted
+bitz:     L3 dense tail            8.9ms     0.0 MB faulted
+bitz:   level 3                   19.4ms     0.0 MB faulted
+bitz:     L2 bit round 1           5.2ms     0.8 MB faulted
+bitz:     L2 tables              529.8µs     0.0 MB faulted
+bitz:     L2 jit round             4.1ms     0.0 MB faulted
+bitz:     L2 jit fold              5.5ms     0.0 MB faulted
+bitz:     L2 dense tail            9.0ms     0.0 MB faulted
+bitz:   level 2                   25.0ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds     5.0ms     0.1 MB faulted
+bitz:     L1 tables              446.1µs     0.0 MB faulted
+bitz:     L1 jit round             4.1ms     0.0 MB faulted
+bitz:     L1 jit fold              5.8ms     0.0 MB faulted
+bitz:     L1 dense tail            9.1ms     0.0 MB faulted
+bitz:   level 1                   25.0ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds     5.2ms     0.6 MB faulted
+bitz:     L0 tables              537.9µs     0.0 MB faulted
+bitz:     L0 jit round             3.8ms     0.0 MB faulted
+bitz:     L0 jit fold              5.4ms     0.0 MB faulted
+bitz:     L0 dense tail            8.8ms     0.0 MB faulted
+bitz:   level 0                   24.3ms     0.0 MB faulted
+bitz: log: gkr h                 150.2ms     0.0 MB faulted
+bitz: bytes log gkr h             13120
+bitz:     L3 value tables         31.6µs     0.2 MB faulted
+bitz:     levels 5..6 build       54.2µs     0.0 MB faulted
+bitz:   levels ≥4                156.2µs     0.0 MB faulted
+bitz:   level 6                  124.3µs     0.0 MB faulted
+bitz:   level 5                  113.2µs     0.0 MB faulted
+bitz:     L4 rebuild              23.8µs     0.0 MB faulted
+bitz:   level 4                  257.2µs     0.0 MB faulted
+bitz:     L3 tables                7.2µs     0.0 MB faulted
+bitz:     L3 jit round            60.6µs     0.0 MB faulted
+bitz:     L3 jit fold             34.3µs     0.0 MB faulted
+bitz:     L3 dense tail          125.4µs     0.0 MB faulted
+bitz:   level 3                  415.9µs     0.0 MB faulted
+bitz:     L2 bit round 1          55.0µs     0.0 MB faulted
+bitz:     L2 tables               25.4µs     0.0 MB faulted
+bitz:     L2 jit round            50.3µs     0.0 MB faulted
+bitz:     L2 jit fold             33.8µs     0.0 MB faulted
+bitz:     L2 dense tail          149.5µs     0.0 MB faulted
+bitz:   level 2                  556.6µs     0.0 MB faulted
+bitz:     L1 one-pass bit rounds    69.7µs     0.1 MB faulted
+bitz:     L1 tables                9.4µs     0.0 MB faulted
+bitz:     L1 jit round            29.4µs     0.0 MB faulted
+bitz:     L1 jit fold             33.3µs     0.0 MB faulted
+bitz:     L1 dense tail          119.2µs     0.0 MB faulted
+bitz:   level 1                  490.2µs     0.0 MB faulted
+bitz:     L0 one-pass bit rounds    40.8µs     0.0 MB faulted
+bitz:     L0 tables               10.9µs     0.0 MB faulted
+bitz:     L0 jit round            31.3µs     0.0 MB faulted
+bitz:     L0 jit fold             30.2µs     0.0 MB faulted
+bitz:     L0 dense tail          128.2µs     0.0 MB faulted
+bitz:   level 0                  461.6µs     0.0 MB faulted
+bitz: log: gkr fold bits           3.1ms     0.0 MB faulted
+bitz: bytes log gkr fold bits      4480
+bitz:   column folds              37.5µs     0.0 MB faulted
+bitz:   images                    20.1µs     0.0 MB faulted
+bitz: bytes log rec folds          2056
+bitz:     L3 value tables         43.9µs     0.0 MB faulted
+bitz:     levels 5..11 build      35.1µs     0.0 MB faulted
+bitz:   levels ≥4                142.4µs     0.0 MB faulted
+bitz:   level 11                  21.6µs     0.0 MB faulted
+bitz:   level 10                  38.7µs     0.0 MB faulted
+bitz:   level 9                   25.7µs     0.0 MB faulted
+bitz:   level 8                   30.2µs     0.0 MB faulted
+bitz:   level 7                   29.6µs     0.0 MB faulted
+bitz:   level 6                   71.0µs     0.0 MB faulted
+bitz:   level 5                   48.9µs     0.0 MB faulted
+bitz:     L4 rebuild              21.4µs     0.0 MB faulted
+bitz:   level 4                  118.9µs     0.0 MB faulted
+bitz:     L3 tables              291.0ns     0.0 MB faulted
+bitz:     L3 jit round            59.6µs     0.0 MB faulted
+bitz:     L3 jit fold             31.8µs     0.0 MB faulted
+bitz:     L3 dense tail           41.7µs     0.0 MB faulted
+bitz:   level 3                  322.8µs     0.0 MB faulted
+bitz:     L2 bit round 1         123.9µs     0.0 MB faulted
+bitz:     L2 tables               26.5µs     0.0 MB faulted
+bitz:     L2 jit round            65.9µs     0.0 MB faulted
+bitz:     L2 jit fold             20.5µs     0.0 MB faulted
+bitz:     L2 dense tail           40.4µs     0.0 MB faulted
+bitz:   level 2                  505.8µs     0.0 MB faulted
+bitz:     L1 one-pass bit rounds   126.8µs     0.2 MB faulted
+bitz:     L1 tables               23.6µs     0.0 MB faulted
+bitz:     L1 jit round            57.1µs     0.0 MB faulted
+bitz:     L1 jit fold             23.1µs     0.0 MB faulted
+bitz:     L1 dense tail           40.7µs     0.0 MB faulted
+bitz:   level 1                  483.4µs     0.0 MB faulted
+bitz:     L0 one-pass bit rounds   115.9µs     0.1 MB faulted
+bitz:     L0 tables               40.2µs     0.0 MB faulted
+bitz:     L0 jit round            62.0µs     0.0 MB faulted
+bitz:     L0 jit fold             22.1µs     0.0 MB faulted
+bitz:     L0 dense tail           40.2µs     0.0 MB faulted
+bitz:   level 0                  487.9µs     0.0 MB faulted
+bitz: log: recursive instance      3.3ms     0.0 MB faulted
+bitz: bytes log rec gkr            6480
+bitz:     sc structured: row tables    11.2ms   235.1 MB faulted
+bitz:     sc structured: low rounds    26.3ms   128.4 MB faulted
+bitz:     sc structured: fold to dense     2.1ms     8.0 MB faulted
+bitz:   sumcheck (structured)     41.1ms     0.0 MB faulted
+bitz: bytes   sumcheck             1528
+bitz:   ring switch                4.4ms    16.1 MB faulted
+bitz:   ligerito                  25.5ms    23.9 MB faulted
+bitz: bytes   ring switch+lig    277224
+bitz: log: open f                116.1ms     0.0 MB faulted
+bitz: bytes log open f           278752
+bitz:     sc combine cols (sum)    49.8µs     0.1 MB faulted
+bitz:     sc row rounds (sum)     81.8µs     0.0 MB faulted
+bitz:     sc fold rows            28.3µs     0.0 MB faulted
+bitz:   sumcheck (sum)           295.5µs     0.0 MB faulted
+bitz:   ring switch              154.9µs     0.0 MB faulted
+bitz:   ligerito                 565.9µs     0.0 MB faulted
+bitz: log: open fold bits          1.3ms     0.0 MB faulted
+bitz: bytes log open fold bits   110888
+flockrec: virtual opening            285.7ms
+bitz: v: log head                 31.1µs   617.4 MB faulted
+bitz: v: (*) row images            1.8ms     0.0 MB faulted
+bitz: v: gkr h                   540.5µs     0.0 MB faulted
+bitz: v: gkr fold bits            71.6µs     0.0 MB faulted
+bitz: v: recursive instance      333.3µs     0.0 MB faulted
+bitz: v: open f                   31.7ms    58.0 MB faulted
+bitz: v: open fold bits          653.8µs     0.0 MB faulted
+TIMING {"base_commit_s":0.013590959,"base_proof_bytes":313616,"base_prove_s":0.172155208,"base_prover_s":0.185746167,"base_runs":[[0.013590959,0.172155208,0.185746167,0.007261042]],"base_verify_s":0.007261042,"batch":4096,"circuit":{"blocks":12273,"cells":251915766,"committed":80910984,"outer_f_bits":27,"outer_h_bits":28,"outer_rows":16,"rows":2268646},"counts":"FalconCounts { transcript: ShaCounts { circuit: 2677, native: 2017 }, pow: ShaCounts { circuit: 415, native: 0 }, opening: OpeningCounts { merkle: ShaCounts { circuit: 9162, native: 0 }, pow: ShaCounts { circuit: 19, native: 0 }, opened_elements: 7905, siblings: 4116, final_codeword: 2048 } }","final_verify_s":0.450861042,"opener":"log","outer_ligerito":"udrg:3:4","outer_t":null,"pi_bytes":417497,"public_input_bytes":36,"public_stream_bytes":35424,"public_top":["bridge folds:1024:16384","bridge:894:14304","opening:1030:3152","binder:68:576","norm:70:560","joint:26:416","keyed ring:4:32"],"rec_early_commit_s":0.053072458,"rec_outer_witness_s":0.004277375,"rec_passes_s":0.24275675,"rec_protocol_s":0.415551209,"rec_prove_s":0.840585834,"rec_record_s":0.2426705,"rec_relation_s":0.1780005,"rec_runs":[[0.066839333,0.2426705,0.053072458,0.24275675,0.1780005,0.004277375,0.415551209,0.840585834]],"rec_witness_s":0.066839333,"reps":1,"security":128,"setup_s":0.000120791,"threads":10,"verify_runs":[0.450861042]}

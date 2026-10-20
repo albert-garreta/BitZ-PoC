@@ -1,0 +1,41 @@
+22:39:18 waiting for AC power before the gate
+22:40:18 waiting for AC power before the gate
+22:41:18 waiting for AC power before the gate
+22:42:18 waiting for AC power before the gate
+22:43:18 waiting for AC power before the gate
+22:44:18 waiting for AC power before the gate
+22:45:18 waiting for AC power before the gate
+22:46:18 waiting for AC power before the gate
+22:47:18 waiting for AC power before the gate
+22:48:18 waiting for AC power before the gate
+22:49:19 waiting for AC power before the gate
+22:50:19 waiting for AC power before the gate
+22:51:19 waiting for AC power before the gate
+22:52:19 waiting for AC power before the gate
+22:53:19 waiting for AC power before the gate
+22:54:19 waiting for AC power before the gate
+22:55:19 waiting for AC power before the gate
+22:56:19 waiting for AC power before the gate
+22:57:19 waiting for AC power before the gate
+22:58:19 waiting for AC power before the gate
+22:59:19 waiting for AC power before the gate
+23:00:19 waiting for AC power before the gate
+23:01:19 waiting for AC power before the gate
+23:02:19 waiting for AC power before the gate
+23:03:19 waiting for AC power before the gate
+23:04:19 waiting for AC power before the gate
+23:05:19 waiting for AC power before the gate
+23:06:19 waiting for AC power before the gate
+23:07:19 waiting for AC power before the gate
+23:08:19 waiting for AC power before the gate
+23:09:19 waiting for AC power before the gate
+23:10:19 waiting for AC power before the gate
+23:11:19 waiting for AC power before the gate
+[bench_gate] falcon-recursion-polylog: idle 92% (streak 1/6)
+[bench_gate] falcon-recursion-polylog: idle 95% (streak 2/6)
+[bench_gate] falcon-recursion-polylog: idle 93% (streak 3/6)
+[bench_gate] falcon-recursion-polylog: idle 95% (streak 4/6)
+[bench_gate] falcon-recursion-polylog: idle 95% (streak 5/6)
+[bench_gate] falcon-recursion-polylog: idle 94% (streak 6/6)
+[bench_gate] falcon-recursion-polylog: starting (swap baseline 2.50 GB, guard +12 GB)
+23:28:26 gate exit 0
