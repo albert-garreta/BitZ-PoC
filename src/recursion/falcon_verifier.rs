@@ -47,32 +47,63 @@ pub struct FalconCounts {
     pub opening: super::falcon_opening::OpeningCounts,
 }
 
-/// Per-stage wall times of one pass, printed with `BITZ_REC_STAGES=1`.
+/// Per-stage wall times of one pass and its in-circuit SHA-256 compressions
+/// (transcript, proof of work, Merkle), printed with `BITZ_REC_STAGES=1`.
 pub(super) struct Stages {
     pass: &'static str,
     start: std::time::Instant,
     last: std::time::Instant,
     marks: Vec<(String, f64)>,
+    /// Cumulative compressions at each mark, counted from `base`.
+    sha: Vec<[usize; 3]>,
+    base: [usize; 3],
     on: bool,
 }
 
 impl Stages {
     pub(super) fn new(pass: &'static str) -> Self {
         let now = std::time::Instant::now();
-        Self { pass, start: now, last: now, marks: Vec::new(), on: std::env::var_os("BITZ_REC_STAGES").is_some() }
+        Self {
+            pass,
+            start: now,
+            last: now,
+            marks: Vec::new(),
+            sha: Vec::new(),
+            base: [0; 3],
+            on: std::env::var_os("BITZ_REC_STAGES").is_some(),
+        }
     }
 
-    pub(super) fn mark(&mut self, stage: impl Into<String>) {
+    /// Compressions counted from `base` (the counters when the pass starts).
+    pub(super) fn with_base(mut self, base: [usize; 3]) -> Self {
+        self.base = base;
+        self
+    }
+
+    /// A mark with the cumulative in-circuit compressions: transcript, proof
+    /// of work, Merkle.
+    pub(super) fn mark(&mut self, stage: impl Into<String>, sha: [usize; 3]) {
         if self.on {
             let now = std::time::Instant::now();
             self.marks.push((stage.into(), (now - self.last).as_secs_f64()));
+            self.sha.push(sha);
             self.last = now;
         }
     }
 
     pub(super) fn print(&self) {
         if self.on {
-            let marks: Vec<String> = self.marks.iter().map(|(s, t)| format!("{s} {t:.3}")).collect();
+            let mut previous = self.base;
+            let marks: Vec<String> = self
+                .marks
+                .iter()
+                .zip(&self.sha)
+                .map(|((s, t), sha)| {
+                    let delta: [usize; 3] = std::array::from_fn(|k| sha[k] - previous[k]);
+                    previous = *sha;
+                    format!("{s} {t:.3} sha {}/{}/{}", delta[0], delta[1], delta[2])
+                })
+                .collect();
             eprintln!("[falcon {}] {} | total {:.3}", self.pass, marks.join(" | "), self.start.elapsed().as_secs_f64());
         }
     }
@@ -305,7 +336,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let field = hooks::sample_field(&mut t.proxy(cs)).expect("public prime");
     let cfg = &field;
     let q = modulus(cfg);
-    stages.mark("statement");
+    stages.mark("statement", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     // Keyed ring: the committed quotient, its bounds, its point grinding.
     public.borrow_mut().set_label("keyed ring");
@@ -349,7 +380,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
         ring_target.add((q - mulmod(w, top, q)) % q, &Zq::V(vec![x[63].clone()]), q);
     }
 
-    stages.mark("keyed ring");
+    stages.mark("keyed ring", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     // Norm sumcheck: slack, cubic rounds, the terminal's modular square.
     public.borrow_mut().set_label("norm");
@@ -386,7 +417,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     check.assert_zero(cs, q, &public, "integer norm terminal");
     t.absorb_field_elements(cs, std::slice::from_ref(&terminal));
 
-    stages.mark("norm");
+    stages.mark("norm", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     // Merge, then the word binder over the merged target.
     public.borrow_mut().set_label("binder");
@@ -462,7 +493,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let (params, column_point, row_weights) =
         hooks::bridge_claim(prepared, binder_point_f, F::from_with_cfg(zeta, cfg), cfg).expect("public bridge claim");
 
-    stages.mark("binder");
+    stages.mark("binder", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     // Bridge: public folds read off the value, the committed forest.
     public.borrow_mut().set_label("bridge folds");
@@ -501,21 +532,23 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     };
     let coefficients = hooks::coefficients(prepared, &params, exceptions, binary).expect("public coefficients");
 
-    stages.mark("bridge");
+    stages.mark("bridge", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     // The joint binary sumcheck, then the opening.
     public.borrow_mut().set_label("joint");
     let opening = match hooks::geometry(prepared) {
         hooks::GeometryRef::Single(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, [&coefficients[0]], &target, d.joint, v);
+            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
             super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening)
         }
         hooks::GeometryRef::Split(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, coefficients.each_ref(), &target, d.joint, v);
+            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
             super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening)
         }
     };
-    stages.mark("joint+opening");
+    stages.mark("opening", [t.duplex.counts.circuit, t.pow.circuit + opening.pow.circuit, opening.merkle.circuit]);
     stages.print();
     if let Some(log) = log {
         *log = t.duplex.log.clone().unwrap_or_default();

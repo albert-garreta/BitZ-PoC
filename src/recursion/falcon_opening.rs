@@ -268,7 +268,8 @@ pub fn verify<CS: Circuit, const N: usize>(
     let lanes = geometry.lanes();
     let mut counts = OpeningCounts::default();
     public.borrow_mut().set_label("opening");
-    let mut stages = super::falcon_verifier::Stages::new(if v.is_some() { "witness opening" } else { "record opening" });
+    let mut stages = super::falcon_verifier::Stages::new(if v.is_some() { "witness opening" } else { "record opening" })
+        .with_base([t.duplex.counts.circuit, t.pow.circuit, 0]);
 
     let mut bt = BlockTranscript::new(cs, t, hooks::OPENING_GRINDING_DOMAIN, opening_bits, v.map(|v| v.opening_nonces));
     opening::bind_allocation(geometry, &mut bt);
@@ -304,7 +305,7 @@ pub fn verify<CS: Circuit, const N: usize>(
     let target = target.settle(bt.cs);
     let padding = opening::sample_padding(&mut bt, geometry);
 
-    stages.mark("ring switch");
+    stages.mark("ring switch", [bt.t.duplex.counts.circuit, bt.t.pow.circuit, counts.merkle.circuit]);
     let pcs_nonces = v.map(|v| v.pcs_nonces);
     let mut ch = PlanChallenger { bt: &mut bt, plan, next: 0, active: false, nonces: pcs_nonces, cursor: 0, pow: ShaCounts::default() };
     let lig = v.map(|v| v.ligerito);
@@ -372,7 +373,7 @@ pub fn verify<CS: Circuit, const N: usize>(
         d
     };
     let root_1 = root_digest(&mut ch, 0);
-    stages.mark("L0 folds");
+    stages.mark("L0 folds", [ch.bt.t.duplex.counts.circuit, ch.bt.t.pow.circuit + ch.pow.circuit, counts.merkle.circuit]);
 
     ch.verify_pow(vc.grinding_bits[0] as u32, lig.map(|p| p.grinding_nonces.first().copied().unwrap_or(0)));
     let num_queries_0 = vc.queries[0];
@@ -407,7 +408,7 @@ pub fn verify<CS: Circuit, const N: usize>(
     let root_0 = merkle::public_digest(*root);
     verify_opens(ch.bt.cs, &root_0, block_len_0, &queries_0, &rows0, &sibs0, &mut counts.merkle);
 
-    stages.mark("L0 opening");
+    stages.mark("L0 opening", [ch.bt.t.duplex.counts.circuit, ch.bt.t.pow.circuit + ch.pow.circuit, counts.merkle.circuit]);
     let n1 = log_n - initial_k;
     let enforced_0 = enforced_sum(&rows0, &r_lane_fold, &alpha_0).settle(ch.bt.cs);
     let (i0, i2) = next_message(&mut ch);
@@ -531,7 +532,7 @@ pub fn verify<CS: Circuit, const N: usize>(
             {
                 fail("Ligerito proof trailing data");
             }
-            stages.mark("final level");
+            stages.mark("final level", [ch.bt.t.duplex.counts.circuit, ch.bt.t.pow.circuit + ch.pow.circuit, counts.merkle.circuit]);
             break;
         }
 
@@ -561,7 +562,7 @@ pub fn verify<CS: Circuit, const N: usize>(
         running = running.fold(&intro_i, beta_i);
         t_r.add(beta_i, &enforced_i);
         level_ctxs.push(LevelCtx { log_msg_cols: n_current, queries: queries_i, alpha: alpha_i, ris_start: ris.len(), beta: beta_i });
-        stages.mark(format!("level {}", i + 1));
+        stages.mark(format!("level {}", i + 1), [ch.bt.t.duplex.counts.circuit, ch.bt.t.pow.circuit + ch.pow.circuit, counts.merkle.circuit]);
         prev_root = root_next;
         let k_next = vc.recursive_ks[i + 1];
         assert!(n_current >= k_next);

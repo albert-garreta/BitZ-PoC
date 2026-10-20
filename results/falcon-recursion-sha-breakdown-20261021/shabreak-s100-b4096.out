@@ -1,0 +1,11 @@
+
+running 1 test
+[falcon witness opening] ring switch 0.000 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.011 sha 126/0/2947 | level 1 0.006 sha 96/0/1334 | level 2 0.003 sha 80/0/869 | level 3 0.002 sha 77/0/611 | final level 0.016 sha 74/0/2047 | total 0.038
+[falcon witness] statement 0.002 sha 0/0/0 | keyed ring 0.002 sha 73/0/0 | norm 0.002 sha 116/0/0 | binder 0.002 sha 135/0/0 | bridge 0.018 sha 593/0/0 | joint 0.001 sha 80/0/0 | opening 0.038 sha 506/0/7808 | total 0.064
+[falcon record opening] ring switch 0.001 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.023 sha 126/0/2947 | level 1 0.016 sha 96/0/1334 | level 2 0.010 sha 80/0/869 | level 3 0.008 sha 77/0/611 | final level 0.053 sha 74/0/2047 | total 0.111
+[falcon record] statement 0.002 sha 0/0/0 | keyed ring 0.013 sha 73/0/0 | norm 0.008 sha 116/0/0 | binder 0.008 sha 135/0/0 | bridge 0.055 sha 593/0/0 | joint 0.002 sha 80/0/0 | opening 0.112 sha 506/0/7808 | total 0.199
+record 0.287 s (9311 blocks) digest fb2a0dd8f6e395c7cc582f2e1fed161caa116dcd4feb6e72db23ba5db67253ef
+test recursion::falcon_verifier::tests::falcon_record_profile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 0.51s
+
