@@ -373,11 +373,16 @@ impl Pcs {
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
+                let bytes = transcript.bytes_written();
                 let reduced = sumcheck::prove(claim, rows, packed_cols, transcript)?;
                 super::trace("  sumcheck", started);
+                super::trace_bytes("  sumcheck", bytes, transcript.bytes_written());
+                let bytes = transcript.bytes_written();
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+                let out = self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood);
+                super::trace_bytes("  ring switch+lig", bytes, transcript.bytes_written());
+                out
             }
             OpeningQuery::InnerProductSum { claim } => {
                 validate_sum_claim(self, claim)?;
@@ -393,6 +398,40 @@ impl Pcs {
                 self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
             }
         }
+    }
+
+    /// [`Self::prove_lin_rows`] for a single-column inner-product claim with
+    /// structured weights over the hint's own rows (see
+    /// [`sumcheck::prove_structured`]): the transcript of the dense claim
+    /// under [`StatementBinding::AlreadyBound`], without its `2^m` weights.
+    pub(crate) fn prove_lin_structured(
+        &self,
+        hint: &FlockCommitHint,
+        weights: circuit::linear_map::binary::StructuredWeights,
+        target: Gf,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(), ProveError> {
+        if hint.packed_message().len() != self.packed_len || 1usize << (weights.t + weights.s) != self.bit_len {
+            return Err(ProveError::PackedWitnessLengthMismatch);
+        }
+        validate_prover_data(self, hint)?;
+        let root = *hint.root();
+        let native = self.native_schedule(None, Some((weights.t + weights.s, 0)), ood)
+            .map_err(|_| ProveError::InvalidClaim)?;
+        transcript.continue_native(native).map_err(|_| ProveError::InvalidClaim)?;
+        transcript.public_message(SUMCHECK_LABEL);
+        let started = std::time::Instant::now();
+        let bytes = transcript.bytes_written();
+        let reduced = sumcheck::prove_structured(weights, hint.rows(), target, transcript)?;
+        super::trace("  sumcheck (structured)", started);
+        super::trace_bytes("  sumcheck", bytes, transcript.bytes_written());
+        let bytes = transcript.bytes_written();
+        let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+        bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
+        let out = self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood);
+        super::trace_bytes("  ring switch+lig", bytes, transcript.bytes_written());
+        out
     }
 
     /// Their `CommitScheme::verify_lin`.
@@ -438,6 +477,29 @@ impl Pcs {
                 self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
             }
         }
+    }
+
+    /// [`Self::verify_lin`] for a single-column inner-product claim whose
+    /// weights the verifier never forms: `weight_mle(point)` evaluates their
+    /// multilinear extension at the sumcheck's point. Same transcript as the
+    /// materialized claim under [`StatementBinding::AlreadyBound`].
+    pub(crate) fn verify_lin_lazy(
+        &self,
+        commitment: &Root,
+        target: Gf,
+        weight_mle: impl FnOnce(&[Gf]) -> Gf,
+        transcript: &mut VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(), VerifyError> {
+        let rounds = self.bit_len.ilog2() as usize;
+        let native = self.native_schedule(None, Some((rounds, 0)), ood)
+            .map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.public_message(SUMCHECK_LABEL);
+        let reduced = sumcheck::verify_lazy(rounds, target, weight_mle, transcript)?;
+        let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+        bind_mle_statement(self, &commitment.0, &reduced.point, reduced.target, transcript);
+        self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
     }
 
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching

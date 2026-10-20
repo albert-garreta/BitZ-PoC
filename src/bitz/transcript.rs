@@ -157,6 +157,11 @@ impl ProverState {
         self.inner.public_message(message);
     }
 
+    /// Proof bytes written so far (narg string and hints).
+    pub(crate) fn bytes_written(&self) -> usize {
+        self.inner.narg_string().len() + self.hints.len()
+    }
+
     /// Absorbs a message and writes it to the narg string.
     pub fn prover_message<T: Encoding<[u8]> + NargSerialize + ?Sized>(&mut self, message: &T) {
         self.inner.prover_message(message);

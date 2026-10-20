@@ -10,7 +10,12 @@
 //!
 //! * committed `f`, `t_f = ⌈log₂ hints⌉`: block `i`'s committed bits are
 //!   column `i`; then the constant one at `n·2^{t_f}`, then the tail's
-//!   committed bits (proof data, settled values) in recording order;
+//!   committed bits (proof data, settled values) in recording order. The
+//!   boxed variant ([`Band`]) moves each block's hints read from outside it
+//!   (its committed outputs) to a dyadic band at the top of its column and
+//!   the constant and tail to the last dyadic columns, so the opening's
+//!   committed weights are block tensors plus two small boxes
+//!   ([`VirtualMap::structured_weights`]);
 //! * derived `h`, `t_h = ⌈log₂ cells⌉`: block `i`'s cells are column `i`;
 //!   then the constant one at `n·2^{t_h}` (`h = f_const`), then the tail cells.
 //!
@@ -27,7 +32,7 @@
 use std::sync::Arc;
 
 use circuit::compact::{BlockTemplate, Coeff, LAZY, PLACEHOLDER, StructuredCircuit};
-use circuit::linear_map::binary::VirtualMap;
+use circuit::linear_map::binary::{StructuredWeights, VirtualMap};
 use circuit::witgen::PackedWitness;
 use field::{RingOps, Uint};
 use flock_core::pcs::commit::Commitment;
@@ -36,8 +41,8 @@ use flock_core::pcs::ligerito::{ProverConfig as LigProverConfig, VerifierConfig 
 use rayon::prelude::*;
 
 use crate::bitz::{LinearClaim, VirtualStatement};
-use crate::cfg_into_iter;
 use crate::ligerito::LOG_PACKING;
+use crate::{cfg_into_iter, cfg_iter_mut};
 use crate::ligerito_flock::{
     FlockCommitHint, LigeritoSelection, ResolvedLigerito, bind_prover_ood, bind_verifier_ood,
     commit_rs_ligerito_rows,
@@ -209,6 +214,72 @@ impl Regions {
     }
 }
 
+/// The boxed committed layout (see [`VirtualMap::structured_weights`]): a
+/// block column of `2^{t_f}` rows holds the template's hints `0..local_start`
+/// at their own rows and the suffix `local_start..hints` (every hint read
+/// from outside its block: the committed output copies) in the dyadic band
+/// `rows_start..rows_start + 2^log`; the constant cell and the tail start at
+/// column `tail_col`, the last `2^tail_log` columns. The grid keeps the plain
+/// layout's size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Band {
+    pub local_start: usize,
+    pub rows_start: usize,
+    pub log: usize,
+    pub tail_col: usize,
+    pub tail_log: usize,
+}
+
+impl Band {
+    /// The band for `n` blocks of `hints` committed bits in columns of `2^ft`
+    /// rows whose hints from `local_start` on are read from outside, with
+    /// `tail` committed bits after them in a grid of `2^f_vars` cells, when
+    /// it fits (`FLOCKREC_NO_BAND=1`: never). The band is at least a word.
+    fn fit(hints: usize, local_start: usize, ft: usize, n: usize, tail: usize, f_vars: usize) -> Option<Self> {
+        if std::env::var_os("FLOCKREC_NO_BAND").is_some() || local_start > hints {
+            return None;
+        }
+        let log = ceil_log2(hints - local_start).max(6);
+        let rows_start = (1usize << ft).checked_sub(1 << log)?;
+        let tail_log = ceil_log2((1 + tail).div_ceil(1 << ft));
+        let cols = 1usize << (f_vars - ft);
+        (local_start <= rows_start && n + (1 << tail_log) <= cols)
+            .then_some(Self { local_start, rows_start, log, tail_col: cols - (1 << tail_log), tail_log })
+    }
+
+    /// Committed row of template hint `h` inside its block's column.
+    fn row(&self, h: usize) -> usize {
+        if h >= self.local_start { self.rows_start + (h - self.local_start) } else { h }
+    }
+
+    /// Copies a block's `hints` committed bits (from bit `from` of `src`)
+    /// into its column `dst`, whose other bits are untouched.
+    fn copy_block(band: Option<Self>, src: &[u64], from: usize, hints: usize, dst: &mut [u64]) {
+        match band {
+            Some(b) => {
+                copy_bits(src, from, b.local_start, dst);
+                copy_bits(src, from + b.local_start, hints - b.local_start, &mut dst[b.rows_start / 64..]);
+            }
+            None => copy_bits(src, from, hints, dst),
+        }
+    }
+}
+
+/// The first hint of `template` read from outside its block. A block's only
+/// handles outside it are its outputs (the recorder hands out nothing else),
+/// so those are the hints in the outputs' supports; the structured weights
+/// still check every external read lands in the band.
+pub fn external_hints_start(template: &BlockTemplate) -> usize {
+    template
+        .outputs
+        .iter()
+        .flat_map(|output| output.terms.iter())
+        .map(|&l| l as usize)
+        .filter(|&l| l < template.hints)
+        .min()
+        .unwrap_or(template.hints)
+}
+
 /// The derived-from-committed map of the relation.
 pub struct FlockRecMap {
     /// Row variables of the committed block columns, and of the derived grid
@@ -220,6 +291,7 @@ pub struct FlockRecMap {
     template: BlockTemplate,
     columns: TemplateColumns,
     n: usize,
+    band: Option<Band>,
     /// Cells with a constant flag in the template.
     template_const_cells: Vec<u32>,
     /// Block `i`, slot `s`: its `f` support (`n·slots` rows) and constant.
@@ -241,19 +313,77 @@ pub struct FlockRecMap {
     digest: [u8; 32],
 }
 
+/// Per class of a region (the blocks sharing rows of the opening grid): the
+/// template columns' weights `T_c[col]` and the template constants' weight.
+type Classes = Vec<(Vec<Gf>, Gf)>;
+
 impl FlockRecMap {
     fn block_cell(&self, i: usize, l: u32) -> usize {
         self.regions.cell(i, l as usize)
+    }
+
+    /// Committed row of template hint `h` inside its block's column.
+    fn f_row(&self, h: usize) -> usize {
+        self.band.map_or(h, |b| b.row(h))
+    }
+
+    /// The template hint at row `r` of a block's column, if any.
+    fn f_local(&self, r: usize) -> Option<usize> {
+        let hints = self.template.hints;
+        match self.band {
+            Some(b) if r >= b.rows_start => Some(b.local_start + (r - b.rows_start)).filter(|&h| h < hints),
+            Some(b) if r >= b.local_start => None,
+            _ => (r < hints).then_some(r),
+        }
+    }
+
+    /// The regions' classes for the opening grid's row weights: a region of
+    /// `2^h` cells per block sits at rows `(k mod g)·2^h` of opening column
+    /// `k / g`, `k` its index in the region (`g = 2^{hr−h}`); per class `c = k
+    /// mod g`, `T_c[col] = Σ_{l ∈ M_0 column col, in the region} row_w[c·2^h +
+    /// l − start]`. The columns list their cells in increasing order, so a
+    /// region is a contiguous run of each.
+    fn region_classes(&self, row_w: &[Gf]) -> (Classes, Option<Classes>) {
+        let tm = &self.template;
+        let zero = Gf::from_bytes([0; 16]);
+        let reg = self.regions;
+        let la = 1usize << reg.ha;
+        let region = |h: usize, cells: std::ops::Range<usize>| -> Classes {
+            let (lo, hi) = (cells.start as u32, cells.end as u32);
+            let part = |list: &[u32]| -> std::ops::Range<usize> { list.partition_point(|&l| l < lo)..list.partition_point(|&l| l < hi) };
+            cfg_into_iter!(0..1usize << (self.hr - h))
+                .map(|c| {
+                    let base = c << h;
+                    let sum = |list: &[u32]| list[part(list)].iter().fold(zero, |acc, &l| acc + row_w[base + (l - lo) as usize]);
+                    let local: Vec<Gf> = (0..tm.hints + tm.slots).map(|col| sum(self.columns.column(col))).collect();
+                    (local, sum(&self.template_const_cells))
+                })
+                .collect()
+        };
+        let classes_a = region(reg.ha, 0..la);
+        let classes_b = reg.hb.map(|hb| region(hb, la..tm.cells().max(la)));
+        (classes_a, classes_b)
+    }
+
+    /// Block `i`'s (class, opening column) in region A, and in region B when
+    /// there is one.
+    fn block_terms(&self, i: usize) -> ((usize, usize), Option<(usize, usize)>) {
+        let reg = self.regions;
+        let ga = self.hr - reg.ha;
+        let b = reg.hb.map(|hb| {
+            let (k, gb) = ((reg.b0 >> hb) + i, self.hr - hb);
+            (k & ((1 << gb) - 1), k >> gb)
+        });
+        ((i & ((1 << ga) - 1), i >> ga), b)
     }
 
     /// Every derived cell reading committed cell `j`, unsorted.
     fn targets(&self, j: usize) -> Vec<usize> {
         let mut out = Vec::new();
         let t = &self.template;
-        if j < self.f_const {
-            let (i, h) = (j >> self.ft, j & ((1 << self.ft) - 1));
-            if h < t.hints {
-                out.extend(self.columns.column(h).iter().map(|&l| self.block_cell(i, l)));
+        if j < self.n << self.ft {
+            if let Some(h) = self.f_local(j & ((1 << self.ft) - 1)) {
+                out.extend(self.columns.column(h).iter().map(|&l| self.block_cell(j >> self.ft, l)));
             }
         }
         if j == self.f_const {
@@ -405,46 +535,35 @@ impl VirtualMap for FlockRecMap {
         let tm = &self.template;
         let zero = Gf::from_bytes([0; 16]);
         let weight_of = |d: usize| row_w[d & ((1 << t) - 1)] * col_w[d >> t];
-        // A region of 2^h cells per block sits at rows (k mod g)·2^h of
-        // opening column k / g, k its index in the region (`g = 2^{hr−h}`).
-        // Per class c = k mod g: T_c[col] = Σ_{l ∈ M_0 column col, in the
-        // region} row_w[c·2^h + l − start]. The columns list their cells in
-        // increasing order, so a region is a contiguous run of each.
-        let reg = self.regions;
-        let la = 1usize << reg.ha;
-        let region_classes = |h: usize, cells: std::ops::Range<usize>| -> Vec<(Vec<Gf>, Gf)> {
-            let (lo, hi) = (cells.start as u32, cells.end as u32);
-            let part = |list: &[u32]| -> std::ops::Range<usize> { list.partition_point(|&l| l < lo)..list.partition_point(|&l| l < hi) };
-            cfg_into_iter!(0..1usize << (self.hr - h))
-                .map(|c| {
-                    let base = c << h;
-                    let sum = |list: &[u32]| list[part(list)].iter().fold(zero, |acc, &l| acc + row_w[base + (l - lo) as usize]);
-                    let local: Vec<Gf> = (0..tm.hints + tm.slots).map(|col| sum(self.columns.column(col))).collect();
-                    (local, sum(&self.template_const_cells))
-                })
-                .collect()
+        let classes = self.region_classes(row_w);
+        let in_a = |i: usize| {
+            let ((c, col), _) = self.block_terms(i);
+            (&classes.0[c], col_w[col])
         };
-        let classes_a = region_classes(reg.ha, 0..la);
-        let classes_b = reg.hb.map(|hb| region_classes(hb, la..tm.cells().max(la)));
-        // Block i's (class, column weight) in each region.
-        let in_a = |i: usize| (&classes_a[i & ((1 << (self.hr - reg.ha)) - 1)], col_w[i >> (self.hr - reg.ha)]);
         let in_b = |i: usize| {
-            let (hb, classes) = (reg.hb?, classes_b.as_ref()?);
-            let k = (reg.b0 >> hb) + i;
-            Some((&classes[k & ((1 << (self.hr - hb)) - 1)], col_w[k >> (self.hr - hb)]))
+            let (_, b) = self.block_terms(i);
+            b.zip(classes.1.as_ref()).map(|((c, col), cb)| (&cb[c], col_w[col]))
         };
         let mut out = vec![zero; cells];
-        // Block committed bits: hint h of block i weighs Σ_regions col_w·T_c[h].
+        // Block committed bits: hint h of block i weighs Σ_regions col_w·T_c[h],
+        // at row f_row(h).
         {
-            let blocks = &mut out[..self.f_const];
-            let h = tm.hints;
+            let blocks = &mut out[..self.n << self.ft];
+            let (ls, rs) = self.band.map_or((tm.hints, tm.hints), |b| (b.local_start, b.rows_start));
+            let top = rs + (tm.hints - ls);
             let fill = |(i, column): (usize, &mut [Gf])| {
                 let ((local, _), w) = in_a(i);
-                for (dst, &lw) in column[..h].iter_mut().zip(&local[..h]) {
+                for (dst, &lw) in column[..ls].iter_mut().zip(&local[..ls]) {
+                    *dst = w * lw;
+                }
+                for (dst, &lw) in column[rs..top].iter_mut().zip(&local[ls..tm.hints]) {
                     *dst = w * lw;
                 }
                 if let Some(((local, _), w)) = in_b(i) {
-                    for (dst, &lw) in column[..h].iter_mut().zip(&local[..h]) {
+                    for (dst, &lw) in column[..ls].iter_mut().zip(&local[..ls]) {
+                        *dst += w * lw;
+                    }
+                    for (dst, &lw) in column[rs..top].iter_mut().zip(&local[ls..tm.hints]) {
                         *dst += w * lw;
                     }
                 }
@@ -565,6 +684,269 @@ impl VirtualMap for FlockRecMap {
         out[self.f_const] += constant;
         Some(out)
     }
+
+    fn has_transposed_mle(&self) -> bool {
+        true
+    }
+
+    /// The transposed weights' extension at `point` without forming them:
+    /// the block hints through the classes' dot products with the low row
+    /// variables' equality table (block columns are aligned), every external
+    /// read (wiring, tail, lazy groups) through its committed index.
+    fn transposed_mle(&self, row_w: &[Gf], col_w: &[Gf], t: usize, point: &[Gf]) -> Option<Gf> {
+        if t != self.hr || (1usize << point.len()) != self.f_cells || point.len() < self.ft {
+            return None;
+        }
+        let tm = &self.template;
+        let zero = Gf::from_bytes([0; 16]);
+        let low = self.ft;
+        let eq_table = |p: &[Gf]| -> Vec<Gf> {
+            let mut table = vec![Gf::ONE];
+            for &c in p {
+                let half = table.len();
+                for k in 0..half {
+                    let hi = table[k] * c;
+                    table.push(hi);
+                    table[k] += hi;
+                }
+            }
+            table
+        };
+        let (lo, hi) = (eq_table(&point[..low]), eq_table(&point[low..]));
+        let eq = |j: usize| lo[j & ((1 << low) - 1)] * hi[j >> low];
+        let weight_of = |d: usize| row_w[d & ((1 << t) - 1)] * col_w[d >> t];
+        let support_eq = |support: &[u32]| support.iter().fold(zero, |acc, &j| acc + eq(j as usize));
+        let eq_const = eq(self.f_const);
+        let classes = self.region_classes(row_w);
+        let dots = |region: &Classes| -> Vec<Gf> {
+            region.iter().map(|(local, _)| (0..tm.hints).fold(zero, |acc, h| acc + local[h] * lo[self.f_row(h)])).collect()
+        };
+        let dots_a = dots(&classes.0);
+        let dots_b = classes.1.as_ref().map(dots);
+        // Blocks: hint h of block i weighs Σ_regions col_w·T_c[h], at row f_row(h)
+        // of column i; then its slots' reads and the template constants.
+        let blocks: Gf = cfg_into_iter!(0..self.n, 16)
+            .map(|i| {
+                let ((ca, cola), b) = self.block_terms(i);
+                let (entry_a, wa) = (&classes.0[ca], col_w[cola]);
+                let b = b.zip(classes.1.as_ref().zip(dots_b.as_ref())).map(|((cb, colb), (region, db))| (&region[cb], col_w[colb], db[cb]));
+                let mut own = wa * dots_a[ca];
+                let mut constant = wa * entry_a.1;
+                if let Some((entry_b, wb, dot)) = b {
+                    own += wb * dot;
+                    constant += wb * entry_b.1;
+                }
+                let mut acc = own * hi[i] + constant * eq_const;
+                for s in 0..tm.slots {
+                    let row = i * tm.slots + s;
+                    let support = self.wiring.row(row);
+                    if support.is_empty() && !self.wiring_const[row] {
+                        continue;
+                    }
+                    let mut w = wa * entry_a.0[tm.hints + s];
+                    if let Some((entry_b, wb, _)) = b {
+                        w += wb * entry_b.0[tm.hints + s];
+                    }
+                    let mut e = support_eq(support);
+                    if self.wiring_const[row] {
+                        e += eq_const;
+                    }
+                    acc += w * e;
+                }
+                acc
+            })
+            .reduce(|| zero, |a, b| a + b);
+        let mut total = blocks + weight_of(self.h_tail) * eq_const;
+        // Tail cells, then their lazy groups.
+        let mut group_weights = vec![[zero; 128]; self.groups.len()];
+        for k in 0..self.tail_const.len() {
+            let w = weight_of(self.h_tail + 1 + k);
+            let mut e = support_eq(self.tail.row(k));
+            if self.tail_const[k] {
+                e += eq_const;
+            }
+            total += w * e;
+            for &id in self.tail_lazy.row(k) {
+                group_weights[id as usize / 128][id as usize % 128] += w;
+            }
+        }
+        let groups: Gf = cfg_into_iter!(0..self.groups.len())
+            .map(|g| {
+                let mut constant = zero;
+                let mut contributions = Vec::new();
+                self.groups[g].scatter(&group_weights[g], &mut constant, &mut contributions);
+                contributions.iter().fold(constant * eq_const, |acc, &(j, w)| acc + w * eq(j as usize))
+            })
+            .reduce(|| zero, |a, b| a + b);
+        Some(total + groups)
+    }
+
+    /// The boxed layout's weights: block column `i < n` is `col_w·T_c` of
+    /// its class in region A (`term`) and in region B (`term2`), one row
+    /// vector per class at its hints' rows; every external read lands in a
+    /// block's band (the row box) or the tail columns (the column box), else
+    /// `None`.
+    fn structured_weights(&self, row_w: &[Gf], col_w: &[Gf], t: usize) -> Option<StructuredWeights> {
+        let band = self.band?;
+        if t != self.hr {
+            return None;
+        }
+        let tm = &self.template;
+        let zero = Gf::from_bytes([0; 16]);
+        let (tf, n) = (self.ft, self.n);
+        let s = (self.f_cells >> tf).ilog2() as usize;
+        let weight_of = |d: usize| row_w[d & ((1 << t) - 1)] * col_w[d >> t];
+        let classes = self.region_classes(row_w);
+        let all: Vec<&(Vec<Gf>, Gf)> = classes.0.iter().chain(classes.1.iter().flatten()).collect();
+        let rows: Vec<Vec<Gf>> = cfg_into_iter!(0..all.len())
+            .map(|k| {
+                let mut r = vec![zero; 1 << tf];
+                for (h, &w) in all[k].0[..tm.hints].iter().enumerate() {
+                    r[band.row(h)] = w;
+                }
+                r
+            })
+            .collect();
+        let offset_b = classes.0.len() as u32;
+        let (mut term, mut weight) = (vec![u32::MAX; 1 << s], vec![zero; 1 << s]);
+        let two = classes.1.is_some();
+        let (mut term2, mut weight2) = if two { (vec![u32::MAX; 1 << s], vec![zero; 1 << s]) } else { (Vec::new(), Vec::new()) };
+        for c in 0..n {
+            let ((ca, cola), b) = self.block_terms(c);
+            (term[c], weight[c]) = (ca as u32, col_w[cola]);
+            if let (Some((cb, colb)), true) = (b, two) {
+                (term2[c], weight2[c]) = (offset_b + cb as u32, col_w[colb]);
+            }
+        }
+        let (r1, b1, c2, b2) = (band.rows_start, band.log, band.tail_col, band.tail_log);
+        // Reused buffers (their pages stay faulted in across proofs).
+        let zeroed = |len: usize| {
+            let mut v = crate::bitz::pool::take(len);
+            cfg_iter_mut!(v, 1 << 14).for_each(|x| *x = zero);
+            v
+        };
+        let mut row_box = zeroed(1 << (b1 + s));
+        let mut col_box = zeroed(1 << (b2 + tf));
+        let mask = (1usize << tf) - 1;
+        {
+            let (rb, cb) = (atomic_words(&mut row_box), atomic_words(&mut col_box));
+            let put = |j: usize, w: Gf| -> bool {
+                let (c, r) = (j >> tf, j & mask);
+                if c >= c2 {
+                    xor_at(cb, ((c - c2) << tf) | r, w);
+                } else if c < n && r >= r1 {
+                    xor_at(rb, (c << b1) | (r - r1), w);
+                } else {
+                    return false;
+                }
+                true
+            };
+            // Wiring: slot `slot` of block i scatters Σ_regions col_w·T_c[hints + slot].
+            let (wiring_constant, wiring_ok) = cfg_into_iter!(0..n, 16)
+                .map(|i| {
+                    let ((ca, cola), b) = self.block_terms(i);
+                    let ((local, class_const), bw) = (&classes.0[ca], col_w[cola]);
+                    let b = b.zip(classes.1.as_ref()).map(|((cb, colb), region)| (&region[cb], col_w[colb]));
+                    let mut constant = bw * *class_const;
+                    if let Some(((_, b_const), bw_b)) = b {
+                        constant += bw_b * *b_const;
+                    }
+                    let mut ok = true;
+                    for slot in 0..tm.slots {
+                        let row = i * tm.slots + slot;
+                        let support = self.wiring.row(row);
+                        if support.is_empty() && !self.wiring_const[row] {
+                            continue;
+                        }
+                        let mut w = bw * local[tm.hints + slot];
+                        if let Some(((local_b, _), bw_b)) = b {
+                            w += bw_b * local_b[tm.hints + slot];
+                        }
+                        for &j in support {
+                            ok &= put(j as usize, w);
+                        }
+                        if self.wiring_const[row] {
+                            constant += w;
+                        }
+                    }
+                    (constant, ok)
+                })
+                .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
+            // The tail: explicit supports scatter their cell's weight; lazy
+            // outputs collect it per group bit.
+            let mut group_weights = vec![zero; 128 * self.groups.len()];
+            let (tail_constant, tail_ok) = {
+                let gw = atomic_words(&mut group_weights);
+                let cells = self.tail_const.len();
+                cfg_into_iter!(0..cells.div_ceil(1024))
+                    .map(|chunk| {
+                        let mut constant = zero;
+                        let mut ok = true;
+                        for k in chunk * 1024..((chunk + 1) * 1024).min(cells) {
+                            let w = weight_of(self.h_tail + 1 + k);
+                            for &j in self.tail.row(k) {
+                                ok &= put(j as usize, w);
+                            }
+                            for &id in self.tail_lazy.row(k) {
+                                xor_at(gw, id as usize, w);
+                            }
+                            if self.tail_const[k] {
+                                constant += w;
+                            }
+                        }
+                        (constant, ok)
+                    })
+                    .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1))
+            };
+            let (group_constant, group_ok) = cfg_into_iter!(0..self.groups.len())
+                .map(|gi| {
+                    let weights: &[Gf; 128] = group_weights[128 * gi..128 * (gi + 1)].try_into().expect("128 group bits");
+                    let mut c = zero;
+                    let mut contributions = Vec::new();
+                    self.groups[gi].scatter(weights, &mut c, &mut contributions);
+                    let ok = contributions.iter().fold(true, |ok, &(j, w)| ok & put(j as usize, w));
+                    (c, ok)
+                })
+                .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
+            // The constant cell collects every constant's weight and its own.
+            let constant = wiring_constant + tail_constant + group_constant + weight_of(self.h_tail);
+            if !(wiring_ok && tail_ok && group_ok && put(self.f_const, constant)) {
+                crate::bitz::pool::recycle(row_box);
+                crate::bitz::pool::recycle(col_box);
+                return None;
+            }
+        }
+        Some(StructuredWeights {
+            t: tf,
+            s,
+            rows,
+            term,
+            weight,
+            term2,
+            weight2,
+            row_box_start: r1,
+            row_box_log: b1,
+            row_box,
+            col_box_start: c2,
+            col_box_log: b2,
+            col_box,
+        })
+    }
+}
+
+/// The table as atomic polynomial words: GF(2^128) addition is XOR, so
+/// concurrent scatters into it commute.
+fn atomic_words(v: &mut [Gf]) -> &[std::sync::atomic::AtomicU64] {
+    // SAFETY: `Gf128` is `repr(C)` over two `u64` words, `AtomicU64` has
+    // `u64`'s layout, and the exclusive borrow keeps every other access out
+    // while the atomics live.
+    unsafe { std::slice::from_raw_parts(v.as_mut_ptr().cast::<std::sync::atomic::AtomicU64>(), 2 * v.len()) }
+}
+
+fn xor_at(words: &[std::sync::atomic::AtomicU64], k: usize, w: Gf) {
+    use std::sync::atomic::Ordering::Relaxed;
+    words[2 * k].fetch_xor(w.lo, Relaxed);
+    words[2 * k + 1].fetch_xor(w.hi, Relaxed);
 }
 
 /// Facts about the circuit's integer rows the security profile consumes.
@@ -761,16 +1143,20 @@ impl FlockRecRelation {
         if st.templates.len() != 1 {
             return Err(geometry("exactly one block template"));
         }
-        let template = st.templates[0].clone();
+        let template = BlockTemplate::clone(&st.templates[0]);
         let ft = ceil_log2(template.hints).max(MIN_F_ROW_VARS);
         let rt = ceil_log2(template.rows()).max(1);
         let n = st.instances.len();
         let regions = Regions::for_cells(template.cells(), n);
+        // The committed grid, boxed when the band fits.
+        let hints = template.hints;
+        let f_vars = ceil_log2((n << ft) + 1 + st.tail_hints.len()).max(ft + 1);
+        let band = Band::fit(hints, external_hints_start(&template), ft, n, st.tail_hints.len(), f_vars);
+        let f_const = band.map_or(n << ft, |b| b.tail_col << ft);
+        let f_row = |h: usize| band.map_or(h, |b| b.row(h));
         // Global committed → f, a chunk of global indices at a time: blocks'
         // hints are contiguous runs (instances in recording order), the tail's
         // hints ascending.
-        let f_const = n << ft;
-        let hints = template.hints;
         let mut global_f = vec![u32::MAX; st.committed];
         const CHUNK: usize = 1 << 16;
         let fill = |(c, out): (usize, &mut [u32])| -> bool {
@@ -783,7 +1169,7 @@ impl FlockRecRelation {
                     i += 1;
                 }
                 if i < n && st.instances[i].hint_base as usize <= g {
-                    *slot = ((i << ft) + g - st.instances[i].hint_base as usize) as u32;
+                    *slot = ((i << ft) + f_row(g - st.instances[i].hint_base as usize)) as u32;
                 } else if k < st.tail_hints.len() && st.tail_hints[k] as usize == g {
                     *slot = (f_const + 1 + k) as u32;
                     k += 1;
@@ -798,8 +1184,6 @@ impl FlockRecRelation {
         if !covered {
             return Err(geometry("a committed bit is neither a block's nor the tail's"));
         }
-        let f_live = f_const + 1 + st.tail_hints.len();
-        let f_vars = ceil_log2(f_live).max(ft + 1);
         let f_layout = IntegerMatrixLayout { row_vars: ft, col_vars: f_vars - ft };
         // Derived grid.
         let h_tail = regions.end(n);
@@ -913,6 +1297,13 @@ impl FlockRecRelation {
             hasher.update(&(regions.ha as u64).to_le_bytes());
             hasher.update(&(hb as u64).to_le_bytes());
         }
+        // The boxed committed layout (likewise).
+        if let Some(b) = band {
+            hasher.update(b"band");
+            for v in [b.local_start, b.rows_start, b.log, b.tail_col, b.tail_log] {
+                hasher.update(&(v as u64).to_le_bytes());
+            }
+        }
         let digest = *hasher.finalize().as_bytes();
         let map = FlockRecMap {
             ft,
@@ -921,6 +1312,7 @@ impl FlockRecRelation {
             template,
             columns,
             n,
+            band,
             template_const_cells,
             wiring,
             wiring_const,
@@ -994,12 +1386,14 @@ impl FlockRecRelation {
             let (c, b) = (idx >> t_vars, idx & ((1 << t_vars) - 1));
             rows[c][b / 64] |= 1u64 << (b % 64);
         };
-        // Block i's committed bits are column i; each region of its cells
-        // starts at a word-aligned derived offset (region heights ≥ 7). All
-        // are bit ranges of the witness, copied a word at a time.
+        // Block i's committed bits are column i (its band word-aligned); each
+        // region of its cells starts at a word-aligned derived offset (region
+        // heights ≥ 7). All are bit ranges of the witness, copied a word at a
+        // time.
+        let band = self.map.band;
         let fill_f = |(i, column): (usize, &mut Vec<u64>)| {
             if let Some(inst) = st.instances.get(i) {
-                copy_bits(g.words(), inst.hint_base as usize, t.hints, column);
+                Band::copy_block(band, g.words(), inst.hint_base as usize, t.hints, column);
             }
         };
         #[cfg(feature = "parallel")]
@@ -1066,18 +1460,22 @@ impl FlockRecRelation {
     /// the constant one, then every committed bit outside the blocks in
     /// order. A prover can commit with them before the recording ends; the
     /// relation then checks [`FlockRecRelation::matches_early`].
+    /// `external_start`: the block template's [`external_hints_start`] (the
+    /// boxed layout), `None` for the plain one.
     pub fn early_committed(
         g: &PackedWitness,
         blocks: &[circuit::witgen::BlockSpan],
         selection: LigeritoSelection,
+        external_start: Option<usize>,
     ) -> Result<EarlyCommitted, ProtocolError> {
-        Self::early_committed_with_profile::<Lambda100>(g, blocks, selection)
+        Self::early_committed_with_profile::<Lambda100>(g, blocks, selection, external_start)
     }
 
     pub fn early_committed_with_profile<P: IopSecurityProfile>(
         g: &PackedWitness,
         blocks: &[circuit::witgen::BlockSpan],
         selection: LigeritoSelection,
+        external_start: Option<usize>,
     ) -> Result<EarlyCommitted, ProtocolError> {
         let geometry = |msg: &str| ProtocolError::LigeritoConfig(format!("flockrec early commitment: {msg}"));
         let hints = blocks.first().ok_or_else(|| geometry("no blocks"))?.hints;
@@ -1086,14 +1484,15 @@ impl FlockRecRelation {
         }
         let n = blocks.len();
         let ft = ceil_log2(hints).max(MIN_F_ROW_VARS);
-        let f_const = n << ft;
         let tail = g.bit_len() - n * hints;
-        let f_vars = ceil_log2(f_const + 1 + tail).max(ft + 1);
+        let f_vars = ceil_log2((n << ft) + 1 + tail).max(ft + 1);
+        let band = external_start.and_then(|start| Band::fit(hints, start, ft, n, tail, f_vars));
+        let f_const = band.map_or(n << ft, |b| b.tail_col << ft);
         let layout = IntegerMatrixLayout { row_vars: ft, col_vars: f_vars - ft };
         let mut rows = vec![vec![0u64; layout.rows() / 64]; layout.cols()];
         let fill = |(i, column): (usize, &mut Vec<u64>)| {
             if let Some(b) = blocks.get(i) {
-                copy_bits(g.words(), b.hint_base, hints, column);
+                Band::copy_block(band, g.words(), b.hint_base, hints, column);
             }
         };
         #[cfg(feature = "parallel")]
@@ -1115,12 +1514,12 @@ impl FlockRecRelation {
             at = gap_end + hints;
         }
         let ligerito = selection.resolve(f_vars - LOG_PACKING, P::LIGERITO_TARGET_BITS).map_err(ProtocolError::LigeritoConfig)?;
-        Ok(EarlyCommitted { layout, rows, ligerito })
+        Ok(EarlyCommitted { layout, band, rows, ligerito })
     }
 
     /// Whether `early` is this relation's committed layout and configuration.
     pub fn matches_early(&self, early: &EarlyCommitted) -> bool {
-        early.layout == self.f_layout && early.ligerito.digest() == self.ligerito.digest()
+        early.layout == self.f_layout && early.band == self.map.band && early.ligerito.digest() == self.ligerito.digest()
     }
 
     /// [`FlockRecRelation::witness`] with the committed rows already formed
@@ -1274,6 +1673,7 @@ pub(crate) struct Batching {
 /// ([`FlockRecRelation::early_committed`]).
 pub struct EarlyCommitted {
     pub layout: IntegerMatrixLayout,
+    pub band: Option<Band>,
     pub rows: Vec<Vec<u64>>,
     pub ligerito: ResolvedLigerito,
 }
@@ -1697,7 +2097,7 @@ impl FlockRecRelation {
             let slots: Vec<bool> = (0..t.slots).map(slot).collect();
             for l in 0..t.cells() {
                 let v = t.cell(l).iter().fold(t.m_const[l], |acc, &c| {
-                    acc ^ if (c as usize) < t.hints { bit((i << ft) + c as usize) } else { slots[c as usize - t.hints] }
+                    acc ^ if (c as usize) < t.hints { bit((i << ft) + self.map.f_row(c as usize)) } else { slots[c as usize - t.hints] }
                 });
                 if v {
                     flip(&mut h_rows, self.map.regions.cell(i, l));
@@ -1779,6 +2179,7 @@ mod tests {
         chain(&mut rec, n);
         let st = rec.finish_structured();
         assert_eq!(st.templates.len(), 1);
+        let external_start = external_hints_start(&st.templates[0]);
         let selection = LigeritoSelection::parse("custom:3:4", 100).unwrap();
         let rel = FlockRecRelation::new(Arc::new(st), [7; 32], selection, Some(t)).unwrap();
         let (g, h) = w.into_witnesses();
@@ -1786,21 +2187,25 @@ mod tests {
         // The witness pass's own block spans give the same committed side.
         let mut fast = circuit::witgen::Witgen::new();
         chain(&mut fast, n);
-        let early = FlockRecRelation::early_committed(fast.witness(), fast.blocks(), selection).unwrap();
+        let early = FlockRecRelation::early_committed(fast.witness(), fast.blocks(), selection, Some(external_start)).unwrap();
         assert!(rel.matches_early(&early));
         assert_eq!(early.rows, wit.f_rows, "early committed rows");
         (rel, wit)
     }
 
-    /// The split layout (SHA-256's 20,456 cells as 2^14 + 2^12): the map
-    /// derives the witness's own rows, its fast transposition is the generic
-    /// column-by-column one, and the relation proves and verifies.
+    /// The split layout (SHA-256's 20,456 cells as 2^14 + 2^12) and the boxed
+    /// committed layout (`FLOCKREC_NO_BAND=1`: the plain one): the map derives
+    /// the witness's own rows, its fast transposition is the generic
+    /// column-by-column one and the structured one, and the relation proves
+    /// and verifies.
     #[test]
     fn split_regions_match_the_map_and_prove() {
+        let boxed = std::env::var_os("FLOCKREC_NO_BAND").is_none();
         // At least 2^20 committed cells for the Ligerito ladder.
         for (n, t) in [(130usize, 18usize), (131, 20)] {
             let (rel, wit) = relation(n, t);
             assert_eq!(rel.map.regions.hb, Some(12), "SHA-256 blocks split");
+            assert_eq!(rel.map.band.is_some(), boxed, "SHA-256 blocks boxed: {:?}", rel.map.band);
             assert_eq!(rel.derive_rows(&wit.f_rows), wit.h_rows, "n {n}: h = M·f in the witness layout");
             // Transposed weights: fast path against column_rows.
             let mut state = 0x1234_5678_9abc_def1u64;
@@ -1819,10 +2224,16 @@ mod tests {
             // (block hints of first, middle and last blocks, the constant,
             // the tail's committed bits, padding) and random cells.
             let ft = rel.map.ft;
+            let hints = rel.map.template.hints;
             let mut sample: Vec<usize> = Vec::new();
             for i in [0, 1, n / 2, n - 1] {
                 sample.extend((0..40).map(|h| (i << ft) + h));
-                sample.extend((0..8).map(|h| (i << ft) + rel.map.template.hints - 1 - 3 * h));
+                sample.extend((0..8).map(|h| (i << ft) + rel.map.f_row(hints - 1 - 3 * h)));
+                // Around the band: the last local rows, the gap, its first rows.
+                if let Some(b) = rel.map.band {
+                    sample.extend((b.local_start - 4..b.local_start + 4).map(|r| (i << ft) + r));
+                    sample.extend((b.rows_start - 4..b.rows_start + 8).map(|r| (i << ft) + r));
+                }
             }
             sample.extend(rel.map.f_const..rel.map.f_const + 300);
             sample.extend((0..200).map(|_| gf().lo as usize % cells));
@@ -1835,6 +2246,25 @@ mod tests {
                 }
                 assert_eq!(fast[j], slow, "n {n}: transposed weight {j}");
             }
+            // The prover's structured weights (boxed layout only).
+            match rel.map.structured_weights(&row_w, &col_w, rel.map.hr) {
+                Some(sw) => assert!(sw.dense() == fast, "n {n}: structured weights"),
+                None => assert!(!boxed, "n {n}: the boxed layout has structured weights"),
+            }
+            // The verifier's lazy extension against the dense weights (index
+            // bit k against point[k]).
+            let point: Vec<Gf> = (0..cells.ilog2()).map(|_| gf()).collect();
+            let mut eq = vec![Gf::ONE];
+            for &c in &point {
+                let half = eq.len();
+                for k in 0..half {
+                    let high = eq[k] * c;
+                    eq.push(high);
+                    eq[k] += high;
+                }
+            }
+            let dense = fast.iter().zip(&eq).fold(Gf::ZERO, |acc, (w, e)| acc + *w * *e);
+            assert_eq!(rel.map.transposed_mle(&row_w, &col_w, rel.map.hr, &point), Some(dense), "n {n}: lazy transposed extension");
             let hint = rel.commit(&wit);
             let mut tp = crate::transcript::Sha256Transcript::new();
             let pi = rel.prove(&mut tp, &wit, &hint).unwrap();

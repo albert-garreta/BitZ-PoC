@@ -53,6 +53,13 @@ pub struct ShaCounts {
     pub native: usize,
 }
 
+impl std::ops::AddAssign for ShaCounts {
+    fn add_assign(&mut self, other: Self) {
+        self.circuit += other.circuit;
+        self.native += other.native;
+    }
+}
+
 /// One compression of `block` into `cv`: native when both are public.
 pub fn compress<CS: Circuit>(
     cs: &mut CS,

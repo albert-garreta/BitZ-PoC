@@ -18,8 +18,10 @@
 
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+use std::sync::Arc;
 
 use num_traits::{One, Zero};
+use rayon::prelude::*;
 
 use crate::{BoolWitness, Circuit, HintResult, PackedBits, ScalarBits, WitnessContext};
 
@@ -569,7 +571,9 @@ pub struct StructuredCircuit {
     pub committed: usize,
     pub cells: usize,
     pub rows: usize,
-    pub templates: Vec<BlockTemplate>,
+    /// Shared, so a recorder's forks (see [`Circuit::map_independent`]) see
+    /// them without copying.
+    pub templates: Vec<Arc<BlockTemplate>>,
     pub instances: Vec<BlockInstance>,
     /// Committed bits allocated outside blocks (ascending global indices).
     pub tail_hints: Vec<u32>,
@@ -891,6 +895,10 @@ pub struct CompactRecorder {
     pub replay: bool,
     /// Record dense linear maps as [`LinearGroup`]s (outside blocks).
     pub lazy: bool,
+    /// Record [`Circuit::map_independent`] calls on the thread pool.
+    pub parallel: bool,
+    /// Lazy group ids start here (a fork's: its parent's count at the fork).
+    group_base: usize,
     phase: &'static str,
     mark: (usize, usize),
     /// Running `(cells, M nnz)` including block internals, for the tallies.
@@ -920,6 +928,8 @@ impl CompactRecorder {
             block: None,
             replay: true,
             lazy: true,
+            parallel: true,
+            group_base: 0,
             phase: "(start)",
             mark: (0, 0),
             totals: (0, 0),
@@ -973,6 +983,131 @@ impl CompactRecorder {
             Some(_) => {}
             None => self.widest.push((self.phase, width, index)),
         }
+    }
+
+    /// The counts `(committed, cells, rows, lazy groups)` a fork starts from.
+    fn base(&self) -> (usize, usize, usize, usize) {
+        (self.out.committed, self.out.cells, self.out.rows, self.group_base + self.out.groups.len())
+    }
+
+    /// A recorder continuing this one's index spaces from its current counts,
+    /// for a sub-circuit recorded on another thread (see
+    /// [`Circuit::map_independent`]).
+    fn fork(&self) -> Self {
+        let mut sub = Self::new();
+        let (committed, cells, rows, groups) = self.base();
+        sub.out.committed = committed;
+        sub.out.cells = cells;
+        sub.out.rows = rows;
+        sub.out.templates = self.out.templates.clone();
+        sub.group_base = groups;
+        sub.replay = self.replay;
+        sub.lazy = self.lazy;
+        sub.parallel = false;
+        sub.phase = self.phase;
+        sub
+    }
+
+    /// Moves a fork's own indices (those from `base` on), in its recording
+    /// and in the handles `returned` from it, up by `by` (committed, cells,
+    /// rows, groups): the sizes of the forks spliced before it.
+    fn shift(&mut self, returned: &mut [Vec<CBit>], base: (usize, usize, usize, usize), by: (u32, u32, u32, u32)) {
+        let (c0, cells0) = (base.0 as u32, base.1 as u32);
+        let lazy0 = LAZY + 128 * base.3 as u32;
+        let (dc, dcell, drow, dg) = by;
+        let term = |t: u32| -> u32 {
+            if t < LAZY {
+                if t >= c0 { t + dc } else { t }
+            } else if t < PLACEHOLDER {
+                if t >= lazy0 { t + 128 * dg } else { t }
+            } else {
+                t
+            }
+        };
+        let bits = |bits: &mut [CBit]| {
+            for b in bits {
+                for t in b.terms.iter_mut() {
+                    *t = term(*t);
+                }
+            }
+        };
+        for r in returned {
+            bits(r);
+        }
+        let out = &mut self.out;
+        for inst in &mut out.instances {
+            inst.hint_base += dc;
+            inst.cell_base += dcell;
+            inst.row_base += drow;
+            bits(&mut inst.inputs);
+        }
+        out.tail_hints.iter_mut().for_each(|h| *h += dc);
+        out.tail_cells.iter_mut().for_each(|c| *c += dcell);
+        out.tail_m_terms.iter_mut().for_each(|t| *t = term(*t));
+        out.tail_rows.iter_mut().for_each(|r| *r += drow);
+        for rows in [&mut out.tail_a, &mut out.tail_b, &mut out.tail_c] {
+            // Column `cell + 1`; 0 is the constant.
+            for col in &mut rows.columns {
+                if *col > cells0 {
+                    *col += dcell;
+                }
+            }
+        }
+        for group in &mut out.groups {
+            for (_, inputs) in &mut group.terms {
+                bits(inputs);
+            }
+        }
+    }
+
+    /// Splices a shifted fork (forked at `base` with `templates` templates).
+    fn append(&mut self, sub: Self, base: (usize, usize, usize, usize), templates: usize) {
+        let mut part = sub.out;
+        let map: Vec<u16> = part
+            .templates
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                if i < templates {
+                    return i as u16;
+                }
+                match self.out.templates.iter().position(|p| p.kind == t.kind) {
+                    Some(p) => {
+                        assert!(self.out.templates[p] == *t, "instance of `{}` differs from its template", t.kind);
+                        p as u16
+                    }
+                    None => {
+                        self.out.templates.push(t.clone());
+                        (self.out.templates.len() - 1) as u16
+                    }
+                }
+            })
+            .collect();
+        for inst in &mut part.instances {
+            inst.template = map[inst.template as usize];
+        }
+        let out = &mut self.out;
+        out.committed += part.committed - base.0;
+        out.cells += part.cells - base.1;
+        out.rows += part.rows - base.2;
+        out.instances.extend(part.instances);
+        out.tail_hints.extend(part.tail_hints);
+        out.tail_cells.extend(part.tail_cells);
+        let terms = out.tail_m_terms.len() as u64;
+        out.tail_m_offsets.extend(part.tail_m_offsets[1..].iter().map(|o| o + terms));
+        out.tail_m_terms.extend(part.tail_m_terms);
+        out.tail_m_const.extend(part.tail_m_const);
+        out.tail_rows.extend(part.tail_rows);
+        for (dst, src) in [(&mut out.tail_a, part.tail_a), (&mut out.tail_b, part.tail_b), (&mut out.tail_c, part.tail_c)] {
+            let columns = dst.columns.len() as u64;
+            dst.offsets.extend(src.offsets[1..].iter().map(|o| o + columns));
+            dst.columns.extend(src.columns);
+            dst.coeffs.extend(src.coeffs);
+        }
+        out.tail_row_limbs.extend(part.tail_row_limbs);
+        out.groups.extend(part.groups);
+        self.totals.0 += sub.totals.0;
+        self.totals.1 += sub.totals.1;
     }
 }
 
@@ -1040,7 +1175,7 @@ impl Circuit for CompactRecorder {
 
     fn linear_maps_128(&mut self, maps: &[(&[CBit; 128], [u128; 128])], constant: u128) -> [CBit; 128] {
         if self.lazy && self.block.is_none() {
-            let id = self.out.groups.len();
+            let id = self.group_base + self.out.groups.len();
             assert!(LAZY as usize + 128 * (id + 1) <= PLACEHOLDER as usize, "lazy id space exhausted");
             self.out.groups.push(LinearGroup {
                 terms: maps.iter().map(|(input, columns)| (*columns, input.to_vec())).collect(),
@@ -1270,11 +1405,11 @@ impl Circuit for CompactRecorder {
         };
         let id = match self.out.templates.iter().position(|t| t.kind == block.kind) {
             Some(id) => {
-                assert!(self.out.templates[id] == template, "instance of `{}` differs from its template", block.kind);
+                assert!(*self.out.templates[id] == template, "instance of `{}` differs from its template", block.kind);
                 id
             }
             None => {
-                self.out.templates.push(template);
+                self.out.templates.push(Arc::new(template));
                 self.out.templates.len() - 1
             }
         };
@@ -1287,6 +1422,47 @@ impl Circuit for CompactRecorder {
         };
         self.out.instances.push(inst);
         self.out.instance_outputs(self.out.instances.len() - 1)
+    }
+
+    /// Forks one recorder per chunk of calls, records them on the thread
+    /// pool, then shifts each fork's own indices (and the handles its calls
+    /// return) past the forks before it and splices them in order: the
+    /// sequential recording exactly.
+    fn map_independent(&mut self, count: usize, body: &(dyn Fn(&mut Self, usize) -> Vec<CBit> + Sync)) -> Vec<Vec<CBit>> {
+        if !self.parallel || self.block.is_some() || count < 2 {
+            return (0..count).map(|k| body(self, k)).collect();
+        }
+        let chunks = count.min(2 * rayon::current_num_threads());
+        let base = self.base();
+        let templates = self.out.templates.len();
+        let this = &*self;
+        let mut subs: Vec<(CompactRecorder, Vec<Vec<CBit>>)> = (0..chunks)
+            .into_par_iter()
+            .map(|c| {
+                let mut sub = this.fork();
+                let returned = (c * count / chunks..(c + 1) * count / chunks).map(|k| body(&mut sub, k)).collect();
+                (sub, returned)
+            })
+            .collect();
+        let mut at = (0u32, 0u32, 0u32, 0u32);
+        let shifts: Vec<(u32, u32, u32, u32)> = subs
+            .iter()
+            .map(|(sub, _)| {
+                let by = at;
+                at.0 += (sub.out.committed - base.0) as u32;
+                at.1 += (sub.out.cells - base.1) as u32;
+                at.2 += (sub.out.rows - base.2) as u32;
+                at.3 += sub.out.groups.len() as u32;
+                by
+            })
+            .collect();
+        subs.par_iter_mut().zip(shifts).for_each(|((sub, returned), by)| sub.shift(returned, base, by));
+        let mut out = Vec::with_capacity(count);
+        for (sub, returned) in subs {
+            self.append(sub, base, templates);
+            out.extend(returned);
+        }
+        out
     }
 }
 
@@ -1338,6 +1514,60 @@ mod tests {
         let _ = outs;
     }
 
+    /// Forked recording ([`Circuit::map_independent`] on the thread pool):
+    /// independent sub-circuits with their own committed bits, blocks, tail
+    /// cells, rows and lazy groups, whose returned handles later code reads,
+    /// record exactly the sequential circuit, which flattens to the witness.
+    #[test]
+    fn forked_recording_is_the_sequential_one() {
+        use crate::sha256::Word;
+        use crate::witgen::CheckingWitgen;
+        use crate::BoolRepresentation;
+        fn run<CS: Circuit>(cs: &mut CS) {
+            let msg = cs.hint::<1, 512, 8, _>(|_| HintResult::Ok(PackedBits::from_fn(|i| (i * 5 + i / 7) % 3 == 0)));
+            let msg: Vec<CS::Bool> = (0..512).map(|i| msg.bit(i)).collect();
+            // The first round's forks record the block body, the second's
+            // replay the template.
+            let returned = cs.map_independent(18, &|cs: &mut CS, k: usize| {
+                let w = cs.hint::<1, 32, 1, _>(move |_| HintResult::Ok(PackedBits::from_fn(|i| (i + k) % 4 == 1)));
+                let block: [Word<CS::Bool, 32>; 16] =
+                    std::array::from_fn(|j| Word::new(std::array::from_fn(|b| if j == 0 { w.bit(b) } else { msg[32 * j + b].clone() })));
+                let out = sha256::compress_block(cs, &block, &sha256::initial_state());
+                let bits: [CS::Bool; 128] = std::array::from_fn(|i| out[i / 32].bit(i % 32));
+                let columns: [u128; 128] = std::array::from_fn(|j| ((j as u128 + 1) * 0x9e37_79b9_7f4a_7c15) ^ ((k as u128) << 64));
+                let mixed = cs.linear_maps_128(&[(&bits, columns)], 0x55);
+                let cell = cs.bitz::<1>(mixed[3].clone());
+                // A bit squares to itself.
+                cs.assert_r1c::<1>(cell.clone(), cell.clone(), cell);
+                (0..64).map(|b| out[4 + b / 32].bit(b % 32)).collect()
+            });
+            // Later code reads every call's returned handles.
+            for (k, bits) in returned.iter().enumerate() {
+                let x = cs.xor(bits[k % 32].clone(), bits[63 - k % 32].clone());
+                let _ = cs.bitz::<1>(x);
+            }
+        }
+        fn twice<CS: Circuit>(cs: &mut CS) {
+            run(cs);
+            run(cs);
+        }
+        let mut seq = CompactRecorder::new();
+        seq.parallel = false;
+        twice(&mut seq);
+        let mut par = CompactRecorder::new();
+        twice(&mut par);
+        let (seq, par) = (seq.finish_structured(), par.finish_structured());
+        assert_eq!(par.templates.len(), 1);
+        assert_eq!(par.instances.len(), 36);
+        assert_eq!(par.groups.len(), 36);
+        assert_eq!(seq.digest(), par.digest(), "forked recording");
+        let mut w = CheckingWitgen::new();
+        twice(&mut w);
+        assert_eq!(w.first_failure, None);
+        let (g, h) = w.into_witnesses();
+        par.flatten().check_witness(&g, &h).expect("the forked recording flattens to the witness");
+    }
+
     /// The compact recording of the SHA-256 compression matches the
     /// reference generator row for row.
     #[test]
@@ -1369,7 +1599,7 @@ mod tests {
             let got: Vec<(u32, Vec<u64>)> = compact.c.row(r).map(|(col, c)| (col, c.to_words(1))).collect();
             let expect: Vec<(u32, Vec<u64>)> = row
                 .iter()
-                .map(|(col, coeff)| (col as u32, coeff.as_words().to_vec()))
+                .map(|(col, coeff)| (col as u32, coeff.to_vec()))
                 .collect();
             assert_eq!(got, expect, "C row {r}");
         }

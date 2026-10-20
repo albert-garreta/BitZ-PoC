@@ -343,7 +343,8 @@ fn witness_level<CS: Circuit>(
     (rows, sibs)
 }
 
-/// Verifies the opened rows of one level against `root`.
+/// Verifies the opened rows of one level against `root` (the subtrees'
+/// leaves and paths as independent sub-circuits).
 pub(super) fn verify_opens<CS: Circuit>(
     cs: &mut CS,
     root: &Digest<CS::Bool>,
@@ -353,8 +354,8 @@ pub(super) fn verify_opens<CS: Circuit>(
     siblings: &[Digest<CS::Bool>],
     counts: &mut ShaCounts,
 ) {
-    let leaves: Vec<_> = rows.iter().map(|row| merkle::leaf_hash(cs, row, counts)).collect();
-    let top = merkle::multi_proof_root(cs, block_len, queries, leaves, siblings, counts);
+    let leaf = |cs: &mut CS, q: usize, c: &mut ShaCounts| merkle::leaf_hash(cs, &rows[q], c);
+    let top = merkle::multi_proof_root_with(cs, block_len, queries, &leaf, siblings, counts);
     merkle::assert_digest_eq(cs, &top, root);
 }
 

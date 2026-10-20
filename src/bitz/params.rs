@@ -295,6 +295,11 @@ pub struct LinearClaimGf {
 }
 
 impl LinearClaimGf {
+    /// The row weights, for reuse once the claim is discharged.
+    pub fn into_row_weights(self) -> Vec<Gf> {
+        self.row_weights
+    }
+
     pub fn from_shape(
         shape: &Shape,
         row_weights: Vec<Gf>,

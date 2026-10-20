@@ -766,7 +766,8 @@ fn sha256_ecdsa_recursion_timings() {
         // from the witness pass while the recording finishes.
         let lig = LigeritoSelection::parse(&selection, 100).unwrap();
         let passes = super::ecdsa_verifier::witness_and_record(&prepared, &statement, &commitment, &proof, |g, blocks| {
-            let early = crate::piop::spartan::flockrec::FlockRecRelation::early_committed(g, blocks, lig).expect("early committed rows");
+            let start = Some(super::sha256_block_external_start());
+            let early = crate::piop::spartan::flockrec::FlockRecRelation::early_committed(g, blocks, lig, start).expect("early committed rows");
             let hint = early.commit();
             (early, hint)
         })

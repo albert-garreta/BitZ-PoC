@@ -47,7 +47,7 @@ pub fn bytes_of_bits<B: BoolWitness>(bits: &[B]) -> Vec<Byte<B>> {
 pub fn gf_bytes<B: BoolWitness>(g: &G<B>) -> Vec<Byte<B>> {
     match g {
         G::P(v) => public_bytes(&u128_of(*v).to_le_bytes()),
-        G::V(bits) => bytes_of_bits(bits),
+        G::V(bits) => bytes_of_bits(&bits[..]),
     }
 }
 

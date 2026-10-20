@@ -36,3 +36,19 @@ pub mod val;
 
 #[cfg(test)]
 mod tests;
+
+/// The first hint of the SHA-256 compression block template read from
+/// outside a block ([`crate::piop::spartan::flockrec::external_hints_start`]),
+/// so a recursion step lays out the boxed committed side from its witness
+/// pass alone (one block recorded once; the relation checks the layout
+/// against its own template).
+pub fn sha256_block_external_start() -> usize {
+    static START: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *START.get_or_init(|| {
+        let mut rec = circuit::compact::CompactRecorder::new();
+        let block = std::array::from_fn(|_| circuit::sha256::Word::constant(0));
+        circuit::sha256::compress_block(&mut rec, &block, &circuit::sha256::initial_state());
+        let st = rec.finish_structured();
+        crate::piop::spartan::flockrec::external_hints_start(&st.templates[0])
+    })
+}

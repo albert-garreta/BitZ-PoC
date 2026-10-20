@@ -47,6 +47,37 @@ pub struct FalconCounts {
     pub opening: super::falcon_opening::OpeningCounts,
 }
 
+/// Per-stage wall times of one pass, printed with `BITZ_REC_STAGES=1`.
+pub(super) struct Stages {
+    pass: &'static str,
+    start: std::time::Instant,
+    last: std::time::Instant,
+    marks: Vec<(String, f64)>,
+    on: bool,
+}
+
+impl Stages {
+    pub(super) fn new(pass: &'static str) -> Self {
+        let now = std::time::Instant::now();
+        Self { pass, start: now, last: now, marks: Vec::new(), on: std::env::var_os("BITZ_REC_STAGES").is_some() }
+    }
+
+    pub(super) fn mark(&mut self, stage: impl Into<String>) {
+        if self.on {
+            let now = std::time::Instant::now();
+            self.marks.push((stage.into(), (now - self.last).as_secs_f64()));
+            self.last = now;
+        }
+    }
+
+    pub(super) fn print(&self) {
+        if self.on {
+            let marks: Vec<String> = self.marks.iter().map(|(s, t)| format!("{s} {t:.3}")).collect();
+            eprintln!("[falcon {}] {} | total {:.3}", self.pass, marks.join(" | "), self.start.elapsed().as_secs_f64());
+        }
+    }
+}
+
 /// `VerifierBlockGrindingTranscript` in the circuit: the native transcript
 /// over public data (through the proxy) with one grinding boundary before
 /// the first challenge after any absorb, and the committed absorbs of proof
@@ -266,6 +297,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
         t.duplex = t.duplex.clone().with_log();
     }
     let fail = |why: &str| public.borrow_mut().fail(why.to_string());
+    let mut stages = Stages::new(if proof.is_some() { "witness" } else { "record" });
 
     // The statement and the prime.
     public.borrow_mut().set_label("statement");
@@ -273,6 +305,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let field = hooks::sample_field(&mut t.proxy(cs)).expect("public prime");
     let cfg = &field;
     let q = modulus(cfg);
+    stages.mark("statement");
 
     // Keyed ring: the committed quotient, its bounds, its point grinding.
     public.borrow_mut().set_label("keyed ring");
@@ -316,6 +349,8 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
         ring_target.add((q - mulmod(w, top, q)) % q, &Zq::V(vec![x[63].clone()]), q);
     }
 
+    stages.mark("keyed ring");
+
     // Norm sumcheck: slack, cubic rounds, the terminal's modular square.
     public.borrow_mut().set_label("norm");
     hooks::validate_field(prepared, cfg).expect("public field bounds");
@@ -350,6 +385,8 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     check.add((q - factor) % q, &square, q);
     check.assert_zero(cs, q, &public, "integer norm terminal");
     t.absorb_field_elements(cs, std::slice::from_ref(&terminal));
+
+    stages.mark("norm");
 
     // Merge, then the word binder over the merged target.
     public.borrow_mut().set_label("binder");
@@ -425,6 +462,8 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let (params, column_point, row_weights) =
         hooks::bridge_claim(prepared, binder_point_f, F::from_with_cfg(zeta, cfg), cfg).expect("public bridge claim");
 
+    stages.mark("binder");
+
     // Bridge: public folds read off the value, the committed forest.
     public.borrow_mut().set_label("bridge folds");
     let sums: Vec<u128> = (0..params.cols())
@@ -462,6 +501,8 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     };
     let coefficients = hooks::coefficients(prepared, &params, exceptions, binary).expect("public coefficients");
 
+    stages.mark("bridge");
+
     // The joint binary sumcheck, then the opening.
     public.borrow_mut().set_label("joint");
     let opening = match hooks::geometry(prepared) {
@@ -474,6 +515,8 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
             super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening)
         }
     };
+    stages.mark("joint+opening");
+    stages.print();
     if let Some(log) = log {
         *log = t.duplex.log.clone().unwrap_or_default();
     }
@@ -528,9 +571,10 @@ pub fn early_commit(
     use crate::piop::spartan::flockrec::FlockRecRelation;
     use crate::piop::spartan::profile::{Lambda100, Lambda128};
     let lig = LigeritoSelection::parse(selection, security)?;
+    let start = Some(super::sha256_block_external_start());
     let early = match security {
-        100 => FlockRecRelation::early_committed_with_profile::<Lambda100>(g, blocks, lig),
-        128 => FlockRecRelation::early_committed_with_profile::<Lambda128>(g, blocks, lig),
+        100 => FlockRecRelation::early_committed_with_profile::<Lambda100>(g, blocks, lig, start),
+        128 => FlockRecRelation::early_committed_with_profile::<Lambda128>(g, blocks, lig, start),
         _ => return Err(format!("outer security {security}: 100 or 128")),
     }
     .map_err(|e| format!("{e:?}"))?;
@@ -825,6 +869,105 @@ pub(super) mod tests {
             passes.stream.bytes(),
             public_input_bytes(&proof),
         );
+    }
+
+    /// Records the circuit `BITZ_REC_RECORDS` times on a discovered stream
+    /// (a profiling target for the recording pass).
+    #[test]
+    #[ignore = "profiling"]
+    fn falcon_record_profile() {
+        let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(1024, |v| v.parse().unwrap());
+        let times: usize = std::env::var("BITZ_REC_RECORDS").ok().map_or(5, |v| v.parse().unwrap());
+        let (prepared, public, proof) = proof_at(batch);
+        let circuit = FalconCircuit::new(&prepared, &public, &proof);
+        let stream = PublicStream::discover();
+        let mut w = circuit::witgen::Witgen::new();
+        verify_falcon_algebraic(&mut w, &prepared, &public, &circuit.root, circuit.exceptions, Some(&proof), stream.clone(), None);
+        let s = stream.borrow().clone();
+        for _ in 0..times {
+            let started = std::time::Instant::now();
+            let replay = PublicStream::replay(s.values.clone(), s.widths.clone());
+            let mut rec = circuit::compact::CompactRecorder::new();
+            verify_falcon_algebraic(&mut rec, &prepared, &public, &circuit.root, circuit.exceptions, None, replay, None);
+            let st = rec.finish_structured();
+            let digest: String = st.digest().iter().map(|b| format!("{b:02x}")).collect();
+            println!("record {:.3} s ({} blocks) digest {digest}", started.elapsed().as_secs_f64(), st.instances.len());
+        }
+    }
+
+    /// Which template hints are read from outside their block: the
+    /// output supports, and any other external reference (a boxed committed
+    /// layout needs them in one dyadic band).
+    #[test]
+    #[ignore = "diagnostic"]
+    fn falcon_template_external_reads() {
+        let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(16, |v| v.parse().unwrap());
+        let (prepared, public, proof) = proof_at(batch);
+        let circuit = FalconCircuit::new(&prepared, &public, &proof);
+        let stream = PublicStream::discover();
+        let mut w = circuit::witgen::Witgen::new();
+        verify_falcon_algebraic(&mut w, &prepared, &public, &circuit.root, circuit.exceptions, Some(&proof), stream.clone(), None);
+        let s = stream.borrow().clone();
+        let replay = PublicStream::replay(s.values.clone(), s.widths.clone());
+        let mut rec = circuit::compact::CompactRecorder::new();
+        verify_falcon_algebraic(&mut rec, &prepared, &public, &circuit.root, circuit.exceptions, None, replay, None);
+        let st = rec.finish_structured();
+        let template = &st.templates[0];
+        let hints = template.hints as u32;
+        let mut output_support = std::collections::BTreeSet::new();
+        for out in &template.outputs {
+            for &t in out.terms.iter() {
+                if t < hints {
+                    output_support.insert(t);
+                }
+            }
+        }
+        // External references: instance inputs, tail M rows, lazy groups.
+        let block_of = |g: u32| -> Option<(usize, u32)> {
+            let i = st.instances.partition_point(|inst| inst.hint_base + hints <= g);
+            (i < st.instances.len() && st.instances[i].hint_base <= g).then(|| (i, g - st.instances[i].hint_base))
+        };
+        let mut external = std::collections::BTreeMap::<u32, usize>::new();
+        let mut note = |g: u32, from: Option<usize>| {
+            if let Some((i, local)) = block_of(g)
+                && Some(i) != from
+            {
+                *external.entry(local).or_default() += 1;
+            }
+        };
+        for (i, inst) in st.instances.iter().enumerate() {
+            for input in &inst.inputs {
+                for &t in input.terms.iter() {
+                    note(t, Some(i));
+                }
+            }
+        }
+        for &t in &st.tail_m_terms {
+            note(t, None);
+        }
+        for group in &st.groups {
+            for (_, inputs) in &group.terms {
+                for bit in inputs {
+                    for &t in bit.terms.iter() {
+                        note(t, None);
+                    }
+                }
+            }
+        }
+        let outside: Vec<u32> = external.keys().copied().filter(|l| !output_support.contains(l)).collect();
+        println!(
+            "template hints {hints}, cells {}, outputs {}; output support {} hints (span {:?}..{:?}); externally read {} hints, {} outside the output support (e.g. {:?})",
+            template.cells(),
+            template.outputs.len(),
+            output_support.len(),
+            output_support.first(),
+            output_support.last(),
+            external.len(),
+            outside.len(),
+            &outside[..outside.len().min(8)],
+        );
+        let terms: usize = template.outputs.iter().map(|o| o.terms.len()).sum();
+        println!("output terms {terms}; blocks {}; committed {}; tail hints {}", st.instances.len(), st.committed, st.tail_hints.len());
     }
 
     /// Prints the prepared shapes the circuit is built from.

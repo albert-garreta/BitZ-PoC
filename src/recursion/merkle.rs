@@ -144,6 +144,141 @@ pub fn multi_proof_root<CS: Circuit>(
     active.pop().unwrap().1
 }
 
+/// A digest's 256 bits, word by word.
+fn digest_bits<B: circuit::BoolWitness>(d: &Digest<B>) -> Vec<B> {
+    (0..256).map(|i| d[i / 32].bit(i % 32)).collect()
+}
+
+fn digest_of_bits<B: circuit::BoolWitness>(bits: &[B]) -> Digest<B> {
+    std::array::from_fn(|w| Word::new(std::array::from_fn(|b| bits[32 * w + b].clone())))
+}
+
+/// Levels above the independent subtrees of [`tree_root_with`] and
+/// [`multi_proof_root_with`] (at most `2^TOP_LEVELS` subtrees).
+const TOP_LEVELS: usize = 6;
+
+/// A node's digest as one independent sub-circuit's result.
+type Leaf<'a, CS> = dyn Fn(&mut CS, usize, &mut ShaCounts) -> Digest<<CS as Circuit>::Bool> + Sync + 'a;
+
+/// The root of the complete tree over `num_leaves` leaves (a power of two),
+/// leaf `i` from `leaf(cs, i)`: the subtrees below the top levels are
+/// independent sub-circuits ([`Circuit::map_independent`]), then the top
+/// levels pair their roots in order.
+pub fn tree_root_with<CS: Circuit>(cs: &mut CS, num_leaves: usize, leaf: &Leaf<'_, CS>, counts: &mut ShaCounts) -> Digest<CS::Bool> {
+    assert!(num_leaves.is_power_of_two());
+    let split = (num_leaves.trailing_zeros() as usize).saturating_sub(TOP_LEVELS);
+    let total = std::sync::Mutex::new(ShaCounts::default());
+    let roots = cs.map_independent(num_leaves >> split, &|cs: &mut CS, s: usize| {
+        let mut c = ShaCounts::default();
+        let mut level: Vec<Digest<CS::Bool>> = (s << split..(s + 1) << split).map(|i| leaf(cs, i, &mut c)).collect();
+        while level.len() > 1 {
+            level = level.chunks(2).map(|pair| pair_hash(cs, &pair[0], &pair[1], &mut c)).collect();
+        }
+        *total.lock().unwrap() += c;
+        digest_bits(&level[0])
+    });
+    *counts += total.into_inner().unwrap();
+    let mut level: Vec<Digest<CS::Bool>> = roots.iter().map(|bits| digest_of_bits(bits)).collect();
+    while level.len() > 1 {
+        level = level.chunks(2).map(|pair| pair_hash(cs, &pair[0], &pair[1], counts)).collect();
+    }
+    level.pop().unwrap()
+}
+
+/// The root the multi-proof of the sorted unique `positions` (`siblings` in
+/// proof order) reconstructs, the leaf at `positions[q]` from `leaf(cs, q)`:
+/// the subtrees below the top levels are independent sub-circuits
+/// ([`Circuit::map_independent`]), each with the siblings the proof spends
+/// inside it, then the top levels in order. The same node hashes as
+/// [`multi_proof_root`], in another order.
+pub fn multi_proof_root_with<CS: Circuit>(
+    cs: &mut CS,
+    num_leaves: usize,
+    positions: &[usize],
+    leaf: &Leaf<'_, CS>,
+    siblings: &[Digest<CS::Bool>],
+    counts: &mut ShaCounts,
+) -> Digest<CS::Bool> {
+    assert!(num_leaves.is_power_of_two());
+    assert!(positions.windows(2).all(|w| w[0] < w[1]));
+    let levels = num_leaves.trailing_zeros() as usize;
+    // The proof spends siblings level by level, its active nodes left to
+    // right: per level, (active node, sibling index), sorted by node.
+    let mut spent: Vec<Vec<(usize, usize)>> = Vec::with_capacity(levels);
+    let mut active = positions.to_vec();
+    let mut next_sibling = 0;
+    for _ in 0..levels {
+        let mut level = Vec::new();
+        let mut next = Vec::with_capacity(active.len());
+        let mut i = 0;
+        while i < active.len() {
+            let p = active[i];
+            if i + 1 < active.len() && active[i + 1] == (p ^ 1) {
+                i += 2;
+            } else {
+                level.push((p, next_sibling));
+                next_sibling += 1;
+                i += 1;
+            }
+            next.push(p >> 1);
+        }
+        spent.push(level);
+        active = next;
+    }
+    assert_eq!(next_sibling, siblings.len(), "multi-proof length");
+    let sibling = |l: usize, p: usize| -> usize {
+        let at = spent[l].binary_search_by_key(&p, |&(node, _)| node).expect("a spent sibling");
+        spent[l][at].1
+    };
+    // The reconstruction of `active` (sorted nodes with their digests) from
+    // level `from` to level `to`.
+    let climb = |cs: &mut CS, mut active: Vec<(usize, Digest<CS::Bool>)>, from: usize, to: usize, c: &mut ShaCounts| {
+        for l in from..to {
+            let mut next = Vec::with_capacity(active.len());
+            let mut i = 0;
+            while i < active.len() {
+                let p = active[i].0;
+                let parent = if i + 1 < active.len() && active[i + 1].0 == (p ^ 1) {
+                    let h = pair_hash(cs, &active[i].1, &active[i + 1].1, c);
+                    i += 2;
+                    h
+                } else {
+                    let sib = &siblings[sibling(l, p)];
+                    let h = if p & 1 == 0 { pair_hash(cs, &active[i].1, sib, c) } else { pair_hash(cs, sib, &active[i].1, c) };
+                    i += 1;
+                    h
+                };
+                next.push((p >> 1, parent));
+            }
+            active = next;
+        }
+        active
+    };
+    // The queries under each subtree root (a node of level `split`): runs.
+    let split = levels.saturating_sub(TOP_LEVELS);
+    let mut groups: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+    for (q, &p) in positions.iter().enumerate() {
+        match groups.last_mut() {
+            Some((node, range)) if *node == p >> split => range.end = q + 1,
+            _ => groups.push((p >> split, q..q + 1)),
+        }
+    }
+    let total = std::sync::Mutex::new(ShaCounts::default());
+    let roots = cs.map_independent(groups.len(), &|cs: &mut CS, g: usize| {
+        let mut c = ShaCounts::default();
+        let active = groups[g].1.clone().map(|q| (positions[q], leaf(cs, q, &mut c))).collect();
+        let top = climb(cs, active, 0, split, &mut c);
+        assert_eq!(top.len(), 1);
+        *total.lock().unwrap() += c;
+        digest_bits(&top[0].1)
+    });
+    *counts += total.into_inner().unwrap();
+    let active = groups.iter().zip(&roots).map(|((node, _), bits)| (*node, digest_of_bits(bits))).collect();
+    let mut top = climb(cs, active, split, levels, counts);
+    assert_eq!(top.len(), 1);
+    top.pop().unwrap().1
+}
+
 /// Asserts two digests are equal.
 pub fn assert_digest_eq<CS: Circuit>(cs: &mut CS, a: &Digest<CS::Bool>, b: &Digest<CS::Bool>) {
     let diff: Vec<CS::Bool> = (0..256)
@@ -193,6 +328,52 @@ mod tests {
                 assert_digest_eq(&mut w, &got, &expected);
                 assert_eq!(w.first_failure.is_none(), !tamper, "{positions:?} tamper {tamper}");
             }
+        }
+    }
+
+    /// The subtree-parallel roots: the complete tree's and the multi-proof's
+    /// match flock's root (a tampered row breaks both), and recording them
+    /// forked is recording them in order.
+    #[test]
+    fn subtree_roots_match_flock_and_record_in_order() {
+        use circuit::compact::CompactRecorder;
+        fn run<CS: Circuit>(cs: &mut CS, rows: &[Vec<Gf>], positions: &[usize], proof: &[[u8; 32]], root: [u8; 32], tamper: bool) {
+            let mut counts = ShaCounts::default();
+            let g: Vec<Vec<G<CS::Bool>>> = rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| row.iter().enumerate().map(|(j, &v)| witness(cs, if tamper && i == positions[0] && j == 1 { v + Gf::ONE } else { v })).collect())
+                .collect();
+            let expected = public_digest(root);
+            let leaf = |cs: &mut CS, i: usize, c: &mut ShaCounts| leaf_hash(cs, &g[i], c);
+            let top = tree_root_with(cs, rows.len(), &leaf, &mut counts);
+            assert_digest_eq(cs, &top, &expected);
+            let sibs: Vec<_> = proof.iter().map(|&h| witness_digest(cs, h)).collect();
+            let opened = |cs: &mut CS, q: usize, c: &mut ShaCounts| leaf_hash(cs, &g[positions[q]], c);
+            let top = multi_proof_root_with(cs, rows.len(), positions, &opened, &sibs, &mut counts);
+            assert_digest_eq(cs, &top, &expected);
+        }
+        // Three levels inside each of the 64 subtrees.
+        let (lanes, num_leaves) = (4, 1 << 9);
+        let rows: Vec<Vec<Gf>> = (0..num_leaves)
+            .map(|i| (0..lanes).map(|j| gf_of((i * 1000 + j + 7) as u128 * 0x9e37_79b9_7f4a_7c15)).collect())
+            .collect();
+        let data: Vec<u8> = rows.iter().flatten().flat_map(|g| g.to_bytes()).collect();
+        let tree = merkle_tree(&data, num_leaves, crate::ligerito_flock::MERKLE_HASH);
+        let root = tree[tree.len() - 1];
+        for positions in [vec![0usize], vec![3, 4, 5, 40, 63, 300, 511], (0..num_leaves).step_by(3).collect(), (0..num_leaves).collect::<Vec<_>>()] {
+            let proof = merkle_multi_proof(&tree, num_leaves, &positions);
+            for tamper in [false, true] {
+                let mut w = CheckingWitgen::new();
+                run(&mut w, &rows, &positions, &proof, root, tamper);
+                assert_eq!(w.first_failure.is_none(), !tamper, "{} positions, tamper {tamper}", positions.len());
+            }
+            let mut seq = CompactRecorder::new();
+            seq.parallel = false;
+            run(&mut seq, &rows, &positions, &proof, root, false);
+            let mut par = CompactRecorder::new();
+            run(&mut par, &rows, &positions, &proof, root, false);
+            assert_eq!(seq.finish_structured().digest(), par.finish_structured().digest(), "{} positions: forked recording", positions.len());
         }
     }
 }

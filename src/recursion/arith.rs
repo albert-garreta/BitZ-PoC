@@ -266,9 +266,9 @@ pub fn mul<CS: Circuit>(cs: &mut CS, a: &G<CS::Bool>, b: &G<CS::Bool>) -> G<CS::
     match (a, b) {
         (G::P(x), G::P(y)) => G::P(*x * *y),
         (G::P(c), G::V(v)) | (G::V(v), G::P(c)) => {
-            G::V(gf128::linear_map(cs, v, &gf128::mul_const_columns(u128_of(*c))))
+            G::of_bits(gf128::linear_map(cs, v, &gf128::mul_const_columns(u128_of(*c))))
         }
-        (G::V(x), G::V(y)) => G::V(mul_bits(cs, x, y)),
+        (G::V(x), G::V(y)) => G::of_bits(mul_bits(cs, x, y)),
     }
 }
 
@@ -283,7 +283,7 @@ pub fn pow_public_base<CS: Circuit>(cs: &mut CS, base: Gf, exponent: &[CS::Bool]
             G::P(v) => {
                 let d = u128_of(*v * delta);
                 let bits = gf128::constant::<CS::Bool>(u128_of(*v));
-                G::V(array::from_fn(|i| {
+                G::of_bits(array::from_fn(|i| {
                     if (d >> i) & 1 == 1 {
                         cs.xor(bits[i].clone(), bit.clone())
                     } else {
@@ -294,7 +294,7 @@ pub fn pow_public_base<CS: Circuit>(cs: &mut CS, base: Gf, exponent: &[CS::Bool]
             G::V(v) => {
                 let scaled = gf128::linear_map(cs, v, &gf128::mul_const_columns(u128_of(delta)));
                 let r = and_bit_word(cs, bit, &scaled);
-                G::V(array::from_fn(|i| cs.xor(v[i].clone(), r[i].clone())))
+                G::of_bits(array::from_fn(|i| cs.xor(v[i].clone(), r[i].clone())))
             }
         };
         power = power * power;
@@ -508,7 +508,7 @@ mod tests {
     fn eval_g(cs: &CheckingWitgen, g: &G<bool>) -> Gf {
         match g {
             G::P(v) => *v,
-            G::V(bits) => gf_of(super::super::val::try_value(cs, bits).unwrap()),
+            G::V(bits) => gf_of(super::super::val::try_value(cs, &bits[..]).unwrap()),
         }
     }
 

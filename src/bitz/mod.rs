@@ -33,6 +33,7 @@ pub mod gkr;
 pub(crate) mod grinding;
 pub(crate) mod kernels;
 pub mod params;
+pub mod pool;
 pub mod pcs;
 pub mod reduce;
 #[cfg(feature = "parallel")]
@@ -262,6 +263,13 @@ impl BitZVerifier {
 /// the minor page faults taken since the previous trace line: fresh pages
 /// cost ≈ 0.5 µs each (≈ 30 ms per GB) on this platform and do not
 /// parallelise, so the count says how much of a phase is first touch.
+/// Prints the proof bytes a phase wrote (under `BITZ_TRACE`).
+pub(crate) fn trace_bytes(label: &str, before: usize, after: usize) {
+    if std::env::var_os("BITZ_TRACE").is_some() {
+        eprintln!("bitz: bytes {label:<18} {:>8}", after - before);
+    }
+}
+
 pub(crate) fn trace(label: &str, started: std::time::Instant) {
     let elapsed = started.elapsed();
     if let Ok(mut phases) = PHASES.lock() {

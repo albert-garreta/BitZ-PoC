@@ -624,6 +624,19 @@ pub trait Circuit {
     fn try_eval(&self, _bit: &Self::Bool) -> Option<bool> {
         None
     }
+
+    /// Runs `body(self, k)` for `k in 0..count`, in order, and returns the
+    /// handles each call returns. Every call must be a self-contained
+    /// sub-circuit: it reads handles made before it and nothing another call
+    /// makes. A backend may run the calls on separate threads and splice
+    /// their results (returned handles included) in order, which is exactly
+    /// the sequential run's result.
+    fn map_independent(&mut self, count: usize, body: &(dyn Fn(&mut Self, usize) -> Vec<Self::Bool> + Sync)) -> Vec<Vec<Self::Bool>>
+    where
+        Self: Sized,
+    {
+        (0..count).map(|k| body(self, k)).collect()
+    }
 }
 
 #[cfg(test)]

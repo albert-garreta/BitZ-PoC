@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use super::params::{LinearClaimGf, SumClaimGf};
 use super::pcs::{ProveError, VerifyError};
 use super::transcript::{ProverState, VerifierState};
-use crate::cfg_into_iter;
+use crate::{cfg_chunks_mut, cfg_into_iter, cfg_iter_mut};
 use crate::ligerito::{xi_combined_rows, xi_combined_rows_packed};
 
 use crate::pcs::IntegerMatrixLayout;
@@ -257,9 +257,8 @@ fn prove_single_column_bits(
     let r = transcript.native_scalar(super::grinding::Stage::BinaryRound);
     target = evaluate_round(coefficients, r);
     point.push(r);
-    let mut weights: Vec<Gf> = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
-        .map(|p| w[2 * p] + r * (w[2 * p] + w[2 * p + 1]))
-        .collect();
+    let mut weights = super::pool::take(pairs);
+    cfg_iter_mut!(weights).enumerate().for_each(|(p, dst)| *dst = w[2 * p] + r * (w[2 * p] + w[2 * p + 1]));
     let mut codes: Vec<u8> = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
         .map(|p| {
             let (b0, b1) = (bit(2 * p) as u8, bit(2 * p + 1) as u8);
@@ -321,9 +320,7 @@ fn prove_single_column_bits(
         let r = transcript.native_scalar(super::grinding::Stage::BinaryRound);
         target = evaluate_round(coefficients, r);
         point.push(r);
-        weights = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
-            .map(|p| weights[2 * p] + r * (weights[2 * p] + weights[2 * p + 1]))
-            .collect();
+        fold(&mut weights, r);
         codes = cfg_into_iter!(0..pairs, PARALLEL_MIN_PAIRS)
             .map(|p| {
                 let (c0, c1) = (codes[2 * p], codes[2 * p + 1]);
@@ -340,9 +337,8 @@ fn prove_single_column_bits(
         let low = code & (code - 1);
         table[code] = table[low] + products[(code ^ low).trailing_zeros() as usize];
     }
-    let mut combined: Vec<Gf> = cfg_into_iter!(0..codes.len(), PARALLEL_MIN_PAIRS)
-        .map(|j| c * table[codes[j] as usize])
-        .collect();
+    let mut combined = super::pool::take(codes.len());
+    cfg_iter_mut!(combined).enumerate().for_each(|(j, dst)| *dst = c * table[codes[j] as usize]);
     drop(codes);
     while combined.len() > 1 {
         let coefficients = round_polynomial(&combined, &weights);
@@ -358,7 +354,304 @@ fn prove_single_column_bits(
     }
     let folded = fold_rows_point(core::slice::from_ref(&bits.to_vec()), &point);
     let columns = vec![weights[0] * c];
+    super::pool::recycle(weights);
+    super::pool::recycle(combined);
     prove_columns(folded, columns, target, point, transcript)
+}
+
+/// [`prove`] for a single-column claim whose weights are
+/// [`circuit::linear_map::binary::StructuredWeights`] over the committed grid
+/// (`rows_bits[c]`: column `c`'s `2^t` bits). Byte-identical messages to the
+/// dense prover over `w.dense()`; no `2^{t+s}` field table ever exists.
+///
+/// The low `b1` row rounds run on the parts' own tables: per row vector, its
+/// row weights against the column-combined witness `A_k[r] = Σ_{c ∈ k}
+/// weight[c]·f[c, r]`; the row box against the witness on its band; the
+/// column box against the witness on its columns (the boxes' first round
+/// straight from the bits, as [`prove_single_column_bits`] does). Then the
+/// witness is folded once from its bits at the bound low rows (`2^{t−b1+s}`
+/// entries), the weights are assembled on the same domain, and the remaining
+/// rounds are the dense ones.
+pub(crate) fn prove_structured(
+    sw: circuit::linear_map::binary::StructuredWeights,
+    rows_bits: &[Vec<u64>],
+    target: Gf,
+    transcript: &mut ProverState,
+) -> Result<MleClaim, ProveError> {
+    let circuit::linear_map::binary::StructuredWeights {
+        t,
+        s,
+        rows,
+        term,
+        weight,
+        term2,
+        weight2,
+        row_box_start: r1,
+        row_box_log: b1,
+        row_box,
+        col_box_start: c2,
+        col_box_log: b2,
+        col_box,
+    } = sw;
+    if rows_bits.len() != 1 << s
+        || rows_bits.iter().any(|row| row.len() * 64 != 1 << t)
+        || b1 > t
+        || r1 % (1 << b1) != 0
+        || r1 + (1 << b1) > 1 << t
+        || c2 % (1 << b2) != 0
+        || c2 + (1 << b2) > 1 << s
+        || term.len() != 1 << s
+        || weight.len() != 1 << s
+        || term2.len() != weight2.len()
+        || !(term2.is_empty() || term2.len() == 1 << s)
+        || rows.iter().any(|r| r.len() != 1 << t)
+        || row_box.len() != 1 << (b1 + s)
+        || col_box.len() != 1 << (b2 + t)
+    {
+        return Err(ProveError::PackedWitnessLengthMismatch);
+    }
+    let zero = Gf::zero();
+    let one = Gf::one();
+    let bit = |c: usize, r: usize| (rows_bits[c][r / 64] >> (r % 64)) & 1 == 1;
+    let mut target = target;
+    let mut point = Vec::with_capacity(t + s);
+    let send = |coefficients: [Gf; 3], target: &mut Gf, point: &mut Vec<Gf>, transcript: &mut ProverState| {
+        if coefficients[1] + coefficients[2] != *target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
+        *target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        Ok(challenge)
+    };
+    let add = |a: [Gf; 3], b: [Gf; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+    // Column-combined witness per row vector.
+    let started = std::time::Instant::now();
+    let mut acc: Vec<Vec<Gf>> = cfg_into_iter!(0..rows.len())
+        .map(|k| {
+            let mut a = vec![zero; 1 << t];
+            for c in 0..1usize << s {
+                // A column reads row vector k through its first term, its
+                // second, or both.
+                let mut w = zero;
+                if term[c] as usize == k {
+                    w += weight[c];
+                }
+                if term2.get(c).is_some_and(|&k2| k2 as usize == k) {
+                    w += weight2[c];
+                }
+                if w == zero {
+                    continue;
+                }
+                for (wi, &word) in rows_bits[c].iter().enumerate() {
+                    let mut x = word;
+                    while x != 0 {
+                        a[64 * wi + x.trailing_zeros() as usize] += w;
+                        x &= x - 1;
+                    }
+                }
+            }
+            a
+        })
+        .collect();
+    super::trace("    sc structured: row tables", started);
+    let started = std::time::Instant::now();
+    let mut rows = rows;
+    let (mut box1_w, mut box2_w) = (row_box, col_box);
+    let box1_bit = |i: usize| bit(i >> b1, r1 + (i & ((1 << b1) - 1)));
+    let box2_bit = |i: usize| bit(c2 + (i >> t), i & ((1 << t) - 1));
+
+    // Low row rounds: every part on its own tables. The boxes' witness is
+    // their bits until the first fold; each box fold also computes the next
+    // round's polynomial in the same pass ([`fold_round`]).
+    let (mut box1_f, mut box2_f): (Vec<Gf>, Vec<Gf>) = (Vec::new(), Vec::new());
+    let mut box_coefficients =
+        if b1 > 0 { add(bit_round(&box1_bit, &box1_w), bit_round(&box2_bit, &box2_w)) } else { [zero; 3] };
+    for round in 0..b1 {
+        let mut coefficients = box_coefficients;
+        for (a, r) in acc.iter().zip(&rows) {
+            coefficients = add(coefficients, round_polynomial(a, r));
+        }
+        let challenge = send(coefficients, &mut target, &mut point, transcript)?;
+        let ((next1, coefficients1), (next2, coefficients2)) = if round == 0 {
+            let bit1 = |i: usize| if box1_bit(i) { one } else { zero };
+            let bit2 = |i: usize| if box2_bit(i) { one } else { zero };
+            (fold_round(bit1, &mut box1_w, challenge), fold_round(bit2, &mut box2_w, challenge))
+        } else {
+            let (src1, src2) = (&box1_f, &box2_f);
+            (fold_round(|i| src1[i], &mut box1_w, challenge), fold_round(|i| src2[i], &mut box2_w, challenge))
+        };
+        super::pool::recycle(std::mem::replace(&mut box1_f, next1));
+        super::pool::recycle(std::mem::replace(&mut box2_f, next2));
+        box_coefficients = add(coefficients1, coefficients2);
+        for (a, r) in acc.iter_mut().zip(rows.iter_mut()) {
+            fold(a, challenge);
+            fold(r, challenge);
+        }
+    }
+    drop(acc);
+    super::pool::recycle(box1_f);
+    super::pool::recycle(box2_f);
+    super::trace("    sc structured: low rounds", started);
+    let started = std::time::Instant::now();
+
+    // The witness at the bound low rows, from its bits: byte tables over
+    // `eq(point, ·)` on the low `b1` row bits.
+    let high = t - b1;
+    let eq = if b1 == 0 { vec![one] } else { build_eq_x_r_vec(&point, &()).expect("bound low rows") };
+    let segment_words = (1usize << b1).div_ceil(64);
+    let byte_tables: Vec<[Gf; 256]> = (0..(1usize << b1).div_ceil(8))
+        .map(|q| {
+            let mut table = [zero; 256];
+            for byte in 1..256usize {
+                let low = byte & (byte - 1);
+                let r = 8 * q + (byte ^ low).trailing_zeros() as usize;
+                table[byte] = table[low] + if r < eq.len() { eq[r] } else { zero };
+            }
+            table
+        })
+        .collect();
+    let mut witness: Vec<Gf> = cfg_into_iter!(0..1usize << (high + s), 64)
+        .map(|i| {
+            let (c, h) = (i >> high, i & ((1 << high) - 1));
+            let base = h << b1;
+            if b1 < 6 {
+                // Fewer than 64 low rows: bit by bit.
+                (0..1usize << b1).fold(zero, |a, r| if bit(c, base + r) { a + eq[r] } else { a })
+            } else {
+                let words = &rows_bits[c][base / 64..base / 64 + segment_words];
+                let mut a = zero;
+                for (wi, &word) in words.iter().enumerate() {
+                    for q in 0..8 {
+                        a += byte_tables[8 * wi + q][((word >> (8 * q)) & 0xFF) as usize];
+                    }
+                }
+                a
+            }
+        })
+        .collect();
+    let h1 = r1 >> b1;
+    let mut weights: Vec<Gf> = cfg_into_iter!(0..1usize << (high + s), 64)
+        .map(|i| {
+            let (c, h) = (i >> high, i & ((1 << high) - 1));
+            let mut w = zero;
+            if term[c] != u32::MAX {
+                w += rows[term[c] as usize][h] * weight[c];
+            }
+            if let Some(&k) = term2.get(c)
+                && k != u32::MAX
+            {
+                w += rows[k as usize][h] * weight2[c];
+            }
+            if h == h1 {
+                w += box1_w[c];
+            }
+            if c >= c2 && c < c2 + (1 << b2) {
+                w += box2_w[((c - c2) << high) | h];
+            }
+            w
+        })
+        .collect();
+    drop(rows);
+    super::pool::recycle(box1_w);
+    super::pool::recycle(box2_w);
+    super::trace("    sc structured: fold to dense", started);
+
+    // The remaining rounds, dense on `2^{t−b1+s}` entries.
+    while witness.len() > 1 {
+        let coefficients = round_polynomial(&witness, &weights);
+        let challenge = send(coefficients, &mut target, &mut point, transcript)?;
+        fold(&mut witness, challenge);
+        fold(&mut weights, challenge);
+    }
+    let evaluation = witness[0];
+    if target != evaluation * weights[0] {
+        return Err(ProveError::InvalidClaim);
+    }
+    transcript.prover_message(&evaluation);
+    Ok(MleClaim { point, target: evaluation })
+}
+
+/// [`fold`] of a witness (`witness(i)`, entries `0..weights.len()`) and of
+/// `weights` at `challenge`, then the [`round_polynomial`] of the folded pair,
+/// in one pass: the folded witness, the weights folded in place, and the
+/// next round's coefficients (the same field sums, regrouped).
+fn fold_round<S: Fn(usize) -> Gf + Sync>(witness: S, weights: &mut Vec<Gf>, challenge: Gf) -> (Vec<Gf>, [Gf; 3]) {
+    let len = weights.len() / 2;
+    let zero = Gf::zero();
+    let mut folded = super::pool::take(len);
+    let mut w_out = super::pool::take(len);
+    let w_in: &[Gf] = weights;
+    let fold1 = |a: Gf, b: Gf| a + challenge * (a + b);
+    if len < 2 {
+        for k in 0..len {
+            folded[k] = fold1(witness(2 * k), witness(2 * k + 1));
+            w_out[k] = fold1(w_in[2 * k], w_in[2 * k + 1]);
+        }
+        super::pool::recycle(std::mem::replace(weights, w_out));
+        return (folded, [zero; 3]);
+    }
+    const PAIRS: usize = PARALLEL_MIN_PAIRS;
+    let partials: Vec<[Gf; 3]> = cfg_chunks_mut!(folded, 2 * PAIRS)
+        .zip(cfg_chunks_mut!(w_out, 2 * PAIRS))
+        .enumerate()
+        .map(|(chunk, (fo, wo))| {
+            let mut at_zero = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut at_one = <Gf as WideMulAcc>::wide_zero(&zero);
+            let mut quadratic = <Gf as WideMulAcc>::wide_zero(&zero);
+            for q in 0..fo.len() / 2 {
+                let i = 4 * (chunk * PAIRS + q);
+                let (f0, f1) = (fold1(witness(i), witness(i + 1)), fold1(witness(i + 2), witness(i + 3)));
+                let (w0, w1) = (fold1(w_in[i], w_in[i + 1]), fold1(w_in[i + 2], w_in[i + 3]));
+                fo[2 * q] = f0;
+                fo[2 * q + 1] = f1;
+                wo[2 * q] = w0;
+                wo[2 * q + 1] = w1;
+                <Gf as WideMulAcc>::wide_add_assign(&mut at_zero, &<Gf as WideMulAcc>::mul_wide(&f0, &w0));
+                <Gf as WideMulAcc>::wide_add_assign(&mut at_one, &<Gf as WideMulAcc>::mul_wide(&f1, &w1));
+                <Gf as WideMulAcc>::wide_add_assign(&mut quadratic, &<Gf as WideMulAcc>::mul_wide(&(f0 + f1), &(w0 + w1)));
+            }
+            [
+                <Gf as WideMulAcc>::from_wide(at_zero),
+                <Gf as WideMulAcc>::from_wide(at_one),
+                <Gf as WideMulAcc>::from_wide(quadratic),
+            ]
+        })
+        .collect();
+    super::pool::recycle(std::mem::replace(weights, w_out));
+    let [a0, a1, a2] = partials.into_iter().fold([zero; 3], |[a, b, c], [x, y, z]| [a + x, b + y, c + z]);
+    (folded, [a0, a0 + a1 + a2, a2])
+}
+
+/// [`round_polynomial`] for a witness of bits (`bits(j)`): the products are
+/// selections of the weights.
+fn bit_round(bits: &(dyn Fn(usize) -> bool + Sync), weights: &[Gf]) -> [Gf; 3] {
+    const CHUNK: usize = 1 << 13;
+    let pairs = weights.len() / 2;
+    let zero = Gf::zero();
+    let partials: Vec<[Gf; 3]> = cfg_into_iter!(0..pairs.div_ceil(CHUNK))
+        .map(|chunk| {
+            let mut acc = [zero; 3];
+            for p in chunk * CHUNK..((chunk + 1) * CHUNK).min(pairs) {
+                let (b0, b1) = (bits(2 * p), bits(2 * p + 1));
+                let (w0, w1) = (weights[2 * p], weights[2 * p + 1]);
+                if b0 {
+                    acc[0] += w0;
+                }
+                if b1 {
+                    acc[1] += w1;
+                }
+                if b0 != b1 {
+                    acc[2] += w0 + w1;
+                }
+            }
+            acc
+        })
+        .collect();
+    let [s0, s1, sq] = partials.into_iter().fold([zero; 3], |[a, b, d], [x, y, z]| [a + x, b + y, d + z]);
+    [s0, s0 + s1 + sq, sq]
 }
 
 pub(crate) fn verify(
@@ -398,6 +691,37 @@ pub(crate) fn verify(
         point,
         target: evaluation,
     })
+}
+
+/// [`verify`] for a single-column claim with lazily evaluated weights.
+pub(crate) fn verify_lazy(
+    rounds: usize,
+    target: Gf,
+    weight_mle: impl FnOnce(&[Gf]) -> Gf,
+    transcript: &mut VerifierState<'_>,
+) -> Result<MleClaim, VerifyError> {
+    let mut point = Vec::with_capacity(rounds);
+    let mut target = target;
+    for _ in 0..rounds {
+        let coefficients = transcript
+            .prover_message::<[Gf; 3]>()
+            .map_err(|_| VerifyError::MalformedProof)?;
+        if coefficients[1] + coefficients[2] != target {
+            return Err(VerifyError::VerificationFailed);
+        }
+        let challenge = transcript
+            .native_scalar(super::grinding::Stage::BinaryRound)
+            .map_err(|_| VerifyError::MalformedProof)?;
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+    }
+    let evaluation = transcript
+        .prover_message::<Gf>()
+        .map_err(|_| VerifyError::MalformedProof)?;
+    if target != evaluation * weight_mle(&point) {
+        return Err(VerifyError::VerificationFailed);
+    }
+    Ok(MleClaim { point, target: evaluation })
 }
 
 /// [`prove`] for a sum of factored claims: the row rounds run one
@@ -613,17 +937,31 @@ fn evaluate_round([constant, linear, quadratic]: [Gf; 3], challenge: Gf) -> Gf {
     constant + challenge * (linear + challenge * quadratic)
 }
 
-/// Fixes the lowest remaining coordinate: `v'[i] = v[2i] + r·(v[2i] + v[2i+1])`.
+/// Fixes the lowest remaining coordinate: `v'[i] = v[2i] + r·(v[2i] + v[2i+1])`,
+/// in place (the first half of the buffer holds the result).
 fn fold(values: &mut Vec<Gf>, challenge: Gf) {
     let len = values.len() / 2;
-    let folded: Vec<Gf> = cfg_into_iter!(0..len, PARALLEL_MIN_PAIRS)
-        .map(|index| {
+    if len >= PARALLEL_MIN_PAIRS * 4 {
+        // Chunks of pairs fold into a scratch half, then copy back: the pair
+        // (2i, 2i+1) of a later index is still unread when index i is written
+        // only when done serially, so the parallel path goes through scratch.
+        let mut folded = super::pool::take(len);
+        let source: &[Gf] = values;
+        cfg_iter_mut!(folded, PARALLEL_MIN_PAIRS).enumerate().for_each(|(index, dst)| {
+            let zero = source[2 * index];
+            let one = source[2 * index + 1];
+            *dst = zero + challenge * (zero + one);
+        });
+        values[..len].copy_from_slice(&folded);
+        super::pool::recycle(folded);
+    } else {
+        for index in 0..len {
             let zero = values[2 * index];
             let one = values[2 * index + 1];
-            zero + challenge * (zero + one)
-        })
-        .collect();
-    *values = folded;
+            values[index] = zero + challenge * (zero + one);
+        }
+    }
+    values.truncate(len);
 }
 
 #[cfg(test)]
@@ -718,6 +1056,59 @@ mod sum_tests {
         .unwrap();
         let mut prover = build_kernel_prover(b"sum-test/v1", b"instance");
         assert!(prove_sum(&wrong, &rows_bits, &[], &mut prover).is_err());
+    }
+
+    /// The structured prover sends the dense single-column prover's bytes.
+    #[test]
+    fn structured_weights_match_the_dense_messages() {
+        use circuit::linear_map::binary::StructuredWeights;
+        let cases = [(7usize, 4usize, 3usize, 40usize, 1usize, 14usize), (7, 3, 6, 64, 0, 5), (8, 4, 7, 128, 2, 12)];
+        for ((t, s, b1, r1, b2, c2), second) in cases.iter().flat_map(|&c| [(c, false), (c, true)]) {
+            let mut state = 0x1234_5678_9abc_def1u64 ^ (t as u64) << 32;
+            let shape = Shape::new(t, s).unwrap();
+            let rows_bits = grid(&mut state, &shape);
+            let terms = 3usize;
+            let (term2, weight2) = if second {
+                (
+                    (0..1u32 << s).map(|c| if c % 3 == 1 { u32::MAX } else { (c * 7 + 1) % terms as u32 }).collect(),
+                    (0..1usize << s).map(|_| random_gf(&mut state)).collect(),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let sw = StructuredWeights {
+                t,
+                s,
+                rows: (0..terms).map(|_| (0..1usize << t).map(|_| random_gf(&mut state)).collect()).collect(),
+                term: (0..1u32 << s).map(|c| if c % 5 == 4 { u32::MAX } else { c % terms as u32 }).collect(),
+                weight: (0..1usize << s).map(|_| random_gf(&mut state)).collect(),
+                term2,
+                weight2,
+                row_box_start: r1,
+                row_box_log: b1,
+                row_box: (0..1usize << (b1 + s)).map(|_| random_gf(&mut state)).collect(),
+                col_box_start: c2,
+                col_box_log: b2,
+                col_box: (0..1usize << (b2 + t)).map(|_| random_gf(&mut state)).collect(),
+            };
+            let dense = sw.dense();
+            let flat: Vec<u64> = rows_bits.iter().flat_map(|r| r.iter().copied()).collect();
+            let mut target = Gf::zero();
+            for (j, w) in dense.iter().enumerate() {
+                if (flat[j / 64] >> (j % 64)) & 1 == 1 {
+                    target += *w;
+                }
+            }
+            let single_shape = Shape::new(t + s, 0).unwrap();
+            let claim = LinearClaimGf::from_shape(&single_shape, dense, vec![Gf::one()], target).unwrap();
+            let mut a = build_kernel_prover(b"structured-test/v1", b"one");
+            let dense_out = prove(&claim, core::slice::from_ref(&flat), &[], &mut a).unwrap();
+            let mut b = build_kernel_prover(b"structured-test/v1", b"one");
+            let structured_out = prove_structured(sw, &rows_bits, target, &mut b).unwrap();
+            assert_eq!(a.finish().narg_string, b.finish().narg_string, "t={t} s={s}");
+            assert_eq!(dense_out.point, structured_out.point);
+            assert_eq!(dense_out.target, structured_out.target);
+        }
     }
 
     #[test]

@@ -249,10 +249,13 @@ impl BitZProver {
         transcript
             .start_native(native)
             .map_err(|_| ProveError::Opening(crate::bitz::pcs::ProveError::Internal))?;
+        let bytes = transcript.bytes_written();
         let fold = self
             .send_fold(statement.claim, derived_rows, transcript)
             .map_err(ProveError::Fold)?;
         super::trace("fold+images", started);
+        super::trace_bytes("fold", bytes, transcript.bytes_written());
+        let bytes = transcript.bytes_written();
         let started = std::time::Instant::now();
         let layout = IntegerMatrixLayout {
             row_vars: shape.log_rows(),
@@ -263,8 +266,36 @@ impl BitZProver {
             .map_err(ProveError::Reduction)?;
         drop(packed);
         super::trace("gkr", started);
+        super::trace_bytes("gkr", bytes, transcript.bytes_written());
+        let bytes = transcript.bytes_written();
 
         let started = std::time::Instant::now();
+        // Structured committed weights, when the map has them: the opening
+        // never forms the 2^m weight table.
+        let structured = match &query {
+            OpeningQuery::InnerProduct { claim }
+                if !statement.is_direct()
+                    && claim.row_weights().len() == shape.rows()
+                    && claim.column_weights().len() == shape.columns()
+                    && std::env::var_os("BITZ_DENSE_PROVE").is_none() =>
+            {
+                statement
+                    .map
+                    .structured_weights(claim.row_weights(), claim.column_weights(), shape.log_rows())
+                    .map(|weights| (weights, claim.target()))
+            }
+            _ => None,
+        };
+        if let Some((weights, target)) = structured {
+            super::trace("structured weights", started);
+            let started = std::time::Instant::now();
+            let result = pcs
+                .prove_lin_structured(hint, weights, target, transcript, ood)
+                .map_err(ProveError::Opening);
+            super::trace("opening (all)", started);
+            super::trace_bytes("opening", bytes, transcript.bytes_written());
+            return result;
+        }
         let query = statement
             .transpose_query(query)
             .map_err(ProveError::Virtual)?;
@@ -282,18 +313,24 @@ impl BitZProver {
             .map_err(ProveError::Opening)
         } else {
             let flat = flatten_rows(hint.rows());
-            pcs.prove_lin_rows(
-                hint,
-                core::slice::from_ref(&flat),
-                &[],
-                &query,
-                StatementBinding::AlreadyBound,
-                transcript,
-                ood,
-            )
-            .map_err(ProveError::Opening)
+            let out = pcs
+                .prove_lin_rows(
+                    hint,
+                    core::slice::from_ref(&flat),
+                    &[],
+                    &query,
+                    StatementBinding::AlreadyBound,
+                    transcript,
+                    ood,
+                )
+                .map_err(ProveError::Opening);
+            if let OpeningQuery::InnerProduct { claim } = query {
+                super::pool::recycle(claim.into_row_weights());
+            }
+            out
         };
         super::trace("opening (all)", started);
+        super::trace_bytes("opening", bytes, transcript.bytes_written());
         result
     }
 }
@@ -337,20 +374,41 @@ impl BitZVerifier {
             .map_err(VerifyError::Reduction)?;
         super::trace("v: gkr", started);
         let started = std::time::Instant::now();
-        let query = statement
-            .transpose_query(query)
-            .map_err(VerifyError::Virtual)?;
-        super::trace("v: transpose", started);
-        let started = std::time::Instant::now();
-        pcs.verify_lin(
-            &com,
-            &query,
-            StatementBinding::AlreadyBound,
-            &mut transcript,
-            ood,
-        )
-        .map_err(VerifyError::Opening)?;
-        super::trace("v: opening", started);
+        let lazy = statement.map.has_transposed_mle() && !statement.is_direct() && std::env::var_os("BITZ_DENSE_VERIFY").is_none();
+        if let (true, OpeningQuery::InnerProduct { claim }) = (lazy, &query) {
+            // The committed side without forming the 2^m weights: the map
+            // evaluates their extension at the sumcheck's point.
+            let shape = self.params.shape();
+            if claim.row_weights().len() != shape.rows() || claim.column_weights().len() != shape.columns() {
+                return Err(VerifyError::Virtual(VirtualError::Claim(ClaimError::RowWeightCountMismatch)));
+            }
+            let (row_w, col_w, t) = (claim.row_weights(), claim.column_weights(), shape.log_rows());
+            let map = statement.map;
+            pcs.verify_lin_lazy(
+                &com,
+                claim.target(),
+                |point| map.transposed_mle(row_w, col_w, t, point).expect("the map evaluates its transpose"),
+                &mut transcript,
+                ood,
+            )
+            .map_err(VerifyError::Opening)?;
+            super::trace("v: lazy opening", started);
+        } else {
+            let query = statement
+                .transpose_query(query)
+                .map_err(VerifyError::Virtual)?;
+            super::trace("v: transpose", started);
+            let started = std::time::Instant::now();
+            pcs.verify_lin(
+                &com,
+                &query,
+                StatementBinding::AlreadyBound,
+                &mut transcript,
+                ood,
+            )
+            .map_err(VerifyError::Opening)?;
+            super::trace("v: opening", started);
+        }
         transcript
             .check_eof()
             .map_err(|_| VerifyError::TrailingData)

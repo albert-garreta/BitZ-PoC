@@ -235,15 +235,6 @@ fn witness_opened<CS: Circuit>(
     (rows, sibs)
 }
 
-/// The root of the complete tree over `leaves` (a power of two).
-fn tree_root<CS: Circuit>(cs: &mut CS, mut level: Vec<Digest<CS::Bool>>, counts: &mut ShaCounts) -> Digest<CS::Bool> {
-    assert!(level.len().is_power_of_two());
-    while level.len() > 1 {
-        level = level.chunks(2).map(|pair| merkle::pair_hash(cs, &pair[0], &pair[1], counts)).collect();
-    }
-    level.pop().unwrap()
-}
-
 /// The circuit of the shared opening of `point` against the joint
 /// sumcheck's committed terminal value (the opening target `μ`), the
 /// commitment `root` and the statement digest.
@@ -277,6 +268,7 @@ pub fn verify<CS: Circuit, const N: usize>(
     let lanes = geometry.lanes();
     let mut counts = OpeningCounts::default();
     public.borrow_mut().set_label("opening");
+    let mut stages = super::falcon_verifier::Stages::new(if v.is_some() { "witness opening" } else { "record opening" });
 
     let mut bt = BlockTranscript::new(cs, t, hooks::OPENING_GRINDING_DOMAIN, opening_bits, v.map(|v| v.opening_nonces));
     opening::bind_allocation(geometry, &mut bt);
@@ -307,11 +299,12 @@ pub fn verify<CS: Circuit, const N: usize>(
     let mut target = Lc::new();
     for (u, e) in eq_r2.iter().enumerate() {
         let s_u: [CS::Bool; 128] = std::array::from_fn(|v| bits[v][u].clone());
-        target.add(*e, &G::V(s_u));
+        target.add(*e, &G::of_bits(s_u));
     }
     let target = target.settle(bt.cs);
     let padding = opening::sample_padding(&mut bt, geometry);
 
+    stages.mark("ring switch");
     let pcs_nonces = v.map(|v| v.pcs_nonces);
     let mut ch = PlanChallenger { bt: &mut bt, plan, next: 0, active: false, nonces: pcs_nonces, cursor: 0, pow: ShaCounts::default() };
     let lig = v.map(|v| v.ligerito);
@@ -379,6 +372,7 @@ pub fn verify<CS: Circuit, const N: usize>(
         d
     };
     let root_1 = root_digest(&mut ch, 0);
+    stages.mark("L0 folds");
 
     ch.verify_pow(vc.grinding_bits[0] as u32, lig.map(|p| p.grinding_nonces.first().copied().unwrap_or(0)));
     let num_queries_0 = vc.queries[0];
@@ -413,6 +407,7 @@ pub fn verify<CS: Circuit, const N: usize>(
     let root_0 = merkle::public_digest(*root);
     verify_opens(ch.bt.cs, &root_0, block_len_0, &queries_0, &rows0, &sibs0, &mut counts.merkle);
 
+    stages.mark("L0 opening");
     let n1 = log_n - initial_k;
     let enforced_0 = enforced_sum(&rows0, &r_lane_fold, &alpha_0).settle(ch.bt.cs);
     let (i0, i2) = next_message(&mut ch);
@@ -488,26 +483,24 @@ pub fn verify<CS: Circuit, const N: usize>(
             let num_queries_last = vc.queries[i + 1];
             let _queries_last = sample_distinct_queries(&mut ch, prev_block_len, num_queries_last);
             let _alpha_last = ch.sample_f128_vec(ceil_log2(num_queries_last));
-            // The complete message's codeword and tree reproduce the last root.
+            // The complete message's codeword and tree reproduce the last root
+            // (each subtree's codeword rows and hashes independent).
             let matrix = encoding_matrix(prev_log_msg_cols, prev_log_inv_rate);
-            let leaves: Vec<Digest<CS::Bool>> = matrix
-                .iter()
-                .map(|weights| {
-                    let row: Vec<G<CS::Bool>> = (0..prev_num_interleaved)
-                        .map(|lane| {
-                            let mut lc = Lc::new();
-                            for (c, w) in weights.iter().enumerate() {
-                                lc.add(*w, &message[c * prev_num_interleaved + lane]);
-                            }
-                            // Settled: a hash block reads committed bits.
-                            lc.settle(ch.bt.cs)
-                        })
-                        .collect();
-                    merkle::leaf_hash(ch.bt.cs, &row, &mut counts.merkle)
-                })
-                .collect();
+            let leaf = |cs: &mut CS, i: usize, c: &mut ShaCounts| {
+                let row: Vec<G<CS::Bool>> = (0..prev_num_interleaved)
+                    .map(|lane| {
+                        let mut lc = Lc::new();
+                        for (col, w) in matrix[i].iter().enumerate() {
+                            lc.add(*w, &message[col * prev_num_interleaved + lane]);
+                        }
+                        // Settled: a hash block reads committed bits.
+                        lc.settle(cs)
+                    })
+                    .collect();
+                merkle::leaf_hash(cs, &row, c)
+            };
             counts.final_codeword += matrix.len() * prev_num_interleaved;
-            let top = tree_root(ch.bt.cs, leaves, &mut counts.merkle);
+            let top = merkle::tree_root_with(ch.bt.cs, matrix.len(), &leaf, &mut counts.merkle);
             merkle::assert_digest_eq(ch.bt.cs, &top, &prev_root);
             // Complete-message binding: the last batching draw cancels.
             let _beta_last = ch.sample_f128();
@@ -538,6 +531,7 @@ pub fn verify<CS: Circuit, const N: usize>(
             {
                 fail("Ligerito proof trailing data");
             }
+            stages.mark("final level");
             break;
         }
 
@@ -567,6 +561,7 @@ pub fn verify<CS: Circuit, const N: usize>(
         running = running.fold(&intro_i, beta_i);
         t_r.add(beta_i, &enforced_i);
         level_ctxs.push(LevelCtx { log_msg_cols: n_current, queries: queries_i, alpha: alpha_i, ris_start: ris.len(), beta: beta_i });
+        stages.mark(format!("level {}", i + 1));
         prev_root = root_next;
         let k_next = vc.recursive_ks[i + 1];
         assert!(n_current >= k_next);
@@ -575,6 +570,7 @@ pub fn verify<CS: Circuit, const N: usize>(
         prev_log_inv_rate = vc.log_inv_rates[i + 2];
     }
     ch.finish();
+    stages.print();
     counts.pow = ch.pow;
     drop(ch);
     bt.finish("opening");

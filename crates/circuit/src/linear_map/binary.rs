@@ -27,6 +27,67 @@ pub enum PreparedVirtualMapError {
 /// Arbitrary maps use [`PreparedVirtualMap`]'s canonical CSC storage. Large
 /// batches can instead expose an implicit tensor repetition without allocating
 /// the fully expanded CSC column-offset array.
+/// Committed-side weights over a `2^t × 2^s` grid (flat index `c·2^t + r`)
+/// of the form
+///
+/// `w[r, c] = rows[term[c]][r]·weight[c]` (columns partitioned among a few
+/// row vectors; `term[c] = u32::MAX` for none)
+/// `+ rows[term2[c]][r]·weight2[c]` (an optional second term per column:
+/// `term2` empty for none anywhere, `u32::MAX` for none in a column)
+/// `+ [R ≤ r < R + 2^b1]·row_box[c·2^b1 + r − R]` (a dyadic band of rows)
+/// `+ [C ≤ c < C + 2^b2]·col_box[(c − C)·2^t + r]` (a dyadic band of columns).
+#[derive(Clone, Debug)]
+pub struct StructuredWeights {
+    pub t: usize,
+    pub s: usize,
+    pub rows: Vec<Vec<field::Gf128>>,
+    pub term: Vec<u32>,
+    pub weight: Vec<field::Gf128>,
+    pub term2: Vec<u32>,
+    pub weight2: Vec<field::Gf128>,
+    pub row_box_start: usize,
+    pub row_box_log: usize,
+    pub row_box: Vec<field::Gf128>,
+    pub col_box_start: usize,
+    pub col_box_log: usize,
+    pub col_box: Vec<field::Gf128>,
+}
+
+impl StructuredWeights {
+    /// The dense weights (tests and fallbacks).
+    pub fn dense(&self) -> Vec<field::Gf128> {
+        let (t, s) = (self.t, self.s);
+        let mut out = vec![field::Gf128::ZERO; 1 << (t + s)];
+        for c in 0..1usize << s {
+            if self.term[c] != u32::MAX {
+                let rows = &self.rows[self.term[c] as usize];
+                for r in 0..1usize << t {
+                    out[(c << t) | r] += rows[r] * self.weight[c];
+                }
+            }
+            if let Some(&k) = self.term2.get(c)
+                && k != u32::MAX
+            {
+                let rows = &self.rows[k as usize];
+                for r in 0..1usize << t {
+                    out[(c << t) | r] += rows[r] * self.weight2[c];
+                }
+            }
+        }
+        for c in 0..1usize << s {
+            for k in 0..1usize << self.row_box_log {
+                out[(c << t) | (self.row_box_start + k)] += self.row_box[(c << self.row_box_log) | k];
+            }
+        }
+        for k in 0..1usize << self.col_box_log {
+            for r in 0..1usize << t {
+                out[((self.col_box_start + k) << t) | r] += self.col_box[(k << t) | r];
+            }
+        }
+        out
+    }
+}
+
 pub trait VirtualMap: Sync {
     /// Structural bound on output bits within each `word_stride`-bit cell.
     /// Every touched row must satisfy `row % word_stride < bound`.
@@ -73,6 +134,37 @@ pub trait VirtualMap: Sync {
         _t: usize,
         _cells: usize,
     ) -> Option<Vec<field::Gf128>> {
+        None
+    }
+
+    /// `Σ_s weight[s]·eq(point, s)` for the transposed weights of
+    /// [`Self::transpose_weights`] (committed cell `s`'s bits low to high
+    /// against `point`), without forming them: the verifier's side of the
+    /// committed-bit sumcheck. `None`: materialize the weights instead.
+    fn transposed_mle(
+        &self,
+        _row: &[field::Gf128],
+        _col: &[field::Gf128],
+        _t: usize,
+        _point: &[field::Gf128],
+    ) -> Option<field::Gf128> {
+        None
+    }
+
+    /// Whether [`Self::transposed_mle`] is available.
+    fn has_transposed_mle(&self) -> bool {
+        false
+    }
+
+    /// The transposed weights in [`StructuredWeights`] form over a committed
+    /// grid of `2^t_f` rows, when the map's structure allows it (the prover
+    /// then never forms the dense `2^m` weights). `None`: dense.
+    fn structured_weights(
+        &self,
+        _row: &[field::Gf128],
+        _col: &[field::Gf128],
+        _t: usize,
+    ) -> Option<StructuredWeights> {
         None
     }
 

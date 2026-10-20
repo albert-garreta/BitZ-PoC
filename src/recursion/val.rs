@@ -240,11 +240,13 @@ impl PublicStream {
     }
 }
 
-/// A GF(2^128) value: public, or 128 F2 combinations of committed bits.
+/// A GF(2^128) value: public, or 128 F2 combinations of committed bits
+/// (shared: values flow into many combinations, and a recorder's bit is a
+/// support list, so copying the 128 bits is what costs).
 #[derive(Clone)]
 pub enum G<B: BoolWitness> {
     P(Gf),
-    V(Bits<B>),
+    V(Arc<Bits<B>>),
 }
 
 impl<B: BoolWitness> G<B> {
@@ -259,8 +261,13 @@ impl<B: BoolWitness> G<B> {
     pub fn bits(&self) -> Bits<B> {
         match self {
             Self::P(v) => gf128::constant(u128_of(*v)),
-            Self::V(b) => b.clone(),
+            Self::V(b) => (**b).clone(),
         }
+    }
+
+    /// A committed value from its bits.
+    pub fn of_bits(bits: Bits<B>) -> Self {
+        Self::V(Arc::new(bits))
     }
 }
 
@@ -277,7 +284,7 @@ pub(crate) fn eval_bits<B: BoolWitness, Z, C>(
 
 /// Commits `value` as fresh bits (proof data).
 pub fn witness<CS: Circuit>(cs: &mut CS, value: Gf) -> G<CS::Bool> {
-    G::V(gf128::witness(cs, u128_of(value)))
+    G::of_bits(gf128::witness(cs, u128_of(value)))
 }
 
 /// The value of committed bits when the backend computes values.
@@ -293,7 +300,7 @@ pub fn try_value<CS: Circuit>(cs: &CS, bits: &[CS::Bool]) -> Option<u128> {
 #[derive(Clone)]
 pub struct Lc<B: BoolWitness> {
     constant: Gf,
-    terms: Vec<(Gf, Bits<B>)>,
+    terms: Vec<(Gf, Arc<Bits<B>>)>,
 }
 
 impl<B: BoolWitness> Default for Lc<B> {
@@ -336,7 +343,7 @@ impl<B: BoolWitness> Lc<B> {
 
     pub fn add_bits(&mut self, c: Gf, bits: &Bits<B>) -> &mut Self {
         if c != Gf::ZERO {
-            self.terms.push((c, bits.clone()));
+            self.terms.push((c, Arc::new(bits.clone())));
         }
         self
     }
@@ -385,7 +392,7 @@ impl<B: BoolWitness> Lc<B> {
     pub fn try_value<CS: Circuit<Bool = B>>(&self, cs: &CS) -> Option<Gf> {
         let mut acc = self.constant;
         for (c, y) in &self.terms {
-            acc += *c * gf_of(try_value(cs, y)?);
+            acc += *c * gf_of(try_value(cs, &y[..])?);
         }
         Some(acc)
     }
@@ -407,7 +414,7 @@ impl<B: BoolWitness> Lc<B> {
         let maps: Vec<(&Bits<B>, [u128; 128])> = self
             .terms
             .iter()
-            .map(|(c, y)| (y, gf128::mul_const_columns(u128_of(*c))))
+            .map(|(c, y)| (&**y, gf128::mul_const_columns(u128_of(*c))))
             .collect();
         cs.linear_maps_128(&maps, u128_of(self.constant))
     }
@@ -427,9 +434,9 @@ impl<B: BoolWitness> Lc<B> {
             let v = u128_of(v);
             HintResult::Ok(PackedBits::from_words([v as u64, (v >> 64) as u64]))
         });
-        let fresh: Bits<B> = std::array::from_fn(|i| packed.bit(i));
+        let fresh: Arc<Bits<B>> = Arc::new(std::array::from_fn(|i| packed.bit(i)));
         let mut check = self.clone();
-        check.add_bits(Gf::ONE, &fresh);
+        check.terms.push((Gf::ONE, fresh.clone()));
         let bits = check.expand(cs);
         gf128::assert_zero(cs, &bits);
         G::V(fresh)
