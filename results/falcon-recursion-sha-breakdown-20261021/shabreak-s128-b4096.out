@@ -1,11 +1,13 @@
 
 running 1 test
-[falcon witness opening] ring switch 0.000 sha 43/2/0 | L0 folds 0.000 sha 47/12/0 | L0 opening 0.012 sha 166/3/3615 | level 1 0.006 sha 148/14/1639 | level 2 0.004 sha 128/13/1071 | level 3 0.003 sha 125/13/741 | final level 0.015 sha 107/6/2047 | total 0.041
-[falcon witness] statement 0.002 sha 0/0/0 | keyed ring 0.002 sha 75/1/0 | norm 0.002 sha 226/23/0 | binder 0.003 sha 251/24/0 | bridge 0.021 sha 1188/297/0 | joint 0.001 sha 210/26/0 | opening 0.042 sha 764/63/9113 | total 0.072
-[falcon record opening] ring switch 0.001 sha 43/2/0 | L0 folds 0.001 sha 47/12/0 | L0 opening 0.030 sha 166/3/3615 | level 1 0.021 sha 148/14/1639 | level 2 0.013 sha 128/13/1071 | level 3 0.010 sha 125/13/741 | final level 0.049 sha 107/6/2047 | total 0.124
-[falcon record] statement 0.002 sha 0/0/0 | keyed ring 0.012 sha 75/1/0 | norm 0.009 sha 226/23/0 | binder 0.009 sha 251/24/0 | bridge 0.067 sha 1188/297/0 | joint 0.004 sha 210/26/0 | opening 0.127 sha 764/63/9113 | total 0.230
-record 0.327 s (12261 blocks) digest 3ed27fd1035e0d65da87f5e225666bd4e1be5542304c45cb2f8cf20340542a59
+[falcon witness opening] ring switch 0.000 sha 43/2/0 | L0 folds 0.000 sha 47/12/0 | L0 opening 0.012 sha 166/3/3615 | level 1 0.006 sha 148/14/1639 | level 2 0.004 sha 128/13/1071 | level 3 0.003 sha 125/13/741 | final level 0.016 sha 107/6/2047 | total 0.042
+[falcon witness opening merkle] L0 309 rows x 16: leaves 1236 nodes 2379 | level 1 189 rows x 8: leaves 378 nodes 1261 | level 2 155 rows x 8: leaves 310 nodes 761 | level 3 142 rows x 8: leaves 284 nodes 457 | final level 1024 rows x 2: leaves 1024 nodes 1023
+[falcon witness] statement 0.002 sha 0/0/0 | keyed ring 0.002 sha 75/1/0 | norm 0.002 sha 226/23/0 | binder 0.003 sha 251/24/0 | bridge 0.021 sha 1188/297/0 | joint 0.001 sha 210/26/0 | opening 0.042 sha 764/63/9113 | total 0.073
+[falcon record opening] ring switch 0.001 sha 43/2/0 | L0 folds 0.001 sha 47/12/0 | L0 opening 0.029 sha 166/3/3615 | level 1 0.020 sha 148/14/1639 | level 2 0.012 sha 128/13/1071 | level 3 0.009 sha 125/13/741 | final level 0.044 sha 107/6/2047 | total 0.117
+[falcon record opening merkle] L0 309 rows x 16: leaves 1236 nodes 2379 | level 1 189 rows x 8: leaves 378 nodes 1261 | level 2 155 rows x 8: leaves 310 nodes 761 | level 3 142 rows x 8: leaves 284 nodes 457 | final level 1024 rows x 2: leaves 1024 nodes 1023
+[falcon record] statement 0.002 sha 0/0/0 | keyed ring 0.012 sha 75/1/0 | norm 0.010 sha 226/23/0 | binder 0.009 sha 251/24/0 | bridge 0.071 sha 1188/297/0 | joint 0.004 sha 210/26/0 | opening 0.120 sha 764/63/9113 | total 0.226
+record 0.321 s (12261 blocks) digest 3ed27fd1035e0d65da87f5e225666bd4e1be5542304c45cb2f8cf20340542a59
 test recursion::falcon_verifier::tests::falcon_record_profile ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 0.63s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1052 filtered out; finished in 0.59s
 

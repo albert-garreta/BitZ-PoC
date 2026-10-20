@@ -406,7 +406,9 @@ pub fn verify<CS: Circuit, const N: usize>(
     counts.opened_elements += num_queries_0 * occupied.len();
     counts.siblings += sib0;
     let root_0 = merkle::public_digest(*root);
-    verify_opens(ch.bt.cs, &root_0, block_len_0, &queries_0, &rows0, &sibs0, &mut counts.merkle);
+    let before = counts.merkle.circuit;
+    let leaves = verify_opens(ch.bt.cs, &root_0, block_len_0, &queries_0, &rows0, &sibs0, &mut counts.merkle);
+    stages.merkle("L0", num_queries_0, lanes, leaves, counts.merkle.circuit - before);
 
     stages.mark("L0 opening", [ch.bt.t.duplex.counts.circuit, ch.bt.t.pow.circuit + ch.pow.circuit, counts.merkle.circuit]);
     let n1 = log_n - initial_k;
@@ -487,6 +489,7 @@ pub fn verify<CS: Circuit, const N: usize>(
             // The complete message's codeword and tree reproduce the last root
             // (each subtree's codeword rows and hashes independent).
             let matrix = encoding_matrix(prev_log_msg_cols, prev_log_inv_rate);
+            let leaf_blocks = std::sync::atomic::AtomicUsize::new(0);
             let leaf = |cs: &mut CS, i: usize, c: &mut ShaCounts| {
                 let row: Vec<G<CS::Bool>> = (0..prev_num_interleaved)
                     .map(|lane| {
@@ -498,11 +501,17 @@ pub fn verify<CS: Circuit, const N: usize>(
                         lc.settle(cs)
                     })
                     .collect();
-                merkle::leaf_hash(cs, &row, c)
+                let before = c.circuit;
+                let digest = merkle::leaf_hash(cs, &row, c);
+                leaf_blocks.fetch_add(c.circuit - before, std::sync::atomic::Ordering::Relaxed);
+                digest
             };
             counts.final_codeword += matrix.len() * prev_num_interleaved;
+            let before = counts.merkle.circuit;
             let top = merkle::tree_root_with(ch.bt.cs, matrix.len(), &leaf, &mut counts.merkle);
             merkle::assert_digest_eq(ch.bt.cs, &top, &prev_root);
+            let leaves = leaf_blocks.load(std::sync::atomic::Ordering::Relaxed);
+            stages.merkle("final level", matrix.len(), prev_num_interleaved, leaves, counts.merkle.circuit - before);
             // Complete-message binding: the last batching draw cancels.
             let _beta_last = ch.sample_f128();
 
@@ -554,7 +563,9 @@ pub fn verify<CS: Circuit, const N: usize>(
         let (rows, sibs) = witness_opened(ch.bt.cs, lig.and_then(|p| p.recursive_proofs.get(i)), num_queries_i, prev_num_interleaved, sib);
         counts.opened_elements += num_queries_i * prev_num_interleaved;
         counts.siblings += sib;
-        verify_opens(ch.bt.cs, &prev_root, prev_block_len, &queries_i, &rows, &sibs, &mut counts.merkle);
+        let before = counts.merkle.circuit;
+        let leaves = verify_opens(ch.bt.cs, &prev_root, prev_block_len, &queries_i, &rows, &sibs, &mut counts.merkle);
+        stages.merkle(format!("level {}", i + 1), num_queries_i, prev_num_interleaved, leaves, counts.merkle.circuit - before);
         let enforced_i = enforced_sum(&rows, &level_rs, &alpha_i).settle(ch.bt.cs);
         let (i0, i2) = next_message(&mut ch);
         let intro_i = Quad::from_msg(&i0, &i2, &Lc::of(&enforced_i));

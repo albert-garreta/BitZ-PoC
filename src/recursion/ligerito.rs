@@ -344,7 +344,9 @@ fn witness_level<CS: Circuit>(
 }
 
 /// Verifies the opened rows of one level against `root` (the subtrees'
-/// leaves and paths as independent sub-circuits).
+/// leaves and paths as independent sub-circuits); returns the in-circuit
+/// compressions of the leaf hashes (the rest of `counts`' increase is the
+/// paths' nodes).
 pub(super) fn verify_opens<CS: Circuit>(
     cs: &mut CS,
     root: &Digest<CS::Bool>,
@@ -353,10 +355,17 @@ pub(super) fn verify_opens<CS: Circuit>(
     rows: &[Vec<G<CS::Bool>>],
     siblings: &[Digest<CS::Bool>],
     counts: &mut ShaCounts,
-) {
-    let leaf = |cs: &mut CS, q: usize, c: &mut ShaCounts| merkle::leaf_hash(cs, &rows[q], c);
+) -> usize {
+    let leaf_blocks = std::sync::atomic::AtomicUsize::new(0);
+    let leaf = |cs: &mut CS, q: usize, c: &mut ShaCounts| {
+        let before = c.circuit;
+        let digest = merkle::leaf_hash(cs, &rows[q], c);
+        leaf_blocks.fetch_add(c.circuit - before, std::sync::atomic::Ordering::Relaxed);
+        digest
+    };
     let top = merkle::multi_proof_root_with(cs, block_len, queries, &leaf, siblings, counts);
     merkle::assert_digest_eq(cs, &top, root);
+    leaf_blocks.into_inner()
 }
 
 /// `induce_sumcheck_enforced_sum`: `Σ_i eq(α)_i Σ_j eq(r)_j row_i[j]`.

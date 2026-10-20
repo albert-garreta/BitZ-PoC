@@ -57,6 +57,8 @@ pub(super) struct Stages {
     /// Cumulative compressions at each mark, counted from `base`.
     sha: Vec<[usize; 3]>,
     base: [usize; 3],
+    /// Per opening level: the Merkle compressions split into leaves and nodes.
+    merkle: Vec<String>,
     on: bool,
 }
 
@@ -70,6 +72,7 @@ impl Stages {
             marks: Vec::new(),
             sha: Vec::new(),
             base: [0; 3],
+            merkle: Vec::new(),
             on: std::env::var_os("BITZ_REC_STAGES").is_some(),
         }
     }
@@ -91,6 +94,14 @@ impl Stages {
         }
     }
 
+    /// One opening level's Merkle compressions: `total`, of which `leaf` hash
+    /// the `rows` leaves of `width` elements and the rest the tree's nodes.
+    pub(super) fn merkle(&mut self, level: impl std::fmt::Display, rows: usize, width: usize, leaf: usize, total: usize) {
+        if self.on {
+            self.merkle.push(format!("{level} {rows} rows x {width}: leaves {leaf} nodes {}", total - leaf));
+        }
+    }
+
     pub(super) fn print(&self) {
         if self.on {
             let mut previous = self.base;
@@ -105,6 +116,9 @@ impl Stages {
                 })
                 .collect();
             eprintln!("[falcon {}] {} | total {:.3}", self.pass, marks.join(" | "), self.start.elapsed().as_secs_f64());
+            if !self.merkle.is_empty() {
+                eprintln!("[falcon {} merkle] {}", self.pass, self.merkle.join(" | "));
+            }
         }
     }
 }

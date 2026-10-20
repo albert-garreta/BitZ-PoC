@@ -1,11 +1,13 @@
 
 running 1 test
-[falcon witness opening] ring switch 0.000 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.009 sha 127/0/2504 | level 1 0.004 sha 97/0/1046 | level 2 0.003 sha 82/0/654 | final level 0.012 sha 89/0/1023 | total 0.028
+[falcon witness opening] ring switch 0.000 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.009 sha 127/0/2504 | level 1 0.004 sha 97/0/1046 | level 2 0.003 sha 82/0/654 | final level 0.013 sha 89/0/1023 | total 0.028
+[falcon witness opening merkle] L0 242 rows x 16: leaves 968 nodes 1536 | level 1 148 rows x 8: leaves 296 nodes 750 | level 2 122 rows x 8: leaves 244 nodes 410 | final level 512 rows x 4: leaves 512 nodes 511
 [falcon witness] statement 0.001 sha 0/0/0 | keyed ring 0.002 sha 73/0/0 | norm 0.001 sha 119/0/0 | binder 0.002 sha 133/0/0 | bridge 0.016 sha 529/0/0 | joint 0.001 sha 74/0/0 | opening 0.028 sha 448/0/5227 | total 0.051
-[falcon record opening] ring switch 0.001 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.021 sha 127/0/2504 | level 1 0.014 sha 97/0/1046 | level 2 0.009 sha 82/0/654 | final level 0.047 sha 89/0/1023 | total 0.093
-[falcon record] statement 0.001 sha 0/0/0 | keyed ring 0.012 sha 73/0/0 | norm 0.007 sha 119/0/0 | binder 0.007 sha 133/0/0 | bridge 0.049 sha 529/0/0 | joint 0.002 sha 74/0/0 | opening 0.093 sha 448/0/5227 | total 0.172
-record 0.251 s (6603 blocks) digest d08999e524cee97ca930ec706d6fbb02936ada40819968aad4658d80cda058ca
+[falcon record opening] ring switch 0.001 sha 35/0/0 | L0 folds 0.000 sha 18/0/0 | L0 opening 0.020 sha 127/0/2504 | level 1 0.013 sha 97/0/1046 | level 2 0.008 sha 82/0/654 | final level 0.041 sha 89/0/1023 | total 0.083
+[falcon record opening merkle] L0 242 rows x 16: leaves 968 nodes 1536 | level 1 148 rows x 8: leaves 296 nodes 750 | level 2 122 rows x 8: leaves 244 nodes 410 | final level 512 rows x 4: leaves 512 nodes 511
+[falcon record] statement 0.001 sha 0/0/0 | keyed ring 0.012 sha 73/0/0 | norm 0.007 sha 119/0/0 | binder 0.007 sha 133/0/0 | bridge 0.049 sha 529/0/0 | joint 0.002 sha 74/0/0 | opening 0.084 sha 448/0/5227 | total 0.162
+record 0.239 s (6603 blocks) digest d08999e524cee97ca930ec706d6fbb02936ada40819968aad4658d80cda058ca
 test recursion::falcon_verifier::tests::falcon_record_profile ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 0.39s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1052 filtered out; finished in 0.36s
 
