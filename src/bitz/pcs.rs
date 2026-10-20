@@ -16,6 +16,11 @@ use flock_core::pcs::ligerito::{
     LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig, VerifierConfig,
     embedded_security_config, recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
 };
+use flock_core::field::Gf256;
+use flock_core::pcs::ligerito::ext::{
+    LigeritoProofExt, recursive_prover_with_basis_ext, recursive_verifier_with_basis_succinct_ext,
+};
+use flock_core::pcs::tensor_algebra::TensorAlgebra;
 use flock_core::pcs::pack::{LOG_PACKING, PACKING_WIDTH as CLAIM_COUNT};
 use flock_core::pcs::ring_switch::{
     build_eq_split, claim_check, eval_rs_eq_finish_from_prefix_binary_q, eval_rs_eq_prefix,
@@ -29,7 +34,8 @@ use super::sumcheck;
 use super::grinding::{Geometry, Policy, Schedule, Stage};
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
 use crate::ligerito_flock::{
-    FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
+    FlockCommitHint, OodClaim, add_ood_basis, add_ood_basis_ext, commit_rs_ligerito_rows,
+    ood_residual_evals, ood_residual_evals_ext,
 };
 use field::Gf128 as Gf;
 
@@ -42,11 +48,14 @@ pub(crate) const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1"
 /// The composed caller's Round-0 claim, batched into the Ligerito basis
 /// (this crate's addition; absent in their protocol).
 pub(crate) const OOD_CLAIM_LABEL: &[u8] = b"bitz/bitz/round0-claim/v1";
+/// The same claim over GF(2^256) (the extension opening's Round 0).
+const OOD_CLAIM_EXT_LABEL: &[u8] = b"bitz/bitz/round0-claim/gf2-256/v1";
 pub(crate) const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
 
 pub(crate) const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";
 pub(crate) const POW_TAG: &[u8] = b"pcs/flock/pow/v1";
 pub(crate) const LIGERITO_BASIS_LABEL: &[u8] = b"flock-ligerito-basis-v0";
+pub(crate) const LIGERITO_BASIS_EXT_LABEL: &[u8] = b"flock-ligerito-basis-ext-v0";
 pub(crate) const MAX_OBSERVED_BYTES: usize = 32;
 
 /// Errors from PCS configuration.
@@ -129,6 +138,10 @@ pub struct Pcs {
     packed_len: usize,
     native_policy: Policy,
     flock_plan: Option<Arc<GrindingPlan>>,
+    /// The Ligerito challenges live in GF(2^256) (a `field = "f256"`
+    /// ladder): the opening runs [`recursive_prover_with_basis_ext`] and
+    /// takes its Round-0 claim over the extension.
+    extension: bool,
 }
 
 impl Pcs {
@@ -160,9 +173,9 @@ impl Pcs {
     }
 
     pub(crate) fn native_schedule(
-        &self, integer: Option<Shape>, binary: Option<(usize, usize)>, ood: Option<(&[Gf], Gf)>,
+        &self, integer: Option<Shape>, binary: Option<(usize, usize)>, ood: Option<OodClaim<'_>>,
     ) -> Result<Schedule, ConfigError> {
-        if ood.is_some_and(|(point, _)| point.len() != self.params.m - LOG_PACKING) {
+        if ood.is_some_and(|claim| claim.vars() != self.params.m - LOG_PACKING) {
             return Err(ConfigError::Invalid("OOD point arity"));
         }
         Schedule::new(self.native_policy, Geometry {
@@ -214,7 +227,16 @@ impl Pcs {
         let (prover_config, verifier_config) = security
             .to_prover_verifier_configs()
             .map_err(|_| ConfigError::Invalid("prover config"))?;
-        Self::from_parts(params, prover_config, verifier_config)
+        let mut pcs = Self::from_parts(params, prover_config, verifier_config)?;
+        pcs.extension = security.field == "f256";
+        Ok(pcs)
+    }
+
+    /// The opening over GF(2^256), for a scheme built from configurations
+    /// ([`Self::from_configs`]), which do not carry the field.
+    pub(crate) fn with_extension(mut self, extension: bool) -> Self {
+        self.extension = extension;
+        self
     }
 
     /// The scheme over explicit flock prover/verifier configurations (a
@@ -268,6 +290,7 @@ impl Pcs {
             packed_len,
             native_policy: Policy::UNGRINDED,
             flock_plan: None,
+            extension: false,
         })
     }
 
@@ -320,7 +343,7 @@ impl Pcs {
         query: &OpeningQuery,
         statement_binding: StatementBinding,
         transcript: &mut ProverState,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), ProveError> {
         self.prove_lin_rows(
             hint,
@@ -348,7 +371,7 @@ impl Pcs {
         query: &OpeningQuery,
         statement_binding: StatementBinding,
         transcript: &mut ProverState,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
@@ -410,7 +433,7 @@ impl Pcs {
         weights: circuit::linear_map::binary::StructuredWeights,
         target: Gf,
         transcript: &mut ProverState,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len || 1usize << (weights.t + weights.s) != self.bit_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
@@ -441,7 +464,7 @@ impl Pcs {
         query: &OpeningQuery,
         statement_binding: StatementBinding,
         transcript: &mut VerifierState<'_>,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), VerifyError> {
         let native = self.native_schedule(None, query.binary_dimensions(), ood)
             .map_err(|_| VerifyError::VerificationFailed)?;
@@ -489,7 +512,7 @@ impl Pcs {
         target: Gf,
         weight_mle: impl FnOnce(&[Gf]) -> Gf,
         transcript: &mut VerifierState<'_>,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), VerifyError> {
         let rounds = self.bit_len.ilog2() as usize;
         let native = self.native_schedule(None, Some((rounds, 0)), ood)
@@ -524,7 +547,7 @@ impl Pcs {
         ring_switch: &RingSwitch<'_>,
         target: Gf,
         transcript: &mut ProverState,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
@@ -552,9 +575,14 @@ impl Pcs {
         let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
         debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
 
+        if self.extension {
+            return self.prove_mle_ext(hint, ring_switch, packed_basis, packed_target, transcript, ood, started_rs);
+        }
+
         // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
         // into the basis, `η_ood·y` into the target.
-        if let Some((point, y)) = ood {
+        if let Some(claim) = ood {
+            let (point, y) = claim.base().ok_or(ProveError::Internal)?;
             if point.len() != ring_switch.suffix_dimension() {
                 return Err(ProveError::Internal);
             }
@@ -595,8 +623,11 @@ impl Pcs {
         ring_switch: &RingSwitch<'_>,
         target: Gf,
         transcript: &mut VerifierState<'_>,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<OodClaim<'_>>,
     ) -> Result<(), VerifyError> {
+        if self.extension {
+            return self.verify_mle_ext(commitment, ring_switch, target, transcript, ood);
+        }
         let proof = read_opening_proof(transcript)?;
         validate_ligerito_proof_shape(&proof, &self.verifier_config, self.final_log_n, &commitment.0)?;
 
@@ -620,7 +651,8 @@ impl Pcs {
         let mut packed_target = batch_claims(&claims, &batching_weights);
         let suffix_point = &ring_switch.point[LOG_PACKING..];
         let ood = match ood {
-            Some((point, y)) => {
+            Some(claim) => {
+                let (point, y) = claim.base().ok_or(VerifyError::VerificationFailed)?;
                 if point.len() != ring_switch.suffix_dimension() {
                     return Err(VerifyError::VerificationFailed);
                 }
@@ -675,6 +707,183 @@ impl Pcs {
         }
         Ok(())
     }
+}
+
+impl Pcs {
+    /// [`Self::prove_mle`]'s opening with the Ligerito challenges in
+    /// GF(2^256): the batched packed basis and target are lifted to the
+    /// extension, the Round-0 claim (over the extension) joins them, and
+    /// [`recursive_prover_with_basis_ext`] opens the same level-0 codeword.
+    #[allow(clippy::too_many_arguments)]
+    fn prove_mle_ext(
+        &self,
+        hint: &FlockCommitHint,
+        ring_switch: &RingSwitch<'_>,
+        packed_basis: Vec<Gf>,
+        packed_target: Gf,
+        transcript: &mut ProverState,
+        ood: Option<OodClaim<'_>>,
+        started_rs: std::time::Instant,
+    ) -> Result<(), ProveError> {
+        let packed = hint.packed_message();
+        let mut basis: Vec<Gf256> = packed_basis.into_iter().map(Gf256::from_base).collect();
+        let mut target = Gf256::from_base(packed_target);
+        if let Some(claim) = ood {
+            let OodClaim::Ext(point, y) = claim else {
+                return Err(ProveError::Internal);
+            };
+            if point.len() != ring_switch.suffix_dimension() {
+                return Err(ProveError::Internal);
+            }
+            bind_ood_claim_ext(transcript, point, y);
+            let eta = transcript.native_scalar(Stage::OodBatch);
+            add_ood_basis_ext(&mut basis, point, eta);
+            target += y.mul_base(eta);
+        }
+        super::trace("  ring switch", started_rs);
+
+        let started_lig = std::time::Instant::now();
+        let data = hint.flock_prover_data();
+        transcript.finish_native().map_err(|_| ProveError::Internal)?;
+        let raw = ProverChallenger::new_ligerito_ext(transcript, target);
+        let mut challenger = AtomicChallenger::new(raw, self.flock_plan.as_deref());
+        let ligerito = recursive_prover_with_basis_ext(
+            &self.prover_config,
+            packed,
+            basis,
+            target,
+            &data.codeword,
+            &data.merkle_tree,
+            &mut challenger,
+        );
+        if !challenger.finish() {
+            return Err(ProveError::Internal);
+        }
+        super::trace("  ligerito", started_lig);
+        write_opening_proof_ext(&ligerito, transcript)
+    }
+
+    /// [`Self::verify_mle`] for [`Self::prove_mle_ext`]: the ring switch as
+    /// usual, then the residual basis over the extension (the ring-switch
+    /// tensor at an extension point, [`eval_rs_eq_prefix_ext`], plus the
+    /// Round-0 term).
+    fn verify_mle_ext(
+        &self,
+        commitment: &Root,
+        ring_switch: &RingSwitch<'_>,
+        target: Gf,
+        transcript: &mut VerifierState<'_>,
+        ood: Option<OodClaim<'_>>,
+    ) -> Result<(), VerifyError> {
+        let proof = read_opening_proof_ext(transcript)?;
+        validate_ligerito_proof_shape_ext(&proof, &self.verifier_config, self.final_log_n, &commitment.0)?;
+
+        // read_claims, target_matches, the batching draw
+        transcript.public_message(MLE_CLAIMS_LABEL);
+        let claims = transcript
+            .prover_message::<[Gf; CLAIM_COUNT]>()
+            .map_err(|_| VerifyError::MalformedProof)?;
+        let prefix_tensor = build_eq(&ring_switch.point[..LOG_PACKING]);
+        if claim_check(&prefix_tensor, &claims) != target {
+            return Err(VerifyError::VerificationFailed);
+        }
+        transcript.public_message(CHALLENGES_LABEL);
+        let batching_point = transcript
+            .native_array::<LOG_PACKING>(Stage::RingBatch)
+            .map_err(|_| VerifyError::MalformedProof)?;
+        let batching_weights = build_eq(&batching_point);
+        let mut packed_target = Gf256::from_base(batch_claims(&claims, &batching_weights));
+        let ood = match ood {
+            None => None,
+            Some(OodClaim::Ext(point, y)) => {
+                if point.len() != ring_switch.suffix_dimension() {
+                    return Err(VerifyError::VerificationFailed);
+                }
+                bind_ood_claim_ext(transcript, point, y);
+                let eta = transcript
+                    .native_scalar(Stage::OodBatch)
+                    .map_err(|_| VerifyError::MalformedProof)?;
+                packed_target += y.mul_base(eta);
+                Some((point, eta))
+            }
+            Some(OodClaim::Base(..)) => return Err(VerifyError::VerificationFailed),
+        };
+        let suffix_point = &ring_switch.point[LOG_PACKING..];
+        let evaluate_basis = |ris: &[Gf256], yr_log_n: usize| -> Vec<Gf256> {
+            if yr_log_n > 32 || ris.len().checked_add(yr_log_n) != Some(suffix_point.len()) {
+                return Vec::new();
+            }
+            let Some(yr_len) = 1usize.checked_shl(yr_log_n as u32) else {
+                return Vec::new();
+            };
+            let (t0, t1) = eval_rs_eq_prefix_ext(suffix_point, ris);
+            let suffix = &suffix_point[ris.len()..];
+            let mut out: Vec<Gf256> = (0..yr_len)
+                .map(|y| {
+                    Gf256::new(
+                        eval_rs_eq_finish_from_prefix_binary_q(&t0, suffix, y as u32, &batching_weights),
+                        eval_rs_eq_finish_from_prefix_binary_q(&t1, suffix, y as u32, &batching_weights),
+                    )
+                })
+                .collect();
+            if let Some((point, eta)) = ood {
+                for (slot, term) in out.iter_mut().zip(ood_residual_evals_ext(ris, yr_log_n, point, eta)) {
+                    *slot += term;
+                }
+            }
+            out
+        };
+
+        transcript.finish_native().map_err(|_| VerifyError::VerificationFailed)?;
+        let raw = VerifierChallenger::new_ligerito_ext(transcript, packed_target);
+        let mut challenger = AtomicChallenger::new(raw, self.flock_plan.as_deref());
+        let valid = recursive_verifier_with_basis_succinct_ext(
+            &self.verifier_config,
+            &proof,
+            ring_switch.suffix_dimension(),
+            packed_target,
+            &commitment.0,
+            evaluate_basis,
+            &mut challenger,
+        );
+        if !challenger.finish() {
+            return Err(VerifyError::MalformedProof);
+        }
+        if !valid {
+            return Err(VerifyError::VerificationFailed);
+        }
+        Ok(())
+    }
+}
+
+/// The ring-switch tensor `Σ_x eq(x, z) ⊗ eq(x, q)` ([`eval_rs_eq_prefix`])
+/// at an extension point `q`: over GF(2^128) ⊗ GF(2^256) =
+/// (GF(2^128) ⊗ GF(2^128)) ⊕ (GF(2^128) ⊗ GF(2^128))·Y, kept as the pair
+/// `(T₀, T₁)` of `T₀ + T₁·(1 ⊗ Y)`. Each variable multiplies by
+/// `1 + z ⊗ 1 + 1 ⊗ (q₀ + q₁Y)` with `Y² = Y + c`:
+/// `T₀ ← T₀ + T₀z + T₀q₀ + T₁·(c·q₁)`, `T₁ ← T₁ + T₁z + T₀q₁ + T₁·(q₀ + q₁)`.
+/// The binary residual coordinates and the batching fold act on each
+/// coordinate alone, so [`eval_rs_eq_finish_from_prefix_binary_q`] finishes
+/// `T₀` and `T₁` separately.
+fn eval_rs_eq_prefix_ext(z_vals: &[Gf], query_prefix: &[Gf256]) -> (TensorAlgebra, TensorAlgebra) {
+    assert!(query_prefix.len() <= z_vals.len());
+    let mut t0 = TensorAlgebra::from_vertical(Gf::ONE);
+    let mut t1 = TensorAlgebra::zero();
+    for (&z, &q) in z_vals.iter().zip(query_prefix.iter()) {
+        let v0 = t0.clone().scale_vertical(z);
+        let v1 = t1.clone().scale_vertical(z);
+        let h00 = t0.clone().scale_horizontal(q.a);
+        let h01 = t0.clone().scale_horizontal(q.b);
+        let h1s = t1.clone().scale_horizontal(q.a + q.b);
+        let h1c = t1.clone().scale_horizontal(Gf256::C * q.b);
+        t0 += &v0;
+        t0 += &h00;
+        t0 += &h1c;
+        t1 += &v1;
+        t1 += &h01;
+        t1 += &h1s;
+    }
+    (t0, t1)
 }
 
 /// Their 40-byte frame: `m`, `log_inv_rate`, `log_batch_size`, the profile
@@ -995,7 +1204,18 @@ fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) {
     transcript.public_message(&y);
 }
 
-
+/// [`bind_ood_claim`] for a GF(2^256) claim: each value as its two
+/// coordinates, `a` then `b`.
+fn bind_ood_claim_ext(transcript: &mut impl PublicTranscript, point: &[Gf256], y: Gf256) {
+    transcript.public_message(OOD_CLAIM_EXT_LABEL);
+    transcript.public_message(&(point.len() as u64));
+    for coordinate in point {
+        transcript.public_message(&coordinate.a);
+        transcript.public_message(&coordinate.b);
+    }
+    transcript.public_message(&y.a);
+    transcript.public_message(&y.b);
+}
 
 pub(crate) fn batch_claims(claims: &[Gf; CLAIM_COUNT], batching_weights: &[Gf]) -> Gf {
     debug_assert_eq!(batching_weights.len(), CLAIM_COUNT);
@@ -1056,7 +1276,28 @@ fn read_opening_proof(transcript: &mut VerifierState<'_>) -> Result<LigeritoProo
         .map_err(|_| VerifyError::MalformedProof)
 }
 
-fn rows_match(rows: &[Vec<Gf>], expected_rows: usize, expected_width: usize) -> bool {
+fn write_opening_proof_ext(proof: &LigeritoProofExt, transcript: &mut ProverState) -> Result<(), ProveError> {
+    let proof_bytes = proof_options().serialize(proof).map_err(|error| {
+        if matches!(error.as_ref(), bincode::ErrorKind::SizeLimit) {
+            ProveError::ProofTooLarge
+        } else {
+            ProveError::SerializationFailed
+        }
+    })?;
+    transcript.hint_bytes(&proof_bytes);
+    Ok(())
+}
+
+fn read_opening_proof_ext(transcript: &mut VerifierState<'_>) -> Result<LigeritoProofExt, VerifyError> {
+    let proof_bytes = transcript
+        .hint_bytes(PROOF_HINT_LIMIT)
+        .map_err(|_| VerifyError::MalformedProof)?;
+    proof_options()
+        .deserialize(&proof_bytes)
+        .map_err(|_| VerifyError::MalformedProof)
+}
+
+fn rows_match<T>(rows: &[Vec<T>], expected_rows: usize, expected_width: usize) -> bool {
     rows.len() == expected_rows && rows.iter().all(|row| row.len() == expected_width)
 }
 
@@ -1072,12 +1313,11 @@ fn positive_fold_nonce_count(config: &VerifierConfig) -> Result<usize, VerifyErr
 
 /// Their `validate_ligerito_proof_shape`: every prover-supplied dimension
 /// against the config, before the replay.
-fn validate_ligerito_proof_shape(
-    lig: &LigeritoProof,
-    config: &VerifierConfig,
-    final_log_n: usize,
-    expected_root: &Hash,
-) -> Result<(), VerifyError> {
+/// The opening proof's shape against the verifier configuration, for the
+/// base and the GF(2^256) proof alike (same fields, other element types).
+macro_rules! check_ligerito_proof_shape {
+    ($lig:ident, $config:ident, $final_log_n:ident, $expected_root:ident) => {{
+        let (lig, config, final_log_n, expected_root) = ($lig, $config, $final_log_n, $expected_root);
     if &lig.initial_root != expected_root {
         return Err(VerifyError::VerificationFailed);
     }
@@ -1130,6 +1370,26 @@ fn validate_ligerito_proof_shape(
         return Err(VerifyError::VerificationFailed);
     }
     Ok(())
+    }};
+}
+
+fn validate_ligerito_proof_shape(
+    lig: &LigeritoProof,
+    config: &VerifierConfig,
+    final_log_n: usize,
+    expected_root: &Hash,
+) -> Result<(), VerifyError> {
+    check_ligerito_proof_shape!(lig, config, final_log_n, expected_root)
+}
+
+/// [`validate_ligerito_proof_shape`] for the GF(2^256) opening's proof.
+fn validate_ligerito_proof_shape_ext(
+    lig: &LigeritoProofExt,
+    config: &VerifierConfig,
+    final_log_n: usize,
+    expected_root: &Hash,
+) -> Result<(), VerifyError> {
+    check_ligerito_proof_shape!(lig, config, final_log_n, expected_root)
 }
 
 // ---------------------------------------------------------------------
@@ -1137,10 +1397,26 @@ fn validate_ligerito_proof_shape(
 // `pcs::challenger`)
 // ---------------------------------------------------------------------
 
+/// The opening's first observations, checked against what the caller
+/// batched: the Ligerito label, then the claimed target — one GF(2^128)
+/// value, or a GF(2^256) value's two coordinates (`expected[..count]`).
 #[derive(Clone, Copy)]
 struct OpeningTargetPrefix {
-    expected_target: Gf,
+    label: &'static [u8],
+    expected: [Gf; 2],
+    count: usize,
+    seen: usize,
     label_seen: bool,
+}
+
+impl OpeningTargetPrefix {
+    fn base(target: Gf) -> Self {
+        Self { label: LIGERITO_BASIS_LABEL, expected: [target, Gf::ZERO], count: 1, seen: 0, label_seen: false }
+    }
+
+    fn ext(target: Gf256) -> Self {
+        Self { label: LIGERITO_BASIS_EXT_LABEL, expected: [target.a, target.b], count: 2, seen: 0, label_seen: false }
+    }
 }
 
 pub(crate) struct ProverChallenger<'a> {
@@ -1154,11 +1430,13 @@ impl<'a> ProverChallenger<'a> {
         Self {
             transcript,
             failed: false,
-            opening_target: Some(OpeningTargetPrefix {
-                expected_target,
-                label_seen: false,
-            }),
+            opening_target: Some(OpeningTargetPrefix::base(expected_target)),
         }
+    }
+
+    /// [`Self::new_ligerito`] for the GF(2^256) opening.
+    pub(crate) fn new_ligerito_ext(transcript: &'a mut ProverState, expected_target: Gf256) -> Self {
+        Self { transcript, failed: false, opening_target: Some(OpeningTargetPrefix::ext(expected_target)) }
     }
 
     pub(crate) fn failed(&self) -> bool {
@@ -1180,11 +1458,13 @@ impl<'a, 'proof> VerifierChallenger<'a, 'proof> {
         Self {
             transcript,
             failed: false,
-            opening_target: Some(OpeningTargetPrefix {
-                expected_target,
-                label_seen: false,
-            }),
+            opening_target: Some(OpeningTargetPrefix::base(expected_target)),
         }
+    }
+
+    /// [`Self::new_ligerito`] for the GF(2^256) opening.
+    pub(crate) fn new_ligerito_ext(transcript: &'a mut VerifierState<'proof>, expected_target: Gf256) -> Self {
+        Self { transcript, failed: false, opening_target: Some(OpeningTargetPrefix::ext(expected_target)) }
     }
 
     pub(crate) fn failed(&self) -> bool {
@@ -1210,7 +1490,7 @@ impl Challenger for ProverChallenger<'_> {
         if let Some(prefix) = &mut self.opening_target
             && !prefix.label_seen
         {
-            if label != LIGERITO_BASIS_LABEL {
+            if label != prefix.label {
                 self.failed = true;
             }
             prefix.label_seen = true;
@@ -1219,9 +1499,13 @@ impl Challenger for ProverChallenger<'_> {
     }
 
     fn observe_f128(&mut self, value: Gf) {
-        if let Some(prefix) = self.opening_target.take() {
-            if !prefix.label_seen || value != prefix.expected_target {
+        if let Some(mut prefix) = self.opening_target.take() {
+            if !prefix.label_seen || value != prefix.expected[prefix.seen] {
                 self.failed = true;
+            }
+            prefix.seen += 1;
+            if prefix.seen < prefix.count {
+                self.opening_target = Some(prefix);
             }
             self.transcript.public_message(&value);
             return;
@@ -1271,7 +1555,7 @@ impl Challenger for VerifierChallenger<'_, '_> {
         if let Some(prefix) = &mut self.opening_target
             && !prefix.label_seen
         {
-            if label != LIGERITO_BASIS_LABEL {
+            if label != prefix.label {
                 self.failed = true;
             }
             prefix.label_seen = true;
@@ -1280,9 +1564,13 @@ impl Challenger for VerifierChallenger<'_, '_> {
     }
 
     fn observe_f128(&mut self, value: Gf) {
-        if let Some(prefix) = self.opening_target.take() {
-            if !prefix.label_seen || value != prefix.expected_target {
+        if let Some(mut prefix) = self.opening_target.take() {
+            if !prefix.label_seen || value != prefix.expected[prefix.seen] {
                 self.failed = true;
+            }
+            prefix.seen += 1;
+            if prefix.seen < prefix.count {
+                self.opening_target = Some(prefix);
             }
             self.transcript.public_message(&value);
             return;

@@ -7,6 +7,8 @@ pub use ::field::gf128::kernels as gf128_kernels;
 pub use ::field::gf128::kernels::mul_by_x;
 
 pub(crate) mod f128_slice;
+mod gf256;
+pub use gf256::Gf256;
 
 #[cfg(test)]
 mod tests {

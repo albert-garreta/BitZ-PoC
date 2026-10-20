@@ -179,6 +179,9 @@ impl LogOpener {
         let resolved = mu
             .resolve(mu_packed_vars, target_bits)
             .map_err(|e| LogError::Config(format!("fold commitment ladder: {e}")))?;
+        if resolved.extension() {
+            return Err(LogError::Config("the fold commitment's Round 0 runs over GF(2^128): give it a GF(2^128) ladder".into()));
+        }
         let mu_security = resolved.security().clone();
         let mu_pcs = Pcs::with_security(&mu_shape, &mu_security, LigeritoProfile::Fast)
             .map_err(|e| LogError::Config(format!("fold commitment pcs: {e:?}")))?
@@ -493,7 +496,7 @@ fn open_f<M: VirtualMap>(
     hint: &FlockCommitHint,
     query: OpeningQuery,
     transcript: &mut ProverState,
-    ood: Option<(&[Gf], Gf)>,
+    ood: Option<crate::ligerito_flock::OodClaim<'_>>,
 ) -> Result<(), LogError> {
     let shape = *map.claim_params().shape();
     let opening = |e| LogError::Opening(format!("f: {e:?}"));
@@ -524,7 +527,7 @@ pub(crate) fn prove<M: VirtualMap>(
     hint: &FlockCommitHint,
     derived_rows: &[Vec<u64>],
     transcript: &mut ProverState,
-    ood: Option<(&[Gf], Gf)>,
+    ood: Option<crate::ligerito_flock::OodClaim<'_>>,
 ) -> Result<LogSizes, LogError> {
     let geometry = opener.geometry;
     let (t, s) = (geometry.t, geometry.s);
@@ -676,7 +679,7 @@ pub(crate) fn prove<M: VirtualMap>(
             &query,
             StatementBinding::AlreadyBound,
             transcript,
-            mu_ood.as_ref().map(|(point, y)| (point.as_slice(), *y)),
+            mu_ood.as_ref().map(|(point, y)| crate::ligerito_flock::OodClaim::Base(point.as_slice(), *y)),
         )
     })
     .map_err(|e| LogError::Opening(format!("fold bits: {e:?}")))?;
@@ -697,7 +700,7 @@ pub(crate) fn verify<M: VirtualMap>(
     pcs: &Pcs,
     root: &[u8; 32],
     mut transcript: VerifierState<'_>,
-    ood: Option<(&[Gf], Gf)>,
+    ood: Option<crate::ligerito_flock::OodClaim<'_>>,
 ) -> Result<(), LogError> {
     let geometry = opener.geometry;
     let (t, s) = (geometry.t, geometry.s);
@@ -826,7 +829,7 @@ pub(crate) fn verify<M: VirtualMap>(
             &OpeningQuery::InnerProductSum { claim },
             StatementBinding::AlreadyBound,
             &mut transcript,
-            mu_ood.as_ref().map(|(point, y)| (point.as_slice(), *y)),
+            mu_ood.as_ref().map(|(point, y)| crate::ligerito_flock::OodClaim::Base(point.as_slice(), *y)),
         )
         .map_err(|e| LogError::Opening(format!("fold bits: {e:?}")))?;
     native(transcript.end_native())?;

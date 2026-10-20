@@ -1371,6 +1371,10 @@ impl FlockRecRelation {
             .resolve(f_vars - LOG_PACKING, security.ligerito_target_bits)
             .map_err(ProtocolError::LigeritoConfig)?;
         security.adopt_ood_round(ligerito.ood_bits())?;
+        // A GF(2^256) ladder (`ext:`) draws its Round-0 point there too.
+        if let Some(params) = security.ood.as_mut() {
+            params.extension = ligerito.extension();
+        }
         let geom = crate::bitz::grinding::Geometry::opening(&h_layout, &f_layout, false);
         security.adopt_native_opening(geom)?;
         let log = match opener {
@@ -2071,7 +2075,9 @@ impl FlockRecRelation {
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ claim: {e:?}")))?;
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
-        let pcs = pcs_from_config(&committed, self.ligerito.prover())?.with_native_policy(security.native_policy()?);
+        let pcs = pcs_from_config(&committed, self.ligerito.prover())?
+            .with_native_policy(security.native_policy()?)
+            .with_extension(self.ligerito.extension());
         let bitz = match &self.log {
             Some(log) => {
                 let statement = self.log_statement(&inner.point, &v_at, &inner.final_claim, cfg);
@@ -2136,7 +2142,9 @@ impl FlockRecRelation {
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ claim: {e:?}")))?;
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
-        let pcs = pcs_from_config(&committed, self.ligerito.verifier())?.with_native_policy(security.native_policy()?);
+        let pcs = pcs_from_config(&committed, self.ligerito.verifier())?
+            .with_native_policy(security.native_policy()?)
+            .with_extension(self.ligerito.extension());
         match &self.log {
             Some(log) => {
                 let statement = self.log_statement(&point, &v_at, &final_claim, cfg);
@@ -2399,6 +2407,40 @@ mod tests {
         }
         run::<Lambda100>("custom:3:4");
         run::<Lambda128>("udrg:2:4");
+    }
+
+    /// Johnson over GF(2^256) (`ext:3:4`) at 128 bits with the standard
+    /// opening: Round 0 runs over the extension, the proof survives its
+    /// codec, verifies, and a flipped proof byte (narg or hint) or a
+    /// tampered Round-0 value is rejected.
+    #[test]
+    fn extension_johnson_opening_proves_and_verifies() {
+        use super::super::profile::Lambda128;
+        let (rel, wit) = relation_with::<Lambda128>(131, Some(18), "ext:3:4", FlockRecOpener::Standard);
+        assert!(rel.ligerito.extension(), "an ext: ladder opens over GF(2^256)");
+        let hint = rel.commit(&wit);
+        let mut tp = crate::transcript::Sha256Transcript::new();
+        let pi = rel.prove(&mut tp, &wit, &hint).unwrap();
+        let round = pi.bitz.ood.clone().expect("a Johnson ladder runs Round 0");
+        assert!(round.y_ext.is_some(), "Round 0 over GF(2^256)");
+        let decoded = BitZOpeningProof::from_bytes(&pi.bitz.to_bytes()).expect("the opening proof decodes");
+        assert_eq!(decoded, pi.bitz, "codec roundtrip");
+        let mut tv = crate::transcript::Sha256Transcript::new();
+        rel.verify(&mut tv, &hint.commitment, &pi).expect("the GF(2^256) relation verifies");
+        for hints in [false, true] {
+            let mut bad = pi.clone();
+            let bytes = if hints { &mut bad.bitz.transcript.hints } else { &mut bad.bitz.transcript.narg_string };
+            let at = bytes.len() / 2;
+            bytes[at] ^= 0x10;
+            let mut tv = crate::transcript::Sha256Transcript::new();
+            assert!(rel.verify(&mut tv, &hint.commitment, &bad).is_err(), "tampered {}", if hints { "hint" } else { "narg" });
+        }
+        let mut bad = pi.clone();
+        if let Some(round) = bad.bitz.ood.as_mut() {
+            round.y_ext = round.y_ext.map(|y| y + Gf::ONE);
+        }
+        let mut tv = crate::transcript::Sha256Transcript::new();
+        assert!(rel.verify(&mut tv, &hint.commitment, &bad).is_err(), "tampered Round-0 value");
     }
 
     #[test]

@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let security = env("BITZ_REC_SECURITY", 128usize);
     let selection = std::env::var("BITZ_REC_LIG")
         .unwrap_or_else(|_| if security == 128 { "udrg:3:4" } else { "custom:6:4" }.into());
-    let log = std::env::var("BITZ_REC_OPENER").map_or(true, |v| v != "std");
+    let log = fv::outer_opener_is_logarithmic(&selection, security);
     let opening_t = std::env::var("BITZ_REC_T")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())

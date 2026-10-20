@@ -150,7 +150,7 @@ impl BitZProver {
         pcs: &Pcs,
         hint: &FlockCommitHint,
         transcript: &mut ProverState,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<crate::ligerito_flock::OodClaim<'_>>,
     ) -> Result<(), ProveError> {
         let shape = *self.params.shape();
         let rows = hint.rows();
@@ -226,7 +226,7 @@ impl BitZVerifier {
         pcs: &Pcs,
         com: Root,
         mut transcript: VerifierState<'_>,
-        ood: Option<(&[Gf], Gf)>,
+        ood: Option<crate::ligerito_flock::OodClaim<'_>>,
     ) -> Result<(), VerifyError> {
         transcript.public_message(&com.0);
         transcript.public_message(&self.params);

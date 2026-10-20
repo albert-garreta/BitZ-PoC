@@ -857,28 +857,50 @@ fn sha256_ecdsa_recursion_timings() {
     println!("TIMING {json}");
 }
 
-/// Where the bytes of a FlockRec proof go (for the size levers).
+/// Where the bytes of a FlockRec proof go (for the size levers): the
+/// Ligerito proof's opened rows, Merkle siblings, final message and sumcheck
+/// messages, for the GF(2^128) proof or (when Round 0 ran over the extension,
+/// as every `ext:` ladder's does) the GF(2^256) one, whose levels past the
+/// first carry 32-byte elements.
 pub(super) fn flockrec_breakdown(pi: &crate::piop::spartan::flockrec::FlockRecProof) -> String {
     use bincode::Options;
     let t = &pi.bitz.transcript;
     let len = u32::from_le_bytes(t.hints[..4].try_into().unwrap()) as usize;
-    let lig: flock_core::pcs::ligerito::LigeritoProof =
-        crate::bitz::pcs::proof_options().deserialize(&t.hints[4..4 + len]).unwrap();
+    let blob = &t.hints[4..4 + len];
+    let extension = pi.bitz.ood.as_ref().is_some_and(|round| round.y_ext.is_some());
     let rows = |r: &Vec<Vec<Gf>>| r.iter().map(|x| 16 * x.len()).sum::<usize>();
-    let row_bytes = rows(&lig.initial_proof.opened_rows)
-        + lig.recursive_proofs.iter().map(|p| rows(&p.opened_rows)).sum::<usize>()
-        + rows(&lig.final_proof.opened_rows);
-    let merkle = 32
-        * (lig.initial_proof.merkle_proof.len()
-            + lig.recursive_proofs.iter().map(|p| p.merkle_proof.len()).sum::<usize>()
-            + lig.final_proof.merkle_proof.len());
+    let rows_ext = |r: &Vec<Vec<flock_core::field::Gf256>>| r.iter().map(|x| 32 * x.len()).sum::<usize>();
+    let (row_bytes, siblings, yr, sumcheck) = if extension {
+        let lig: flock_core::pcs::ligerito::ext::LigeritoProofExt = crate::bitz::pcs::proof_options().deserialize(blob).unwrap();
+        (
+            rows(&lig.initial_proof.opened_rows)
+                + lig.recursive_proofs.iter().map(|p| rows_ext(&p.opened_rows)).sum::<usize>()
+                + rows_ext(&lig.final_proof.opened_rows),
+            lig.initial_proof.merkle_proof.len()
+                + lig.recursive_proofs.iter().map(|p| p.merkle_proof.len()).sum::<usize>()
+                + lig.final_proof.merkle_proof.len(),
+            32 * lig.final_proof.yr.len(),
+            64 * lig.sumcheck_transcript.len(),
+        )
+    } else {
+        let lig: flock_core::pcs::ligerito::LigeritoProof = crate::bitz::pcs::proof_options().deserialize(blob).unwrap();
+        (
+            rows(&lig.initial_proof.opened_rows)
+                + lig.recursive_proofs.iter().map(|p| rows(&p.opened_rows)).sum::<usize>()
+                + rows(&lig.final_proof.opened_rows),
+            lig.initial_proof.merkle_proof.len()
+                + lig.recursive_proofs.iter().map(|p| p.merkle_proof.len()).sum::<usize>()
+                + lig.final_proof.merkle_proof.len(),
+            16 * lig.final_proof.yr.len(),
+            32 * lig.sumcheck_transcript.len(),
+        )
+    };
+    let merkle = 32 * siblings;
     format!(
-        "narg {} B, hints {} B (rows {row_bytes}, merkle {merkle}, yr {}, sumcheck msgs {}, other {}), piop {} B",
+        "narg {} B, hints {} B (rows {row_bytes}, merkle {merkle}, yr {yr}, sumcheck msgs {sumcheck}, other {}), piop {} B",
         t.narg_string.len(),
         t.hints.len(),
-        16 * lig.final_proof.yr.len(),
-        32 * lig.sumcheck_transcript.len(),
-        t.hints.len() - row_bytes - merkle - 16 * lig.final_proof.yr.len() - 32 * lig.sumcheck_transcript.len(),
+        t.hints.len() - row_bytes - merkle - yr - sumcheck,
         pi.piop_bytes(),
     )
 }

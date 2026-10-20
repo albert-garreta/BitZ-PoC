@@ -664,20 +664,35 @@ pub fn outer_relation(
     .map_err(|e| format!("{e:?}"))
 }
 
-/// The outer proof's opener: `BITZ_REC_OPENER` = `log` (the default: BitZ
-/// logarithmic, the fold bits committed under `BITZ_REC_MU_LIG`, by default
-/// the outer selection) or `std` (standard BitZ, the folds sent).
+/// The outer proof's opener: `BITZ_REC_OPENER` = `log` (BitZ logarithmic,
+/// the fold bits committed under `BITZ_REC_MU_LIG`, by default the outer
+/// selection) or `std` (standard BitZ, the folds sent). Unset: `log`, except
+/// for a GF(2^256) outer ladder (`ext:`), whose fold commitment would need
+/// its own Round 0 over the extension: `std`.
 pub fn outer_opener(selection: &str, security: usize) -> Result<crate::piop::spartan::flockrec::FlockRecOpener, String> {
     use crate::ligerito_flock::LigeritoSelection;
     use crate::piop::spartan::flockrec::FlockRecOpener;
+    let logarithmic = || -> Result<FlockRecOpener, String> {
+        let mu = std::env::var("BITZ_REC_MU_LIG").unwrap_or_else(|_| selection.to_string());
+        Ok(FlockRecOpener::Logarithmic { mu: LigeritoSelection::parse(&mu, security)? })
+    };
     match std::env::var("BITZ_REC_OPENER").as_deref() {
         Ok("std") => Ok(FlockRecOpener::Standard),
-        Ok("log") | Err(_) => {
-            let mu = std::env::var("BITZ_REC_MU_LIG").unwrap_or_else(|_| selection.to_string());
-            Ok(FlockRecOpener::Logarithmic { mu: LigeritoSelection::parse(&mu, security)? })
+        Ok("log") => logarithmic(),
+        Err(_) if matches!(LigeritoSelection::parse(selection, security)?, LigeritoSelection::CustomJohnsonExt { .. }) => {
+            Ok(FlockRecOpener::Standard)
         }
+        Err(_) => logarithmic(),
         Ok(other) => Err(format!("BITZ_REC_OPENER={other}: log or std")),
     }
+}
+
+/// Whether [`outer_opener`] picks BitZ logarithmic for `selection`.
+pub fn outer_opener_is_logarithmic(selection: &str, security: usize) -> bool {
+    matches!(
+        outer_opener(selection, security),
+        Ok(crate::piop::spartan::flockrec::FlockRecOpener::Logarithmic { .. })
+    )
 }
 
 /// The final verifier's view: the circuit recorded on the public stream
@@ -872,12 +887,12 @@ pub(super) mod tests {
         use std::time::Instant;
         let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(16, |v| v.parse().unwrap());
         let selection = std::env::var("BITZ_REC_LIG").unwrap_or_else(|_| "udrg:2:4".into());
-        // Standard BitZ at T = 18 rows; BitZ logarithmic (the default opener)
-        // at the reference split.
-        let standard = std::env::var("BITZ_REC_OPENER").is_ok_and(|v| v == "std");
+        // Standard BitZ at T = 18 rows; BitZ logarithmic at the reference
+        // split.
+        let security = security();
+        let standard = !outer_opener_is_logarithmic(&selection, security);
         let opening_t: Option<usize> =
             std::env::var("BITZ_REC_T").ok().map(|v| v.parse().unwrap()).or(standard.then_some(18));
-        let security = security();
         let (prepared, public, proof) = proof_at(batch);
         let circuit = FalconCircuit::new(&prepared, &public, &proof);
         let t0 = Instant::now();

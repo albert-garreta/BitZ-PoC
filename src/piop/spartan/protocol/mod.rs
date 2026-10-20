@@ -2188,7 +2188,7 @@ pub mod terminal {
                 &pcs,
                 hint,
                 &mut state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))?;
         Ok(BitZOpeningProof {
@@ -2247,7 +2247,7 @@ pub mod terminal {
                 &pcs,
                 Root(commitment.root),
                 state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))
     }

@@ -396,6 +396,7 @@ mod tests {
             } else {
                 bad.bitz_mut().ood = Some(crate::ligerito_flock::OodRound {
                     y: crate::poly::univariate::binary_gf128::Gf128::zero(),
+                    y_ext: None,
                     nonce: None,
                 });
             }

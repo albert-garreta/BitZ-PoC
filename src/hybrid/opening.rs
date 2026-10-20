@@ -1291,7 +1291,7 @@ mod geometry_tests {
         let statement = [0x53; 32];
         let mut dense_t = Blake3Transcript::new();
         let mut streamed_t = Blake3Transcript::new();
-        let params = with_ood.then_some(OodRoundParams { grinding_bits: 0 });
+        let params = with_ood.then_some(OodRoundParams { grinding_bits: 0, extension: false });
         let dense_ood = prove_ood(&mut dense_t, params, &packed);
         let streamed_ood = prove_ood(&mut streamed_t, params, &packed);
         let point: Vec<_> = (0..geometry.bit_log())
@@ -1761,7 +1761,7 @@ pub(crate) fn ood_parameters(
                     "Round 0 exceeds the derived grinding cap".into(),
                 ));
             }
-            Ok((bits, OodRoundParams { grinding_bits }))
+            Ok((bits, OodRoundParams { grinding_bits, extension: false }))
         })
         .transpose()
 }
@@ -1830,9 +1830,10 @@ pub(crate) fn prove_with_security<const N: usize>(
     // Batch the Round-0 claim into the same opening: one draw adds
     // `η_ood·eq(·, ζ⃗)` to the basis and `η_ood·y` to the target.
     if let Some(ood) = ood {
+        let (ood_point, ood_y) = ood.value.expect_base();
         let eta_ood: Gf = t.get_field_challenge(&());
-        add_ood_basis(&mut basis, &packed, &ood.point, eta_ood, None);
-        target += eta_ood * ood.y;
+        add_ood_basis(&mut basis, &packed, ood_point, eta_ood, None);
+        target += eta_ood * ood_y;
     }
     // Sample after all ring-switch messages. The authenticated target of this
     // independent claim is zero; a nonzero padded message cannot be discarded.
@@ -1918,9 +1919,10 @@ fn prove_sources_initial_with_security<const N: usize, Final: OpeningEncoding>(
     drop(ring_scope);
     let basis_scope = tracing::info_span!("op:extra_bases").entered();
     let ood_basis = ood.map(|ood| {
+        let (point, y) = ood.value.expect_base();
         let eta: Gf = t.get_field_challenge(&());
-        target += eta * ood.y;
-        (ood.point.as_slice(), eta)
+        target += eta * y;
+        (point, eta)
     });
     let padding = sample_padding(t, geometry);
     let (padding_point, padding_scale) = &padding[0];
@@ -2263,8 +2265,9 @@ fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
     let (eq_r2, mut target) = ring_switch_verify(t, ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
     let eta_ood: Option<Gf> = ood.map(|claim| {
+        let (_, y) = claim.value.expect_base();
         let eta: Gf = t.get_field_challenge(&());
-        target += eta * claim.y;
+        target += eta * y;
         eta
     });
     let padding = sample_padding(t, geometry);
@@ -2305,7 +2308,7 @@ fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
                     if let (Some(ood), Some(eta)) = (ood, eta_ood) {
                         for (slot, term) in out
                             .iter_mut()
-                            .zip(ood_residual_evals(prefix, log_y, &ood.point, eta))
+                            .zip(ood_residual_evals(prefix, log_y, ood.value.expect_base().0, eta))
                         {
                             *slot += term;
                         }

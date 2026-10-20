@@ -272,7 +272,7 @@ impl IopSecurityParams {
             grinding_bits,
             floor: false,
         });
-        self.ood = Some(OodRoundParams { grinding_bits });
+        self.ood = Some(OodRoundParams { grinding_bits, extension: false });
         Ok(())
     }
 }

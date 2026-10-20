@@ -206,7 +206,7 @@ pub(super) fn prove_opening<T: Transcript + Send>(
                 hint,
                 &derived,
                 &mut state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| error(format!("bitz prove: {e:?}")))?;
         state
@@ -225,7 +225,7 @@ pub(super) fn prove_opening<T: Transcript + Send>(
                 hint,
                 h_rows,
                 &mut state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| error(format!("bitz prove: {e:?}")))?;
         state
@@ -288,7 +288,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 &pcs,
                 Root(commitment.root),
                 state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| error(format!("bitz verify: {e:?}")))
     } else {
@@ -305,7 +305,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 &pcs,
                 Root(commitment.root),
                 state,
-                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| claim.value.as_claim()),
             )
             .map_err(|e| error(format!("bitz verify: {e:?}")))
     }

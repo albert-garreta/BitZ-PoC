@@ -174,6 +174,7 @@ impl Sha256EcdsaSecurity {
                 });
                 Ok(OodRoundParams {
                     grinding_bits: work,
+                    extension: false,
                 })
             })
             .transpose()?;

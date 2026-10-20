@@ -384,7 +384,7 @@ fn finish_opening<CS: Circuit>(
 ) -> OpeningCounts {
     let binary = weights.shape();
     let native = pcs
-        .native_schedule(None, Some(binary), ood.as_ref().map(|(p, _)| (*p, Gf::ZERO)))
+        .native_schedule(None, Some(binary), ood.as_ref().map(|(p, _)| crate::ligerito_flock::OodClaim::Base(p, Gf::ZERO)))
         .expect("public native schedule");
     t.continue_native(cs, native);
     if bind {
@@ -459,7 +459,7 @@ pub fn verify_direct<CS: Circuit>(
     let shape: Shape = *params.shape();
     let binary = (shape.log_rows(), shape.log_columns());
     let native = pcs
-        .native_schedule(Some(shape), Some(binary), ood.as_ref().map(|(p, _)| (*p, Gf::ZERO)))
+        .native_schedule(Some(shape), Some(binary), ood.as_ref().map(|(p, _)| crate::ligerito_flock::OodClaim::Base(p, Gf::ZERO)))
         .expect("public native schedule");
     t.start_native(cs, native);
     let fold = receive_fold(cs, params, claim, t);
@@ -499,7 +499,7 @@ pub fn verify_virtual<CS: Circuit, M: circuit::linear_map::binary::VirtualMap>(
         (statement.committed_shape().log_bits(), 0)
     };
     let native = pcs
-        .native_schedule(Some(shape), Some(binary), ood.as_ref().map(|(p, _)| (*p, Gf::ZERO)))
+        .native_schedule(Some(shape), Some(binary), ood.as_ref().map(|(p, _)| crate::ligerito_flock::OodClaim::Base(p, Gf::ZERO)))
         .expect("public native schedule");
     t.start_native(cs, native);
     let fold = receive_fold(cs, params, &claim, t);
