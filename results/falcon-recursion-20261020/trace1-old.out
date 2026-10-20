@@ -1,0 +1,100 @@
+bitz:     nibble rows            321.3µs    79.6 MB faulted
+bitz:     L3 value tables          3.4ms    32.1 MB faulted
+bitz:     levels 5..15 build       3.0ms     0.1 MB faulted
+bitz:   levels ≥4                  6.9ms     0.0 MB faulted
+bitz:   level 15                  19.7µs     0.0 MB faulted
+bitz:   level 14                   9.7µs     0.0 MB faulted
+bitz:   level 13                  18.3µs     0.0 MB faulted
+bitz:   level 12                  27.0µs     0.0 MB faulted
+bitz:   level 11                  36.8µs     0.0 MB faulted
+bitz:   level 10                  64.3µs     0.0 MB faulted
+bitz:   level 9                  102.2µs     0.0 MB faulted
+bitz:   level 8                  166.1µs     0.0 MB faulted
+bitz:   level 7                  316.7µs     0.0 MB faulted
+bitz:   level 6                  585.7µs     0.0 MB faulted
+bitz:   level 5                    1.1ms     0.0 MB faulted
+bitz:     L4 rebuild               1.3ms     0.0 MB faulted
+bitz:   level 4                    3.5ms     0.0 MB faulted
+bitz:     L3 tables              792.0ns     0.0 MB faulted
+bitz:     L3 jit round             2.8ms     0.1 MB faulted
+bitz:     L3 jit fold              1.9ms     0.0 MB faulted
+bitz:     L3 dense tail            1.1ms     0.0 MB faulted
+bitz:   level 3                    6.1ms     0.0 MB faulted
+bitz:     L2 bit round 1           4.9ms     0.0 MB faulted
+bitz:     L2 tables                1.5ms     0.0 MB faulted
+bitz:     L2 jit round             2.8ms     0.0 MB faulted
+bitz:     L2 jit fold              1.9ms     0.0 MB faulted
+bitz:     L2 dense tail            1.2ms     0.0 MB faulted
+bitz:   level 2                   12.4ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds     4.8ms     0.0 MB faulted
+bitz:     L1 tables                1.3ms     0.0 MB faulted
+bitz:     L1 jit round             2.7ms     0.0 MB faulted
+bitz:     L1 jit fold              1.9ms     0.0 MB faulted
+bitz:     L1 dense tail            1.2ms     0.0 MB faulted
+bitz:   level 1                   12.2ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds     4.5ms     0.0 MB faulted
+bitz:     L0 tables                1.7ms     0.0 MB faulted
+bitz:     L0 jit round             2.8ms     0.0 MB faulted
+bitz:     L0 jit fold              1.9ms     0.0 MB faulted
+bitz:     L0 dense tail            1.2ms     0.0 MB faulted
+bitz:   level 0                   12.3ms     0.0 MB faulted
+flockrec: statement + round 0          5.2µs
+flockrec: prime + batching            62.7ms
+flockrec: inner sumcheck             539.1ms
+bitz:   column folds              42.8ms     0.2 MB faulted
+bitz:   images                     3.5ms     0.0 MB faulted
+bitz: fold+images                 46.6ms     0.0 MB faulted
+bitz:     nibble rows              7.0ms     4.2 MB faulted
+bitz:     L3 value tables         14.6ms   128.0 MB faulted
+bitz:     levels 5..17 build      48.9ms   256.0 MB faulted
+bitz:   levels ≥4                 70.8ms     0.0 MB faulted
+bitz:   level 17                  68.2µs     0.0 MB faulted
+bitz:   level 16                  98.9µs     0.0 MB faulted
+bitz:   level 15                  95.2µs     0.0 MB faulted
+bitz:   level 14                 120.6µs     0.0 MB faulted
+bitz:   level 13                 160.1µs     0.0 MB faulted
+bitz:   level 12                 241.6µs     0.0 MB faulted
+bitz:   level 11                 561.3µs     0.0 MB faulted
+bitz:   level 10                   1.3ms     0.0 MB faulted
+bitz:   level 9                    1.2ms     0.0 MB faulted
+bitz:   level 8                    2.2ms     0.0 MB faulted
+bitz:   level 7                    4.3ms     0.0 MB faulted
+bitz:   level 6                   10.1ms     0.0 MB faulted
+bitz:   level 5                   18.8ms     0.0 MB faulted
+bitz:     L4 rebuild              15.7ms     0.0 MB faulted
+bitz:   level 4                   50.6ms     0.0 MB faulted
+bitz:     L3 tables                1.7µs     0.0 MB faulted
+bitz:     L3 jit round            26.5ms     0.0 MB faulted
+bitz:     L3 jit fold             22.6ms     0.0 MB faulted
+bitz:     L3 dense tail           18.0ms     0.0 MB faulted
+bitz:   level 3                   67.4ms     0.0 MB faulted
+bitz:     L2 bit round 1          42.7ms     0.0 MB faulted
+bitz:     L2 tables                5.0ms     0.0 MB faulted
+bitz:     L2 jit round            26.4ms     0.0 MB faulted
+bitz:     L2 jit fold             23.2ms     0.0 MB faulted
+bitz:     L2 dense tail           18.4ms     0.0 MB faulted
+bitz:   level 2                  116.0ms     0.0 MB faulted
+bitz:     L1 one-pass bit rounds    42.7ms     0.0 MB faulted
+bitz:     L1 tables                5.7ms     0.0 MB faulted
+bitz:     L1 jit round            26.2ms     0.0 MB faulted
+bitz:     L1 jit fold             22.7ms     0.0 MB faulted
+bitz:     L1 dense tail           28.3ms     0.0 MB faulted
+bitz:   level 1                  126.0ms     0.0 MB faulted
+bitz:     L0 one-pass bit rounds    44.0ms     0.0 MB faulted
+bitz:     L0 tables                7.0ms     0.0 MB faulted
+bitz:     L0 jit round            28.2ms     0.0 MB faulted
+bitz:     L0 jit fold             25.0ms     0.0 MB faulted
+bitz:     L0 dense tail           19.0ms     0.0 MB faulted
+bitz:   level 0                  123.5ms     0.0 MB faulted
+bitz: gkr                        610.9ms     8.0 MB faulted
+bitz: transpose                  342.8ms  2090.9 MB faulted
+bitz:   sumcheck                 696.9ms  2106.5 MB faulted
+bitz:   ring switch               12.7ms     0.0 MB faulted
+bitz:   ligerito                  66.8ms    16.2 MB faulted
+bitz: opening (all)              777.3ms     0.0 MB faulted
+flockrec: virtual opening               1.8s
+bitz: v: fold                      3.8ms   555.7 MB faulted
+bitz: v: gkr                       1.2ms     8.0 MB faulted
+bitz: v: transpose               320.2ms  2094.8 MB faulted
+bitz: v: opening                 786.5ms  4489.6 MB faulted
+TIMING {"base_commit_s":0.009713375,"base_proof_bytes":223808,"base_prove_s":0.382080083,"base_prover_s":0.391793458,"base_runs":[[0.009713375,0.382080083,0.391793458,0.005668958]],"base_verify_s":0.005668958,"batch":1024,"circuit":{"blocks":8952,"cells":183951649,"committed":59170032,"outer_f_bits":27,"outer_h_bits":28,"rows":1657135},"counts":"FalconCounts { transcript: ShaCounts { circuit: 2457, native: 1423 }, pow: ShaCounts { circuit: 370, native: 0 }, opening: OpeningCounts { merkle: ShaCounts { circuit: 6109, native: 0 }, pow: ShaCounts { circuit: 16, native: 0 }, opened_elements: 6785, siblings: 2506, final_codeword: 2048 } }","final_verify_s":1.722190208,"outer_ligerito":"udrg:3:4","outer_t":18,"pi_bytes":309281,"public_input_bytes":36,"public_stream_bytes":20878,"public_top":["bridge:796:12736","bridge folds:256:4096","opening:905:2734","binder:52:464","norm:50:400","joint:24:384","keyed ring:6:64"],"rec_early_commit_s":0.134250208,"rec_outer_witness_s":0.005505625,"rec_passes_s":0.584495792,"rec_protocol_s":2.382906333,"rec_prove_s":3.163927542,"rec_record_s":0.399082,"rec_relation_s":0.191019792,"rec_runs":[[0.051155959,0.399082,0.134250208,0.584495792,0.191019792,0.005505625,2.382906333,3.163927542]],"rec_witness_s":0.051155959,"reps":1,"security":128,"setup_s":0.000098042,"threads":1,"verify_runs":[1.722190208]}

@@ -1,0 +1,6 @@
+new /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d fba209b4bdb2d9b5a6248b8d7ffd9b57
+old /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/ab/falcon_recursion-c2c14ae 6458a19e4891506fd1cf184a3f19778f
+base /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-blake3/release/deps/falcon_algebraic-1a75e935008ed786 1889d1a19d353deb7fdbb9309ee866cb
+5399485aeac72078c968712e2b50b16edc52931b
+ M docs/falcon-recursion.md
+ -InternalBattery-0 (id=36110435)	72%; charging; 0:56 remaining present: true

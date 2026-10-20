@@ -4,8 +4,9 @@ Branch `falcon-recursion` (from `falcon-aerie-experiments` fa341d3ad). One
 recursion step: a batch proof of the algebraic Falcon-512 relation
 (configuration G: per-site grinding, small prime, keyed ring, 16 bridge rows,
 optimized word binder) is verified by a BitZ circuit, and that circuit is
-proved with FlockRec. Campaign data: `bench_results/falcon-recursion-20261018/`
-(ignored by git); results below.
+proved with FlockRec. Campaign data: `results/falcon-recursion-20261018/`
+(baseline) and `results/falcon-recursion-20261020/` (after the prover and
+verifier optimizations, A/B against the baseline binary); results below.
 
 ## The circuit
 
@@ -52,7 +53,97 @@ to the native verifier's: 9,996 at batch 16, 14,614 at batch 1,024),
 `falcon_circuit_rejects_tampered_proofs` (19 altered parts, each rejected by
 the circuit and the native verifier), `falcon_recursion_step_proves_and_verifies`.
 
-## Results
+## Prover and verifier optimizations (2026-10-20)
+
+Three changes, none of which changes the relation's statement or the proof
+format (π sizes move by at most 2.6 KB: the transcript differs, so the
+queries do):
+
+1. **Shared recorder terms** (`src/recursion/val.rs`). `G` and `Lc` hold
+   `Arc<Bits>`: a value flows into many linear combinations, and a recorder
+   bit is a support list, so copying 128 of them per term was most of the
+   recording (0.50 → 0.37 s at 1,024 in a same-session A/B; the circuit
+   digest unchanged).
+2. **Structured FlockRec opening** (`src/piop/spartan/flockrec.rs`, the
+   prover and verifier halves from the FlockRec-verifier line in
+   `src/bitz`). The committed layout is *boxed*: each SHA-256 block's hints
+   read from outside it (its 256 committed outputs, template locals
+   6112..6375) move to a 2^9-row band at the top of its 2^13-row column, and
+   the constant and the tail move to the last dyadic columns. The opening's
+   committed weights are then per-class row vectors (two per column, one per
+   region of the split derived layout) plus a row box (the band) and a
+   column box (the tail), so the prover never forms the 2^m transposed
+   weights, and the verifier evaluates their extension lazily. At 1,024
+   (λ=128, dev build): "transpose 171 ms + dense sumcheck 185–284 ms" became
+   "structured weights 36 ms + structured sumcheck 44 ms"; the verifier's
+   "transpose 167 ms + opening 368 ms" became "lazy opening 28 ms". The early
+   commitment lays out the same band (the recursion module records one
+   SHA-256 compression once for the template's external hints);
+   `FLOCKREC_NO_BAND=1` keeps the plain layout and the dense path.
+3. **Forked recording** (`crates/circuit`). `Circuit::map_independent` runs
+   self-contained sub-circuits; the compact recorder records them on forked
+   recorders, shifts their indices (and the handles they return) past the
+   forks before them and splices them in order, which is the sequential
+   recording exactly (block templates are shared through `Arc`). The
+   in-circuit Merkle multi-proofs and the final level's complete tree split
+   into at most 64 subtrees, each with the siblings the proof spends inside
+   it (assigned natively: query positions are public), so leaf hashes, the
+   final codeword's rows and the paths record on the pool. At 1,024 the
+   opening's recording went 0.19 → 0.09 s and the whole recording
+   0.29 → 0.19 s.
+
+### A/B campaign (2026-10-20)
+
+The 10-18 binary (c2c14ae24, "old") against 5399485ae ("new"), interleaved
+cell by cell with alternating order, one gated campaign on AC power
+(20:36–20:55, clocks 3.7–5.0 GHz), same cells, selections and fn-dsa inputs
+as below; `results/falcon-recursion-20261020/` holds the runs, `campaign.zsh`,
+`summarize.py` and `summary.md`.
+
+10 threads (rec step and final verify; π + public as before):
+
+| λ | batch | rec step old → new | final verify old → new | π new | peak RSS old → new (GiB) |
+|---|---|---|---|---|---|
+| 128 | 1,024 | 1.42 → 0.85 s | 1.14 → 0.37 s | 308.5 KB | 9.0 → 3.6 |
+| 128 | 4,096 | 1.36 → 0.85 s | 1.25 → 0.45 s | 305.9 KB | 9.3 → 4.1 |
+| 128 | 32,768 | 5.00 → 1.56 s | 4.66 → 0.82 s | 352.0 KB | 9.9 → 6.4 |
+| 100 | 1,024 | 1.13 → 0.79 s | 0.69 → 0.42 s | 91.5 KB | 6.3 → 3.7 |
+| 100 | 4,096 | 1.69 → 0.96 s | 1.64 → 0.41 s | 99.5 KB | 9.5 → 5.2 |
+| 100 | 32,768 | 2.71 → 1.67 s | 3.03 → 0.78 s | 108.4 KB | 9.4 → 7.5 |
+
+1 thread:
+
+| λ | batch | rec step old → new | final verify old → new |
+|---|---|---|---|
+| 128 | 1,024 | 3.09 → 3.20 s | 2.48 → 0.68 s |
+| 128 | 4,096 | 3.50 → 2.71 s | 1.90 → 0.76 s |
+| 128 | 32,768 | 8.30 → 4.38 s | 5.14 → 1.35 s |
+| 100 | 1,024 | 2.42 → 1.94 s | 0.97 → 0.57 s |
+| 100 | 4,096 | 3.82 → 3.03 s | 1.86 → 0.67 s |
+| 100 | 32,768 | 6.11 → 4.26 s | 3.62 → 1.17 s |
+
+Notes:
+
+1. The old binary ran slower than in the 10-18 campaign (1.42 against 1.18 s
+   at λ=128, 1K; 5.00 against 2.94 s at 32K): its dense opening faults about
+   2 GiB in the prover's transpose and 4.5 GiB in the verifier's opening at
+   1K, and its FlockRec prove swings with the machine's memory state
+   (0.66–1.08 s across reps at 1K, 2.55–3.85 s at 32K) where the new one is
+   steady (0.48–0.50 s at 1K). Against the 10-18 numbers, the step is 1.4×, 1.5×,
+   1.9× faster at λ=128 (1K, 4K, 32K) and 1.2×, 1.3×, 1.1× at λ=100; the final
+   verifier 2.2×, 2.0×, 4.2× and 1.5×, 2.0×, 1.8×.
+2. Proof of work is one draw per grinding site, and the two binaries'
+   transcripts differ. At 1 thread, λ=128, 1K the prime draw took 63 ms (old)
+   against 808 ms (new) while the opening went 1.8 → 1.0 s
+   (`trace1-{old,new}.out`), hence the unchanged step there.
+3. Where the new step goes (λ=128, 1K, 10 threads): recording 0.21 s
+   (concurrent with the 0.05 s witness pass), outer relation 0.14 s,
+   FlockRec prove 0.50 s (GKR ≈ 0.16 s, inner sumcheck ≈ 0.10 s, structured
+   opening ≈ 0.10 s, the rest batching and its proof of work). At λ=100 the
+   early commitment at rate 1/64 takes 0.14–0.44 s and is on the critical
+   path at 32K (passes 0.55 s against recording 0.37 s).
+
+## Results (2026-10-18 baseline)
 
 M5 (10 cores, 24 GiB), AC power, one gated campaign (2026-10-18 15:54–16:07,
 clocks 3.9–4.7 GHz); `results/falcon-recursion-20261018/` holds the raw runs,
@@ -124,15 +215,30 @@ Findings:
    faster at λ=128 (proof of work and Merkle hashing on the SHA-256
    extensions).
 5. The final verifier takes 0.6–3.5 s against 5–78 ms natively: it re-records
-   the circuit on the public stream before checking π.
+   the circuit on the public stream before checking π (0.37–0.82 s after the
+   10-20 changes).
 6. The production proofs are byte-identical to configuration G's before the
    hooks (`proof_debug_digest` 964daab7… at 1K, dcb4c8cf… at 32K).
 
 Levers not pursued: Johnson at λ=128 (a level-0 binding beyond GF(2^128):
 a certified Round-0 sample with grinding, or GF(2^256) out-of-domain
-samples) would bring π to roughly the λ=100 size; fewer bridge columns or a
-bridge whose root claim does not take the folds as public exponents; sparse
-exception counts in the base proof.
+samples); fewer bridge columns or a bridge whose root claim does not take the
+folds as public exponents; sparse exception counts in the base proof.
+
+Why π is ~310 KB at λ=128: about 85 % of it is the outer Ligerito opening's
+query data (in a 1K run at rate 1/4, 112 KB of opened rows and 154 KB of
+Merkle siblings out of 312 KB).
+Unique decoding gives under one bit per query (≈0.83 at rate 1/8, ~155
+level-0 queries, never fewer than ~130 at any rate), against ~3 bits per
+query for Johnson at rate 1/64 (~30 queries at λ=100). Johnson over
+GF(2^256) is built for the BitZ opener in `~/f2z-pcs-ecdsa-size`
+(uncommitted) and for the base Falcon opening on `origin/falcon-pcs-levers`:
+its Round 0 reaches ~225 bits and λ=128 needs 79, 60, 48 queries at rates
+1/8, 1/16, 1/32. On SHA+ECDSA its λ=128 proofs were 0.48–0.52× the best
+unique-decoding ones and 1.4–1.6× the λ=100 Johnson ones, which suggests
+π ≈ 130–150 KB at 1K and 150–175 KB at 32K here (an estimate; porting it to
+the virtual opening, structured prover and lazy verifier included, is not
+done).
 
 ## Reproduce
 
@@ -151,8 +257,15 @@ RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR=$PWD/target-bench cargo bench 
 RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR=$PWD/target-blake3 cargo bench \
   --features falcon-hybrid,bench-internals,unchecked --bench falcon_algebraic --no-run
 python3 scripts/bench_gate.py run --label falcon-recursion -- zsh results/falcon-recursion-20261018/campaign.zsh
+
+# the A/B campaign (old binary copied to target-bench/ab/ before rebuilding);
+# waits for AC power, then takes the gate
+zsh results/falcon-recursion-20261020/launch.zsh
+python3 results/falcon-recursion-20261020/summarize.py bench_results/falcon-recursion-20261020/runs
 ```
 
 `campaign.zsh` writes to `bench_results/falcon-recursion-20261018/` and
 expects the fn-dsa case cache there (`BITZ_FALCON_CASE_CACHE`; the 1K and 32K
-caches were copied from the configuration-G campaign, 4K was generated).
+caches were copied from the configuration-G campaign, 4K was generated). The
+A/B campaign reads the same cache and writes to
+`bench_results/falcon-recursion-20261020/`.
