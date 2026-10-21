@@ -1,0 +1,4 @@
+sha /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/sha256_compressions-9153b795c4e8412d 8b31bd72c2f59f38e2f54b63716a38f3
+rec /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d 16e5e4dc1011e1ecc4eb8799c7dd2810
+1fc4bf8ac613ca23a30276c81bacc1e0f09ad949
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

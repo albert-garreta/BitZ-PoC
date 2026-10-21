@@ -358,6 +358,38 @@ Findings:
 The defaults are unchanged (`udrg:3:4` with the polylog opener at 128 bits).
 ext:3:4 costs nothing and ext:5:4 is the size sweet spot.
 
+## Cost against the standalone SHA-256 prover (2026-10-21)
+
+The circuit's hashes are CM instances. Every compression is
+`circuit::sha256::compress_block`, with words held as F2 bits and as lifted Z
+bits (doubled Ch and Maj): 6,376 committed hint bits, 20,456 cells and 184
+integer rows. FlockRec proves committed bits `f`, `h = M·f` over F2 and
+`C·h = 0` over Z, and the SHA blocks are 96–97 % of the committed bits and
+99.5 % of the cells. Same features (`recursion`: SHA-256 transcripts and
+Merkle trees), λ=128, 10 threads, AC, gated
+(`results/falcon-recursion-vs-sha-20261021/`):
+
+| prover | compressions | prove | per compression |
+|---|---|---|---|
+| `sha256_compressions` (repeated Spartan + virtual BitZ, `udrg:1:4`) | 8,192 | 378 ms | 46 µs |
+| same | 16,384 | 794 ms | 48 µs |
+| FlockRec on the Falcon circuit at 1K (`ext:3:4`, T = 18) | 8,952 | 437 ms | 49 µs |
+| FlockRec on the Falcon circuit at 32K | 17,897 | 652 ms | 36 µs |
+
+The standalone excludes its witness generation (751 ms at 2^13); the step's
+recording (0.20 s at 1K) is the equivalent. FlockRec at 1K: GKR on `h`
+166–179 ms, opening (structured sumcheck, ring switch, Ligerito) 54–63 ms,
+structured weights ~30 ms, folds ~10 ms; the remaining ~150 ms is the inner
+sumcheck, prime, batching and proof of work (untraced).
+
+The outer proof therefore costs what this repository's generic CM path costs
+per compression. The slide-16 prover (85 ms at 2^13 and λ=100, ~10 µs per
+compression) is the `sha-compressions` line (14d63cec, not on this branch):
+Ch-only product slots (16,361 cells instead of 20,456), the Id ⊗ M block
+opener and private I/O. The generic path takes 346 ms for the same 2^13 at
+λ=100 on this binary. The Falcon circuit is almost entirely identical SHA
+blocks, so that machinery is the main lever on the outer prover (not ported).
+
 ## Results (2026-10-18 baseline)
 
 M5 (10 cores, 24 GiB), AC power, one gated campaign (2026-10-18 15:54–16:07,
@@ -486,6 +518,10 @@ python3 results/falcon-recursion-polylog-20261020/summarize.py bench_results/fal
 # BITZ_REC_LIG=udrg:3:4|ext:3:4|ext:5:4|ext:6:4, standard opener at T = 18)
 zsh results/falcon-recursion-ext-20261021/launch.zsh
 python3 results/falcon-recursion-ext-20261021/summarize.py bench_results/falcon-recursion-ext-20261021/runs
+
+# FlockRec against the standalone SHA-256 prover (sha256_compressions built
+# with --features recursion,falcon-hybrid,bench-internals,unchecked,span-metrics)
+python3 scripts/bench_gate.py run --label falcon-vs-sha -- zsh results/falcon-recursion-vs-sha-20261021/run.zsh
 
 # the circuit's SHA-256 compressions per stage (the dev test binary above)
 zsh results/falcon-recursion-sha-breakdown-20261021/shabreak.zsh /tmp/shabreak
