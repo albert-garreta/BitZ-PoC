@@ -39,14 +39,18 @@ impl<'a, 'b, T: Transcript + Send> GrindingChallenger<'a, 'b, T> {
         if !security.plan.matches(config) {
             return Err(Error::Invalid("shared Ligerito grinding configuration"));
         }
-        let final_verifier_draws = config
-            .levels
-            .last()
-            .and_then(|level| level.queries.checked_next_power_of_two())
-            .filter(|&queries| queries > 0)
-            .ok_or(Error::Invalid("shared Ligerito query count"))?
-            .ilog2() as usize
-            + 1;
+        // An extension challenge is two consecutive base draws, so the
+        // verifier's final `α` and `β` take twice the draws over GF(2^256).
+        let draws_per_challenge = if config.field == "f256" { 2 } else { 1 };
+        let final_verifier_draws = draws_per_challenge
+            * (config
+                .levels
+                .last()
+                .and_then(|level| level.queries.checked_next_power_of_two())
+                .filter(|&queries| queries > 0)
+                .ok_or(Error::Invalid("shared Ligerito query count"))?
+                .ilog2() as usize
+                + 1);
         Ok(Self {
             inner: ZincChallenger(transcript),
             security,

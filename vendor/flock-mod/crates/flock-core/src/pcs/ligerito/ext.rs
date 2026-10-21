@@ -53,17 +53,21 @@ pub struct FinalProofExt {
 /// [`LigeritoProof`] with extension-valued messages. `initial_proof` opens
 /// the base-field level-0 codeword.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LigeritoProofExt {
+pub struct LigeritoProofExt<Final = FinalProofExt> {
     pub initial_root: Hash,
     pub initial_proof: RecursiveProof,
     pub recursive_roots: Vec<Hash>,
     pub recursive_proofs: Vec<RecursiveProofExt>,
-    pub final_proof: FinalProofExt,
+    pub final_proof: Final,
     pub sumcheck_transcript: Vec<SumcheckMessageExt>,
     pub grinding_nonces: Vec<u64>,
     pub ood_values: Vec<E>,
     pub fold_grinding_nonces: Vec<u64>,
 }
+
+/// [`CompactLigeritoProof`] over the extension: the last level's whole
+/// pre-fold message replaces `yr`, its queried rows and their paths.
+pub type CompactLigeritoProofExt = LigeritoProofExt<Vec<E>>;
 
 // -------------------------------------------------------------------
 // Transcript adapters
@@ -302,6 +306,140 @@ fn verify_level_opens_ext(
     verify_level_opens(root, block_len, queries, &base, 2 * lanes, multi_proof, kind)
 }
 
+/// The base protocol's [`FinalBinding`] over the extension.
+enum FinalBindingExt {
+    CompleteMessage,
+    QuerySum(E),
+}
+
+/// [`FinalEncoding`] over the extension: the terminal either opens queried
+/// rows of the last commitment ([`FinalProofExt`]) or sends its whole
+/// pre-fold message (`Vec<E>`), which the verifier re-encodes and checks
+/// against the last root. `shape` counts extension lanes; the base encoder
+/// sees one more lane bit.
+trait FinalEncodingExt: Sized {
+    type Captured;
+
+    fn capture(message: &[E]) -> Self::Captured;
+    fn finish(captured: Self::Captured, yr: Vec<E>, witness: &LigeroWitness, queries: &[usize])
+    -> Self;
+    fn polynomial(&self, shape: FinalShape, folds: &[E]) -> Option<Cow<'_, [E]>>;
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        folds: &[E],
+        alpha: &[E],
+    ) -> Option<FinalBindingExt>;
+}
+
+impl FinalEncodingExt for FinalProofExt {
+    type Captured = ();
+
+    fn capture(_: &[E]) {}
+
+    fn finish(_: (), yr: Vec<E>, witness: &LigeroWitness, queries: &[usize]) -> Self {
+        Self {
+            yr,
+            opened_rows: queries.iter().map(|&q| row_ext(witness, q)).collect(),
+            merkle_proof: merkle_multi_proof_for(&witness.tree, witness.block_len, queries),
+        }
+    }
+
+    fn polynomial(&self, shape: FinalShape, folds: &[E]) -> Option<Cow<'_, [E]>> {
+        let (columns, _, _) = shape.dimensions()?;
+        (self.yr.len() == columns && folds.len() == shape.log_num_interleaved)
+            .then(|| Cow::Borrowed(self.yr.as_slice()))
+    }
+
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        folds: &[E],
+        alpha: &[E],
+    ) -> Option<FinalBindingExt> {
+        let (_, lanes, rows) = shape.dimensions()?;
+        (self.opened_rows.len() == queries.len()
+            && verify_level_opens_ext(
+                root,
+                rows,
+                queries,
+                &self.opened_rows,
+                lanes,
+                &self.merkle_proof,
+                shape.hash,
+            ))
+        .then(|| {
+            FinalBindingExt::QuerySum(enforced_sum_ext(&self.opened_rows, folds, queries, alpha))
+        })
+    }
+}
+
+/// The base encoder's view of an extension terminal: one more lane bit.
+fn base_shape(shape: FinalShape) -> Option<FinalShape> {
+    Some(FinalShape {
+        log_num_interleaved: shape.log_num_interleaved.checked_add(1)?,
+        ..shape
+    })
+}
+
+impl FinalEncodingExt for Vec<E> {
+    type Captured = Self;
+
+    fn capture(message: &[E]) -> Self {
+        message.to_vec()
+    }
+
+    fn finish(captured: Self, _: Vec<E>, _: &LigeroWitness, _: &[usize]) -> Self {
+        captured
+    }
+
+    fn polynomial(&self, shape: FinalShape, folds: &[E]) -> Option<Cow<'_, [E]>> {
+        // The base bound on the encoded table, at twice the lanes.
+        base_shape(shape)?.compact_message_len()?;
+        let (columns, lanes, _) = shape.dimensions()?;
+        if self.len() != columns.checked_mul(lanes)? || folds.len() != shape.log_num_interleaved {
+            return None;
+        }
+        let mut message = self.clone();
+        for &r in folds {
+            message = fold_lsb(&message, r);
+        }
+        Some(Cow::Owned(message))
+    }
+
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        _: &[E],
+        _: &[E],
+    ) -> Option<FinalBindingExt> {
+        let base = base_shape(shape)?;
+        if 2 * self.len() != base.compact_message_len()? {
+            return None;
+        }
+        let (_, _, rows) = shape.dimensions()?;
+        if queries.iter().any(|&q| q >= rows) {
+            return None;
+        }
+        let ntt = compact_terminal_ntt(shape.log_msg_cols.checked_add(shape.log_inv_rate)?)?;
+        let witness = ligero_commit_ext(
+            self,
+            shape.log_msg_cols,
+            shape.log_num_interleaved,
+            shape.log_inv_rate,
+            ntt,
+            shape.hash,
+        );
+        (witness.root() == *root).then_some(FinalBindingExt::CompleteMessage)
+    }
+}
+
 /// An opened row's entries, base (level 0) or extension (recursive levels).
 trait RowEntry: Copy + Send + Sync {
     fn times(self, e: E) -> E;
@@ -490,6 +628,67 @@ pub fn recursive_prover_with_basis_ext<Ch: Challenger>(
     challenger: &mut Ch,
 ) -> LigeritoProofExt {
     let log_n = packed_witness.len().trailing_zeros() as usize;
+    let block_len_0 = 1usize << (log_n - config.initial_k + config.log_inv_rates[0]);
+    let num_interleaved_0 = 1usize << config.initial_k;
+    let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
+    assert_eq!(l0_codeword.len(), block_len_0 * num_interleaved_0);
+    assert_eq!(l0_tree.len(), 2 * block_len_0 - 1);
+    prover_impl(
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
+        |block_len, lanes, queries: &[usize]| RecursiveProof {
+            opened_rows: queries
+                .iter()
+                .map(|&q| l0_codeword[q * lanes..(q + 1) * lanes].to_vec())
+                .collect(),
+            merkle_proof: merkle_multi_proof_for(l0_tree, block_len, queries),
+        },
+        challenger,
+    )
+}
+
+/// [`recursive_prover_with_basis_ext`] against an externally authenticated
+/// level-0 oracle, with the compact terminal: the extension counterpart of
+/// [`super::recursive_prover_with_basis_initial_compact`]. `initial_root`
+/// is the oracle's binding identifier; `open_initial` receives (number of
+/// positions, lane count, query indices) and the matching verifier must
+/// authenticate every returned row with that geometry and identifier.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_compact_ext<Ch, O>(
+    config: &ProverConfig,
+    packed_witness: &[Gf128],
+    b_initial: Vec<E>,
+    target: E,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> CompactLigeritoProofExt
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    prover_impl(config, packed_witness, b_initial, target, initial_root, open_initial, challenger)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prover_impl<Ch, O, Final>(
+    config: &ProverConfig,
+    packed_witness: &[Gf128],
+    b_initial: Vec<E>,
+    target: E,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> LigeritoProofExt<Final>
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+    Final: FinalEncodingExt,
+{
+    let log_n = packed_witness.len().trailing_zeros() as usize;
     let r = config.recursive_steps;
     let initial_k = config.initial_k;
     assert_eq!(packed_witness.len(), 1usize << log_n);
@@ -506,9 +705,6 @@ pub fn recursive_prover_with_basis_ext<Ch: Challenger>(
     let log_inv_rate_0 = config.log_inv_rates[0];
     let block_len_0 = 1usize << (log_n - initial_k + log_inv_rate_0);
     let num_interleaved_0 = 1usize << initial_k;
-    let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
-    assert_eq!(l0_codeword.len(), block_len_0 * num_interleaved_0);
-    assert_eq!(l0_tree.len(), 2 * block_len_0 - 1);
 
     challenger.observe_label(b"flock-ligerito-basis-ext-v0");
     observe(challenger, target);
@@ -570,13 +766,9 @@ pub fn recursive_prover_with_basis_ext<Ch: Challenger>(
     let num_queries_0 = config.queries[0];
     let queries_0 = sample_distinct_queries(challenger, block_len_0, num_queries_0);
     let alpha_0 = sample_vec(challenger, ceil_log2(num_queries_0));
-    let initial_proof = RecursiveProof {
-        opened_rows: queries_0
-            .iter()
-            .map(|&q| l0_codeword[q * num_interleaved_0..(q + 1) * num_interleaved_0].to_vec())
-            .collect(),
-        merkle_proof: merkle_multi_proof_for(l0_tree, block_len_0, &queries_0),
-    };
+    let initial_proof = open_initial(block_len_0, num_interleaved_0, &queries_0);
+    assert_eq!(initial_proof.opened_rows.len(), queries_0.len());
+    assert!(initial_proof.opened_rows.iter().all(|row| row.len() == num_interleaved_0));
 
     let sks_vks_n1 = eval_sk_at_vks(n1);
     let (basis_0, enforced_0) = induce_sumcheck_poly_ext(
@@ -599,6 +791,7 @@ pub fn recursive_prover_with_basis_ext<Ch: Challenger>(
 
     for i in 0..r {
         let k_i = config.recursive_ks[i];
+        let final_message = (i == r - 1).then(|| Final::capture(sc.f()));
         let mut level_rs = Vec::with_capacity(k_i);
         for j in 0..k_i {
             let bits = fold_bits(i + 1).saturating_sub(j as u32);
@@ -620,20 +813,18 @@ pub fn recursive_prover_with_basis_ext<Ch: Challenger>(
             grinding_nonces.push(challenger.grind_pow(config.grinding_bits[i + 1] as u32));
             let queries_last =
                 sample_distinct_queries(challenger, wtns_prev.block_len, config.queries[i + 1]);
-            let opened_rows: Vec<Vec<E>> =
-                queries_last.iter().map(|&q| row_ext(&wtns_prev, q)).collect();
-            let merkle_proof =
-                merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_last);
+            let final_proof = Final::finish(
+                final_message.expect("last iteration captures its message"),
+                yr,
+                &wtns_prev,
+                &queries_last,
+            );
             return LigeritoProofExt {
                 initial_root,
                 initial_proof,
                 recursive_roots,
                 recursive_proofs,
-                final_proof: FinalProofExt {
-                    yr,
-                    opened_rows,
-                    merkle_proof,
-                },
+                final_proof,
                 sumcheck_transcript,
                 grinding_nonces,
                 ood_values,
@@ -722,6 +913,108 @@ pub fn recursive_verifier_with_basis_succinct_ext<Ch, F>(
 where
     Ch: Challenger,
     F: Fn(&[E], usize) -> Vec<E>,
+{
+    verifier_impl(
+        config,
+        proof,
+        &proof.initial_proof,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        |block_len, lanes, queries, opening| {
+            verify_level_opens(
+                expected_initial_root,
+                block_len,
+                queries,
+                &opening.opened_rows,
+                lanes,
+                &opening.merkle_proof,
+                config.merkle_hash,
+            )
+        },
+        challenger,
+    )
+}
+
+/// Verifier for [`recursive_prover_with_basis_initial_compact_ext`]: the
+/// extension counterpart of
+/// [`super::recursive_verifier_with_basis_initial_compact`].
+/// `initial_opening` holds the canonical full level-0 rows reconstructed by
+/// the caller's codec; `authenticate_initial` must bind every entry.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_verifier_with_basis_initial_compact_ext<Ch, F, A>(
+    config: &VerifierConfig,
+    proof: &CompactLigeritoProofExt,
+    initial_opening: &RecursiveProof,
+    log_n: usize,
+    target: E,
+    expected_initial_root: &Hash,
+    eval_b_residual: F,
+    authenticate_initial: A,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    F: Fn(&[E], usize) -> Vec<E>,
+    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+{
+    let r = config.recursive_steps;
+    if r == 0
+        || config.recursive_ks.len() != r
+        || config.log_inv_rates.len() != r + 1
+        || proof.recursive_roots.len() != r
+        || proof.recursive_proofs.len() != r - 1
+        || proof.grinding_nonces.len() != r + 1
+    {
+        return false;
+    }
+    let Some(remaining) = log_n
+        .checked_sub(config.initial_k)
+        .and_then(|n| config.recursive_ks.iter().try_fold(n, |n, &k| n.checked_sub(k)))
+    else {
+        return false;
+    };
+    let shape = FinalShape {
+        log_msg_cols: remaining,
+        log_num_interleaved: config.recursive_ks[r - 1],
+        log_inv_rate: config.log_inv_rates[r],
+        hash: config.merkle_hash,
+    };
+    if base_shape(shape).and_then(FinalShape::compact_message_len) != Some(2 * proof.final_proof.len())
+    {
+        return false;
+    }
+    verifier_impl(
+        config,
+        proof,
+        initial_opening,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        authenticate_initial,
+        challenger,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verifier_impl<Ch, F, A, Final>(
+    config: &VerifierConfig,
+    proof: &LigeritoProofExt<Final>,
+    initial_opening: &RecursiveProof,
+    log_n: usize,
+    target: E,
+    expected_initial_root: &Hash,
+    eval_b_residual: F,
+    authenticate_initial: A,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    F: Fn(&[E], usize) -> Vec<E>,
+    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+    Final: FinalEncodingExt,
 {
     macro_rules! challenge {
         ($draw:expr) => {
@@ -851,21 +1144,17 @@ where
     let num_queries_0 = config.queries[0];
     let queries_0 = challenge!(try_sample_distinct_queries(challenger, block_len_0, num_queries_0));
     let alpha_0 = challenge!(try_sample_vec(challenger, ceil_log2(num_queries_0)));
-    if proof.initial_proof.opened_rows.len() != queries_0.len()
-        || !verify_level_opens(
-            expected_initial_root,
-            block_len_0,
-            &queries_0,
-            &proof.initial_proof.opened_rows,
-            num_interleaved_0,
-            &proof.initial_proof.merkle_proof,
-            config.merkle_hash,
-        )
+    if initial_opening.opened_rows.len() != queries_0.len()
+        || initial_opening
+            .opened_rows
+            .iter()
+            .any(|row| row.len() != num_interleaved_0)
+        || !authenticate_initial(block_len_0, num_interleaved_0, &queries_0, initial_opening)
     {
         return false;
     }
     let enforced_0 =
-        enforced_sum_ext(&proof.initial_proof.opened_rows, &r_lane_fold, &queries_0, &alpha_0);
+        enforced_sum_ext(&initial_opening.opened_rows, &r_lane_fold, &queries_0, &alpha_0);
     let intro_0 = next_msg!(tx);
     observe(challenger, intro_0.u_0);
     observe(challenger, intro_0.u_2);
@@ -929,11 +1218,22 @@ where
             {
                 return false;
             }
-            let yr = &proof.final_proof.yr;
+            let shape = FinalShape {
+                log_msg_cols: prev_log_msg_cols,
+                log_num_interleaved: prev_log_num_interleaved,
+                log_inv_rate: prev_log_inv_rate,
+                hash: config.merkle_hash,
+            };
+            if shape.log_msg_cols != n_current {
+                return false;
+            }
+            let Some(yr) = proof.final_proof.polynomial(shape, &level_rs) else {
+                return false;
+            };
             if yr.len() != 1usize << n_current {
                 return false;
             }
-            for &v in yr {
+            for &v in yr.iter() {
                 observe(challenger, v);
             }
             if nonce_idx >= proof.grinding_nonces.len()
@@ -949,35 +1249,25 @@ where
             let queries_last =
                 challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_last));
             let alpha_last = challenge!(try_sample_vec(challenger, ceil_log2(num_queries_last)));
-            if proof.final_proof.opened_rows.len() != queries_last.len()
-                || !verify_level_opens_ext(
-                    &prev_root,
-                    prev_block_len,
-                    &queries_last,
-                    &proof.final_proof.opened_rows,
-                    prev_lanes,
-                    &proof.final_proof.merkle_proof,
-                    config.merkle_hash,
-                )
-            {
+            // Bind the last commitment to `yr` (see the base verifier): by
+            // the queried rows, or by re-encoding the whole message, whose
+            // batching term then cancels from both sides (the draw stays).
+            let Some(binding) =
+                proof.final_proof.authenticate(shape, &prev_root, &queries_last, &level_rs, &alpha_last)
+            else {
                 return false;
-            }
-            // Bind the last commitment to `yr` (see the base verifier).
-            let enforced_last = enforced_sum_ext(
-                &proof.final_proof.opened_rows,
-                &level_rs,
-                &queries_last,
-                &alpha_last,
-            );
+            };
             let beta_last = challenge!(try_sample(challenger));
-            t_r += beta_last * enforced_last;
-            level_ctxs.push(LevelCtx {
-                log_msg_cols: n_current,
-                queries: queries_last,
-                alpha: alpha_last,
-                ris_start: ris.len(),
-                beta: beta_last,
-            });
+            if let FinalBindingExt::QuerySum(enforced_last) = binding {
+                t_r += beta_last * enforced_last;
+                level_ctxs.push(LevelCtx {
+                    log_msg_cols: n_current,
+                    queries: queries_last,
+                    alpha: alpha_last,
+                    ris_start: ris.len(),
+                    beta: beta_last,
+                });
+            }
 
             let yr_log_n = n_current;
             let yr_len = yr.len();
@@ -1274,5 +1564,110 @@ mod tests {
             &mut p_ch,
         );
         assert!(!verify(&lying, target + E::ONE), "false claim must not verify");
+    }
+
+    #[test]
+    fn compact_initial_extension_opening_roundtrip_and_tamper() {
+        // An externally authenticated level 0 (here: the codeword's own
+        // tree under a foreign identifier) and the compact terminal.
+        let log_n = 12;
+        let initial_k = 2;
+        let ks = [2usize, 2];
+        let (p_cfg, v_cfg) = configs(log_n, initial_k, &ks, vec![0, 1, 1], vec![3, 2, 2]);
+        let mut rng = RandomChallenger::new(0xE3);
+        let poly: Vec<Gf128> = (0..1usize << log_n).map(|_| rng.sample_f128()).collect();
+        let z: Vec<E> = (0..log_n).map(|_| rand_e(&mut rng)).collect();
+        let b = build_eq_table_ext(&z);
+        let target = mle(&poly, &z);
+        let ntt_0 = AdditiveNttF128::standard(log_n - initial_k + 1);
+        let wtns_0 = ligero_commit(&poly, log_n - initial_k, initial_k, 1, &ntt_0, HashKind::Sha256);
+        let tree_root = wtns_0.root();
+        let statement = [0x5a; 32];
+
+        let mut p_ch = FsChallenger::new(b"ext-compact-test");
+        let proof = recursive_prover_with_basis_initial_compact_ext(
+            &p_cfg,
+            &poly,
+            b.clone(),
+            target,
+            statement,
+            |block_len, lanes, queries: &[usize]| RecursiveProof {
+                opened_rows: queries.iter().map(|&q| wtns_0.mat[q * lanes..(q + 1) * lanes].to_vec()).collect(),
+                merkle_proof: merkle_multi_proof_for(&wtns_0.tree, block_len, queries),
+            },
+            &mut p_ch,
+        );
+        // The terminal is the last level's pre-fold message: 2^(12-2-2) = 2^8.
+        assert_eq!(proof.final_proof.len(), 1 << (log_n - initial_k - ks[0]));
+
+        let z_res = z.clone();
+        let eval_b = move |ris: &[E], yr_log_n: usize| -> Vec<E> {
+            let k = ris.len();
+            let mut scalar = E::ONE;
+            for (a, b) in z_res[..k].iter().zip(ris.iter()) {
+                scalar *= E::ONE + *a + *b;
+            }
+            assert_eq!(k + yr_log_n, z_res.len());
+            build_eq_table_ext(&z_res[k..]).into_iter().map(|v| v * scalar).collect()
+        };
+        let verify = |proof: &CompactLigeritoProofExt, target: E| {
+            let mut ch = FsChallenger::new(b"ext-compact-test");
+            recursive_verifier_with_basis_initial_compact_ext(
+                &v_cfg,
+                proof,
+                &proof.initial_proof,
+                log_n,
+                target,
+                &statement,
+                &eval_b,
+                |block_len, lanes, queries, opening| {
+                    verify_level_opens(
+                        &tree_root,
+                        block_len,
+                        queries,
+                        &opening.opened_rows,
+                        lanes,
+                        &opening.merkle_proof,
+                        HashKind::Sha256,
+                    )
+                },
+                &mut ch,
+            )
+        };
+        assert!(verify(&proof, target), "honest compact extension proof must verify");
+        assert!(!verify(&proof, target + E::ONE), "wrong target");
+        let mut bad = proof.clone();
+        bad.final_proof[3] += E::new(Gf128::ZERO, Gf128::ONE);
+        assert!(!verify(&bad, target), "tampered terminal message");
+        let mut bad = proof.clone();
+        bad.final_proof.pop();
+        assert!(!verify(&bad, target), "short terminal message");
+        let mut bad = proof.clone();
+        bad.initial_proof.opened_rows[1][0] += Gf128::ONE;
+        assert!(!verify(&bad, target), "tampered level-0 row");
+        let mut bad = proof.clone();
+        bad.ood_values[1] += E::ONE;
+        assert!(!verify(&bad, target), "tampered OOD value");
+
+        // The compact and expanded terminals share one transcript up to the
+        // terminal: the expanded proof's messages are the compact proof's.
+        let mut p_ch = FsChallenger::new(b"ext-compact-test");
+        let expanded: LigeritoProofExt = prover_impl(
+            &p_cfg,
+            &poly,
+            b,
+            target,
+            statement,
+            |block_len, lanes, queries: &[usize]| RecursiveProof {
+                opened_rows: queries.iter().map(|&q| wtns_0.mat[q * lanes..(q + 1) * lanes].to_vec()).collect(),
+                merkle_proof: merkle_multi_proof_for(&wtns_0.tree, block_len, queries),
+            },
+            &mut p_ch,
+        );
+        assert_eq!(expanded.sumcheck_transcript, proof.sumcheck_transcript);
+        assert_eq!(expanded.recursive_roots, proof.recursive_roots);
+        assert_eq!(expanded.ood_values, proof.ood_values);
+        // The last level folds `ks[1]` variables of the captured message.
+        assert_eq!(proof.final_proof.len() >> ks[1], expanded.final_proof.yr.len());
     }
 }

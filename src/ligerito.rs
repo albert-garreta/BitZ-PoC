@@ -210,6 +210,65 @@ pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf
         .collect()
 }
 
+/// [`residual_b_evals`] at an extension prefix: the verifier's challenges
+/// live in GF(2^256), the left factor of `E ∈ GF(2^256) ⊗_{F_2} K`. Each
+/// column `e_u` is then an extension element; the right multiplications
+/// mix columns `F_2`-linearly, so they act on the two coordinates alone,
+/// and the left factors `(1 + a)`, `a` multiply each column in GF(2^256).
+pub(crate) fn residual_b_evals_ext(
+    prefix: &[flock_core::field::Gf256],
+    yr_log_n: usize,
+    r_hi: &[Gf],
+    eq_r2: &[Gf],
+) -> Vec<flock_core::field::Gf256> {
+    use flock_core::field::Gf256;
+
+    assert_eq!(
+        prefix.len().wrapping_add(yr_log_n),
+        r_hi.len(),
+        "prefix + tail must cover the point"
+    );
+    assert_eq!(eq_r2.len(), 128);
+    let one = Gf::one();
+    let right = |cols: &[Gf256], h: Gf| -> Vec<Gf256> {
+        let a: Vec<Gf> = cols.iter().map(|c| c.a).collect();
+        let b: Vec<Gf> = cols.iter().map(|c| c.b).collect();
+        apply_right_mul(&a, h)
+            .into_iter()
+            .zip(apply_right_mul(&b, h))
+            .map(|(a, b)| Gf256::new(a, b))
+            .collect()
+    };
+    let mut cols = vec![Gf256::ZERO; 128];
+    cols[0] = Gf256::ONE;
+    for (&a, &h) in prefix.iter().zip(r_hi.iter()) {
+        let f0 = right(&cols, one + h);
+        let f1 = right(&cols, h);
+        let la = Gf256::ONE + a;
+        for w in 0..128 {
+            cols[w] = la * f0[w] + a * f1[w];
+        }
+    }
+    let mut cur: Vec<Vec<Gf256>> = vec![cols];
+    for j in 0..yr_log_n {
+        let h = r_hi[prefix.len() + j];
+        let stride = cur.len();
+        let mut next: Vec<Vec<Gf256>> = vec![Vec::new(); stride * 2];
+        for (i, e) in cur.iter().enumerate() {
+            next[i] = right(e, one + h);
+            next[i + stride] = right(e, h);
+        }
+        cur = next;
+    }
+    cur.iter()
+        .map(|cols| {
+            cols.iter()
+                .zip(eq_r2.iter())
+                .fold(Gf256::ZERO, |acc, (c, &e)| acc + c.mul_base(e))
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------
 // Packed commitment
 // ---------------------------------------------------------------------
@@ -1001,6 +1060,53 @@ mod tests {
                 "residual block mismatch at y={y}"
             );
         }
+    }
+
+    /// At an extension prefix, the residual block equals the dense B table
+    /// folded (lowest variable first) by the same challenges; at a base
+    /// prefix it is the base block, lifted.
+    #[test]
+    fn residual_b_evals_ext_matches_dense_fold() {
+        use flock_core::field::Gf256;
+
+        let (pre_len, yr) = (4usize, 3usize);
+        let m_p = pre_len + yr;
+        let r_hi: Vec<Gf> = (0..m_p).map(|i| sample(0x81 + i as u64)).collect();
+        let r2: Vec<Gf> = (0..LOG_PACKING).map(|i| sample(0x91 + i as u64)).collect();
+        let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2");
+        let eq_hi = build_eq_x_r_vec(&r_hi, &()).expect("hi");
+        let b_tbl: Vec<Gf256> = eq_hi
+            .iter()
+            .map(|ev| {
+                let w = ev.as_words();
+                let mut acc = Gf::zero();
+                for u in 0..128usize {
+                    if (w[u >> 6] >> (u & 63)) & 1 == 1 {
+                        acc += eq_r2[u];
+                    }
+                }
+                Gf256::from_base(acc)
+            })
+            .collect();
+        let prefix: Vec<Gf256> = (0..pre_len)
+            .map(|i| Gf256::new(sample(0xa1 + i as u64), sample(0xb1 + i as u64)))
+            .collect();
+        let mut dense = b_tbl;
+        for &a in &prefix {
+            dense = dense
+                .chunks_exact(2)
+                .map(|pair| pair[0] + a * (pair[0] + pair[1]))
+                .collect();
+        }
+        assert_eq!(residual_b_evals_ext(&prefix, yr, &r_hi, &eq_r2), dense);
+
+        let base: Vec<Gf> = (0..pre_len).map(|i| sample(0xc1 + i as u64)).collect();
+        let lifted: Vec<Gf256> = base.iter().map(|&a| Gf256::from_base(a)).collect();
+        let expect: Vec<Gf256> = residual_b_evals(&base, yr, &r_hi, &eq_r2)
+            .into_iter()
+            .map(Gf256::from_base)
+            .collect();
+        assert_eq!(residual_b_evals_ext(&lifted, yr, &r_hi, &eq_r2), expect);
     }
 
     /// The method-of-four-Russians `s_v` fold equals the scalar bit scan

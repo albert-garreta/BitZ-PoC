@@ -316,6 +316,9 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
     let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &bridge.sums else {
         return Err(error("unsplit bridge sum shape"));
     };
+    let crate::hybrid::opening::JointOpening::Base(opening) = &proof.opening else {
+        return Err(error("the Falcon verifier circuit reads GF(2^128) joint openings"));
+    };
     Ok(ProofView {
         quotient: &ring.quotient,
         point_nonce: ring.point_nonce,
@@ -335,8 +338,8 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
         joint_rounds: &proof.joint.rounds,
         joint_value: proof.joint.value,
         joint_nonces: &proof.joint.nonces,
-        s_v: &proof.opening.ring.s_v,
-        ligerito: &proof.opening.ligerito,
+        s_v: &opening.ring.s_v,
+        ligerito: &opening.ligerito,
         opening_nonces: &proof.opening_nonces,
         pcs_nonces: &proof.pcs_nonces,
     })
@@ -389,7 +392,10 @@ pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
         panic!("a keyed-ring raw-arithmetic proof");
     };
     let bridge = &mut proof.bridges[0];
-    let lig = &mut proof.opening.ligerito;
+    let crate::hybrid::opening::JointOpening::Base(opening) = &mut proof.opening else {
+        panic!("a GF(2^128) joint opening");
+    };
+    let lig = &mut opening.ligerito;
     match part {
         "quotient" => ring.quotient[0] += Q,
         "norm-round" => arithmetic.norm.sumcheck.round_polynomials[0].swap(1, 2),
@@ -406,7 +412,7 @@ pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
         "forest" => bridge.forest[5][0] += Gf::ONE,
         "joint-round" => proof.joint.rounds[2][1] += Gf::ONE,
         "joint-value" => proof.joint.value += Gf::ONE,
-        "ring-switch" => proof.opening.ring.s_v[3] += Gf::ONE,
+        "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
         "initial-row" => lig.initial_proof.opened_rows[0][0] += Gf::ONE,
         "initial-path" => lig.initial_proof.merkle_proof[0][0] ^= 1,
         "recursive-row" => lig.recursive_proofs[0].opened_rows[1][0] += Gf::ONE,
