@@ -778,7 +778,7 @@ mod tests {
     fn fs_challenger_pow_rejects_the_other_hash() {
         for kind in KINDS {
             let other = match kind {
-                HashKind::Sha256 => HashKind::Blake3,
+                HashKind::Sha256 | HashKind::Sha256Compress => HashKind::Blake3,
                 HashKind::Blake3 => HashKind::Sha256,
             };
             let mut prover = FsChallenger::with_hash(b"pow-test", kind);

@@ -10105,7 +10105,7 @@ mod tests {
                 // Verifier on the other transcript hash: challenges diverge
                 // from the first sample, so it must reject.
                 let other_fs = match fs_hash {
-                    HashKind::Sha256 => HashKind::Blake3,
+                    HashKind::Sha256 | HashKind::Sha256Compress => HashKind::Blake3,
                     HashKind::Blake3 => HashKind::Sha256,
                 };
                 let mut w_ch = crate::challenger::FsChallenger::with_hash(b"m22-matrix", other_fs);

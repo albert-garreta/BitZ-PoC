@@ -1211,7 +1211,7 @@ mod tests {
         let data = random_data(n_leaves, leaf_size, 77);
         for kind in KINDS {
             let other = match kind {
-                HashKind::Sha256 => HashKind::Blake3,
+                HashKind::Sha256 | HashKind::Sha256Compress => HashKind::Blake3,
                 HashKind::Blake3 => HashKind::Sha256,
             };
             let tree = merkle_tree(&data, n_leaves, kind);

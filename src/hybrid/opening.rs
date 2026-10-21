@@ -1604,17 +1604,55 @@ pub(crate) enum JointOpening {
     Ext(JointProofExt),
 }
 
-/// [`JointProof`] over GF(2^256): the same ring switch, and a compact
-/// extension Ligerito proof whose level 0 stays the base codeword.
+/// [`JointProof`] over GF(2^256): the same ring switch, and an extension
+/// Ligerito proof whose level 0 stays the base codeword.
 #[derive(Clone, Debug)]
 pub(crate) struct JointProofExt {
     pub ring: RingSwitchProof,
-    pub ligerito: ligerito::ext::CompactLigeritoProofExt,
+    pub ligerito: ExtLigerito,
+}
+
+/// How the extension Ligerito proof ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Terminal {
+    /// The last level's whole message, re-encoded by the verifier.
+    #[default]
+    Compact,
+    /// `yr` and the last level's queried rows with their paths: a few KB
+    /// more, but a verifier that pays per hash (a recursive verifier
+    /// circuit) checks a few paths instead of rebuilding the last tree.
+    Standard,
+}
+
+/// The extension Ligerito proof in its terminal's encoding.
+#[derive(Clone, Debug)]
+pub(crate) enum ExtLigerito {
+    Compact(ligerito::ext::CompactLigeritoProofExt),
+    Standard(ligerito::ext::LigeritoProofExt),
+}
+
+impl ExtLigerito {
+    pub(crate) fn terminal(&self) -> Terminal {
+        match self {
+            Self::Compact(_) => Terminal::Compact,
+            Self::Standard(_) => Terminal::Standard,
+        }
+    }
+
+    /// The proof's serialized size (without an enum tag: the verifier's
+    /// configuration fixes the terminal).
+    pub(crate) fn serialized_size(&self) -> bincode::Result<u64> {
+        match self {
+            Self::Compact(proof) => bincode::serialized_size(proof),
+            Self::Standard(proof) => bincode::serialized_size(proof),
+        }
+    }
 }
 
 /// The joint opening in the Ligerito profile's field. In the Johnson
 /// regimes the caller ran Round 0 right after the statement and passes its
 /// claim, which rides this opening (one batching draw, as in [`prove`]).
+/// `terminal` only matters over GF(2^256).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_joint_opening<const N: usize>(
     t: &mut (impl Transcript + Send),
@@ -1625,6 +1663,7 @@ pub(crate) fn prove_joint_opening<const N: usize>(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: &JointProverData<N>,
     point: &[Gf],
+    terminal: Terminal,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<JointOpening, Error> {
     if ood.is_some() != resolved.ood_bits().is_some() {
@@ -1634,7 +1673,7 @@ pub(crate) fn prove_joint_opening<const N: usize>(
     }
     if resolved.extension() {
         prove_joint_sources_ext(
-            t, geometry, statement, sources, ood, resolved, data, point, security,
+            t, geometry, statement, sources, ood, resolved, data, point, terminal, security,
         )
         .map(JointOpening::Ext)
     } else {
@@ -1716,6 +1755,7 @@ fn prove_joint_sources_ext<const N: usize>(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: &JointProverData<N>,
     point: &[Gf],
+    terminal: Terminal,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<JointProofExt, Error> {
     use flock_core::field::Gf256;
@@ -1755,17 +1795,17 @@ fn prove_joint_sources_ext<const N: usize>(
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
     macro_rules! run {
-        ($challenger:expr) => {
-            ligerito::ext::recursive_prover_with_basis_initial_compact_ext(
-                &pc,
-                &tables.packed,
-                basis,
-                target,
-                *statement,
-                |positions, lanes, queries| data.open(positions, lanes, queries),
-                $challenger,
-            )
-        };
+        ($challenger:expr) => {{
+            let open = |positions, lanes, queries: &[usize]| data.open(positions, lanes, queries);
+            match terminal {
+                Terminal::Compact => ExtLigerito::Compact(ligerito::ext::recursive_prover_with_basis_initial_compact_ext(
+                    &pc, &tables.packed, basis, target, *statement, open, $challenger,
+                )),
+                Terminal::Standard => ExtLigerito::Standard(ligerito::ext::recursive_prover_with_basis_initial_ext(
+                    &pc, &tables.packed, basis, target, *statement, open, $challenger,
+                )),
+            }
+        }};
     }
     let mut ligerito = if let Some(security) = security {
         let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
@@ -1777,7 +1817,10 @@ fn prove_joint_sources_ext<const N: usize>(
     } else {
         run!(&mut ZincChallenger(t))
     };
-    compact_initial_rows(geometry, &mut ligerito.initial_proof)?;
+    match &mut ligerito {
+        ExtLigerito::Compact(proof) => compact_initial_rows(geometry, &mut proof.initial_proof)?,
+        ExtLigerito::Standard(proof) => compact_initial_rows(geometry, &mut proof.initial_proof)?,
+    }
     Ok(JointProofExt { ring, ligerito })
 }
 
@@ -1823,7 +1866,8 @@ fn authenticate_joint<const N: usize>(
     )
 }
 
-/// Verify [`prove_joint_opening`]: the proof's field must be the profile's.
+/// Verify [`prove_joint_opening`]: the proof's field must be the profile's,
+/// and over GF(2^256) its terminal must be `terminal`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn verify_joint_opening<const N: usize>(
     t: &mut (impl Transcript + Send),
@@ -1835,6 +1879,7 @@ pub(crate) fn verify_joint_opening<const N: usize>(
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &JointOpening,
+    terminal: Terminal,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
     if ood.is_some() != resolved.ood_bits().is_some() {
@@ -1846,9 +1891,10 @@ pub(crate) fn verify_joint_opening<const N: usize>(
         (JointOpening::Base(proof), false) => verify_joint_base(
             t, geometry, statement, root, point, value, ood, resolved, proof, security,
         ),
-        (JointOpening::Ext(proof), true) => verify_joint_ext(
+        (JointOpening::Ext(proof), true) if proof.ligerito.terminal() == terminal => verify_joint_ext(
             t, geometry, statement, root, point, value, ood, resolved, proof, security,
         ),
+        (JointOpening::Ext(_), true) => Err(Error::Invalid("joint opening terminal")),
         _ => Err(Error::Invalid(
             "joint opening field disagrees with Ligerito profile",
         )),
@@ -1904,8 +1950,16 @@ fn verify_joint_ext<const N: usize>(
         return Err(Error::Invalid("GF(2^256) opening without its Round 0"));
     };
     let vc = resolved.verifier();
-    let lig = &proof.ligerito;
-    let initial = expand_initial_rows(geometry, &lig.initial_proof, vc.queries[0], vc.log_inv_rates[0])?;
+    // The fields both terminals share.
+    macro_rules! lig {
+        ($field:ident) => {
+            match &proof.ligerito {
+                ExtLigerito::Compact(proof) => &proof.$field,
+                ExtLigerito::Standard(proof) => &proof.$field,
+            }
+        };
+    }
+    let initial = expand_initial_rows(geometry, lig!(initial_proof), vc.queries[0], vc.log_inv_rates[0])?;
     geometry.bind_allocation(t);
     let (eq_r2, target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
@@ -1924,11 +1978,11 @@ fn verify_joint_ext<const N: usize>(
         .zip(level_ks)
         .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
         .sum();
-    if lig.recursive_roots.len() != vc.recursive_steps
-        || lig.recursive_proofs.len() + 1 != vc.recursive_steps
-        || lig.grinding_nonces.len() != vc.recursive_steps + 1
-        || lig.ood_values.len() != expected_ood_values
-        || lig.fold_grinding_nonces.len() != expected_fold_nonces
+    if lig!(recursive_roots).len() != vc.recursive_steps
+        || lig!(recursive_proofs).len() + 1 != vc.recursive_steps
+        || lig!(grinding_nonces).len() != vc.recursive_steps + 1
+        || lig!(ood_values).len() != expected_ood_values
+        || lig!(fold_grinding_nonces).len() != expected_fold_nonces
     {
         return Err(Error::Invalid("Ligerito proof shape"));
     }
@@ -1960,17 +2014,30 @@ fn verify_joint_ext<const N: usize>(
     };
     macro_rules! run {
         ($challenger:expr) => {
-            ligerito::ext::recursive_verifier_with_basis_initial_compact_ext(
-                &vc,
-                lig,
-                &initial,
-                geometry.packed_log(),
-                target,
-                statement,
-                eval,
-                authenticate,
-                $challenger,
-            )
+            match &proof.ligerito {
+                ExtLigerito::Compact(lig) => ligerito::ext::recursive_verifier_with_basis_initial_compact_ext(
+                    &vc,
+                    lig,
+                    &initial,
+                    geometry.packed_log(),
+                    target,
+                    statement,
+                    eval,
+                    authenticate,
+                    $challenger,
+                ),
+                ExtLigerito::Standard(lig) => ligerito::ext::recursive_verifier_with_basis_initial_ext(
+                    &vc,
+                    lig,
+                    &initial,
+                    geometry.packed_log(),
+                    target,
+                    statement,
+                    eval,
+                    authenticate,
+                    $challenger,
+                ),
+            }
         };
     }
     let valid = if let Some(security) = security {

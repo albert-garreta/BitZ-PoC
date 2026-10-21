@@ -176,6 +176,20 @@ fn ligerito_selection(target_bits: usize) -> LigeritoSelection {
     LigeritoSelection::MATCHED_UDR
 }
 
+/// Bench-only terminal of an `ext:` opening: `BITZ_FALCON_TERMINAL=standard`
+/// opens the last level at its queries instead of sending its whole message
+/// (recursion-friendly: the verifier circuit hashes a few paths instead of
+/// rebuilding the last tree).
+fn ligerito_terminal() -> shared::Terminal {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_FALCON_TERMINAL").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("compact") => {}
+        Ok("standard") => return shared::Terminal::Standard,
+        _ => panic!("BITZ_FALCON_TERMINAL must be compact or standard"),
+    }
+    shared::Terminal::Compact
+}
+
 fn bridge_mode() -> BridgeMode {
     if small_prime() {
         BridgeMode::Unsplit
@@ -332,6 +346,8 @@ pub struct PreparedFalconAlgebraic {
     /// Round 0 (the out-of-domain sample) of the Johnson profiles, right
     /// after the statement; `None` under unique decoding.
     round0: Option<OodRoundParams>,
+    /// The extension opening's terminal ([`ligerito_terminal`]).
+    terminal: shared::Terminal,
     compact_binding: bool,
     compute_variant: &'static str,
     ring_mode: RingMode,
@@ -479,9 +495,7 @@ impl FalconAlgebraicProof {
                         shared::JointOpening::Base(opening) => {
                             bincode::serialized_size(&opening.ligerito)
                         }
-                        shared::JointOpening::Ext(opening) => {
-                            bincode::serialized_size(&opening.ligerito)
-                        }
+                        shared::JointOpening::Ext(opening) => opening.ligerito.serialized_size(),
                     }
                     .expect("proof serialization size") as usize
                     + 8 * (self.opening_nonces.len() + self.pcs_nonces.len()),
@@ -511,8 +525,10 @@ impl FalconAlgebraicProof {
         fn rows<T>(rows: &[Vec<T>], elem: usize) -> usize {
             rows.iter().map(|r| elem * r.len()).sum()
         }
+        // `$final`: the terminal's parts (the whole message, or `yr` and the
+        // last level's openings).
         macro_rules! parts {
-            ($l:expr, $elem:expr) => {{
+            ($l:expr, $elem:expr, $final:expr) => {{
                 let l = $l;
                 vec![
                     ("round0", self.round0_bytes()),
@@ -528,7 +544,6 @@ impl FalconAlgebraicProof {
                         l.recursive_proofs.iter().map(|p| hash * p.merkle_proof.len()).sum(),
                     ),
                     ("roots", hash * (1 + l.recursive_roots.len())),
-                    ("final_message", $elem * l.final_proof.len()),
                     ("sumcheck_messages", 2 * $elem * l.sumcheck_transcript.len()),
                     ("ood_values", $elem * l.ood_values.len()),
                     (
@@ -539,11 +554,28 @@ impl FalconAlgebraicProof {
                             + self.pcs_nonces.len()),
                     ),
                 ]
+                .into_iter()
+                .chain($final)
+                .collect::<Vec<_>>()
             }};
         }
         let mut parts = match &self.opening {
-            shared::JointOpening::Base(opening) => parts!(&opening.ligerito, 16),
-            shared::JointOpening::Ext(opening) => parts!(&opening.ligerito, 32),
+            shared::JointOpening::Base(opening) => {
+                let l = &opening.ligerito;
+                parts!(l, 16, [("final_message", 16 * l.final_proof.len())])
+            }
+            shared::JointOpening::Ext(opening) => match &opening.ligerito {
+                shared::ExtLigerito::Compact(l) => parts!(l, 32, [("final_message", 32 * l.final_proof.len())]),
+                shared::ExtLigerito::Standard(l) => parts!(
+                    l,
+                    32,
+                    [
+                        ("final_message", 32 * l.final_proof.yr.len()),
+                        ("final_opened_rows", rows(&l.final_proof.opened_rows, 32)),
+                        ("final_merkle_paths", hash * l.final_proof.merkle_proof.len()),
+                    ]
+                ),
+            },
         };
         let total = self
             .payload_size_breakdown()
@@ -784,6 +816,7 @@ impl PreparedFalconAlgebraic {
             pcs_grinding,
             grinding,
             round0,
+            terminal: ligerito_terminal(),
             compact_binding,
             compute_variant,
             ring_mode,
@@ -795,6 +828,16 @@ impl PreparedFalconAlgebraic {
             return Err(error("algebraic composition misses security target"));
         }
         Ok(prepared)
+    }
+
+    /// The same configuration with the extension opening's terminal set.
+    pub(crate) fn with_terminal(mut self, terminal: shared::Terminal) -> Self {
+        self.terminal = terminal;
+        self
+    }
+
+    pub(crate) fn terminal(&self) -> shared::Terminal {
+        self.terminal
     }
 
     pub fn batch(&self) -> usize {
@@ -1571,6 +1614,7 @@ impl PreparedFalconAlgebraic {
                     &self.ligerito,
                     data,
                     &point,
+                    self.terminal,
                     Some(&mut pcs),
                 )
             }
@@ -1584,6 +1628,7 @@ impl PreparedFalconAlgebraic {
                     &self.ligerito,
                     data,
                     &point,
+                    self.terminal,
                     Some(&mut pcs),
                 )
             }
@@ -1823,6 +1868,7 @@ impl PreparedFalconAlgebraic {
                 ood.as_ref(),
                 &self.ligerito,
                 &proof.opening,
+                self.terminal,
                 Some(&mut pcs),
             ),
             SourceGeometry::Split(g) => shared::verify_joint_opening(
@@ -1835,6 +1881,7 @@ impl PreparedFalconAlgebraic {
                 ood.as_ref(),
                 &self.ligerito,
                 &proof.opening,
+                self.terminal,
                 Some(&mut pcs),
             ),
         }
@@ -2670,9 +2717,15 @@ mod tests {
             (100, "custom:1:4", &[1, 65][..]),
         ] {
             let selection = LigeritoSelection::parse(profile, target).unwrap();
-            for &batch in batches {
-                let prepared =
-                    PreparedFalconAlgebraic::new_with_ligerito(batch, target, selection).unwrap();
+            let terminals: &[shared::Terminal] = if profile.starts_with("ext:") {
+                &[shared::Terminal::Compact, shared::Terminal::Standard]
+            } else {
+                &[shared::Terminal::Compact]
+            };
+            for (&batch, &terminal) in batches.iter().flat_map(|b| terminals.iter().map(move |t| (b, t))) {
+                let prepared = PreparedFalconAlgebraic::new_with_ligerito(batch, target, selection)
+                    .unwrap()
+                    .with_terminal(terminal);
                 assert_eq!(
                     prepared.round0.map(|params| params.extension),
                     Some(profile.starts_with("ext:"))
@@ -2713,8 +2766,13 @@ mod tests {
                 let udr = PreparedFalconAlgebraic::new(batch, target).unwrap();
                 assert!(udr.verify(&public, &proof).is_err());
 
-                for mutation in 0..5 {
+                for mutation in 0..7 {
                     let mut bad = proof.clone();
+                    if mutation >= 5
+                        && !matches!(&bad.opening, shared::JointOpening::Ext(o) if o.ligerito.terminal() == shared::Terminal::Standard)
+                    {
+                        continue;
+                    }
                     match (mutation, &mut bad.opening) {
                         (0, _) => bad.ood.as_mut().unwrap().y += Gf::ONE,
                         (1, _) => bad.ood = None,
@@ -2722,15 +2780,25 @@ mod tests {
                             Some(y) => *y += Gf::ONE,
                             None => bad.ood.as_mut().unwrap().y_ext = Some(Gf::ONE),
                         },
-                        (3, shared::JointOpening::Ext(opening)) => {
-                            opening.ligerito.final_proof[0] += Gf256::new(Gf::ZERO, Gf::ONE)
-                        }
+                        (3, shared::JointOpening::Ext(opening)) => match &mut opening.ligerito {
+                            shared::ExtLigerito::Compact(l) => l.final_proof[0] += Gf256::new(Gf::ZERO, Gf::ONE),
+                            shared::ExtLigerito::Standard(l) => l.final_proof.yr[0] += Gf256::new(Gf::ZERO, Gf::ONE),
+                        },
                         (3, shared::JointOpening::Base(opening)) => {
                             opening.ligerito.final_proof[0] += Gf::ONE
                         }
-                        (_, shared::JointOpening::Ext(opening)) => {
-                            opening.ligerito.ood_values[0] += Gf256::new(Gf::ZERO, Gf::ONE)
-                        }
+                        (5, shared::JointOpening::Ext(opening)) => match &mut opening.ligerito {
+                            shared::ExtLigerito::Standard(l) => l.final_proof.opened_rows[0][0] += Gf256::ONE,
+                            shared::ExtLigerito::Compact(_) => unreachable!(),
+                        },
+                        (6, shared::JointOpening::Ext(opening)) => match &mut opening.ligerito {
+                            shared::ExtLigerito::Standard(l) => l.final_proof.merkle_proof[0][0] ^= 1,
+                            shared::ExtLigerito::Compact(_) => unreachable!(),
+                        },
+                        (_, shared::JointOpening::Ext(opening)) => match &mut opening.ligerito {
+                            shared::ExtLigerito::Compact(l) => l.ood_values[0] += Gf256::new(Gf::ZERO, Gf::ONE),
+                            shared::ExtLigerito::Standard(l) => l.ood_values[0] += Gf256::new(Gf::ZERO, Gf::ONE),
+                        },
                         (_, shared::JointOpening::Base(opening)) => {
                             opening.ligerito.ood_values[0] += Gf::ONE
                         }

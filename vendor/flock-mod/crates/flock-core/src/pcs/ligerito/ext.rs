@@ -673,6 +673,27 @@ where
     prover_impl(config, packed_witness, b_initial, target, initial_root, open_initial, challenger)
 }
 
+/// [`recursive_prover_with_basis_initial_compact_ext`] with the standard
+/// terminal: `yr` and the last level's queried rows with their paths
+/// instead of its whole message (cheaper to check where the verifier pays
+/// per hash, as in a recursive verifier circuit).
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_ext<Ch, O>(
+    config: &ProverConfig,
+    packed_witness: &[Gf128],
+    b_initial: Vec<E>,
+    target: E,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> LigeritoProofExt
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    prover_impl(config, packed_witness, b_initial, target, initial_root, open_initial, challenger)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn prover_impl<Ch, O, Final>(
     config: &ProverConfig,
@@ -982,6 +1003,48 @@ where
         hash: config.merkle_hash,
     };
     if base_shape(shape).and_then(FinalShape::compact_message_len) != Some(2 * proof.final_proof.len())
+    {
+        return false;
+    }
+    verifier_impl(
+        config,
+        proof,
+        initial_opening,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        authenticate_initial,
+        challenger,
+    )
+}
+
+/// Verifier for [`recursive_prover_with_basis_initial_ext`] (the standard
+/// terminal); otherwise as [`recursive_verifier_with_basis_initial_compact_ext`].
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_verifier_with_basis_initial_ext<Ch, F, A>(
+    config: &VerifierConfig,
+    proof: &LigeritoProofExt,
+    initial_opening: &RecursiveProof,
+    log_n: usize,
+    target: E,
+    expected_initial_root: &Hash,
+    eval_b_residual: F,
+    authenticate_initial: A,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    F: Fn(&[E], usize) -> Vec<E>,
+    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+{
+    let r = config.recursive_steps;
+    if r == 0
+        || config.recursive_ks.len() != r
+        || config.log_inv_rates.len() != r + 1
+        || proof.recursive_roots.len() != r
+        || proof.recursive_proofs.len() != r - 1
+        || proof.grinding_nonces.len() != r + 1
     {
         return false;
     }
@@ -1669,5 +1732,82 @@ mod tests {
         assert_eq!(expanded.ood_values, proof.ood_values);
         // The last level folds `ks[1]` variables of the captured message.
         assert_eq!(proof.final_proof.len() >> ks[1], expanded.final_proof.yr.len());
+    }
+
+    #[test]
+    fn initial_extension_opening_with_standard_terminal_roundtrip_and_tamper() {
+        let log_n = 12;
+        let initial_k = 2;
+        let ks = [2usize, 2];
+        let (p_cfg, v_cfg) = configs(log_n, initial_k, &ks, vec![0, 1, 1], vec![3, 2, 2]);
+        let mut rng = RandomChallenger::new(0xE5);
+        let poly: Vec<Gf128> = (0..1usize << log_n).map(|_| rng.sample_f128()).collect();
+        let z: Vec<E> = (0..log_n).map(|_| rand_e(&mut rng)).collect();
+        let b = build_eq_table_ext(&z);
+        let target = mle(&poly, &z);
+        let ntt_0 = AdditiveNttF128::standard(log_n - initial_k + 1);
+        let wtns_0 = ligero_commit(&poly, log_n - initial_k, initial_k, 1, &ntt_0, HashKind::Sha256);
+        let tree_root = wtns_0.root();
+        let statement = [0x5b; 32];
+        let open = |block_len: usize, lanes: usize, queries: &[usize]| RecursiveProof {
+            opened_rows: queries.iter().map(|&q| wtns_0.mat[q * lanes..(q + 1) * lanes].to_vec()).collect(),
+            merkle_proof: merkle_multi_proof_for(&wtns_0.tree, block_len, queries),
+        };
+        let mut p_ch = FsChallenger::new(b"ext-standard-test");
+        let proof = recursive_prover_with_basis_initial_ext(&p_cfg, &poly, b, target, statement, open, &mut p_ch);
+        assert_eq!(proof.final_proof.yr.len(), 1 << (log_n - initial_k - ks[0] - ks[1]));
+        assert_eq!(proof.final_proof.opened_rows.len(), v_cfg.queries[2]);
+
+        let z_res = z.clone();
+        let eval_b = move |ris: &[E], yr_log_n: usize| -> Vec<E> {
+            let k = ris.len();
+            let mut scalar = E::ONE;
+            for (a, b) in z_res[..k].iter().zip(ris.iter()) {
+                scalar *= E::ONE + *a + *b;
+            }
+            assert_eq!(k + yr_log_n, z_res.len());
+            build_eq_table_ext(&z_res[k..]).into_iter().map(|v| v * scalar).collect()
+        };
+        let verify = |proof: &LigeritoProofExt, target: E| {
+            let mut ch = FsChallenger::new(b"ext-standard-test");
+            recursive_verifier_with_basis_initial_ext(
+                &v_cfg,
+                proof,
+                &proof.initial_proof,
+                log_n,
+                target,
+                &statement,
+                &eval_b,
+                |block_len, lanes, queries, opening| {
+                    verify_level_opens(
+                        &tree_root,
+                        block_len,
+                        queries,
+                        &opening.opened_rows,
+                        lanes,
+                        &opening.merkle_proof,
+                        HashKind::Sha256,
+                    )
+                },
+                &mut ch,
+            )
+        };
+        assert!(verify(&proof, target), "honest extension proof must verify");
+        assert!(!verify(&proof, target + E::ONE), "wrong target");
+        let mut bad = proof.clone();
+        bad.final_proof.yr[1] += E::new(Gf128::ZERO, Gf128::ONE);
+        assert!(!verify(&bad, target), "tampered yr");
+        let mut bad = proof.clone();
+        bad.final_proof.opened_rows[0][1] += E::ONE;
+        assert!(!verify(&bad, target), "tampered last-level row");
+        let mut bad = proof.clone();
+        bad.final_proof.merkle_proof[0][0] ^= 1;
+        assert!(!verify(&bad, target), "tampered last-level path");
+        let mut bad = proof.clone();
+        bad.initial_proof.opened_rows[1][0] += Gf128::ONE;
+        assert!(!verify(&bad, target), "tampered level-0 row");
+        let mut bad = proof.clone();
+        bad.ood_values[1] += E::ONE;
+        assert!(!verify(&bad, target), "tampered OOD value");
     }
 }
