@@ -1062,4 +1062,15 @@ pub(super) mod tests {
             println!("== {batch}\n{}", hooks::describe(&prepared));
         }
     }
+
+    /// Prints the base proof's opening shape (rates, queries, folds) for the
+    /// `BITZ_FALCON_LIGERITO` selection.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn describe_base_opening() {
+        for batch in [1024usize, 4096, 32768] {
+            let prepared = PreparedFalconAlgebraic::new(batch, 128).unwrap();
+            println!("== {batch}\n{}", prepared.grinding_report());
+        }
+    }
 }
