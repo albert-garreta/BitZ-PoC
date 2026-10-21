@@ -123,6 +123,38 @@ fn requested_bridge_rows() -> usize {
     SOURCE_ROW_VARS
 }
 
+/// Bench-only logarithmic bridge (see [`bridge::polylog`]):
+/// `BITZ_FALCON_BRIDGE=polylog` commits the bridge's column folds instead of
+/// sending them, opened under `BITZ_FALCON_FOLD_LIGERITO` (default
+/// `ext:5:4`). Requires the unsplit bridge (small prime) and per-site grinding.
+#[cfg(feature = "bench-internals")]
+fn polylog_selection(target_bits: usize) -> Option<LigeritoSelection> {
+    let fold = || match std::env::var("BITZ_FALCON_FOLD_LIGERITO") {
+        Err(std::env::VarError::NotPresent) => {
+            LigeritoSelection::parse("ext:5:4", target_bits).expect("default fold profile")
+        }
+        Ok(profile) => LigeritoSelection::parse(&profile, target_bits)
+            .unwrap_or_else(|e| panic!("BITZ_FALCON_FOLD_LIGERITO: {e}")),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_FALCON_FOLD_LIGERITO must be valid Unicode")
+        }
+    };
+    match std::env::var("BITZ_FALCON_BRIDGE") {
+        Err(std::env::VarError::NotPresent) => None,
+        Ok(value) => match value.as_str() {
+            "standard" => None,
+            "polylog" => Some(fold()),
+            _ => panic!("BITZ_FALCON_BRIDGE must be standard or polylog"),
+        },
+        Err(std::env::VarError::NotUnicode(_)) => panic!("BITZ_FALCON_BRIDGE must be valid Unicode"),
+    }
+}
+
+#[cfg(not(feature = "bench-internals"))]
+fn polylog_selection(_: usize) -> Option<LigeritoSelection> {
+    None
+}
+
 /// Row variables of one arithmetic source row, fixed by the source packing.
 const SOURCE_ROW_VARS: usize = 13;
 
@@ -348,6 +380,8 @@ pub struct PreparedFalconAlgebraic {
     round0: Option<OodRoundParams>,
     /// The extension opening's terminal ([`ligerito_terminal`]).
     terminal: shared::Terminal,
+    /// The logarithmic bridge's fold opener (bench-only experiment).
+    polylog: Option<bridge::polylog::Prepared>,
     compact_binding: bool,
     compute_variant: &'static str,
     ring_mode: RingMode,
@@ -387,6 +421,8 @@ pub struct FalconAlgebraicProof {
     arithmetic: ArithmeticProof,
     bridges: Vec<bridge::Proof>,
     bridge_merge_nonces: Vec<u64>,
+    /// The logarithmic bridge, replacing `bridges` when prepared.
+    polylog_bridge: Option<bridge::polylog::Proof>,
     joint: joint::Proof,
     /// Round 0's `y` and nonce (Johnson profiles only).
     ood: Option<OodRound>,
@@ -420,6 +456,7 @@ impl std::fmt::Debug for FalconAlgebraicProof {
             }
         }
         proof
+            .field("polylog_bridge", &self.polylog_bridge)
             .field("joint", &self.joint)
             .field("ood", &self.ood)
             .field("opening", &self.opening)
@@ -475,13 +512,10 @@ impl FalconAlgebraicProof {
             ("norm_and_binding", self.arithmetic.payload_size_bytes()),
             (
                 "bitz_bridge",
-                self.bridges
+                self.bridge_size_breakdown()
                     .iter()
-                    .map(|proof| {
-                        proof.sums.encoded_len() + 32 * proof.forest.len() + 8 * proof.nonces.len()
-                    })
-                    .sum::<usize>()
-                    + 8 * self.bridge_merge_nonces.len(),
+                    .map(|(_, bytes)| bytes)
+                    .sum::<usize>(),
             ),
             (
                 "binary_sumcheck",
@@ -499,6 +533,29 @@ impl FalconAlgebraicProof {
                     }
                     .expect("proof serialization size") as usize
                     + 8 * (self.opening_nonces.len() + self.pcs_nonces.len()),
+            ),
+        ]
+    }
+
+    /// Diagnostic split of the `bitz_bridge` entry: column sums, forest
+    /// messages and nonces, or the logarithmic bridge's parts.
+    pub fn bridge_size_breakdown(&self) -> Vec<(&'static str, usize)> {
+        if let Some(polylog) = &self.polylog_bridge {
+            return polylog.size_breakdown();
+        }
+        vec![
+            (
+                "column_sums",
+                self.bridges.iter().map(|proof| proof.sums.encoded_len()).sum(),
+            ),
+            (
+                "forest",
+                self.bridges.iter().map(|proof| 32 * proof.forest.len()).sum(),
+            ),
+            (
+                "nonces",
+                self.bridges.iter().map(|proof| 8 * proof.nonces.len()).sum::<usize>()
+                    + 8 * self.bridge_merge_nonces.len(),
             ),
         ]
     }
@@ -710,6 +767,7 @@ impl PreparedFalconAlgebraic {
             FalconAlgebraicBinding::Words,
             RingMode::Canonical,
             selection,
+            None,
         )
     }
 
@@ -727,9 +785,11 @@ impl PreparedFalconAlgebraic {
             binding,
             ring_mode,
             ligerito_selection(target_bits),
+            polylog_selection(target_bits),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_ligerito_configuration(
         batch: usize,
         target_bits: usize,
@@ -737,6 +797,7 @@ impl PreparedFalconAlgebraic {
         binding: FalconAlgebraicBinding,
         ring_mode: RingMode,
         selection: LigeritoSelection,
+        fold: Option<LigeritoSelection>,
     ) -> Result<Self, FalconError> {
         if ring_mode != RingMode::Canonical
             && (binding != FalconAlgebraicBinding::Words || compute_variant != "padding")
@@ -807,6 +868,16 @@ impl PreparedFalconAlgebraic {
         for matrix in bridge_matrices(&layout, compact_binding) {
             bridge::validate_layout(&matrix, bridge_mode(), prime_range().1)?;
         }
+        let polylog = fold
+            .map(|selection| {
+                if compact_binding || bridge_mode() != BridgeMode::Unsplit || !per_site_grinding() {
+                    return Err(error(
+                        "the polylog bridge needs the raw unsplit bridge and per-site grinding",
+                    ));
+                }
+                bridge::polylog::Prepared::new(bridge_params(&layout), selection, target_bits, ligerito_terminal())
+            })
+            .transpose()?;
         let prepared = Self {
             layout,
             target_bits,
@@ -817,6 +888,7 @@ impl PreparedFalconAlgebraic {
             grinding,
             round0,
             terminal: ligerito_terminal(),
+            polylog,
             compact_binding,
             compute_variant,
             ring_mode,
@@ -991,6 +1063,22 @@ impl PreparedFalconAlgebraic {
         if let Some(error) = self.round0_error() {
             terms.push(("Round 0 (OOD)", error));
         }
+        if let Some(polylog) = &self.polylog {
+            let trees: f64 = polylog
+                .layouts()
+                .iter()
+                .map(|layout| {
+                    binary(
+                        bridge::error_numerator(layout, BridgeMode::Unsplit),
+                        self.grinding.bridge[0],
+                    )
+                })
+                .sum();
+            terms.push((
+                "polylog bridge folds",
+                trees + polylog.site_errors().iter().sum::<f64>(),
+            ));
+        }
         let algebraic_bits = if per_site_grinding() {
             -self.largest_site_error().log2()
         } else {
@@ -1077,6 +1165,22 @@ impl PreparedFalconAlgebraic {
                 params.grinding_bits,
             );
         }
+        if let Some(polylog) = &self.polylog {
+            let config = polylog.ligerito().prover();
+            let [folds, readoff] = polylog.layouts();
+            out += &format!(
+                "polylog bridge: fold tree (row {} col {}) | read-off (row {} col {}) | fold opener {} rates {:?} queries {:?} | round 0 {:?} | pcs blocks {}\n",
+                folds.row_vars,
+                folds.col_vars,
+                readoff.row_vars,
+                readoff.col_vars,
+                polylog.ligerito().selection().name(),
+                config.log_inv_rates,
+                config.queries,
+                polylog.round0().map(|params| params.grinding_bits),
+                polylog.plan().blocks.len(),
+            );
+        }
         out
     }
 
@@ -1123,6 +1227,15 @@ impl PreparedFalconAlgebraic {
                 .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32))),
         );
         sites.extend(self.round0_error());
+        if let Some(polylog) = &self.polylog {
+            for layout in polylog.layouts() {
+                sites.push(binary(
+                    bridge_site_numerator(&layout),
+                    self.grinding.bridge[0],
+                ));
+            }
+            sites.extend(polylog.site_errors());
+        }
         sites.into_iter().fold(0.0, f64::max)
     }
 
@@ -1345,6 +1458,9 @@ impl PreparedFalconAlgebraic {
         if self.schedule.word_binding {
             h.update(&self.schedule.terminal_merge_bits.to_le_bytes());
         }
+        if let Some(polylog) = &self.polylog {
+            polylog.bind(&mut h);
+        }
         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
         // The same byte stream as one little-endian coefficient at a time,
         // key then target per signature, filled in parallel.
@@ -1447,7 +1563,7 @@ impl PreparedFalconAlgebraic {
                 }
             }
         };
-        let (arithmetic, bridges, coefficients, target, bridge_merge_nonces) =
+        let (arithmetic, bridges, coefficients, target, bridge_merge_nonces, polylog_bridge) =
             if self.uses_compact_binding() {
                 #[cfg(not(any(test, feature = "bench-internals")))]
                 unreachable!("compact binding requires bench-internals");
@@ -1504,6 +1620,7 @@ impl PreparedFalconAlgebraic {
                         coefficients,
                         target,
                         nonces,
+                        None,
                     )
                 }
             } else {
@@ -1544,28 +1661,47 @@ impl PreparedFalconAlgebraic {
                 drop(committed.witness);
                 let params = bridge_params(&self.layout);
                 let extra = params.row_vars - SOURCE_ROW_VARS;
-                let (bridge, binary) = {
+                let (bridge, binary, polylog_bridge) = {
                     let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
                     let claim = widen_bridge_claim(claim, extra, &field)?;
                     let grouped = (extra > 0).then(|| bridge_columns(source.rows(), extra));
-                    bridge::prove_weighted(
-                        &mut t,
-                        &params,
-                        grouped.as_deref().unwrap_or(source.rows()),
-                        bridge_mode(),
-                        &claim.column_point,
-                        claim.modulus,
-                        self.grinding.bridge[0],
-                        &claim.row_weights,
-                    )?
+                    let rows = grouped.as_deref().unwrap_or(source.rows());
+                    match &self.polylog {
+                        Some(polylog) => {
+                            let (proof, binary) = bridge::polylog::prove(
+                                &mut t,
+                                polylog,
+                                rows,
+                                &claim.column_point,
+                                claim.modulus,
+                                self.grinding.bridge[0],
+                                &claim.row_weights,
+                            )?;
+                            (None, binary, Some(proof))
+                        }
+                        None => {
+                            let (proof, binary) = bridge::prove_weighted(
+                                &mut t,
+                                &params,
+                                rows,
+                                bridge_mode(),
+                                &claim.column_point,
+                                claim.modulus,
+                                self.grinding.bridge[0],
+                                &claim.row_weights,
+                            )?;
+                            (Some(proof), binary, None)
+                        }
+                    }
                 };
                 let target = binary.value;
                 (
                     ArithmeticProof::Raw(proof),
-                    vec![bridge],
+                    bridge.into_iter().collect(),
                     compact::coefficients(&self.layout, &params, &committed.exceptions, binary)?,
                     target,
                     Vec::new(),
+                    polylog_bridge,
                 )
             };
         drop(committed.source);
@@ -1644,6 +1780,7 @@ impl PreparedFalconAlgebraic {
             arithmetic,
             bridges,
             bridge_merge_nonces,
+            polylog_bridge,
             joint,
             ood: ood.map(|claim: OodProverClaim| claim.round),
             opening,
@@ -1720,7 +1857,7 @@ impl PreparedFalconAlgebraic {
         let (coefficients, target) = match (&proof.arithmetic, self.uses_compact_binding()) {
             #[cfg(any(test, feature = "bench-internals"))]
             (ArithmeticProof::Compact(arithmetic), true) => {
-                if proof.bridges.len() != 3 {
+                if proof.bridges.len() != 3 || proof.polylog_bridge.is_some() {
                     return Err(error("compact bridge count"));
                 }
                 let matrices = compact::bridge_layouts(&self.layout);
@@ -1763,7 +1900,10 @@ impl PreparedFalconAlgebraic {
                 combine_binary_claims(binary_claims, zeta)?
             }
             (ArithmeticProof::Raw(arithmetic), false) => {
-                if proof.bridges.len() != 1 || !proof.bridge_merge_nonces.is_empty() {
+                if proof.bridges.len() != usize::from(self.polylog.is_none())
+                    || proof.polylog_bridge.is_some() != self.polylog.is_some()
+                    || !proof.bridge_merge_nonces.is_empty()
+                {
                     return Err(error("raw bridge shape"));
                 }
                 let arithmetic_span =
@@ -1802,17 +1942,29 @@ impl PreparedFalconAlgebraic {
                 let bridge_span = tracing::info_span!("falcon_algebraic:verify_bridge").entered();
                 let params = bridge_params(&self.layout);
                 let claim = widen_bridge_claim(claim, params.row_vars - SOURCE_ROW_VARS, &field)?;
-                let binary = bridge::verify_weighted(
-                    &mut t,
-                    &params,
-                    bridge_mode(),
-                    &claim.column_point,
-                    claim.value,
-                    claim.modulus,
-                    &proof.bridges[0],
-                    self.grinding.bridge[0],
-                    &claim.row_weights,
-                )?;
+                let binary = match (&self.polylog, &proof.polylog_bridge) {
+                    (Some(polylog), Some(polylog_proof)) => bridge::polylog::verify(
+                        &mut t,
+                        polylog,
+                        &claim.column_point,
+                        claim.value,
+                        claim.modulus,
+                        polylog_proof,
+                        self.grinding.bridge[0],
+                        &claim.row_weights,
+                    )?,
+                    _ => bridge::verify_weighted(
+                        &mut t,
+                        &params,
+                        bridge_mode(),
+                        &claim.column_point,
+                        claim.value,
+                        claim.modulus,
+                        &proof.bridges[0],
+                        self.grinding.bridge[0],
+                        &claim.row_weights,
+                    )?,
+                };
                 drop(claim);
                 drop(bridge_span);
                 let target = binary.value;
@@ -2808,6 +2960,51 @@ mod tests {
                         "{profile} batch {batch} mutation {mutation}"
                     );
                 }
+            }
+        }
+    }
+
+    /// The logarithmic bridge end to end. Its switches are process-wide, so
+    /// run it explicitly: `BITZ_FALCON_PRIME=small
+    /// BITZ_FALCON_GRINDING_MODEL=per-site BITZ_FALCON_BRIDGE=polylog
+    /// [BITZ_FALCON_FOLD_LIGERITO=..] cargo test --features bench-internals
+    /// -- --ignored polylog_bridge_end_to_end`.
+    #[test]
+    #[ignore = "needs the bench-only polylog environment"]
+    fn polylog_bridge_end_to_end() {
+        // The fold commitment needs at least 2^7 columns: 65 signatures.
+        for batch in [65, 300] {
+            let prepared = PreparedFalconAlgebraic::new(batch, 128).unwrap();
+            assert!(prepared.polylog.is_some(), "BITZ_FALCON_BRIDGE=polylog is not set");
+            let (public, witness) = fixture(batch);
+            let committed = prepared.commit(public.clone(), witness).unwrap();
+            let mut prover_next = [0u64; 4];
+            let proof = prepared
+                .prove_observed(committed, |t| {
+                    prover_next = std::array::from_fn(|_| t.get_challenge());
+                })
+                .unwrap();
+            let mut verifier_next = [0u64; 4];
+            prepared
+                .verify_observed(&public, &proof, |t| {
+                    verifier_next = std::array::from_fn(|_| t.get_challenge());
+                })
+                .unwrap();
+            assert_eq!(prover_next, verifier_next);
+            assert!(proof.bridges.is_empty());
+            assert_eq!(
+                proof.payload_size_bytes(),
+                proof.payload_size_breakdown().iter().map(|(_, n)| n).sum::<usize>()
+            );
+            for mutation in 0..3 {
+                let mut bad = proof.clone();
+                let polylog = bad.polylog_bridge.as_mut().unwrap();
+                match mutation {
+                    0 => polylog.root_value += Gf::ONE,
+                    1 => polylog.root[3] ^= 1,
+                    _ => polylog.fold_forest[1][0] += Gf::ONE,
+                }
+                assert!(prepared.verify(&public, &bad).is_err(), "mutation {mutation}");
             }
         }
     }
