@@ -1,0 +1,4 @@
+mode,iteration,setup_ms,witness_ms,witness_commit_ms,continuation_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib,piop_ms,iop_ms,mul_piop_ms,sha_piop_ms,mul_opening_ms,joint_sumcheck_ms,shared_opening_ms,ood_round_ms
+hybrid,0,6252.520,0.001,75.753,241.379,317.136,36.374,303600,0,163.673,77.558,0.371,163.302,3.789,20.917,52.852,2.793
+hybrid,1,6252.520,0.001,59.159,183.923,243.085,28.952,303600,0,115.702,68.019,0.464,115.238,3.597,16.724,47.698,2.990
+hybrid,2,6252.520,0.001,47.219,176.597,223.818,27.360,303600,0,115.458,60.961,0.380,115.078,4.112,13.611,43.237,2.631

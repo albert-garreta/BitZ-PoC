@@ -1,0 +1,4 @@
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-hybrid/release/deps/hybrid_u32_sha256-1c4f5da08700971c 8e489b0e8237432d41c6300f4bb33adc
+/Users/albertgarretafontelles/f2z-pcs-shacomp/target/release/deps/sha256_compressions-ba2724b86aa629b7 c204c079a1accac795ac15b0454e5f7a
+/Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/sha256_compressions-9153b795c4e8412d 8b31bd72c2f59f38e2f54b63716a38f3
+ -InternalBattery-0 (id=36110435)	94%; discharging; 8:40 remaining present: true

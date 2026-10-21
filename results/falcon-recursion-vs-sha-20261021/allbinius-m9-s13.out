@@ -1,0 +1,4 @@
+mode,iteration,setup_ms,witness_ms,total_prover_ms,verify_ms,proof_bytes,peak_rss_kib
+all-binius,0,3851.760,23.076,168.890,21.269,510032,0
+all-binius,1,3851.760,22.759,176.186,20.432,510032,0
+all-binius,2,3851.760,22.064,166.608,21.560,510032,0

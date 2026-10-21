@@ -1,0 +1,24 @@
+mode=all-binius mul_opener=bitz multiplication_relation=u32_mod_2_32 multiplications=512 chained_compressions=8192 merkle=blake3 non_zk=true threads=10
+setup_ms=3851.760 binius_fri_component_bits=112 binius_log_inv_rate=1
+[2m2026-10-21T13:53:32.696215Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m [3mcategory[0m[2m=[0m"metrics" [3mproof_size_bytes[0m[2m=[0m510032
+[2m2026-10-21T13:53:32.889222Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m [3mcategory[0m[2m=[0m"metrics" [3mproof_size_bytes[0m[2m=[0m510032
+[2m2026-10-21T13:53:33.086996Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m [3mcategory[0m[2m=[0m"metrics" [3mproof_size_bytes[0m[2m=[0m510032
+[2m2026-10-21T13:53:33.274112Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m [3mcategory[0m[2m=[0m"metrics" [3mproof_size_bytes[0m[2m=[0m510032
+        4.97 real         9.11 user         1.05 sys
+          7092486144  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              774210  page reclaims
+                 181  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+               26105  involuntary context switches
+        176479628289  instructions retired
+         37490843851  cycles elapsed
+          7010604816  peak memory footprint

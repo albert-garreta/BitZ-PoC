@@ -2,3 +2,5 @@ sha /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/tar
 rec /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d 16e5e4dc1011e1ecc4eb8799c7dd2810
 1fc4bf8ac613ca23a30276c81bacc1e0f09ad949
  -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true
+hybrid /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-hybrid/release/deps/hybrid_u32_sha256-1c4f5da08700971c 8e489b0e8237432d41c6300f4bb33adc
+hybrid /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-hybrid/release/deps/hybrid_u32_sha256-1c4f5da08700971c 8e489b0e8237432d41c6300f4bb33adc

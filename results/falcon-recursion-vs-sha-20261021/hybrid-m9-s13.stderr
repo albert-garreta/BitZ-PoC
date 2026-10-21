@@ -1,0 +1,44 @@
+mode=hybrid mul_opener=bitz multiplication_relation=u32_mod_2_32 multiplications=512 chained_compressions=8192 merkle=blake3 non_zk=true threads=10
+[2m2026-10-21T13:51:15.419674Z[0m [32m INFO[0m [1mbenchmark:setup[0m[2m:[0m building chained SHA circuit [3mcompressions[0m[2m=[0m8192
+[2m2026-10-21T13:51:15.630132Z[0m [32m INFO[0m [1mbenchmark:setup[0m[2m:[0m compiling chained SHA circuit
+[2m2026-10-21T13:51:21.246010Z[0m [32m INFO[0m [1mbenchmark:setup[0m[2m:[0m preparing SHA shift keys
+LIGERITO_CONFIG {"configuration":{"analysis_version":"johnson_ood_row_union_over_bchks25_thm_4_6","field":"f128","final_block":{"yr_log_n":3},"grinding_step":"post_commit_pre_queries","hash":"sha256-compress","initial_k":4,"levels":[{"eta":0.02,"expected_eps_ood_bits":118.39671219158798,"expected_eps_pg_bits":84.03769315174216,"expected_eps_query_bits":90.11312550109534,"fold_grinding_bits":22,"grinding_bits":16,"k_recursive":4,"log_inv_rate":1,"log_msg_cols":18,"log_num_interleaved":4,"ood_samples":0,"proximity_loss":null,"queries":196,"regime":"johnson_ood","target_security_bits":106},{"eta":0.02,"expected_eps_ood_bits":113.54236261900824,"expected_eps_pg_bits":87.81051717150723,"expected_eps_query_bits":90.5679812768287,"fold_grinding_bits":19,"grinding_bits":16,"k_recursive":3,"log_inv_rate":2,"log_msg_cols":15,"log_num_interleaved":3,"ood_samples":1,"proximity_loss":null,"queries":96,"regime":"johnson_ood","target_security_bits":106},{"eta":0.02,"expected_eps_ood_bits":112.80539702484204,"expected_eps_pg_bits":90.84530412774835,"expected_eps_query_bits":90.91927283922585,"fold_grinding_bits":16,"grinding_bits":16,"k_recursive":3,"log_inv_rate":3,"log_msg_cols":12,"log_num_interleaved":3,"ood_samples":1,"proximity_loss":null,"queries":64,"regime":"johnson_ood","target_security_bits":106},{"eta":0.02,"expected_eps_ood_bits":112.12732511972939,"expected_eps_pg_bits":93.05047831283866,"expected_eps_query_bits":90.67049700534028,"fold_grinding_bits":13,"grinding_bits":16,"k_recursive":3,"log_inv_rate":4,"log_msg_cols":9,"log_num_interleaved":3,"ood_samples":1,"proximity_loss":null,"queries":48,"regime":"johnson_ood","target_security_bits":106},{"eta":0.02,"expected_eps_ood_bits":111.54236261900824,"expected_eps_pg_bits":95.78774501165063,"expected_eps_query_bits":91.46938030183259,"fold_grinding_bits":11,"grinding_bits":16,"k_recursive":3,"log_inv_rate":5,"log_msg_cols":6,"log_num_interleaved":3,"ood_samples":1,"proximity_loss":null,"queries":39,"regime":"johnson_ood","target_security_bits":106},{"eta":0.02,"expected_eps_ood_bits":111.12732511972939,"expected_eps_pg_bits":97.73526683211571,"expected_eps_query_bits":91.93388142335603,"fold_grinding_bits":9,"grinding_bits":16,"k_recursive":3,"log_inv_rate":6,"log_msg_cols":3,"log_num_interleaved":3,"ood_samples":1,"proximity_loss":null,"queries":33,"regime":"johnson_ood","target_security_bits":106}],"log_n":22,"m":29,"target_security_bits":106},"configuration_fingerprint":"3ee267ca9d1350ba763b16d567ab0e72ca165e869ec87247cb880314547692af","outer_ood":true,"outer_ood_grinding_bits":12,"outer_ood_raw_bits":96.75368173796404,"protocol_version":"bitz/ligerito-policy/early-ood/v1","recursive_ood":[0,1,1,1,1,1],"regime":"johnson","requested_profile":"custom:1:4","resolved_profile":"custom:1:4","target_bits":106}
+setup_ms=6252.520 packed_logs=[9, 21] algebraic_security_bits=101.446 ligerito_component_bits=106 log_inv_rate=1 ood_grinding_bits=12 binding_term=step3:piop-round:103.49
+[2m2026-10-21T13:51:21.739252Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m Round 0: out-of-domain sample of the virtual packed witness
+[2m2026-10-21T13:51:21.748664Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving multiplication constraints and GKR
+[2m2026-10-21T13:51:21.753896Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving chained SHA constraints
+[2m2026-10-21T13:51:21.950720Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving shared bit sumcheck
+[2m2026-10-21T13:51:21.978666Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m ring switching and opening both roots with Ligerito
+[2m2026-10-21T13:51:22.205814Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m Round 0: out-of-domain sample of the virtual packed witness
+[2m2026-10-21T13:51:22.208633Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving multiplication constraints and GKR
+[2m2026-10-21T13:51:22.212813Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving chained SHA constraints
+[2m2026-10-21T13:51:22.376134Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving shared bit sumcheck
+[2m2026-10-21T13:51:22.397091Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m ring switching and opening both roots with Ligerito
+[2m2026-10-21T13:51:22.542896Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m Round 0: out-of-domain sample of the virtual packed witness
+[2m2026-10-21T13:51:22.545926Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving multiplication constraints and GKR
+[2m2026-10-21T13:51:22.550033Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving chained SHA constraints
+[2m2026-10-21T13:51:22.665303Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving shared bit sumcheck
+[2m2026-10-21T13:51:22.682073Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m ring switching and opening both roots with Ligerito
+[2m2026-10-21T13:51:22.803134Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m Round 0: out-of-domain sample of the virtual packed witness
+[2m2026-10-21T13:51:22.805801Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving multiplication constraints and GKR
+[2m2026-10-21T13:51:22.810316Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving chained SHA constraints
+[2m2026-10-21T13:51:22.925440Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m proving shared bit sumcheck
+[2m2026-10-21T13:51:22.939083Z[0m [32m INFO[0m [1mbenchmark:proving[0m[2m:[0m[1mbenchmark:continuation[0m[2m:[0m ring switching and opening both roots with Ligerito
+        8.33 real        10.82 user         3.15 sys
+          5645074432  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             1202889  page reclaims
+                   9  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+              101260  involuntary context switches
+        195592123227  instructions retired
+         50837708781  cycles elapsed
+          7519738480  peak memory footprint
