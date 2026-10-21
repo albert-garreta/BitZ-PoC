@@ -386,18 +386,21 @@ pub(crate) fn prove_structured(
         weight,
         term2,
         weight2,
-        row_box_start: r1,
         row_box_log: b1,
-        row_box,
+        row_boxes,
         col_box_start: c2,
         col_box_log: b2,
         col_box,
     } = sw;
+    let mut starts: Vec<usize> = row_boxes.iter().map(|(start, _)| *start).collect();
+    starts.sort_unstable();
     if rows_bits.len() != 1 << s
         || rows_bits.iter().any(|row| row.len() * 64 != 1 << t)
         || b1 > t
-        || r1 % (1 << b1) != 0
-        || r1 + (1 << b1) > 1 << t
+        || row_boxes
+            .iter()
+            .any(|(start, w)| start % (1 << b1) != 0 || start + (1 << b1) > 1 << t || w.len() != 1 << (b1 + s))
+        || starts.windows(2).any(|pair| pair[0] == pair[1])
         || c2 % (1 << b2) != 0
         || c2 + (1 << b2) > 1 << s
         || term.len() != 1 << s
@@ -405,7 +408,6 @@ pub(crate) fn prove_structured(
         || term2.len() != weight2.len()
         || !(term2.is_empty() || term2.len() == 1 << s)
         || rows.iter().any(|r| r.len() != 1 << t)
-        || row_box.len() != 1 << (b1 + s)
         || col_box.len() != 1 << (b2 + t)
     {
         return Err(ProveError::PackedWitnessLengthMismatch);
@@ -459,40 +461,61 @@ pub(crate) fn prove_structured(
     super::trace("    sc structured: row tables", started);
     let started = std::time::Instant::now();
     let mut rows = rows;
-    let (mut box1_w, mut box2_w) = (row_box, col_box);
-    let box1_bit = |i: usize| bit(i >> b1, r1 + (i & ((1 << b1) - 1)));
+    // The row boxes (each its band's bits until the first fold) and the
+    // column box, as (start, weights, witness).
+    let (box_starts, mut box_w): (Vec<usize>, Vec<Vec<Gf>>) = row_boxes.into_iter().unzip();
+    let mut box2_w = col_box;
+    let box_bit = |j: usize, i: usize| bit(i >> b1, box_starts[j] + (i & ((1 << b1) - 1)));
     let box2_bit = |i: usize| bit(c2 + (i >> t), i & ((1 << t) - 1));
 
     // Low row rounds: every part on its own tables. The boxes' witness is
     // their bits until the first fold; each box fold also computes the next
     // round's polynomial in the same pass ([`fold_round`]).
-    let (mut box1_f, mut box2_f): (Vec<Gf>, Vec<Gf>) = (Vec::new(), Vec::new());
-    let mut box_coefficients =
-        if b1 > 0 { add(bit_round(&box1_bit, &box1_w), bit_round(&box2_bit, &box2_w)) } else { [zero; 3] };
+    let mut box_f: Vec<Vec<Gf>> = box_starts.iter().map(|_| Vec::new()).collect();
+    let mut box2_f: Vec<Gf> = Vec::new();
+    let mut box_coefficients = if b1 > 0 {
+        let mut c = bit_round(&box2_bit, &box2_w);
+        for (j, w) in box_w.iter().enumerate() {
+            c = add(c, bit_round(&|i: usize| box_bit(j, i), w));
+        }
+        c
+    } else {
+        [zero; 3]
+    };
     for round in 0..b1 {
         let mut coefficients = box_coefficients;
         for (a, r) in acc.iter().zip(&rows) {
             coefficients = add(coefficients, round_polynomial(a, r));
         }
         let challenge = send(coefficients, &mut target, &mut point, transcript)?;
-        let ((next1, coefficients1), (next2, coefficients2)) = if round == 0 {
-            let bit1 = |i: usize| if box1_bit(i) { one } else { zero };
+        let (next2, mut next_coefficients) = if round == 0 {
             let bit2 = |i: usize| if box2_bit(i) { one } else { zero };
-            (fold_round(bit1, &mut box1_w, challenge), fold_round(bit2, &mut box2_w, challenge))
+            fold_round(bit2, &mut box2_w, challenge)
         } else {
-            let (src1, src2) = (&box1_f, &box2_f);
-            (fold_round(|i| src1[i], &mut box1_w, challenge), fold_round(|i| src2[i], &mut box2_w, challenge))
+            let src2 = &box2_f;
+            fold_round(|i| src2[i], &mut box2_w, challenge)
         };
-        super::pool::recycle(std::mem::replace(&mut box1_f, next1));
         super::pool::recycle(std::mem::replace(&mut box2_f, next2));
-        box_coefficients = add(coefficients1, coefficients2);
+        for (j, (w, f)) in box_w.iter_mut().zip(box_f.iter_mut()).enumerate() {
+            let (next, coefficients) = if round == 0 {
+                fold_round(|i| if box_bit(j, i) { one } else { zero }, w, challenge)
+            } else {
+                let src = &*f;
+                fold_round(|i| src[i], w, challenge)
+            };
+            super::pool::recycle(std::mem::replace(f, next));
+            next_coefficients = add(next_coefficients, coefficients);
+        }
+        box_coefficients = next_coefficients;
         for (a, r) in acc.iter_mut().zip(rows.iter_mut()) {
             fold(a, challenge);
             fold(r, challenge);
         }
     }
     drop(acc);
-    super::pool::recycle(box1_f);
+    for f in box_f {
+        super::pool::recycle(f);
+    }
     super::pool::recycle(box2_f);
     super::trace("    sc structured: low rounds", started);
     let started = std::time::Instant::now();
@@ -532,7 +555,8 @@ pub(crate) fn prove_structured(
             }
         })
         .collect();
-    let h1 = r1 >> b1;
+    // Each row box has collapsed to its band's high row.
+    let box_high: Vec<usize> = box_starts.iter().map(|start| start >> b1).collect();
     let mut weights: Vec<Gf> = cfg_into_iter!(0..1usize << (high + s), 64)
         .map(|i| {
             let (c, h) = (i >> high, i & ((1 << high) - 1));
@@ -545,8 +569,10 @@ pub(crate) fn prove_structured(
             {
                 w += rows[k as usize][h] * weight2[c];
             }
-            if h == h1 {
-                w += box1_w[c];
+            for (j, &h_j) in box_high.iter().enumerate() {
+                if h == h_j {
+                    w += box_w[j][c];
+                }
             }
             if c >= c2 && c < c2 + (1 << b2) {
                 w += box2_w[((c - c2) << high) | h];
@@ -555,7 +581,9 @@ pub(crate) fn prove_structured(
         })
         .collect();
     drop(rows);
-    super::pool::recycle(box1_w);
+    for w in box_w {
+        super::pool::recycle(w);
+    }
     super::pool::recycle(box2_w);
     super::trace("    sc structured: fold to dense", started);
 
@@ -1063,7 +1091,8 @@ mod sum_tests {
     fn structured_weights_match_the_dense_messages() {
         use circuit::linear_map::binary::StructuredWeights;
         let cases = [(7usize, 4usize, 3usize, 40usize, 1usize, 14usize), (7, 3, 6, 64, 0, 5), (8, 4, 7, 128, 2, 12)];
-        for ((t, s, b1, r1, b2, c2), second) in cases.iter().flat_map(|&c| [(c, false), (c, true)]) {
+        let variants = [(false, false), (true, false), (false, true), (true, true)];
+        for ((t, s, b1, r1, b2, c2), (second, several)) in cases.iter().flat_map(|&c| variants.map(|v| (c, v))) {
             let mut state = 0x1234_5678_9abc_def1u64 ^ (t as u64) << 32;
             let shape = Shape::new(t, s).unwrap();
             let rows_bits = grid(&mut state, &shape);
@@ -1084,9 +1113,16 @@ mod sum_tests {
                 weight: (0..1usize << s).map(|_| random_gf(&mut state)).collect(),
                 term2,
                 weight2,
-                row_box_start: r1,
                 row_box_log: b1,
-                row_box: (0..1usize << (b1 + s)).map(|_| random_gf(&mut state)).collect(),
+                // One band at `r1`, or up to three disjoint aligned bands.
+                row_boxes: {
+                    let starts: Vec<usize> = if several {
+                        (0..1usize << (t - b1)).map(|k| k << b1).filter(|&start| start != r1).take(2).chain([r1]).collect()
+                    } else {
+                        vec![r1]
+                    };
+                    starts.into_iter().map(|start| (start, (0..1usize << (b1 + s)).map(|_| random_gf(&mut state)).collect())).collect()
+                },
                 col_box_start: c2,
                 col_box_log: b2,
                 col_box: (0..1usize << (b2 + t)).map(|_| random_gf(&mut state)).collect(),

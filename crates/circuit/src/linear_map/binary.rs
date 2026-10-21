@@ -34,7 +34,8 @@ pub enum PreparedVirtualMapError {
 /// row vectors; `term[c] = u32::MAX` for none)
 /// `+ rows[term2[c]][r]·weight2[c]` (an optional second term per column:
 /// `term2` empty for none anywhere, `u32::MAX` for none in a column)
-/// `+ [R ≤ r < R + 2^b1]·row_box[c·2^b1 + r − R]` (a dyadic band of rows)
+/// `+ Σ_j [R_j ≤ r < R_j + 2^b1]·box_j[c·2^b1 + r − R_j]` (dyadic bands of
+/// rows, all `2^b1` rows high, `(R_j, box_j)` in `row_boxes`)
 /// `+ [C ≤ c < C + 2^b2]·col_box[(c − C)·2^t + r]` (a dyadic band of columns).
 #[derive(Clone, Debug)]
 pub struct StructuredWeights {
@@ -45,9 +46,9 @@ pub struct StructuredWeights {
     pub weight: Vec<field::Gf128>,
     pub term2: Vec<u32>,
     pub weight2: Vec<field::Gf128>,
-    pub row_box_start: usize,
     pub row_box_log: usize,
-    pub row_box: Vec<field::Gf128>,
+    /// The row bands' aligned starts and weights (`2^(b1+s)` each), disjoint.
+    pub row_boxes: Vec<(usize, Vec<field::Gf128>)>,
     pub col_box_start: usize,
     pub col_box_log: usize,
     pub col_box: Vec<field::Gf128>,
@@ -74,9 +75,11 @@ impl StructuredWeights {
                 }
             }
         }
-        for c in 0..1usize << s {
-            for k in 0..1usize << self.row_box_log {
-                out[(c << t) | (self.row_box_start + k)] += self.row_box[(c << self.row_box_log) | k];
+        for (start, row_box) in &self.row_boxes {
+            for c in 0..1usize << s {
+                for k in 0..1usize << self.row_box_log {
+                    out[(c << t) | (start + k)] += row_box[(c << self.row_box_log) | k];
+                }
             }
         }
         for k in 0..1usize << self.col_box_log {
