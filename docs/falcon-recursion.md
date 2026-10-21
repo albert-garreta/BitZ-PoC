@@ -390,6 +390,32 @@ opener and private I/O. The generic path takes 346 ms for the same 2^13 at
 λ=100 on this binary. The Falcon circuit is almost entirely identical SHA
 blocks, so that machinery is the main lever on the outer prover (not ported).
 
+## SHA batch + glue on one commitment, and the opening rows (2026-10-21)
+
+The BitZ paper's §2.4.1 is implemented for this circuit
+(`docs/falcon-recursion-split.md`, `src/piop/spartan/split.rs`,
+`src/bitz/shared.rs`, `c07b28ebc`): the compressions as one 2^13 batch of
+the Ch-only relation with the block opener, the rest as FlockRec on a stub
+circuit whose committed bits live in the batch's grid (the compressions'
+inputs and outputs are the batch's own cells; no linking), one Round 0,
+two PIOPs and one shared opening. It proves and verifies (tests, the
+Falcon step at 16 and 1K), but it does not beat FlockRec
+(`results/falcon-recursion-split-20261021/summary.md`, λ=128, ext:3:4
+base and outer):
+
+| batch | FlockRec t18 | FlockRec t17 | FlockRec t16 | FlockRec t15 | split (best) |
+|---|---|---|---|---|---|
+| 1,024 | 0.47 s / 170.6 KB | 0.39 s / 178.4 KB | 0.37 s / 192.8 KB | 0.34 s / 226.0 KB | 0.47 s / 208.4 KB (+0.55 s witness) |
+| 32,768 | 0.66 s / 178.1 KB | 0.64 s / 195.0 KB | 0.56 s / 226.3 KB | 0.54 s / 291.5 KB | 0.69 s / 213.6 KB (+0.62 s witness) |
+
+(rec step / π.) FlockRec's structured opening already prices a CM block like
+the block opener prices a compression; the batch pads to 2^13 and the split
+pays a second PIOP and a second fold + GKR. The cheap lever is FlockRec's
+opening rows T: at λ=128 every PIOP round grinds ≈ T + 2 bits (the prime is
+at most min(113, 128 − T) bits), so T = 18 spends most of its PIOP time on
+proof of work; T = 17 (1K/4K) or T = 16 (32K) is 15–17 % faster per step for
+5–27 % more proof.
+
 ## Results (2026-10-18 baseline)
 
 M5 (10 cores, 24 GiB), AC power, one gated campaign (2026-10-18 15:54–16:07,

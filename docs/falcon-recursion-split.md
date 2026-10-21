@@ -1,6 +1,7 @@
 # Falcon recursion: SHA batch + glue in one commitment (BitZ paper §2.4.1)
 
-Status (2026-10-21): implemented and tested; campaign pending. User
+Status (2026-10-21): implemented, tested and measured (`c07b28ebc`); it does not
+beat FlockRec (see Results). User
 directives: follow §2.4.1 (one commitment of the concatenation, each
 sub-SNARK run until an inner-product claim over the binary field, the claims
 proved together); no second commitment, no linking step; accept the SHA
@@ -83,12 +84,28 @@ product sumcheck and Round-0 value rejected. `falcon_verifier::tests::
 falcon_recursion_split_step_proves_and_verifies` (ignored): the Falcon
 step end to end, final verifier from the public stream, tampered opening.
 
-## First numbers (dev build, no LTO, noisy; batch 1024, λ=128, ext:3:4)
+## Results (gated campaign, `results/falcon-recursion-split-20261021/`)
 
-5,135 compressions → `k = 13`; tail 1.15 M committed bits; glue grid 2^23.
-SHA witness 0.65–0.68 s. Prove 0.35–0.37 s at `SHA_T` 16/18 (FlockRec
-step on the same build: 0.32 s); π 206 KB (`SHA_T` 16), 183 KB
-(`SHA_T` 18, glue T 18), 188 KB (glue T 14) against FlockRec's 170 KB. The
-PIOP phases swing with proof-of-work draws (each relation has its own
-initial and terminal grinding boundaries). Campaign:
-`results/falcon-recursion-split-20261021/campaign.zsh`.
+λ=128, ext:3:4 base and outer, 10 threads, medians (summary.md has the
+full table). Step without the batch's witness generation / π:
+
+| batch | FlockRec t18 | FlockRec t17 | FlockRec t16 | FlockRec t15 | split 17-15 | split 16-15 |
+|---|---|---|---|---|---|---|
+| 1,024 | 0.47 s / 170.6 KB | 0.39 s / 178.4 KB | 0.37 s / 192.8 KB | 0.34 s / 226.0 KB | 0.55 s / 192.7 KB | 0.47 s / 208.4 KB |
+| 4,096 | 0.50 s / 169.8 KB | 0.41 s / 177.4 KB | 0.38 s / 193.9 KB | 0.38 s / 225.9 KB | 0.53 s / 193.2 KB | 0.52 s / 208.2 KB |
+| 32,768 | 0.66 s / 178.1 KB | 0.64 s / 195.0 KB | 0.56 s / 226.3 KB | 0.54 s / 291.5 KB | 0.71 s / 197.9 KB | 0.69 s / 213.6 KB |
+
+The batch's witness generation adds 0.55–0.62 s to the split. The split's
+protocol (0.20–0.27 s) beats FlockRec t18's (0.29–0.35 s), but its setup
+and verifier cost more and its proofs are larger; FlockRec at T = 16–17
+dominates it on time and size at every batch. FlockRec already prices a CM
+block like the block opener prices a compression (GKR over derived cells),
+the 2^13 batch pads with 37 / 25 / 6 % dummies, and the split pays a second
+PIOP's proof of work and a second fold + GKR. The lever this found is the
+opening rows: each PIOP round grinds ≈ rows + 2 bits at λ=128 (the prime is
+at most min(113, 128 − rows) bits), so FlockRec at T = 17 or 16 is 15–17 %
+faster per step for 5–27 % more proof.
+
+Not done (would not change the comparison): a word-level packer for the
+batch's witness (two serial bit loops, ~0.5 s of the 0.55–0.62 s), a shared
+prime and initial boundary for the two PIOPs, a faster stub/relation build.

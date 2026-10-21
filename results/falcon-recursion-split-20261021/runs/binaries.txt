@@ -1,0 +1,7 @@
+bin /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d ec7ef82849b861c14e33f6749c797147
+c07b28ebc947f6db996c02b9275404b5789e2515
+?? target-blake3/
+?? target-flock/
+?? target-hybrid/
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true
+rows.zsh bin /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d ec7ef82849b861c14e33f6749c797147
