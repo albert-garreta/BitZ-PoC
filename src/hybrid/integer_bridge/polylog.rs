@@ -220,8 +220,11 @@ fn bind_folds(t: &mut impl Transcript, p: &IntegerMatrixLayout, root: &Hash) {
     t.absorb_slice(root);
 }
 
+const ROOT_VALUE_LABEL: &[u8] = b"bitz/falcon/polylog-bridge/root-value/v1";
+const FOLD_CLAIMS_LABEL: &[u8] = b"bitz/falcon/polylog-bridge/fold-claims/v1";
+
 fn bind_root_value(t: &mut impl Transcript, value: &Gf) {
-    t.absorb_slice(b"bitz/falcon/polylog-bridge/root-value/v1");
+    t.absorb_slice(ROOT_VALUE_LABEL);
     t.absorb_slice(&value.to_bytes());
 }
 
@@ -231,16 +234,22 @@ fn batch_fold_claims(
     fold: BinaryClaim,
     readoff: BinaryClaim,
 ) -> (joint::Coefficients, Gf) {
-    t.absorb_slice(b"bitz/falcon/polylog-bridge/fold-claims/v1");
+    t.absorb_slice(FOLD_CLAIMS_LABEL);
     t.absorb_slice(&fold.value.to_bytes());
     t.absorb_slice(&readoff.value.to_bytes());
     let xi: Gf = t.get_field_challenge(&());
     let target = fold.value + xi * readoff.value;
+    (batched_coefficients(fold, readoff, xi), target)
+}
+
+/// The batched claims' coefficients at the draw `xi`: the fold claim's
+/// tensor, then the read-off's scaled by `xi`.
+fn batched_coefficients(fold: BinaryClaim, readoff: BinaryClaim, xi: Gf) -> joint::Coefficients {
     let mut low = readoff.low;
     for value in &mut low {
         *value *= xi;
     }
-    let coefficients = joint::Coefficients {
+    joint::Coefficients {
         tensors: vec![
             joint::Tensor {
                 low: fold.low,
@@ -254,8 +263,7 @@ fn batch_fold_claims(
             },
         ],
         gathers: Vec::new(),
-    };
-    (coefficients, target)
+    }
 }
 
 /// `T`'s columns as the bridge's column-major bit vectors: word `c` holds
@@ -598,6 +606,96 @@ pub(crate) fn verify<T: Transcript + Send>(
         .finish()
         .map_err(|_| err("polylog fold opening grinding"))?;
     Ok(claim)
+}
+
+/// The bridge's native pieces as the recursion circuit
+/// ([`crate::recursion::falcon_verifier`]) runs them on public data: the
+/// labels and domains it absorbs, the trees' and read-off's shapes, weights
+/// and images, the batching coefficients, the fold opener's configuration.
+pub(crate) mod recursion {
+    use super::*;
+
+    pub(crate) const GRINDING_DOMAIN: &[u8] = <PolylogGrinding as GrindingDomain>::DOMAIN;
+    pub(crate) const OPENING_GRINDING_DOMAIN: &[u8] = <PolylogOpeningGrinding as GrindingDomain>::DOMAIN;
+    pub(crate) const ROOT_VALUE_LABEL: &[u8] = super::ROOT_VALUE_LABEL;
+    pub(crate) const FOLD_CLAIMS_LABEL: &[u8] = super::FOLD_CLAIMS_LABEL;
+
+    /// The public checks [`super::verify`] makes before its transcript: the
+    /// column point, the row weights, the shape against the modulus.
+    pub(crate) fn validate(p: &IntegerMatrixLayout, column_point: &[F], field: &Cfg, row_weights: &[u128]) -> Result<(), FalconError> {
+        validate_point(column_point, p.col_vars, field)?;
+        validate_row_weights(p, row_weights, field.modulus_u128())?;
+        unsplit_shape(p, field.modulus_u128())?;
+        checked_weight_sum(row_weights)?;
+        Ok(())
+    }
+
+    pub(crate) fn bind_folds(t: &mut impl Transcript, p: &IntegerMatrixLayout, root: &Hash) {
+        super::bind_folds(t, p, root);
+    }
+
+    pub(crate) fn fold_layout(p: &IntegerMatrixLayout) -> IntegerMatrixLayout {
+        super::fold_layout(p)
+    }
+
+    pub(crate) fn readoff_layout(p: &IntegerMatrixLayout) -> (usize, IntegerMatrixLayout) {
+        super::readoff_layout(p)
+    }
+
+    pub(crate) fn readoff_weights(a: usize, column_point: &[F], field: &Cfg) -> Vec<u128> {
+        super::readoff_weights(a, column_point, field)
+    }
+
+    /// `g`, the fold tree's root factor (`g^T = g·g^S`).
+    pub(crate) fn generator() -> Gf {
+        generator_comb().pow(1)
+    }
+
+    /// The fold tree's binary claim at its exit `point` (value zero: the
+    /// circuit forms it), images `g^{2^k}`.
+    pub(crate) fn fold_claim(p: &IntegerMatrixLayout, point: &[Gf]) -> Result<BinaryClaim, FalconError> {
+        let comb = generator_comb();
+        let images: Vec<Gf> = (0..128).map(|k| comb.pow(1u128 << k)).collect();
+        unsplit_binary_claim(&fold_layout(p), &images, point, Gf::ZERO)
+    }
+
+    pub(crate) fn batched_coefficients(fold: BinaryClaim, readoff: BinaryClaim, xi: Gf) -> joint::Coefficients {
+        super::batched_coefficients(fold, readoff, xi)
+    }
+
+    impl Prepared {
+        pub(crate) fn layout(&self) -> &IntegerMatrixLayout {
+            &self.layout
+        }
+
+        pub(crate) fn geometry(&self) -> &Geometry<1> {
+            &self.geometry
+        }
+
+        pub(crate) fn resolved(&self) -> &ResolvedLigerito {
+            &self.ligerito
+        }
+
+        pub(crate) fn pcs_plan(&self) -> &GrindingPlan {
+            &self.plan
+        }
+
+        pub(crate) fn round0_params(&self) -> Option<OodRoundParams> {
+            self.round0
+        }
+
+        pub(crate) fn joint_bits(&self) -> u32 {
+            self.joint_bits
+        }
+
+        pub(crate) fn opening_bits(&self) -> u32 {
+            self.opening_bits
+        }
+
+        pub(crate) fn terminal(&self) -> shared::Terminal {
+            self.terminal
+        }
+    }
 }
 
 #[cfg(test)]

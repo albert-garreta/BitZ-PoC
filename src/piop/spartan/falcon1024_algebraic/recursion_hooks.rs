@@ -91,9 +91,13 @@ pub(crate) fn check_configuration(prepared: &PreparedFalconAlgebraic) -> Result<
             "the Falcon verifier circuit needs the keyed-ring, word-binder, unsplit-bridge configuration",
         ));
     }
-    // Unique decoding, or Johnson over GF(2^256) with the standard terminal.
-    if prepared.ligerito.ood_bits().is_some()
-        && !(prepared.ligerito.extension() && prepared.terminal() == crate::hybrid::opening::Terminal::Standard)
+    // Unique decoding, or Johnson over GF(2^256) with the standard terminal
+    // (the main opening and the polylog bridge's fold opening alike).
+    let supported = |resolved: &ResolvedLigerito, terminal: crate::hybrid::opening::Terminal| {
+        resolved.ood_bits().is_none() || (resolved.extension() && terminal == crate::hybrid::opening::Terminal::Standard)
+    };
+    if !supported(&prepared.ligerito, prepared.terminal())
+        || prepared.polylog.as_ref().is_some_and(|pl| !supported(pl.resolved(), pl.terminal()))
     {
         return Err(error(
             "the Falcon verifier circuit opens unique-decoding or ext: profiles with the standard terminal",
@@ -286,6 +290,14 @@ pub(crate) fn pcs_plan(prepared: &PreparedFalconAlgebraic) -> &GrindingPlan {
     &prepared.pcs_grinding
 }
 
+/// The logarithmic bridge's preparation (its fold opener's configuration).
+pub(crate) type PolylogPrepared = bridge::polylog::Prepared;
+
+/// The logarithmic bridge's fold opener (`BITZ_FALCON_BRIDGE=polylog`).
+pub(crate) fn polylog(prepared: &PreparedFalconAlgebraic) -> Option<&bridge::polylog::Prepared> {
+    prepared.polylog.as_ref()
+}
+
 /// Round 0's parameters (Johnson profiles), right after the statement.
 pub(crate) fn round0(prepared: &PreparedFalconAlgebraic) -> Option<crate::ligerito_flock::OodRoundParams> {
     prepared.round0
@@ -293,6 +305,52 @@ pub(crate) fn round0(prepared: &PreparedFalconAlgebraic) -> Option<crate::ligeri
 
 pub(crate) fn terminal(prepared: &PreparedFalconAlgebraic) -> crate::hybrid::opening::Terminal {
     prepared.terminal()
+}
+
+/// An opening's parts as the circuit reads them: the ring switch's `s_v`,
+/// the GF(2^128) Ligerito proof or the GF(2^256) one (standard terminal),
+/// and its grinding nonces.
+pub(crate) struct OpeningView<'a> {
+    pub s_v: &'a [Gf],
+    pub ligerito: Option<&'a flock_core::pcs::ligerito::LigeritoProof<Vec<Gf>>>,
+    pub ligerito_ext: Option<&'a flock_core::pcs::ligerito::ext::LigeritoProofExt>,
+    pub opening_nonces: &'a [u64],
+    pub pcs_nonces: &'a [u64],
+}
+
+fn opening_view<'a>(
+    opening: &'a crate::hybrid::opening::JointOpening,
+    opening_nonces: &'a [u64],
+    pcs_nonces: &'a [u64],
+) -> Result<OpeningView<'a>, FalconError> {
+    use crate::hybrid::opening::{ExtLigerito, JointOpening};
+    let (s_v, ligerito, ligerito_ext) = match opening {
+        JointOpening::Base(opening) => (&opening.ring.s_v[..], Some(&opening.ligerito), None),
+        JointOpening::Ext(opening) => match &opening.ligerito {
+            ExtLigerito::Standard(lig) => (&opening.ring.s_v[..], None, Some(lig)),
+            ExtLigerito::Compact(_) => {
+                return Err(error("the Falcon verifier circuit reads the standard extension terminal"));
+            }
+        },
+    };
+    Ok(OpeningView { s_v, ligerito, ligerito_ext, opening_nonces, pcs_nonces })
+}
+
+/// The logarithmic bridge's parts as the circuit reads them.
+pub(crate) struct PolylogView<'a> {
+    pub root: &'a [u8; 32],
+    pub round0: Option<&'a crate::ligerito_flock::OodRound>,
+    pub root_value: Gf,
+    pub forest: &'a [[Gf; 2]],
+    pub fold_forest: &'a [[Gf; 2]],
+    pub nonces: &'a [u64],
+    pub readoff_sums: &'a [u128],
+    pub readoff_forest: &'a [[Gf; 2]],
+    pub readoff_nonces: &'a [u64],
+    pub joint_rounds: &'a [[Gf; 2]],
+    pub joint_value: Gf,
+    pub joint_nonces: &'a [u64],
+    pub opening: OpeningView<'a>,
 }
 
 /// A proof's parts as the circuit reads them.
@@ -324,29 +382,51 @@ pub(crate) struct ProofView<'a> {
     pub round0: Option<&'a crate::ligerito_flock::OodRound>,
     pub opening_nonces: &'a [u64],
     pub pcs_nonces: &'a [u64],
+    /// The logarithmic bridge (its folds are committed; `sums`, `forest`
+    /// and `bridge_nonces` are then empty).
+    pub polylog: Option<PolylogView<'a>>,
 }
 
 pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, FalconError> {
     let (RingProof::Keyed(ring), ArithmeticProof::Raw(arithmetic)) = (&proof.ring, &proof.arithmetic) else {
         return Err(error("the Falcon verifier circuit reads keyed-ring raw-arithmetic proofs"));
     };
-    if proof.bridges.len() != 1 || !proof.bridge_merge_nonces.is_empty() {
+    if !proof.bridge_merge_nonces.is_empty() {
         return Err(error("raw bridge shape"));
     }
-    let bridge = &proof.bridges[0];
-    let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &bridge.sums else {
-        return Err(error("unsplit bridge sum shape"));
-    };
-    use crate::hybrid::opening::{ExtLigerito, JointOpening};
-    let (s_v, ligerito, ligerito_ext) = match &proof.opening {
-        JointOpening::Base(opening) => (&opening.ring.s_v[..], Some(&opening.ligerito), None),
-        JointOpening::Ext(opening) => match &opening.ligerito {
-            ExtLigerito::Standard(lig) => (&opening.ring.s_v[..], None, Some(lig)),
-            ExtLigerito::Compact(_) => {
-                return Err(error("the Falcon verifier circuit reads the standard extension terminal"));
-            }
-        },
-    };
+    fn unsplit(sums: &crate::bitz::column_sums::ColumnSums) -> Result<&[u128], FalconError> {
+        match sums {
+            crate::bitz::column_sums::ColumnSums::Unsplit(sums) => Ok(sums.as_slice()),
+            _ => Err(error("unsplit bridge sum shape")),
+        }
+    }
+    let (sums, forest, bridge_nonces, polylog): (&[u128], &[[Gf; 2]], &[u64], _) =
+        match (proof.bridges.as_slice(), &proof.polylog_bridge) {
+            ([bridge], None) => (unsplit(&bridge.sums)?, &bridge.forest, &bridge.nonces, None),
+            ([], Some(pl)) => (
+                &[],
+                &[],
+                &[],
+                Some(PolylogView {
+                    root: &pl.root,
+                    round0: pl.ood.as_ref(),
+                    root_value: pl.root_value,
+                    forest: &pl.forest,
+                    fold_forest: &pl.fold_forest,
+                    nonces: &pl.nonces,
+                    readoff_sums: unsplit(&pl.readoff.sums)?,
+                    readoff_forest: &pl.readoff.forest,
+                    readoff_nonces: &pl.readoff.nonces,
+                    joint_rounds: &pl.joint.rounds,
+                    joint_value: pl.joint.value,
+                    joint_nonces: &pl.joint.nonces,
+                    opening: opening_view(&pl.opening, &pl.opening_nonces, &pl.pcs_nonces)?,
+                }),
+            ),
+            _ => return Err(error("raw bridge shape")),
+        };
+    let main = opening_view(&proof.opening, &proof.opening_nonces, &proof.pcs_nonces)?;
+    let (s_v, ligerito, ligerito_ext) = (main.s_v, main.ligerito, main.ligerito_ext);
     Ok(ProofView {
         quotient: &ring.quotient,
         point_nonce: ring.point_nonce,
@@ -361,8 +441,8 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
         binding_nonces: &arithmetic.binding_nonces,
         terminal_merge_nonce: arithmetic.terminal_merge_nonce,
         sums,
-        forest: &bridge.forest,
-        bridge_nonces: &bridge.nonces,
+        forest,
+        bridge_nonces,
         joint_rounds: &proof.joint.rounds,
         joint_value: proof.joint.value,
         joint_nonces: &proof.joint.nonces,
@@ -372,7 +452,21 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
         round0: proof.ood.as_ref(),
         opening_nonces: &proof.opening_nonces,
         pcs_nonces: &proof.pcs_nonces,
+        polylog,
     })
+}
+
+impl ProofView<'_> {
+    /// The main opening's parts.
+    pub(crate) fn opening(&self) -> OpeningView<'_> {
+        OpeningView {
+            s_v: self.s_v,
+            ligerito: self.ligerito,
+            ligerito_ext: self.ligerito_ext,
+            opening_nonces: self.opening_nonces,
+            pcs_nonces: self.pcs_nonces,
+        }
+    }
 }
 
 /// The exceptions the statement digest binds (the circuit's public input
@@ -421,7 +515,7 @@ pub(crate) const TAMPERED_PARTS: &[&str] = &[
 /// and paths.
 #[cfg(test)]
 pub(crate) fn tampered_parts(proof: &FalconAlgebraicProof) -> Vec<&'static str> {
-    match &proof.opening {
+    let mut parts = match &proof.opening {
         crate::hybrid::opening::JointOpening::Base(_) => TAMPERED_PARTS.to_vec(),
         crate::hybrid::opening::JointOpening::Ext(_) => TAMPERED_PARTS
             .iter()
@@ -429,18 +523,47 @@ pub(crate) fn tampered_parts(proof: &FalconAlgebraicProof) -> Vec<&'static str> 
             .filter(|&part| part != "fold-nonce")
             .chain(["round0", "ood-value", "final-row", "final-path"])
             .collect(),
+    };
+    // The logarithmic bridge commits its folds: its own parts in place of the
+    // standard bridge's sums and forest.
+    if proof.polylog_bridge.is_some() {
+        parts.retain(|&part| part != "fold" && part != "forest");
+        parts.extend(POLYLOG_PARTS);
     }
+    parts
 }
+
+/// The logarithmic bridge's parts [`tamper`] alters.
+#[cfg(test)]
+pub(crate) const POLYLOG_PARTS: &[&str] = &[
+    "polylog-root",
+    "polylog-round0",
+    "polylog-root-value",
+    "polylog-forest",
+    "polylog-fold-forest",
+    "polylog-readoff-sum",
+    "polylog-readoff-forest",
+    "polylog-joint-round",
+    "polylog-joint-value",
+    "polylog-ring-switch",
+    "polylog-initial-row",
+    "polylog-initial-path",
+    "polylog-final-message",
+    "polylog-opening-nonce",
+];
 
 #[cfg(test)]
 pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
+    if let Some(part) = part.strip_prefix("polylog-") {
+        tamper_polylog(proof, part);
+        return;
+    }
     if tamper_opening(proof, part) {
         return;
     }
     let (RingProof::Keyed(ring), ArithmeticProof::Raw(arithmetic)) = (&mut proof.ring, &mut proof.arithmetic) else {
         panic!("a keyed-ring raw-arithmetic proof");
     };
-    let bridge = &mut proof.bridges[0];
     match part {
         "quotient" => ring.quotient[0] += Q,
         "norm-round" => arithmetic.norm.sumcheck.round_polynomials[0].swap(1, 2),
@@ -449,16 +572,62 @@ pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
         "binding-round" => arithmetic.binding.round_polynomials[2].swap(0, 1),
         "binding-terminal" => arithmetic.binding_terminal.swap(0, 1),
         "fold" => {
-            let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &mut bridge.sums else {
+            let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &mut proof.bridges[0].sums else {
                 panic!("unsplit sums")
             };
             sums[1] += 1;
         }
-        "forest" => bridge.forest[5][0] += Gf::ONE,
+        "forest" => proof.bridges[0].forest[5][0] += Gf::ONE,
         "joint-round" => proof.joint.rounds[2][1] += Gf::ONE,
         "joint-value" => proof.joint.value += Gf::ONE,
         "opening-nonce" => proof.opening_nonces[0] ^= 1,
         _ => panic!("unknown part {part}"),
+    }
+}
+
+/// [`tamper`]'s logarithmic-bridge parts.
+#[cfg(test)]
+fn tamper_polylog(proof: &mut FalconAlgebraicProof, part: &str) {
+    use crate::hybrid::opening::{ExtLigerito, JointOpening};
+    use flock_core::field::Gf256;
+    let pl = proof.polylog_bridge.as_mut().expect("a polylog bridge proof");
+    match part {
+        "root" => pl.root[5] ^= 1,
+        "round0" => *pl.ood.as_mut().and_then(|r| r.y_ext.as_mut()).expect("a fold Round 0") += Gf::ONE,
+        "root-value" => pl.root_value += Gf::ONE,
+        "forest" => pl.forest[5][0] += Gf::ONE,
+        "fold-forest" => pl.fold_forest[3][1] += Gf::ONE,
+        "readoff-sum" => {
+            let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &mut pl.readoff.sums else {
+                panic!("unsplit read-off sums")
+            };
+            sums[0] += 1;
+        }
+        "readoff-forest" => pl.readoff.forest[2][0] += Gf::ONE,
+        "joint-round" => pl.joint.rounds[1][0] += Gf::ONE,
+        "joint-value" => pl.joint.value += Gf::ONE,
+        "opening-nonce" => pl.opening_nonces[0] ^= 1,
+        _ => match &mut pl.opening {
+            JointOpening::Ext(opening) => {
+                let ExtLigerito::Standard(lig) = &mut opening.ligerito else {
+                    panic!("a standard-terminal fold opening");
+                };
+                match part {
+                    "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
+                    "initial-row" => lig.initial_proof.opened_rows[0][0] += Gf::ONE,
+                    "initial-path" => lig.initial_proof.merkle_proof[0][0] ^= 1,
+                    "final-message" => lig.final_proof.yr[1] += Gf256::new(Gf::ZERO, Gf::ONE),
+                    _ => panic!("unknown polylog part {part}"),
+                }
+            }
+            JointOpening::Base(opening) => match part {
+                "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
+                "initial-row" => opening.ligerito.initial_proof.opened_rows[0][0] += Gf::ONE,
+                "initial-path" => opening.ligerito.initial_proof.merkle_proof[0][0] ^= 1,
+                "final-message" => opening.ligerito.final_proof[3] += Gf::ONE,
+                _ => panic!("unknown polylog part {part}"),
+            },
+        },
     }
 }
 

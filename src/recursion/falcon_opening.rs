@@ -300,36 +300,52 @@ fn ring_switch<CS: Circuit>(
     (eq_r2, target)
 }
 
+/// What an opening circuit reads from the native configuration: the
+/// Ligerito profile, its grinding plan and the opening's grinding domain
+/// (the main opening's, or the polylog bridge's fold opening).
+pub(crate) struct OpeningConfig<'a> {
+    pub resolved: &'a crate::ligerito_flock::ResolvedLigerito,
+    pub plan: &'a crate::ligerito_flock::grinding_plan::GrindingPlan,
+    pub grinding_domain: &'static [u8],
+}
+
+impl<'a> OpeningConfig<'a> {
+    /// The main opening's.
+    pub(crate) fn main(prepared: &'a PreparedFalconAlgebraic) -> Self {
+        Self { resolved: hooks::ligerito(prepared), plan: hooks::pcs_plan(prepared), grinding_domain: hooks::OPENING_GRINDING_DOMAIN }
+    }
+}
+
 /// The circuit of the shared opening of `point` against the joint
 /// sumcheck's committed terminal value (the opening target `μ`), the
 /// commitment `root` and the statement digest. `ood` is Round 0's point
 /// and value, which an `ext:` profile's opening carries.
 #[allow(clippy::too_many_arguments)]
-pub fn verify<CS: Circuit, const N: usize>(
+pub(crate) fn verify<CS: Circuit, const N: usize>(
     cs: &mut CS,
     t: &mut SpartanTranscript<CS::Bool>,
-    prepared: &PreparedFalconAlgebraic,
+    config: &OpeningConfig<'_>,
     geometry: &Geometry<N>,
     digest: &[u8; 32],
     root: &[u8; 32],
     point: &[Gf],
     mu: &G<CS::Bool>,
-    v: Option<&hooks::ProofView<'_>>,
+    v: Option<&hooks::OpeningView<'_>>,
     opening_bits: u32,
     ood: Option<&(Vec<E>, E2<CS::Bool>)>,
 ) -> OpeningCounts {
     opening::validate(geometry).expect("public geometry");
     assert_eq!(point.len(), geometry.bit_log(), "joint source opening point");
-    let resolved = hooks::ligerito(prepared);
+    let resolved = config.resolved;
     if resolved.extension() {
         let ood = ood.expect("an ext: opening carries Round 0");
-        return verify_ext(cs, t, prepared, geometry, digest, root, point, mu, v, opening_bits, ood);
+        return verify_ext(cs, t, config, geometry, digest, root, point, mu, v, opening_bits, ood);
     }
     assert!(ood.is_none(), "the GF(2^128) opening runs under unique decoding");
     let public = t.public().clone();
     let fail = |why: &str| public.borrow_mut().fail(why.to_string());
     let vc: &VerifierConfig = resolved.verifier();
-    let plan = hooks::pcs_plan(prepared);
+    let plan = config.plan;
     assert!(plan.matches(resolved.security()), "shared Ligerito grinding configuration");
     if let Some(v) = v
         && v.ligerito.is_none_or(|lig| opening::check_shape(vc, lig).is_err())
@@ -343,7 +359,7 @@ pub fn verify<CS: Circuit, const N: usize>(
     let mut stages = super::falcon_verifier::Stages::new(if v.is_some() { "witness opening" } else { "record opening" })
         .with_base([t.duplex.counts.circuit, t.pow.circuit, 0]);
 
-    let mut bt = BlockTranscript::new(cs, t, hooks::OPENING_GRINDING_DOMAIN, opening_bits, v.map(|v| v.opening_nonces));
+    let mut bt = BlockTranscript::new(cs, t, config.grinding_domain, opening_bits, v.map(|v| v.opening_nonces));
     opening::bind_allocation(geometry, &mut bt);
     let (eq_r2, target) = ring_switch(&mut bt, &point[..7], mu, v.map(|v| v.s_v), &public);
     let padding = opening::sample_padding(&mut bt, geometry);
@@ -767,13 +783,13 @@ fn open_level_ext<CS: Circuit>(
 fn verify_ext<CS: Circuit, const N: usize>(
     cs: &mut CS,
     t: &mut SpartanTranscript<CS::Bool>,
-    prepared: &PreparedFalconAlgebraic,
+    config: &OpeningConfig<'_>,
     geometry: &Geometry<N>,
     digest: &[u8; 32],
     root: &[u8; 32],
     point: &[Gf],
     mu: &G<CS::Bool>,
-    v: Option<&hooks::ProofView<'_>>,
+    v: Option<&hooks::OpeningView<'_>>,
     opening_bits: u32,
     (zeta, y_ood): &(Vec<E>, E2<CS::Bool>),
 ) -> OpeningCounts {
@@ -781,9 +797,9 @@ fn verify_ext<CS: Circuit, const N: usize>(
 
     let public = t.public().clone();
     let fail = |why: &str| public.borrow_mut().fail(why.to_string());
-    let resolved = hooks::ligerito(prepared);
+    let resolved = config.resolved;
     let vc: &VerifierConfig = resolved.verifier();
-    let plan = hooks::pcs_plan(prepared);
+    let plan = config.plan;
     assert!(plan.matches(resolved.security()), "shared Ligerito grinding configuration");
     if let Some(v) = v
         && v.ligerito_ext.is_none_or(|lig| opening::check_shape_ext(vc, lig).is_err())
@@ -798,7 +814,7 @@ fn verify_ext<CS: Circuit, const N: usize>(
     let mut stages = super::falcon_verifier::Stages::new(if v.is_some() { "witness opening" } else { "record opening" })
         .with_base([t.duplex.counts.circuit, t.pow.circuit, 0]);
 
-    let mut bt = BlockTranscript::new(cs, t, hooks::OPENING_GRINDING_DOMAIN, opening_bits, v.map(|v| v.opening_nonces));
+    let mut bt = BlockTranscript::new(cs, t, config.grinding_domain, opening_bits, v.map(|v| v.opening_nonces));
     opening::bind_allocation(geometry, &mut bt);
     let (eq_r2, target) = ring_switch(&mut bt, &point[..7], mu, v.map(|v| v.s_v), &public);
     let eta: Gf = bt.get_field_challenge(&());

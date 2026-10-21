@@ -45,6 +45,8 @@ pub struct FalconCounts {
     pub transcript: ShaCounts,
     pub pow: ShaCounts,
     pub opening: super::falcon_opening::OpeningCounts,
+    /// The polylog bridge's fold opening, when the base proof has one.
+    pub fold_opening: Option<super::falcon_opening::OpeningCounts>,
 }
 
 /// Per-stage wall times of one pass and its in-circuit SHA-256 compressions
@@ -319,6 +321,184 @@ fn field_of(values: &[u128], cfg: &Cfg) -> Vec<F> {
     values.iter().map(|&c| F::from_with_cfg(c, cfg)).collect()
 }
 
+/// Round 0 over GF(2^256) of a commitment of `packed_log` packed variables:
+/// `ζ` public, `y` committed. `round` is the proof's (`None` while
+/// recording, `Some(None)` for a proof without one).
+fn round0_ext<CS: Circuit>(
+    cs: &mut CS,
+    t: &mut SpartanTranscript<CS::Bool>,
+    params: crate::ligerito_flock::OodRoundParams,
+    packed_log: usize,
+    round: Option<Option<&crate::ligerito_flock::OodRound>>,
+    shape: &str,
+) -> (Vec<flock_core::field::Gf256>, super::ext::E2<CS::Bool>) {
+    assert!(params.extension, "the circuit runs Round 0 over GF(2^256)");
+    if round.is_some_and(|r| r.is_none_or(|r| r.y_ext.is_none() || r.nonce.is_some() != (params.grinding_bits > 0))) {
+        t.public().borrow_mut().fail(shape.to_string());
+    }
+    let round = round.flatten();
+    let y = flock_core::field::Gf256::new(round.map_or(Gf::ZERO, |r| r.y), round.and_then(|r| r.y_ext).unwrap_or(Gf::ZERO));
+    let nonce = (params.grinding_bits > 0).then(|| round.and_then(|r| r.nonce).unwrap_or(0));
+    super::spartan::ood_round_ext(cs, t, packed_log, params.grinding_bits, nonce, y)
+}
+
+/// `integer_bridge::verify_unsplit` in the circuit: the public folds `sums`
+/// (from the stream, under `labels.0`) read off `value` mod `q`, are bound
+/// and root the committed forest at their column point (under `labels.1`).
+/// `proof` is the folds, forest and nonces (`None` while recording).
+/// Returns the forest's exit.
+#[allow(clippy::too_many_arguments)]
+fn unsplit_bridge<CS: Circuit>(
+    cs: &mut CS,
+    t: &mut SpartanTranscript<CS::Bool>,
+    params: &crate::pcs::IntegerMatrixLayout,
+    column_point: &[F],
+    row_weights: &[u128],
+    value: ModLc<CS::Bool>,
+    cfg: &Cfg,
+    grinding: u32,
+    proof: Option<(&[u128], &[[Gf; 2]], &[u64])>,
+    labels: (&'static str, &'static str),
+) -> (Vec<Gf>, G<CS::Bool>) {
+    let public = t.public().clone();
+    let fail = |why: &str| public.borrow_mut().fail(why.to_string());
+    let q = modulus(cfg);
+    public.borrow_mut().set_label(labels.0);
+    let sums: Vec<u128> = (0..params.cols())
+        .map(|c| public.borrow_mut().take(128, || proof.map_or(0, |p| p.0.get(c).copied().unwrap_or(0))))
+        .collect();
+    if let Some(p) = proof
+        && p.0 != sums.as_slice()
+    {
+        fail("bridge fold count");
+    }
+    public.borrow_mut().set_label(labels.1);
+    let forest_len = bridge::message_count(params);
+    if let Err(e) = bridge::validate(params, column_point, cfg, &sums, proof.map_or(forest_len, |p| p.1.len()), row_weights) {
+        fail(&e.to_string());
+    }
+    let read_off = bridge::read_off(&sums, column_point, cfg);
+    let mut check = value;
+    check.constant = (check.constant + q - read_off % q) % q;
+    check.assert_zero(cs, q, &public, "bridge prime read-off");
+    bridge::bind(&mut t.proxy(cs), &sums);
+    let mut bt = BlockTranscript::new(cs, t, bridge::GRINDING_DOMAIN, grinding, proof.map(|p| p.2));
+    let zeta = bridge::root_point(&mut bt, params);
+    let root_claim = bridge::root_claim(&sums, &zeta);
+    let exit = bridge_forest(&mut bt, proof.map(|p| p.1), G::P(root_claim), &zeta, params.row_vars);
+    bt.finish(labels.1);
+    exit
+}
+
+/// `integer_bridge::polylog::verify` in the circuit. The fold commitment's
+/// root is public (as the source root is) and runs its Round 0; the root
+/// value `R = Σ_c eq(ζ, c)·g^{S[c]}` is committed. The source forest runs
+/// from `R` and the fold tree over the committed folds' bits from `g·R`
+/// (the exponentiations `g^{T[c]}` as a product tree, public images
+/// `g^{2^k}`); the read-off on the reshaped folds is a standard unsplit
+/// bridge on `value + 1` with public sums; the two fold claims are batched,
+/// reduced by their joint sumcheck and opened by the fold opening. Returns
+/// the source forest's exit and the fold opening's counts.
+#[allow(clippy::too_many_arguments)]
+fn polylog_bridge<CS: Circuit>(
+    cs: &mut CS,
+    t: &mut SpartanTranscript<CS::Bool>,
+    pl: &hooks::PolylogPrepared,
+    params: &crate::pcs::IntegerMatrixLayout,
+    column_point: &[F],
+    row_weights: &[u128],
+    value: &Zq<CS::Bool>,
+    cfg: &Cfg,
+    grinding: u32,
+    v: Option<&hooks::PolylogView<'_>>,
+) -> ((Vec<Gf>, G<CS::Bool>), super::falcon_opening::OpeningCounts) {
+    use crate::hybrid::integer_bridge::polylog::recursion as polylog;
+    let public = t.public().clone();
+    let fail = |why: &str| public.borrow_mut().fail(why.to_string());
+    if let Err(e) = polylog::validate(params, column_point, cfg, row_weights) {
+        fail(&e.to_string());
+    }
+    if let Some(v) = v
+        && (v.forest.len() != bridge::message_count(params) || v.fold_forest.len() != bridge::message_count(&polylog::fold_layout(params)))
+    {
+        fail("polylog bridge forest message count");
+    }
+    public.borrow_mut().set_label("polylog root");
+    let mut root = [0u8; 32];
+    for (w, chunk) in root.chunks_exact_mut(8).enumerate() {
+        let word = public.borrow_mut().take(64, || {
+            v.map_or(0, |v| u128::from(u64::from_le_bytes(v.root[8 * w..8 * w + 8].try_into().expect("8 bytes"))))
+        });
+        chunk.copy_from_slice(&(word as u64).to_le_bytes());
+    }
+    public.borrow_mut().set_label("polylog bridge");
+    polylog::bind_folds(&mut t.proxy(cs), params, &root);
+    let round0 = pl
+        .round0_params()
+        .map(|params0| round0_ext(cs, t, params0, pl.geometry().packed_log(), v.map(|v| v.round0), "polylog Round 0 shape"));
+    let (source, fold_point, fold_exit) = {
+        let mut bt = BlockTranscript::new(cs, t, polylog::GRINDING_DOMAIN, grinding, v.map(|v| v.nonces));
+        let zeta = bridge::root_point(&mut bt, params);
+        let r = witness(bt.cs, v.map_or(Gf::ZERO, |v| v.root_value));
+        bt.absorb_slice(polylog::ROOT_VALUE_LABEL);
+        bt.absorb_committed(&gf_bytes(&r));
+        let source = bridge_forest(&mut bt, v.map(|v| v.forest), r.clone(), &zeta, params.row_vars);
+        // g^T = g·g^S: the fold tree starts from g·R.
+        let g_r = Lc::of(&r).scaled(polylog::generator()).settle(bt.cs);
+        let fold_rows = polylog::fold_layout(params).row_vars;
+        let (fold_point, fold_exit) = bridge_forest(&mut bt, v.map(|v| v.fold_forest), g_r, &zeta, fold_rows);
+        bt.finish("polylog bridge");
+        (source, fold_point, fold_exit)
+    };
+    let fold = polylog::fold_claim(params, &fold_point).expect("public fold claim");
+    let (a, readoff) = polylog::readoff_layout(params);
+    let readoff_weights = polylog::readoff_weights(a, column_point, cfg);
+    let mut shifted = ModLc::of(value);
+    shifted.constant = 1;
+    let (readoff_point, readoff_exit) = unsplit_bridge(
+        cs,
+        t,
+        &readoff,
+        &column_point[a..],
+        &readoff_weights,
+        shifted,
+        cfg,
+        grinding,
+        v.map(|v| (v.readoff_sums, v.readoff_forest, v.readoff_nonces)),
+        ("polylog read-off sums", "polylog read-off"),
+    );
+    let readoff_claim = bridge::binary_claim(&readoff, &readoff_weights, &readoff_point, Gf::ZERO).expect("public read-off claim");
+    // The batch: each claim's value is its forest's exit plus one.
+    let plus_one = |cs: &mut CS, exit: &G<CS::Bool>| {
+        let mut lc = Lc::of(exit);
+        lc.add_const(Gf::ONE);
+        lc.settle(cs)
+    };
+    let fold_value = plus_one(cs, &fold_exit);
+    let readoff_value = plus_one(cs, &readoff_exit);
+    t.proxy(cs).absorb_slice(polylog::FOLD_CLAIMS_LABEL);
+    t.absorb_slice(cs, &gf_bytes(&fold_value));
+    t.absorb_slice(cs, &gf_bytes(&readoff_value));
+    let xi: Gf = t.proxy(cs).get_field_challenge(&());
+    let target = {
+        let mut lc = Lc::of(&fold_value);
+        lc.add(xi, &readoff_value);
+        lc.settle(cs)
+    };
+    let coefficients = polylog::batched_coefficients(fold, readoff_claim, xi);
+    public.borrow_mut().set_label("polylog joint");
+    let joint_proof = v.map(|v| (v.joint_rounds, v.joint_nonces, v.joint_value));
+    let (point, mu) = joint_sumcheck(cs, t, pl.geometry(), [&coefficients], &target, pl.joint_bits(), joint_proof);
+    let config = super::falcon_opening::OpeningConfig {
+        resolved: pl.resolved(),
+        plan: pl.pcs_plan(),
+        grinding_domain: polylog::OPENING_GRINDING_DOMAIN,
+    };
+    let opening = super::falcon_opening::verify(cs, t, &config, pl.geometry(), &root, &root, &point, &mu, v.map(|v| &v.opening), pl.opening_bits(), round0.as_ref());
+    public.borrow_mut().set_label("bridge");
+    (source, opening)
+}
+
 /// The circuit of `PreparedFalconAlgebraic::verify` for one proof (`None`
 /// while recording) of `statement`, whose commitment `root` and exception
 /// lists are public inputs next to it.
@@ -349,18 +529,11 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let digest = hooks::bind_statement(prepared, statement, root, exceptions, &mut t.proxy(cs)).expect("public statement");
     // Round 0 (`ext:` profiles), right after the statement: ζ public, y committed.
     let round0 = hooks::round0(prepared).map(|params| {
-        assert!(params.extension, "the circuit runs Round 0 over GF(2^256)");
-        let round = v.and_then(|v| v.round0);
-        if v.is_some() && round.is_none_or(|r| r.y_ext.is_none() || r.nonce.is_some() != (params.grinding_bits > 0)) {
-            fail("Round 0 shape");
-        }
-        let y = flock_core::field::Gf256::new(round.map_or(Gf::ZERO, |r| r.y), round.and_then(|r| r.y_ext).unwrap_or(Gf::ZERO));
-        let nonce = (params.grinding_bits > 0).then(|| round.and_then(|r| r.nonce).unwrap_or(0));
         let packed_log = match hooks::geometry(prepared) {
             hooks::GeometryRef::Single(g) => g.packed_log(),
             hooks::GeometryRef::Split(g) => g.packed_log(),
         };
-        super::spartan::ood_round_ext(cs, &mut t, packed_log, params.grinding_bits, nonce, y)
+        round0_ext(cs, &mut t, params, packed_log, v.map(|v| v.round0), "Round 0 shape")
     });
     let field = hooks::sample_field(&mut t.proxy(cs)).expect("public prime");
     let cfg = &field;
@@ -524,33 +697,23 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
 
     stages.mark("binder", [t.duplex.counts.circuit, t.pow.circuit, 0]);
 
-    // Bridge: public folds read off the value, the committed forest.
-    public.borrow_mut().set_label("bridge folds");
-    let sums: Vec<u128> = (0..params.cols())
-        .map(|c| public.borrow_mut().take(128, || v.map_or(0, |v| v.sums.get(c).copied().unwrap_or(0))))
-        .collect();
-    if let Some(v) = v
-        && v.sums != sums.as_slice()
-    {
-        fail("bridge fold count");
-    }
-    public.borrow_mut().set_label("bridge");
-    let forest_len = bridge::message_count(&params);
-    if let Err(e) = bridge::validate(&params, &column_point, cfg, &sums, v.map_or(forest_len, |v| v.forest.len()), &row_weights) {
-        fail(&e.to_string());
-    }
-    let read_off = bridge::read_off(&sums, &column_point, cfg);
-    let mut check = ModLc::of(&value);
-    check.constant = (q - read_off % q) % q;
-    check.assert_zero(cs, q, &public, "bridge prime read-off");
-    bridge::bind(&mut t.proxy(cs), &sums);
-    let (point, forest_claim) = {
-        let mut bt = BlockTranscript::new(cs, &mut t, bridge::GRINDING_DOMAIN, d.bridge, v.map(|v| v.bridge_nonces));
-        let zeta = bridge::root_point(&mut bt, &params);
-        let root_claim = bridge::root_claim(&sums, &zeta);
-        let out = bridge_forest(&mut bt, v.map(|v| v.forest), G::P(root_claim), &zeta, params.row_vars);
-        bt.finish("bridge");
-        out
+    // Bridge: the source forest's exit. Standard: public folds read off the
+    // value and root the committed forest. Logarithmic: the folds committed,
+    // the root committed, a second product tree over the folds' bits.
+    let ((point, forest_claim), fold_opening) = match hooks::polylog(prepared) {
+        None => {
+            let folds = v.map(|v| (v.sums, v.forest, v.bridge_nonces));
+            let exit = unsplit_bridge(cs, &mut t, &params, &column_point, &row_weights, ModLc::of(&value), cfg, d.bridge, folds, ("bridge folds", "bridge"));
+            (exit, None)
+        }
+        Some(pl) => {
+            if v.is_some_and(|v| v.polylog.is_none()) {
+                fail("polylog bridge shape");
+            }
+            let polylog = v.and_then(|v| v.polylog.as_ref());
+            let (exit, opening) = polylog_bridge(cs, &mut t, pl, &params, &column_point, &row_weights, &value, cfg, d.bridge, polylog);
+            (exit, Some(opening))
+        }
     };
     let binary = bridge::binary_claim(&params, &row_weights, &point, Gf::ZERO).expect("public binary claim");
     // The binary claim's value is the forest's terminal plus one.
@@ -565,16 +728,19 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
 
     // The joint binary sumcheck, then the opening.
     public.borrow_mut().set_label("joint");
+    let joint_proof = v.map(|v| (v.joint_rounds, v.joint_nonces, v.joint_value));
+    let main_view = v.map(|v| v.opening());
+    let config = super::falcon_opening::OpeningConfig::main(prepared);
     let opening = match hooks::geometry(prepared) {
         hooks::GeometryRef::Single(g) => {
-            let (point, mu) = joint_sumcheck(cs, &mut t, g, [&coefficients[0]], &target, d.joint, v);
+            let (point, mu) = joint_sumcheck(cs, &mut t, g, [&coefficients[0]], &target, d.joint, joint_proof);
             stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
-            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening, round0.as_ref())
+            super::falcon_opening::verify(cs, &mut t, &config, g, &digest, root, &point, &mu, main_view.as_ref(), d.opening, round0.as_ref())
         }
         hooks::GeometryRef::Split(g) => {
-            let (point, mu) = joint_sumcheck(cs, &mut t, g, coefficients.each_ref(), &target, d.joint, v);
+            let (point, mu) = joint_sumcheck(cs, &mut t, g, coefficients.each_ref(), &target, d.joint, joint_proof);
             stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
-            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening, round0.as_ref())
+            super::falcon_opening::verify(cs, &mut t, &config, g, &digest, root, &point, &mu, main_view.as_ref(), d.opening, round0.as_ref())
         }
     };
     stages.mark("opening", [t.duplex.counts.circuit, t.pow.circuit + opening.pow.circuit, opening.merkle.circuit]);
@@ -582,7 +748,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     if let Some(log) = log {
         *log = t.duplex.log.clone().unwrap_or_default();
     }
-    FalconCounts { transcript: t.duplex.counts, pow: t.pow, opening }
+    FalconCounts { transcript: t.duplex.counts, pow: t.pow, opening, fold_opening }
 }
 
 /// One Falcon proof's verifier circuit as the recursion prover runs it
@@ -815,13 +981,13 @@ fn joint_sumcheck<CS: Circuit, const N: usize>(
     coefficients: [&Coefficients; N],
     target: &G<CS::Bool>,
     bits: u32,
-    v: Option<&hooks::ProofView<'_>>,
+    v: Option<(&[[Gf; 2]], &[u64], Gf)>,
 ) -> (Vec<Gf>, G<CS::Bool>) {
     let public = t.public().clone();
     joint::validate(geometry, coefficients).expect("public joint shapes");
     let rounds = geometry.bit_log();
     if let Some(v) = v
-        && (v.joint_rounds.len() != rounds || v.joint_nonces.len() != if bits > 0 { rounds } else { 0 })
+        && (v.0.len() != rounds || v.1.len() != if bits > 0 { rounds } else { 0 })
     {
         public.borrow_mut().fail("joint binary sumcheck shape");
     }
@@ -830,11 +996,11 @@ fn joint_sumcheck<CS: Circuit, const N: usize>(
     let mut value = Lc::of(target);
     let mut point = Vec::with_capacity(rounds);
     for round in 0..rounds {
-        let [u0, u2] = v.and_then(|v| v.joint_rounds.get(round)).copied().unwrap_or([Gf::ZERO; 2]).map(|x| witness(cs, x));
+        let [u0, u2] = v.and_then(|v| v.0.get(round)).copied().unwrap_or([Gf::ZERO; 2]).map(|x| witness(cs, x));
         observe_gf(cs, t, &u0);
         observe_gf(cs, t, &u2);
         if bits > 0 {
-            let nonce = v.and_then(|v| v.joint_nonces.get(round)).copied().unwrap_or(0);
+            let nonce = v.and_then(|v| v.1.get(round)).copied().unwrap_or(0);
             t.grinding_boundary_private(cs, joint::GRINDING_DOMAIN, round as u64, bits, nonce);
         }
         let r: Gf = t.proxy(cs).get_field_challenge(&());
@@ -845,7 +1011,7 @@ fn joint_sumcheck<CS: Circuit, const N: usize>(
         point.push(r);
     }
     let coefficient = joint::terminal_coefficient(geometry, coefficients, &point);
-    let terminal = witness(cs, v.map_or(Gf::ZERO, |v| v.joint_value));
+    let terminal = witness(cs, v.map_or(Gf::ZERO, |v| v.2));
     value.add(coefficient, &terminal);
     value.assert_zero(cs, &public, "joint binary sumcheck terminal");
     observe_gf(cs, t, &terminal);
