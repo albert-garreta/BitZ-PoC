@@ -80,6 +80,14 @@ pub struct PackedWitness {
 }
 
 impl PackedWitness {
+    /// A witness of `bit_len` bits from its packed words (least significant
+    /// first); bits past `bit_len` must be zero.
+    pub fn from_words(words: Vec<u64>, bit_len: usize) -> Self {
+        assert_eq!(words.len(), bit_len.div_ceil(64), "packed witness length");
+        assert!(bit_len % 64 == 0 || words.last().is_none_or(|w| w >> (bit_len % 64) == 0), "bits past the length");
+        Self { words, bit_len }
+    }
+
     /// Returns the least-significant-bit-first packed storage.
     pub fn packed_words(&self) -> &[u64] {
         &self.words

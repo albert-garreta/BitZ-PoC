@@ -184,6 +184,15 @@ impl Pcs {
         }).map_err(|_| ConfigError::Invalid("native opening schedule"))
     }
 
+    /// The integer stages alone (fold point and GKR) on a derived grid of
+    /// `shape`: one claim of several opened together ([`super::shared`]),
+    /// whose binary sumcheck and ring switch run once under their own
+    /// schedule.
+    pub(crate) fn native_prefix(&self, shape: &Shape) -> Result<Schedule, ConfigError> {
+        Schedule::new(self.native_policy, Geometry::prefix(shape.log_rows(), shape.log_columns()))
+            .map_err(|_| ConfigError::Invalid("native prefix schedule"))
+    }
+
     /// Their scheme as shipped: flock's embedded `fast` ladder for the size.
     pub fn new(shape: &Shape, merkle_hash: HashKind) -> Result<Self, ConfigError> {
         let m = shape.log_bits();

@@ -258,34 +258,62 @@ pub(crate) trait LinearRelationSpec: Sync {
     }
 }
 
-/// A linear-relation proof: the boundary nonces, the legacy inner sumcheck
-/// (empty on the product path), the product sumcheck (for relations with
-/// product slots) and the opening.
+/// A linear-relation proof: the PIOP (boundary nonces, the legacy inner
+/// sumcheck, empty on the product path, and the product sumcheck for
+/// relations with product slots) and the opening.
 #[derive(Clone)]
 pub struct LinearProof {
-    initial_nonce: u64,
-    inner: SumcheckProof<SpartanBitzField, 3>,
-    inner_nonces: Vec<u64>,
-    terminal_nonce: u64,
-    product: Option<ProductSumcheckProof>,
+    piop: LinearPiopProof,
     bitz: BitZOpeningProof,
+}
+
+/// A linear relation's PIOP messages: [`LinearProof`] without its opening,
+/// for a protocol that opens the claim together with another relation's
+/// on one commitment.
+#[derive(Clone)]
+pub struct LinearPiopProof {
+    pub initial_nonce: u64,
+    pub inner: SumcheckProof<SpartanBitzField, 3>,
+    pub inner_nonces: Vec<u64>,
+    pub terminal_nonce: u64,
+    pub product: Option<ProductSumcheckProof>,
+}
+
+impl LinearPiopProof {
+    /// Payload bytes: the two boundary nonces, the inner round coefficients
+    /// and their nonces, and the product sumcheck.
+    pub fn bytes(&self) -> usize {
+        2 * 8
+            + 3 * 16 * self.inner.round_polynomials.len()
+            + 8 * self.inner_nonces.len()
+            + self.product.as_ref().map_or(0, ProductSumcheckProof::bytes)
+    }
+}
+
+/// The PIOP's opening claim on the opened grid: the runtime prime, every
+/// row's canonical weight, the column weights and the claimed value.
+pub(crate) struct LinearOpeningClaim {
+    pub prime: field::FpCtx<2>,
+    pub rows: Vec<u128>,
+    pub cols: Vec<u128>,
+    pub claimed: u128,
 }
 
 impl LinearProof {
     pub const fn initial_nonce(&self) -> u64 {
-        self.initial_nonce
+        self.piop.initial_nonce
     }
 
     pub const fn inner(&self) -> &SumcheckProof<SpartanBitzField, 3> {
-        &self.inner
+        &self.piop.inner
     }
 
     pub fn inner_nonces(&self) -> &[u64] {
-        &self.inner_nonces
+        &self.piop.inner_nonces
     }
 
     pub const fn terminal_nonce(&self) -> u64 {
-        self.terminal_nonce
+        self.piop.terminal_nonce
     }
 
     pub const fn bitz(&self) -> &BitZOpeningProof {
@@ -293,36 +321,32 @@ impl LinearProof {
     }
 
     pub const fn product(&self) -> Option<&ProductSumcheckProof> {
-        self.product.as_ref()
+        self.piop.product.as_ref()
     }
 
     pub fn product_mut(&mut self) -> Option<&mut ProductSumcheckProof> {
-        self.product.as_mut()
+        self.piop.product.as_mut()
     }
 
-    /// PIOP payload bytes: the two boundary nonces, the inner round
-    /// coefficients and their nonces, and the product sumcheck.
+    /// PIOP payload bytes ([`LinearPiopProof::bytes`]).
     pub fn piop_bytes(&self) -> usize {
-        2 * 8
-            + 3 * 16 * self.inner.round_polynomials.len()
-            + 8 * self.inner_nonces.len()
-            + self.product.as_ref().map_or(0, ProductSumcheckProof::bytes)
+        self.piop.bytes()
     }
 
     pub fn initial_nonce_mut(&mut self) -> &mut u64 {
-        &mut self.initial_nonce
+        &mut self.piop.initial_nonce
     }
 
     pub fn inner_mut(&mut self) -> &mut SumcheckProof<SpartanBitzField, 3> {
-        &mut self.inner
+        &mut self.piop.inner
     }
 
     pub fn inner_nonces_mut(&mut self) -> &mut Vec<u64> {
-        &mut self.inner_nonces
+        &mut self.piop.inner_nonces
     }
 
     pub fn terminal_nonce_mut(&mut self) -> &mut u64 {
-        &mut self.terminal_nonce
+        &mut self.piop.terminal_nonce
     }
 
     pub fn bitz_mut(&mut self) -> &mut BitZOpeningProof {
@@ -449,16 +473,16 @@ fn claim_digest(
     Ok(hasher.finalize())
 }
 
-/// Proves a linear relation against its committed source rows.
-pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
-    transcript: &mut T,
+/// The prover's input checks: the statement, the opener configuration, the
+/// witness against the commitment, the inner prefix width.
+pub(crate) fn check_linear_prover<S: LinearRelationSpec>(
     spec: &S,
     statement: &S::Statement,
     witness: &S::Witness,
     hint: &FlockCommitHint,
     pc: &LigProverConfig,
     options: LinearProveOptions,
-) -> Result<LinearProof, ProtocolError> {
+) -> Result<(), ProtocolError> {
     spec.validate_statement(statement)?;
     spec.validate_opener_config(pc)?;
     spec.validate_witness(statement, witness, hint)?;
@@ -474,17 +498,86 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     if hint.commitment.params.m != f_layout.row_vars + f_layout.col_vars {
         return Err(ProtocolError::InvalidGeometry);
     }
-    let security = spec.security();
-    let domains = spec.domains();
+    Ok(())
+}
 
+/// Binds the relation's statement frames and its opener configuration;
+/// returns the assignment binding the opening claim cites.
+pub(crate) fn bind_linear_statement<T: Transcript, S: LinearRelationSpec>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    commitment: &Commitment,
+    config: &dyn LigeritoStatementConfig,
+) -> Result<[u8; 32], ProtocolError> {
     let binding = {
-        let _scope = tracing::info_span!("sha256:statement_bind_prover").entered();
-        let (frames, binding) = spec.statement_frames(statement, &hint.commitment, pc)?;
+        let _scope = tracing::info_span!("sha256:statement_bind").entered();
+        let (frames, binding) = spec.statement_frames(statement, commitment, config)?;
         absorb_frames(transcript, &frames);
         binding
     };
     spec.ligerito()?.bind(transcript);
-    let ood = bind_prover_ood(transcript, hint, security.ood);
+    Ok(binding)
+}
+
+/// Proves a linear relation against its committed source rows.
+pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    pc: &LigProverConfig,
+    options: LinearProveOptions,
+) -> Result<LinearProof, ProtocolError> {
+    check_linear_prover(spec, statement, witness, hint, pc, options)?;
+    let binding = bind_linear_statement(transcript, spec, statement, &hint.commitment, pc)?;
+    let ood = bind_prover_ood(transcript, hint, spec.security().ood);
+    let (piop, claim) = prove_linear_piop(transcript, spec, statement, witness, binding, options)?;
+
+    let bitz = {
+        let _step5 = tracing::info_span!("step5:open_prove").entered();
+        let _scope = tracing::info_span!("sha256:bitz_prove").entered();
+        let f_layout = spec.source_layout();
+        let params = opening_params(spec.opened_layout(), claim.prime.modulus_u128())?;
+        let committed = opening_shape(f_layout)?;
+        let native_claim = LinearClaim::new(&params, claim.rows, claim.cols, claim.claimed)
+            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(spec.security().native_policy()?);
+        match spec.block_map() {
+            Some(map) => {
+                let opening = BlockStatement::new(params, committed, map, &native_claim)
+                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
+                bitz_opener::prove_block_opening(
+                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
+                )?
+            }
+            None => {
+                let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+                bitz_opener::prove_virtual_opening(
+                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
+                )?
+            }
+        }
+    };
+
+    Ok(LinearProof { piop, bitz })
+}
+
+/// The PIOP after the statement and Round 0: the initial boundary, the
+/// runtime prime, the batching, the product (or legacy inner) sumcheck and
+/// the bound opening claim, which it returns for the opening.
+pub(crate) fn prove_linear_piop<T: Transcript + Send, S: LinearRelationSpec>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    witness: &S::Witness,
+    binding: [u8; 32],
+    options: LinearProveOptions,
+) -> Result<(LinearPiopProof, LinearOpeningClaim), ProtocolError> {
+    let security = spec.security();
+    let domains = spec.domains();
 
     // Commit first, then derive the one runtime prime. The exact signed
     // relation stays q-independent; only its one local-row collapse is
@@ -682,40 +775,11 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         absorb_spartan_message(transcript, domains.claim_tag, &digest);
     }
 
-    let bitz = {
-        let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = tracing::info_span!("sha256:bitz_prove").entered();
-        let params = opening_params(spec.opened_layout(), prime.modulus_u128())?;
-        let committed = opening_shape(f_layout)?;
-        let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
-            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
-        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(security.native_policy()?);
-        match spec.block_map() {
-            Some(map) => {
-                let opening = BlockStatement::new(params, committed, map, &native_claim)
-                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
-                bitz_opener::prove_block_opening(
-                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
-                )?
-            }
-            None => {
-                let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
-                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-                bitz_opener::prove_virtual_opening(
-                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
-                )?
-            }
-        }
-    };
-
-    Ok(LinearProof {
-        initial_nonce,
-        inner,
-        inner_nonces,
-        terminal_nonce,
-        product,
-        bitz,
-    })
+    let OpeningClaim { cols, claimed, .. } = claim;
+    Ok((
+        LinearPiopProof { initial_nonce, inner, inner_nonces, terminal_nonce, product },
+        LinearOpeningClaim { prime: prime.clone(), rows, cols, claimed },
+    ))
 }
 
 /// The transcript domain of the draw that folds the product sumcheck's
@@ -761,6 +825,49 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     proof: &LinearProof,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
+    check_linear_verifier(spec, statement, commitment, &proof.piop, vc)?;
+    let f_layout = spec.source_layout();
+    let security = spec.security();
+    let binding = bind_linear_statement(transcript, spec, statement, commitment, vc)?;
+    let ood = bind_verifier_ood(
+        transcript,
+        packed_vars(f_layout),
+        security.ood,
+        proof.bitz.ood.as_ref(),
+    )
+    .map_err(ProtocolError::Bitz)?;
+    let claim = verify_linear_piop(transcript, spec, statement, &proof.piop, binding)?;
+
+    let _step5 = tracing::info_span!("step5:open_verify").entered();
+    let _scope = tracing::info_span!("sha256:bitz_verify").entered();
+    let params = opening_params(spec.opened_layout(), claim.prime.modulus_u128())?;
+    let committed = opening_shape(f_layout)?;
+    let native_claim = LinearClaim::new(&params, claim.rows, claim.cols, claim.claimed)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
+    match spec.block_map() {
+        Some(map) => {
+            let opening = BlockStatement::new(params, committed, map, &native_claim)
+                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
+            bitz_opener::verify_block_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+        }
+        None => {
+            let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+            bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+        }
+    }
+}
+
+/// The verifier's input checks: the statement, the opener configuration and
+/// the commitment, the PIOP proof's shape.
+pub(crate) fn check_linear_verifier<S: LinearRelationSpec>(
+    spec: &S,
+    statement: &S::Statement,
+    commitment: &Commitment,
+    proof: &LinearPiopProof,
+    vc: &LigVerifierConfig,
+) -> Result<(), ProtocolError> {
     spec.validate_statement(statement)?;
     spec.validate_opener_config(vc)?;
     crate::ligerito_flock::validate_ligerito_commitment(commitment, vc)
@@ -780,23 +887,22 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     {
         return Err(ProtocolError::InvalidGeometry);
     }
+    Ok(())
+}
+
+/// [`prove_linear_piop`]'s verifier: re-derives the prime and the batching,
+/// checks the sumchecks and binds the opening claim, which it returns.
+pub(crate) fn verify_linear_piop<T: Transcript + Send, S: LinearRelationSpec>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    proof: &LinearPiopProof,
+    binding: [u8; 32],
+) -> Result<LinearOpeningClaim, ProtocolError> {
+    let opened = spec.opened_layout();
+    let product_layout = spec.product_layout();
     let security = spec.security();
     let domains = spec.domains();
-
-    let binding = {
-        let _scope = tracing::info_span!("sha256:statement_bind_verifier").entered();
-        let (frames, binding) = spec.statement_frames(statement, commitment, vc)?;
-        absorb_frames(transcript, &frames);
-        binding
-    };
-    spec.ligerito()?.bind(transcript);
-    let ood = bind_verifier_ood(
-        transcript,
-        packed_vars(f_layout),
-        security.ood,
-        proof.bitz.ood.as_ref(),
-    )
-    .map_err(ProtocolError::Bitz)?;
 
     let step2_scope = tracing::info_span!("step2:project_verify").entered();
     {
@@ -944,26 +1050,8 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         )?;
         absorb_spartan_message(transcript, domains.claim_tag, &digest);
     }
-
-    let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = tracing::info_span!("sha256:bitz_verify").entered();
-    let params = opening_params(opened, prime.modulus_u128())?;
-    let committed = opening_shape(f_layout)?;
-    let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
-        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
-    let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
-    match spec.block_map() {
-        Some(map) => {
-            let opening = BlockStatement::new(params, committed, map, &native_claim)
-                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
-            bitz_opener::verify_block_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
-        }
-        None => {
-            let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
-                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-            bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
-        }
-    }
+    let OpeningClaim { cols, claimed, .. } = claim;
+    Ok(LinearOpeningClaim { prime: prime.clone(), rows, cols, claimed })
 }
 
 /// Every opened row's canonical weight, in row order.

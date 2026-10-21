@@ -23,6 +23,8 @@ pub use prime::{
     SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
     Sha256PrimeError,
 };
+pub(crate) use constraints::sha256_public_f_column;
+pub(crate) use proof::shared;
 pub use proof::{
     SHA256_DEFAULT_INNER_PREFIX_VARS, commit_sha256_compression_witness,
     commit_sha256_compression_witness_with_config, prove_sha256_compressions,

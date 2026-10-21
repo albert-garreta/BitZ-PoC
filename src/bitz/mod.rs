@@ -40,6 +40,7 @@ pub mod pcs;
 pub mod reduce;
 #[cfg(feature = "parallel")]
 mod row_dispatch;
+pub mod shared;
 pub mod sumcheck;
 pub mod transcript;
 pub mod virt;

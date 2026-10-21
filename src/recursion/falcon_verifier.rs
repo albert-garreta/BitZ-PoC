@@ -662,6 +662,25 @@ pub fn outer_relation(
     use crate::ligerito_flock::LigeritoSelection;
     use crate::piop::spartan::flockrec::FlockRecRelation;
     use crate::piop::spartan::profile::{Lambda100, Lambda128};
+    let digest = source_digest(statement, root, exceptions, stream);
+    let (st, lig) = (std::sync::Arc::new(st), LigeritoSelection::parse(selection, security)?);
+    let opener = outer_opener(selection, security)?;
+    match security {
+        100 => FlockRecRelation::new_with_opener::<Lambda100>(st, digest, lig, opening_row_vars, opener),
+        128 => FlockRecRelation::new_with_opener::<Lambda128>(st, digest, lig, opening_row_vars, opener),
+        _ => return Err(format!("outer security {security}: 100 or 128")),
+    }
+    .map_err(|e| format!("{e:?}"))
+}
+
+/// Everything a Falcon proof's verifier circuit is a function of: the
+/// statement, root, exceptions and the public stream.
+fn source_digest(
+    statement: &FalconAlgebraicStatement,
+    root: &[u8; 32],
+    exceptions: &[Vec<u16>],
+    stream: &super::val::PublicStream,
+) -> [u8; 32] {
     let mut h = blake3::Hasher::new();
     h.update(b"bitz/recursion/falcon512-algebraic/v1");
     let mut bytes = Vec::with_capacity(4 * crate::piop::spartan::falcon512_algebraic::N);
@@ -683,14 +702,56 @@ pub fn outer_relation(
         h.update(&v.to_le_bytes());
         h.update(&[*w]);
     }
-    let (st, digest, lig) = (std::sync::Arc::new(st), *h.finalize().as_bytes(), LigeritoSelection::parse(selection, security)?);
-    let opener = outer_opener(selection, security)?;
+    *h.finalize().as_bytes()
+}
+
+/// The verifier circuit's relation split on one commitment (at `security`
+/// bits: 100 or 128): its SHA-256 compressions as one batch of the
+/// compression relation, the rest as FlockRec on the stub circuit
+/// ([`crate::piop::spartan::split`]), the glue opening at `glue_rows` rows.
+#[allow(clippy::too_many_arguments)]
+pub fn split_relation(
+    st: &circuit::compact::StructuredCircuit,
+    statement: &FalconAlgebraicStatement,
+    root: &[u8; 32],
+    exceptions: &[Vec<u16>],
+    stream: &super::val::PublicStream,
+    selection: &str,
+    glue_rows: usize,
+    security: usize,
+) -> Result<crate::piop::spartan::split::SplitRelation, String> {
+    use crate::piop::spartan::profile::{Lambda100, Lambda128};
+    use crate::piop::spartan::split::SplitRelation;
+    let digest = source_digest(statement, root, exceptions, stream);
+    let lig = crate::ligerito_flock::LigeritoSelection::parse(selection, security)?;
+    // `BITZ_REC_SHA_T`: the batch's claim rows (`14 + r`, `2^r` compressions
+    // per committed column; unset: the batch's own split).
+    let sha_rows = std::env::var("BITZ_REC_SHA_T").ok().map(|v| v.parse::<usize>().map_err(|e| format!("BITZ_REC_SHA_T: {e}"))).transpose()?;
     match security {
-        100 => FlockRecRelation::new_with_opener::<Lambda100>(st, digest, lig, opening_row_vars, opener),
-        128 => FlockRecRelation::new_with_opener::<Lambda128>(st, digest, lig, opening_row_vars, opener),
+        100 => SplitRelation::new_at::<Lambda100>(st, digest, lig, glue_rows, sha_rows),
+        128 => SplitRelation::new_at::<Lambda128>(st, digest, lig, glue_rows, sha_rows),
         _ => return Err(format!("outer security {security}: 100 or 128")),
     }
     .map_err(|e| format!("{e:?}"))
+}
+
+/// [`split_relation`] for the final verifier: the circuit recorded on the
+/// public stream (no proof).
+#[allow(clippy::too_many_arguments)]
+pub fn replay_split_relation(
+    prepared: &PreparedFalconAlgebraic,
+    statement: &FalconAlgebraicStatement,
+    root: &[u8; 32],
+    exceptions: &[Vec<u16>],
+    stream: &super::val::PublicStream,
+    selection: &str,
+    glue_rows: usize,
+    security: usize,
+) -> Result<crate::piop::spartan::split::SplitRelation, String> {
+    let replay = super::val::PublicStream::replay(stream.values.clone(), stream.widths.clone());
+    let mut rec = circuit::compact::CompactRecorder::new();
+    verify_falcon_algebraic(&mut rec, prepared, statement, root, exceptions, None, replay, None);
+    split_relation(&rec.finish_structured(), statement, root, exceptions, stream, selection, glue_rows, security)
 }
 
 /// The outer proof's opener: `BITZ_REC_OPENER` = `log` (BitZ logarithmic,
@@ -966,6 +1027,84 @@ pub(super) mod tests {
             (t4 - t3).as_secs_f64(),
             passes.stream.bytes(),
             public_input_bytes(&proof),
+        );
+    }
+
+    /// One recursion step with the split relation: the passes, the SHA
+    /// batch + glue on one commitment, its proof and the final verifier
+    /// (the relation rebuilt from the public stream); a tampered opening is
+    /// rejected. `BITZ_REC_GLUE_T`: the glue opening's rows (18).
+    #[test]
+    #[ignore = "heavy: one split proof of the verifier circuit"]
+    fn falcon_recursion_split_step_proves_and_verifies() {
+        use std::time::Instant;
+        let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(16, |v| v.parse().unwrap());
+        let selection = std::env::var("BITZ_REC_LIG").unwrap_or_else(|_| "ext:3:4".into());
+        let glue_rows: usize = std::env::var("BITZ_REC_GLUE_T").ok().map_or(18, |v| v.parse().unwrap());
+        let security = security();
+        let (prepared, public, proof) = proof_at(batch);
+        let circuit = FalconCircuit::new(&prepared, &public, &proof);
+        let t0 = Instant::now();
+        let passes = crate::recursion::ecdsa_verifier::witness_and_record_circuit(&circuit, |_, _| ()).expect("the base proof verifies");
+        let t1 = Instant::now();
+        let rel = split_relation(&passes.circuit, &public, &circuit.root, circuit.exceptions, &passes.stream, &selection, glue_rows, security).unwrap();
+        let t2 = Instant::now();
+        let (wit, times) = rel.witness(&passes.circuit, &passes.g, &passes.h).unwrap();
+        let t3 = Instant::now();
+        let hint = rel.commit(&wit);
+        let t4 = Instant::now();
+        let mut tp = crate::transcript::Sha256Transcript::new();
+        let pi = rel.prove(&mut tp, &wit, &hint).expect("split prove");
+        let t5 = Instant::now();
+        let st = &passes.circuit;
+        println!(
+            "circuit: committed {} cells {} rows {} blocks {} tail hints {}; glue f/h {}/{} bits, SHA batch 2^{}",
+            st.committed,
+            st.cells,
+            st.rows,
+            st.instances.len(),
+            st.tail_hints.len(),
+            rel.committed_layout().row_vars + rel.committed_layout().col_vars,
+            rel.glue().derived_layout().row_vars + rel.glue().derived_layout().col_vars,
+            rel.sha().log_instance_capacity(),
+        );
+        for (name, s) in [("SHA batch", rel.sha().security()), ("glue", rel.glue().security())] {
+            println!(
+                "{name} grinding: initial {} terminal {} PIOP rounds {} forest rounds {} ring {}; prime {}..{} bits",
+                s.initial_grinding_bits,
+                s.terminal_grinding_bits,
+                s.piop_round_grinding_bits,
+                s.forest_round_grinding_bits,
+                s.ring_switch_grinding_bits,
+                128 - s.projection_min.leading_zeros(),
+                128 - s.projection_max.leading_zeros(),
+            );
+        }
+        drop((wit, rel));
+        let vrel = replay_split_relation(&prepared, &public, &circuit.root, circuit.exceptions, &passes.stream, &selection, glue_rows, security).unwrap();
+        let mut tv = crate::transcript::Sha256Transcript::new();
+        vrel.verify(&mut tv, &hint.commitment, &pi).expect("split verify");
+        let t6 = Instant::now();
+        let mut bad = pi.clone();
+        let at = bad.bitz.transcript.narg_string.len() / 3;
+        bad.bitz.transcript.narg_string[at] ^= 0x04;
+        let mut tv = crate::transcript::Sha256Transcript::new();
+        assert!(vrel.verify(&mut tv, &hint.commitment, &bad).is_err(), "tampered opening");
+        let pi_bytes = pi.bitz.to_bytes().len() + pi.piop_bytes() + bincode::serialize(&hint.commitment).unwrap().len();
+        println!(
+            "base proof {} B; split step: passes {:.2} s, relation {:.2} s, witness {:.2} s (glue {:.2}, SHA batch {:.2}, rows {:.2}), commit {:.2} s, prove {:.2} s, final verify {:.2} s; pi {pi_bytes} B (opening {} B) + public {} B",
+            proof.payload_size_bytes(),
+            (t1 - t0).as_secs_f64(),
+            (t2 - t1).as_secs_f64(),
+            (t3 - t2).as_secs_f64(),
+            times.glue_s,
+            times.sha_s,
+            times.rows_s,
+            (t4 - t3).as_secs_f64(),
+            (t5 - t4).as_secs_f64(),
+            (t6 - t5).as_secs_f64(),
+            pi.bitz.to_bytes().len(),
+            passes.stream.bytes(),
         );
     }
 

@@ -50,6 +50,7 @@ pub(crate) mod raw_monty;
 pub mod sha256;
 pub(crate) mod slot_rows;
 pub(crate) mod spliced_digest;
+pub mod split;
 pub mod sumcheck;
 pub mod u128_bitz;
 pub mod u128_mul;

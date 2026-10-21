@@ -18,6 +18,13 @@
 //! `BITZ_REC_T` (outer opening rows; default the reference split with `log`,
 //! 18 at 128 and 19 at 100 with `std`), `BITZ_REC_SEED` (42) and
 //! `BITZ_FALCON_CASE_CACHE`.
+//!
+//! `BITZ_REC_SPLIT=1`: the split relation instead (the circuit's SHA-256
+//! compressions as one batch of the compression relation, the glue as
+//! FlockRec, one commitment and one opening; `bitz::piop::spartan::split`),
+//! the glue opening at `BITZ_REC_GLUE_T` rows (18); the compressions'
+//! witness generation is reported apart (`rec_sha_witness_s`) and
+//! `rec_prove_ex_sha_witness_s` is the step without it.
 
 #[path = "common/falcon_degree_inputs.rs"]
 mod falcon_degree_inputs;
@@ -114,9 +121,130 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     by_label.sort_by_key(|&(_, _, b)| std::cmp::Reverse(b));
 
     // After: one recursion step, then the final verifier.
+    let split = std::env::var("BITZ_REC_SPLIT").is_ok_and(|v| v == "1");
+    let glue_rows = env("BITZ_REC_GLUE_T", 18usize);
     let mut rec = Vec::new();
     let mut ver = Vec::new();
     let mut outer = None;
+    let mut split_runs: Vec<[f64; 11]> = Vec::new();
+    let mut split_outer = None;
+    for _ in 0..reps {
+        if !split {
+            break;
+        }
+        let t0 = Instant::now();
+        let passes = witness_and_record_circuit(&circuit, |_, _| ())?;
+        let t1 = Instant::now();
+        assert_eq!(passes.stream.values, stream.values, "deterministic public stream");
+        let shape = [
+            passes.circuit.committed,
+            passes.circuit.cells,
+            passes.circuit.rows,
+            passes.circuit.instances.len(),
+            passes.circuit.tail_hints.len(),
+        ];
+        let rel = fv::split_relation(
+            &passes.circuit,
+            &statement,
+            &circuit.root,
+            circuit.exceptions,
+            &passes.stream,
+            &selection,
+            glue_rows,
+            security,
+        )?;
+        let t2 = Instant::now();
+        let (wit, times) = rel.witness(&passes.circuit, &passes.g, &passes.h).map_err(|e| format!("{e:?}"))?;
+        let t3 = Instant::now();
+        let hint = rel.commit(&wit);
+        let t4 = Instant::now();
+        let mut tp = bitz::transcript::Sha256Transcript::new();
+        let pi = rel.prove(&mut tp, &wit, &hint).map_err(|e| format!("{e:?}"))?;
+        let t5 = Instant::now();
+        let bits = |l: &bitz::pcs::IntegerMatrixLayout| l.row_vars + l.col_vars;
+        let outer_shape = [
+            bits(rel.committed_layout()),
+            bits(rel.glue().derived_layout()),
+            rel.glue().derived_layout().row_vars,
+            rel.sha().log_instance_capacity(),
+        ];
+        drop((wit, rel, passes.g, passes.h));
+        let total = (t5 - t0).as_secs_f64();
+        split_runs.push([
+            passes.witness_s,
+            passes.record_s,
+            (t1 - t0).as_secs_f64(),
+            (t2 - t1).as_secs_f64(),
+            times.glue_s,
+            times.sha_s,
+            times.rows_s,
+            (t4 - t3).as_secs_f64(),
+            (t5 - t4).as_secs_f64(),
+            total,
+            total - times.sha_s,
+        ]);
+        let v0 = Instant::now();
+        let vrel = fv::replay_split_relation(
+            &prepared,
+            &statement,
+            &circuit.root,
+            circuit.exceptions,
+            &stream,
+            &selection,
+            glue_rows,
+            security,
+        )?;
+        let mut tv = bitz::transcript::Sha256Transcript::new();
+        vrel.verify(&mut tv, &hint.commitment, &pi).map_err(|e| format!("{e:?}"))?;
+        ver.push(v0.elapsed().as_secs_f64());
+        let opening = pi.bitz.to_bytes().len();
+        let pi_bytes = opening + pi.piop_bytes() + bincode::serialize(&hint.commitment)?.len();
+        split_outer = Some((shape, outer_shape, pi_bytes, opening, pi.sha.bytes(), pi.glue.bytes()));
+    }
+    if let Some((shape, outer_shape, pi_bytes, opening, sha_piop, glue_piop)) = split_outer {
+        let colb = |i: usize| median(base.iter().map(|r| r[i]).collect());
+        let cols = |i: usize| median(split_runs.iter().map(|r| r[i]).collect());
+        let json = serde_json::json!({
+            "mode": "split",
+            "batch": batch,
+            "threads": threads,
+            "reps": reps,
+            "security": security,
+            "outer_ligerito": selection,
+            "glue_t": glue_rows,
+            "setup_s": setup_s,
+            "base_commit_s": colb(0),
+            "base_prove_s": colb(1),
+            "base_prover_s": colb(2),
+            "base_verify_s": colb(3),
+            "base_proof_bytes": base_bytes,
+            "rec_witness_s": cols(0),
+            "rec_record_s": cols(1),
+            "rec_passes_s": cols(2),
+            "rec_relation_s": cols(3),
+            "rec_glue_witness_s": cols(4),
+            "rec_sha_witness_s": cols(5),
+            "rec_rows_s": cols(6),
+            "rec_commit_s": cols(7),
+            "rec_protocol_s": cols(8),
+            "rec_prove_s": cols(9),
+            "rec_prove_ex_sha_witness_s": cols(10),
+            "final_verify_s": median(ver.clone()),
+            "pi_bytes": pi_bytes,
+            "pi_opening_bytes": opening,
+            "pi_sha_piop_bytes": sha_piop,
+            "pi_glue_piop_bytes": glue_piop,
+            "public_stream_bytes": stream.bytes(),
+            "public_input_bytes": fv::public_input_bytes(&proof),
+            "circuit": {"committed": shape[0], "cells": shape[1], "rows": shape[2], "blocks": shape[3], "tail_hints": shape[4], "shared_f_bits": outer_shape[0], "glue_h_bits": outer_shape[1], "glue_rows": outer_shape[2], "sha_log_batch": outer_shape[3]},
+            "counts": format!("{counts:?}"),
+            "base_runs": base,
+            "split_runs": split_runs,
+            "verify_runs": ver,
+        });
+        println!("TIMING {json}");
+        return Ok(());
+    }
     for _ in 0..reps {
         let t0 = Instant::now();
         let passes = witness_and_record_circuit(&circuit, |g, blocks| {

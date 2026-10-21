@@ -782,6 +782,96 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
     )
 }
 
+/// A block-layout batch with nothing public, as one part of a protocol that
+/// opens its claim together with another relation's on one commitment
+/// ([`crate::bitz::shared`]): the statement binding, the PIOP up to the
+/// bound opening claim, and the claim's block statement inputs.
+pub(crate) mod shared {
+    use super::*;
+    use crate::piop::spartan::protocol::linear::{
+        LinearOpeningClaim, LinearPiopProof, bind_linear_statement, check_linear_prover,
+        check_linear_verifier, prove_linear_piop, verify_linear_piop,
+    };
+
+    fn spec(
+        prepared: &PreparedSha256CompressionBatch,
+    ) -> Result<Sha256CompressionSpec<'_, PackedSourceRepeatedVirtualMap>, ProtocolError> {
+        match Sha256CompressionRelation::new(prepared)? {
+            Sha256CompressionRelation::Product(spec) if spec.block.is_some() && prepared.private_io() => Ok(spec),
+            _ => Err(ProtocolError::InvalidGeometry),
+        }
+    }
+
+    /// The block map and the derived (product tensor) grid of the claim.
+    pub(crate) fn block_claim_geometry(
+        prepared: &PreparedSha256CompressionBatch,
+    ) -> Result<(&crate::bitz::BlockRepeatedMap, &IntegerMatrixLayout), ProtocolError> {
+        let block = prepared.block_layout().ok_or(ProtocolError::InvalidGeometry)?;
+        let opened = prepared.product_assignment_params().ok_or(ProtocolError::InvalidGeometry)?;
+        Ok((&block.map, opened))
+    }
+
+    /// The batch's committed rows in its block layout.
+    pub(crate) fn block_rows(
+        prepared: &PreparedSha256CompressionBatch,
+        witness: &Sha256CompressionWitnessBatch,
+    ) -> Result<Vec<Vec<u64>>, ProtocolError> {
+        block_source_rows(prepared, witness)
+    }
+
+    /// The derived rows the claim's fold and GKR run on.
+    pub(crate) fn derived_rows(witness: &Sha256CompressionWitnessBatch) -> Result<&[Vec<u64>], ProtocolError> {
+        witness.product_assignment_rows().ok_or(ProtocolError::InvalidGeometry)
+    }
+
+    pub(crate) fn bind_statement<T: Transcript>(
+        transcript: &mut T,
+        prepared: &PreparedSha256CompressionBatch,
+        commitment: &Commitment,
+        config: &dyn LigeritoStatementConfig,
+    ) -> Result<[u8; 32], ProtocolError> {
+        bind_linear_statement(transcript, &spec(prepared)?, &[], commitment, config)
+    }
+
+    pub(crate) fn check_prover(
+        prepared: &PreparedSha256CompressionBatch,
+        witness: &Sha256CompressionWitnessBatch,
+        hint: &FlockCommitHint,
+        pc: &LigProverConfig,
+    ) -> Result<(), ProtocolError> {
+        let options = LinearProveOptions { prefix_vars: SHA256_DEFAULT_INNER_PREFIX_VARS };
+        check_linear_prover(&spec(prepared)?, &[], witness, hint, pc, options)
+    }
+
+    pub(crate) fn check_verifier(
+        prepared: &PreparedSha256CompressionBatch,
+        commitment: &Commitment,
+        piop: &LinearPiopProof,
+        vc: &LigVerifierConfig,
+    ) -> Result<(), ProtocolError> {
+        check_linear_verifier(&spec(prepared)?, &[], commitment, piop, vc)
+    }
+
+    pub(crate) fn prove_piop<T: Transcript + Send>(
+        transcript: &mut T,
+        prepared: &PreparedSha256CompressionBatch,
+        witness: &Sha256CompressionWitnessBatch,
+        binding: [u8; 32],
+    ) -> Result<(LinearPiopProof, LinearOpeningClaim), ProtocolError> {
+        let options = LinearProveOptions { prefix_vars: SHA256_DEFAULT_INNER_PREFIX_VARS };
+        prove_linear_piop(transcript, &spec(prepared)?, &[], witness, binding, options)
+    }
+
+    pub(crate) fn verify_piop<T: Transcript + Send>(
+        transcript: &mut T,
+        prepared: &PreparedSha256CompressionBatch,
+        piop: &LinearPiopProof,
+        binding: [u8; 32],
+    ) -> Result<LinearOpeningClaim, ProtocolError> {
+        verify_linear_piop(transcript, &spec(prepared)?, &[], piop, binding)
+    }
+}
+
 /// Bits `[position, position + 64)` of the packed source in its cell order
 /// (cell `c·2^t + b` = row `b` of column `c`); cells past the grid read zero.
 fn packed_bits64(rows: &[Vec<u64>], row_vars: usize, position: usize) -> u64 {

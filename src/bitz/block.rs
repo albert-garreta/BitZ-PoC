@@ -254,7 +254,7 @@ impl<'a> BlockStatement<'a> {
 
     /// The bytes both roles bind after the root: the claim parameters, the
     /// committed shape, the map digest.
-    fn frame(&self) -> Vec<u8> {
+    pub(crate) fn frame(&self) -> Vec<u8> {
         let mut frame = Vec::with_capacity(48 + 16 + 32);
         frame.extend_from_slice(Encoding::<[u8]>::encode(&self.claim_params).as_ref());
         frame.extend_from_slice(&(self.committed.log_rows() as u64).to_le_bytes());

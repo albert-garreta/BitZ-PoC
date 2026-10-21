@@ -429,35 +429,67 @@ pub(crate) fn prove_structured(
     };
     let add = |a: [Gf; 3], b: [Gf; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
-    // Column-combined witness per row vector.
+    // Column-combined witness per row vector: each vector's columns (through
+    // their first term, their second, or both), a vector read by many
+    // columns (a rank-one term across the grid) in parallel column chunks.
     let started = std::time::Instant::now();
-    let mut acc: Vec<Vec<Gf>> = cfg_into_iter!(0..rows.len())
-        .map(|k| {
-            let mut a = vec![zero; 1 << t];
-            for c in 0..1usize << s {
-                // A column reads row vector k through its first term, its
-                // second, or both.
-                let mut w = zero;
-                if term[c] as usize == k {
-                    w += weight[c];
-                }
-                if term2.get(c).is_some_and(|&k2| k2 as usize == k) {
-                    w += weight2[c];
-                }
-                if w == zero {
-                    continue;
-                }
-                for (wi, &word) in rows_bits[c].iter().enumerate() {
-                    let mut x = word;
-                    while x != 0 {
-                        a[64 * wi + x.trailing_zeros() as usize] += w;
-                        x &= x - 1;
-                    }
+    let mut members: Vec<Vec<(usize, Gf)>> = vec![Vec::new(); rows.len()];
+    for c in 0..1usize << s {
+        let first = (term[c] != u32::MAX).then_some((term[c] as usize, weight[c]));
+        let second = term2.get(c).filter(|&&k| k != u32::MAX).map(|&k| (k as usize, weight2[c]));
+        match (first, second) {
+            (Some((k1, w1)), Some((k2, w2))) if k1 == k2 => members[k1].push((c, w1 + w2)),
+            _ => {
+                for (k, w) in first.into_iter().chain(second) {
+                    members[k].push((c, w));
                 }
             }
+        }
+    }
+    let add_columns = |a: &mut Vec<Gf>, columns: &[(usize, Gf)]| {
+        for &(c, w) in columns {
+            if w == zero {
+                continue;
+            }
+            for (wi, &word) in rows_bits[c].iter().enumerate() {
+                let mut x = word;
+                while x != 0 {
+                    a[64 * wi + x.trailing_zeros() as usize] += w;
+                    x &= x - 1;
+                }
+            }
+        }
+    };
+    let mut acc: Vec<Vec<Gf>> = cfg_into_iter!(0..rows.len())
+        .map(|k| {
+            let columns = &members[k];
+            #[cfg(feature = "parallel")]
+            if columns.len() > 64 {
+                return columns
+                    .par_chunks(32)
+                    .fold(
+                        || vec![zero; 1 << t],
+                        |mut a, chunk| {
+                            add_columns(&mut a, chunk);
+                            a
+                        },
+                    )
+                    .reduce(
+                        || vec![zero; 1 << t],
+                        |mut a, b| {
+                            for (x, y) in a.iter_mut().zip(&b) {
+                                *x += *y;
+                            }
+                            a
+                        },
+                    );
+            }
+            let mut a = vec![zero; 1 << t];
+            add_columns(&mut a, columns);
             a
         })
         .collect();
+
     super::trace("    sc structured: row tables", started);
     let started = std::time::Instant::now();
     let mut rows = rows;

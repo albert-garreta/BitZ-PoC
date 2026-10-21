@@ -277,6 +277,60 @@ impl Band {
     }
 }
 
+/// The stacked committed layout: the relation's committed bits inside a
+/// host relation's block grid, so one commitment holds both witnesses (the
+/// BitZ paper's §2.4.1). The grid is `2^(a+r) × 2^s`; block `i` is the
+/// `2^a`-row chunk at flat index `i·2^a` (`2^r` blocks per column), its hint
+/// `h` at local row `pos[h]` — a cell of the host's block for the bits both
+/// relations read. Each block's box, its local rows `2^a − 2^box_log ..
+/// 2^a`, starts with the template's hints the host does not hold (its
+/// first `used` rows; every hint read from outside its block must be among
+/// them); the rest of the boxes, block after block (whole boxes past the
+/// relation's blocks), hold the constant and then the tail's committed bits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stacked {
+    pub a: usize,
+    pub r: usize,
+    pub s: usize,
+    pub pos: Vec<u32>,
+    pub box_log: usize,
+    pub used: usize,
+}
+
+impl Stacked {
+    /// The first local row of a block's box.
+    pub fn box_start(&self) -> usize {
+        (1usize << self.a) - (1usize << self.box_log)
+    }
+
+    /// Free box rows for `n` relation blocks.
+    pub fn capacity(&self, n: usize) -> usize {
+        let size = 1usize << self.box_log;
+        n * size.saturating_sub(self.used) + (1usize << (self.r + self.s)).saturating_sub(n) * size
+    }
+
+    /// The flat committed index of free box row `k` (the constant at `k =
+    /// 0`, tail bit `k − 1` after it) for `n` relation blocks.
+    pub fn free(&self, n: usize, k: usize) -> Option<usize> {
+        let size = 1usize << self.box_log;
+        let per_block = size.checked_sub(self.used)?;
+        let (block, row) = if k < n * per_block {
+            (k / per_block, self.used + k % per_block)
+        } else {
+            let rest = k - n * per_block;
+            (n + rest / size, rest % size)
+        };
+        (block < 1usize << (self.r + self.s)).then(|| (block << self.a) | (self.box_start() + row))
+    }
+}
+
+/// [`Stacked`] with its inverse row table.
+struct StackedMap {
+    layout: Stacked,
+    /// Local row → template hint (`u32::MAX`: none).
+    local: Vec<u32>,
+}
+
 /// The first hint of `template` read from outside its block. A block's only
 /// handles outside it are its outputs (the recorder hands out nothing else),
 /// so those are the hints in the outputs' supports; the structured weights
@@ -298,6 +352,11 @@ pub struct FlockRecMap {
     /// the opening runs against (`hr ≥ ha`: blocks' regions stacked per
     /// opening column; flat derived indices are unchanged).
     ft: usize,
+    /// Row variables of a block's committed chunk: block `i`'s hint `h` is
+    /// flat committed index `(i << fa) | f_row(h)` (`fa = ft`, a block per
+    /// column, but in the stacked layout).
+    fa: usize,
+    stacked: Option<StackedMap>,
     pub(crate) regions: Regions,
     hr: usize,
     template: BlockTemplate,
@@ -334,14 +393,20 @@ impl FlockRecMap {
         self.regions.cell(i, l as usize)
     }
 
-    /// Committed row of template hint `h` inside its block's column.
+    /// Committed row of template hint `h` inside its block's chunk.
     fn f_row(&self, h: usize) -> usize {
-        self.band.map_or(h, |b| b.row(h))
+        match &self.stacked {
+            Some(sm) => sm.layout.pos[h] as usize,
+            None => self.band.map_or(h, |b| b.row(h)),
+        }
     }
 
-    /// The template hint at row `r` of a block's column, if any.
+    /// The template hint at row `r` of a block's chunk, if any.
     fn f_local(&self, r: usize) -> Option<usize> {
         let hints = self.template.hints;
+        if let Some(sm) = &self.stacked {
+            return sm.local.get(r).copied().filter(|&h| h != u32::MAX).map(|h| h as usize);
+        }
         match self.band {
             Some(b) if r >= b.rows_start => Some(b.local_start + (r - b.rows_start)).filter(|&h| h < hints),
             Some(b) if r >= b.local_start => None,
@@ -393,9 +458,9 @@ impl FlockRecMap {
     fn targets(&self, j: usize) -> Vec<usize> {
         let mut out = Vec::new();
         let t = &self.template;
-        if j < self.n << self.ft {
-            if let Some(h) = self.f_local(j & ((1 << self.ft) - 1)) {
-                out.extend(self.columns.column(h).iter().map(|&l| self.block_cell(j >> self.ft, l)));
+        if j < self.n << self.fa {
+            if let Some(h) = self.f_local(j & ((1 << self.fa) - 1)) {
+                out.extend(self.columns.column(h).iter().map(|&l| self.block_cell(j >> self.fa, l)));
             }
         }
         if j == self.f_const {
@@ -558,32 +623,37 @@ impl VirtualMap for FlockRecMap {
         };
         let mut out = vec![zero; cells];
         // Block committed bits: hint h of block i weighs Σ_regions col_w·T_c[h],
-        // at row f_row(h).
+        // at row f_row(h) of its chunk.
         {
-            let blocks = &mut out[..self.n << self.ft];
+            let blocks = &mut out[..self.n << self.fa];
             let (ls, rs) = self.band.map_or((tm.hints, tm.hints), |b| (b.local_start, b.rows_start));
             let top = rs + (tm.hints - ls);
+            let stacked = self.stacked.as_ref().map(|sm| &sm.layout.pos);
             let fill = |(i, column): (usize, &mut [Gf])| {
-                let ((local, _), w) = in_a(i);
-                for (dst, &lw) in column[..ls].iter_mut().zip(&local[..ls]) {
-                    *dst = w * lw;
-                }
-                for (dst, &lw) in column[rs..top].iter_mut().zip(&local[ls..tm.hints]) {
-                    *dst = w * lw;
-                }
-                if let Some(((local, _), w)) = in_b(i) {
-                    for (dst, &lw) in column[..ls].iter_mut().zip(&local[..ls]) {
-                        *dst += w * lw;
-                    }
-                    for (dst, &lw) in column[rs..top].iter_mut().zip(&local[ls..tm.hints]) {
-                        *dst += w * lw;
+                let regions = std::iter::once(in_a(i)).chain(in_b(i));
+                for (k, ((local, _), w)) in regions.enumerate() {
+                    let put = |dst: &mut Gf, lw: Gf| if k == 0 { *dst = w * lw } else { *dst += w * lw };
+                    match stacked {
+                        Some(pos) => {
+                            for (&p, &lw) in pos.iter().zip(&local[..tm.hints]) {
+                                put(&mut column[p as usize], lw);
+                            }
+                        }
+                        None => {
+                            for (dst, &lw) in column[..ls].iter_mut().zip(&local[..ls]) {
+                                put(dst, lw);
+                            }
+                            for (dst, &lw) in column[rs..top].iter_mut().zip(&local[ls..tm.hints]) {
+                                put(dst, lw);
+                            }
+                        }
                     }
                 }
             };
             #[cfg(feature = "parallel")]
-            blocks.par_chunks_mut(1 << self.ft).enumerate().for_each(fill);
+            blocks.par_chunks_mut(1 << self.fa).enumerate().for_each(fill);
             #[cfg(not(feature = "parallel"))]
-            blocks.chunks_mut(1 << self.ft).enumerate().for_each(fill);
+            blocks.chunks_mut(1 << self.fa).enumerate().for_each(fill);
         }
         // Wiring: slot s of block i scatters col_w[i/g]·T_{i mod g}[hints + s],
         // blocks in parallel: field additions are XORs of the two words, so
@@ -706,12 +776,14 @@ impl VirtualMap for FlockRecMap {
     /// variables' equality table (block columns are aligned), every external
     /// read (wiring, tail, lazy groups) through its committed index.
     fn transposed_mle(&self, row_w: &[Gf], col_w: &[Gf], t: usize, point: &[Gf]) -> Option<Gf> {
-        if t != self.hr || (1usize << point.len()) != self.f_cells || point.len() < self.ft {
+        if t != self.hr || (1usize << point.len()) != self.f_cells || point.len() < self.fa {
             return None;
         }
         let tm = &self.template;
         let zero = Gf::from_bytes([0; 16]);
-        let low = self.ft;
+        // Block i's chunk is flat `i·2^fa`: its hints' rows read the low
+        // equality table, the block the high one at `i`.
+        let low = self.fa;
         let eq_table = |p: &[Gf]| -> Vec<Gf> {
             let mut table = vec![Gf::ONE];
             for &c in p {
@@ -797,17 +869,19 @@ impl VirtualMap for FlockRecMap {
     /// its class in region A (`term`) and in region B (`term2`), one row
     /// vector per class at its hints' rows; every external read lands in a
     /// block's band (the row box) or the tail columns (the column box), else
-    /// `None`.
+    /// `None`. The stacked layout: [`FlockRecMap::stacked_structured_weights`].
     fn structured_weights(&self, row_w: &[Gf], col_w: &[Gf], t: usize) -> Option<StructuredWeights> {
-        let band = self.band?;
         if t != self.hr {
             return None;
         }
+        if let Some(sm) = &self.stacked {
+            return self.stacked_structured_weights(sm, row_w, col_w);
+        }
+        let band = self.band?;
         let tm = &self.template;
         let zero = Gf::from_bytes([0; 16]);
         let (tf, n) = (self.ft, self.n);
         let s = (self.f_cells >> tf).ilog2() as usize;
-        let weight_of = |d: usize| row_w[d & ((1 << t) - 1)] * col_w[d >> t];
         let classes = self.region_classes(row_w);
         let all: Vec<&(Vec<Gf>, Gf)> = classes.0.iter().chain(classes.1.iter().flatten()).collect();
         let rows: Vec<Vec<Gf>> = cfg_into_iter!(0..all.len())
@@ -831,16 +905,10 @@ impl VirtualMap for FlockRecMap {
             }
         }
         let (r1, b1, c2, b2) = (band.rows_start, band.log, band.tail_col, band.tail_log);
-        // Reused buffers (their pages stay faulted in across proofs).
-        let zeroed = |len: usize| {
-            let mut v = crate::bitz::pool::take(len);
-            cfg_iter_mut!(v, 1 << 14).for_each(|x| *x = zero);
-            v
-        };
         let mut row_box = zeroed(1 << (b1 + s));
         let mut col_box = zeroed(1 << (b2 + tf));
         let mask = (1usize << tf) - 1;
-        {
+        let ok = {
             let (rb, cb) = (atomic_words(&mut row_box), atomic_words(&mut col_box));
             let put = |j: usize, w: Gf| -> bool {
                 let (c, r) = (j >> tf, j & mask);
@@ -853,80 +921,12 @@ impl VirtualMap for FlockRecMap {
                 }
                 true
             };
-            // Wiring: slot `slot` of block i scatters Σ_regions col_w·T_c[hints + slot].
-            let (wiring_constant, wiring_ok) = cfg_into_iter!(0..n, 16)
-                .map(|i| {
-                    let ((ca, cola), b) = self.block_terms(i);
-                    let ((local, class_const), bw) = (&classes.0[ca], col_w[cola]);
-                    let b = b.zip(classes.1.as_ref()).map(|((cb, colb), region)| (&region[cb], col_w[colb]));
-                    let mut constant = bw * *class_const;
-                    if let Some(((_, b_const), bw_b)) = b {
-                        constant += bw_b * *b_const;
-                    }
-                    let mut ok = true;
-                    for slot in 0..tm.slots {
-                        let row = i * tm.slots + slot;
-                        let support = self.wiring.row(row);
-                        if support.is_empty() && !self.wiring_const[row] {
-                            continue;
-                        }
-                        let mut w = bw * local[tm.hints + slot];
-                        if let Some(((local_b, _), bw_b)) = b {
-                            w += bw_b * local_b[tm.hints + slot];
-                        }
-                        for &j in support {
-                            ok &= put(j as usize, w);
-                        }
-                        if self.wiring_const[row] {
-                            constant += w;
-                        }
-                    }
-                    (constant, ok)
-                })
-                .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
-            // The tail: explicit supports scatter their cell's weight; lazy
-            // outputs collect it per group bit.
-            let mut group_weights = vec![zero; 128 * self.groups.len()];
-            let (tail_constant, tail_ok) = {
-                let gw = atomic_words(&mut group_weights);
-                let cells = self.tail_const.len();
-                cfg_into_iter!(0..cells.div_ceil(1024))
-                    .map(|chunk| {
-                        let mut constant = zero;
-                        let mut ok = true;
-                        for k in chunk * 1024..((chunk + 1) * 1024).min(cells) {
-                            let w = weight_of(self.h_tail + 1 + k);
-                            for &j in self.tail.row(k) {
-                                ok &= put(j as usize, w);
-                            }
-                            for &id in self.tail_lazy.row(k) {
-                                xor_at(gw, id as usize, w);
-                            }
-                            if self.tail_const[k] {
-                                constant += w;
-                            }
-                        }
-                        (constant, ok)
-                    })
-                    .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1))
-            };
-            let (group_constant, group_ok) = cfg_into_iter!(0..self.groups.len())
-                .map(|gi| {
-                    let weights: &[Gf; 128] = group_weights[128 * gi..128 * (gi + 1)].try_into().expect("128 group bits");
-                    let mut c = zero;
-                    let mut contributions = Vec::new();
-                    self.groups[gi].scatter(weights, &mut c, &mut contributions);
-                    let ok = contributions.iter().fold(true, |ok, &(j, w)| ok & put(j as usize, w));
-                    (c, ok)
-                })
-                .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
-            // The constant cell collects every constant's weight and its own.
-            let constant = wiring_constant + tail_constant + group_constant + weight_of(self.h_tail);
-            if !(wiring_ok && tail_ok && group_ok && put(self.f_const, constant)) {
-                crate::bitz::pool::recycle(row_box);
-                crate::bitz::pool::recycle(col_box);
-                return None;
-            }
+            self.scatter_external(&classes, row_w, col_w, t, &put).is_some_and(|constant| put(self.f_const, constant))
+        };
+        if !ok {
+            crate::bitz::pool::recycle(row_box);
+            crate::bitz::pool::recycle(col_box);
+            return None;
         }
         Some(StructuredWeights {
             t: tf,
@@ -941,6 +941,183 @@ impl VirtualMap for FlockRecMap {
             col_box_start: c2,
             col_box_log: b2,
             col_box,
+        })
+    }
+}
+
+/// Reused zeroed buffers (their pages stay faulted in across proofs).
+fn zeroed(len: usize) -> Vec<Gf> {
+    let zero = Gf::from_bytes([0; 16]);
+    let mut v = crate::bitz::pool::take(len);
+    cfg_iter_mut!(v, 1 << 14).for_each(|x| *x = zero);
+    v
+}
+
+impl FlockRecMap {
+    /// Scatters every external read's weight through `put` (flat committed
+    /// index and weight; `false` for an index outside the structure): the
+    /// slots' wiring, the tail's explicit supports and its lazy groups.
+    /// Returns the constant cell's total weight (every constant flag's and
+    /// its own), or `None` if a read fell outside.
+    fn scatter_external(
+        &self,
+        classes: &(Classes, Option<Classes>),
+        row_w: &[Gf],
+        col_w: &[Gf],
+        t: usize,
+        put: &(dyn Fn(usize, Gf) -> bool + Sync),
+    ) -> Option<Gf> {
+        let tm = &self.template;
+        let zero = Gf::from_bytes([0; 16]);
+        let weight_of = |d: usize| row_w[d & ((1 << t) - 1)] * col_w[d >> t];
+        // Wiring: slot `slot` of block i scatters Σ_regions col_w·T_c[hints + slot].
+        let (wiring_constant, wiring_ok) = cfg_into_iter!(0..self.n, 16)
+            .map(|i| {
+                let ((ca, cola), b) = self.block_terms(i);
+                let ((local, class_const), bw) = (&classes.0[ca], col_w[cola]);
+                let b = b.zip(classes.1.as_ref()).map(|((cb, colb), region)| (&region[cb], col_w[colb]));
+                let mut constant = bw * *class_const;
+                if let Some(((_, b_const), bw_b)) = b {
+                    constant += bw_b * *b_const;
+                }
+                let mut ok = true;
+                for slot in 0..tm.slots {
+                    let row = i * tm.slots + slot;
+                    let support = self.wiring.row(row);
+                    if support.is_empty() && !self.wiring_const[row] {
+                        continue;
+                    }
+                    let mut w = bw * local[tm.hints + slot];
+                    if let Some(((local_b, _), bw_b)) = b {
+                        w += bw_b * local_b[tm.hints + slot];
+                    }
+                    for &j in support {
+                        ok &= put(j as usize, w);
+                    }
+                    if self.wiring_const[row] {
+                        constant += w;
+                    }
+                }
+                (constant, ok)
+            })
+            .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
+        // The tail: explicit supports scatter their cell's weight; lazy
+        // outputs collect it per group bit.
+        let mut group_weights = vec![zero; 128 * self.groups.len()];
+        let (tail_constant, tail_ok) = {
+            let gw = atomic_words(&mut group_weights);
+            let cells = self.tail_const.len();
+            cfg_into_iter!(0..cells.div_ceil(1024))
+                .map(|chunk| {
+                    let mut constant = zero;
+                    let mut ok = true;
+                    for k in chunk * 1024..((chunk + 1) * 1024).min(cells) {
+                        let w = weight_of(self.h_tail + 1 + k);
+                        for &j in self.tail.row(k) {
+                            ok &= put(j as usize, w);
+                        }
+                        for &id in self.tail_lazy.row(k) {
+                            xor_at(gw, id as usize, w);
+                        }
+                        if self.tail_const[k] {
+                            constant += w;
+                        }
+                    }
+                    (constant, ok)
+                })
+                .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1))
+        };
+        let (group_constant, group_ok) = cfg_into_iter!(0..self.groups.len())
+            .map(|gi| {
+                let weights: &[Gf; 128] = group_weights[128 * gi..128 * (gi + 1)].try_into().expect("128 group bits");
+                let mut c = zero;
+                let mut contributions = Vec::new();
+                self.groups[gi].scatter(weights, &mut c, &mut contributions);
+                let ok = contributions.iter().fold(true, |ok, &(j, w)| ok & put(j as usize, w));
+                (c, ok)
+            })
+            .reduce(|| (zero, true), |a, b| (a.0 + b.0, a.1 && b.1));
+        // The constant cell collects every constant's weight and its own.
+        (wiring_ok && tail_ok && group_ok).then(|| wiring_constant + tail_constant + group_constant + weight_of(self.h_tail))
+    }
+
+    /// The stacked layout's weights ([`Stacked`]): a column holds `2^r`
+    /// consecutive blocks, which share their opening column (`hr − ha ≥ r`)
+    /// and whose classes are `2^r` consecutive ones, so the column is
+    /// `col_w·S_κ` for one of `2^(hr−ha−r)` stacked class vectors `S_κ` (the
+    /// classes' `T_c` at their blocks' hint rows; one more vector for a last
+    /// column the blocks only partly fill, `term`). Every external read and
+    /// the constant land in a block's box: `2^r` row boxes, one per stacked
+    /// block. `term2` stays free (the host relation's claim).
+    fn stacked_structured_weights(&self, sm: &StackedMap, row_w: &[Gf], col_w: &[Gf]) -> Option<StructuredWeights> {
+        let layout = &sm.layout;
+        let tm = &self.template;
+        let zero = Gf::from_bytes([0; 16]);
+        let (a, r, s) = (layout.a, layout.r, layout.s);
+        let tf = a + r;
+        let ga = self.hr.checked_sub(self.regions.ha)?;
+        if self.regions.hb.is_some() || ga < r {
+            return None;
+        }
+        let classes = self.region_classes(row_w);
+        let per = 1usize << r;
+        let supers = classes.0.len() >> r;
+        let stacked_row = |kappa: usize, members: usize| -> Vec<Gf> {
+            let mut v = vec![zero; 1 << tf];
+            for j in 0..members {
+                let local = &classes.0[(kappa << r) | j].0;
+                for (&p, &w) in layout.pos.iter().zip(&local[..tm.hints]) {
+                    v[(j << a) | p as usize] = w;
+                }
+            }
+            v
+        };
+        let mut rows: Vec<Vec<Gf>> = cfg_into_iter!(0..supers).map(|kappa| stacked_row(kappa, per)).collect();
+        let (mut term, mut weight) = (vec![u32::MAX; 1 << s], vec![zero; 1 << s]);
+        let full = self.n >> r;
+        for c in 0..full {
+            (term[c], weight[c]) = ((c & (supers - 1)) as u32, col_w[c >> (ga - r)]);
+        }
+        let partial = self.n & (per - 1);
+        if partial != 0 {
+            rows.push(stacked_row(full & (supers - 1), partial));
+            (term[full], weight[full]) = ((rows.len() - 1) as u32, col_w[full >> (ga - r)]);
+        }
+        let (b1, start) = (layout.box_log, layout.box_start());
+        let mut boxes: Vec<Vec<Gf>> = (0..per).map(|_| zeroed(1 << (b1 + s))).collect();
+        let (mask_t, mask_a) = ((1usize << tf) - 1, (1usize << a) - 1);
+        let ok = {
+            let words: Vec<&[std::sync::atomic::AtomicU64]> = boxes.iter_mut().map(|b| atomic_words(b)).collect();
+            let put = |j: usize, w: Gf| -> bool {
+                let (c, row) = (j >> tf, j & mask_t);
+                let local = row & mask_a;
+                if local < start {
+                    return false;
+                }
+                xor_at(words[row >> a], (c << b1) | (local - start), w);
+                true
+            };
+            self.scatter_external(&classes, row_w, col_w, self.hr, &put).is_some_and(|constant| put(self.f_const, constant))
+        };
+        if !ok {
+            for b in boxes {
+                crate::bitz::pool::recycle(b);
+            }
+            return None;
+        }
+        Some(StructuredWeights {
+            t: tf,
+            s,
+            rows,
+            term,
+            weight,
+            term2: Vec::new(),
+            weight2: Vec::new(),
+            row_box_log: b1,
+            row_boxes: boxes.into_iter().enumerate().map(|(j, b)| ((j << a) + start, b)).collect(),
+            col_box_start: 0,
+            col_box_log: 0,
+            col_box: zeroed(1 << tf),
         })
     }
 }
@@ -1167,21 +1344,86 @@ impl FlockRecRelation {
         opening_row_vars: Option<usize>,
         opener: FlockRecOpener,
     ) -> Result<Self, ProtocolError> {
+        Self::build::<P>(st, source_digest, selection, opening_row_vars, opener, None)
+    }
+
+    /// The relation with its committed bits in the stacked layout (see
+    /// [`Stacked`]): one commitment shared with the host relation whose
+    /// block grid it is, opened with the host's claim
+    /// ([`crate::bitz::shared`]). The opening's derived rows must be at
+    /// least `ha + r` (each column's blocks share an opening column), the
+    /// blocks' cells one region, the opener standard.
+    pub fn new_stacked<P: IopSecurityProfile>(
+        st: Arc<StructuredCircuit>,
+        source_digest: [u8; 32],
+        selection: LigeritoSelection,
+        opening_row_vars: usize,
+        layout: Stacked,
+    ) -> Result<Self, ProtocolError> {
+        Self::build::<P>(st, source_digest, selection, Some(opening_row_vars), FlockRecOpener::Standard, Some(layout))
+    }
+
+    fn build<P: IopSecurityProfile>(
+        st: Arc<StructuredCircuit>,
+        source_digest: [u8; 32],
+        selection: LigeritoSelection,
+        opening_row_vars: Option<usize>,
+        opener: FlockRecOpener,
+        stacked: Option<Stacked>,
+    ) -> Result<Self, ProtocolError> {
         let geometry = |msg: &str| ProtocolError::LigeritoConfig(format!("flockrec geometry: {msg}"));
         if st.templates.len() != 1 {
             return Err(geometry("exactly one block template"));
         }
         let template = BlockTemplate::clone(&st.templates[0]);
-        let ft = ceil_log2(template.hints).max(MIN_F_ROW_VARS);
         let rt = ceil_log2(template.rows()).max(1);
         let n = st.instances.len();
         let regions = Regions::for_cells(template.cells(), n);
-        // The committed grid, boxed when the band fits.
         let hints = template.hints;
-        let f_vars = ceil_log2((n << ft) + 1 + st.tail_hints.len()).max(ft + 1);
-        let band = Band::fit(hints, external_hints_start(&template), ft, n, st.tail_hints.len(), f_vars);
-        let f_const = band.map_or(n << ft, |b| b.tail_col << ft);
-        let f_row = |h: usize| band.map_or(h, |b| b.row(h));
+        // The committed grid: one block per column (boxed when the band
+        // fits), or stacked inside the host's block grid.
+        let (ft, fa, f_vars, band, f_const, stacked) = match stacked {
+            None => {
+                let ft = ceil_log2(hints).max(MIN_F_ROW_VARS);
+                let f_vars = ceil_log2((n << ft) + 1 + st.tail_hints.len()).max(ft + 1);
+                let band = Band::fit(hints, external_hints_start(&template), ft, n, st.tail_hints.len(), f_vars);
+                (ft, ft, f_vars, band, band.map_or(n << ft, |b| b.tail_col << ft), None)
+            }
+            Some(layout) => {
+                let (a, r, s) = (layout.a, layout.r, layout.s);
+                let start = layout.box_start();
+                if layout.pos.len() != hints || layout.box_log > a || a < 6 || a + r + s >= 32 || n > 1 << (r + s) {
+                    return Err(geometry("stacked layout shape"));
+                }
+                let mut local = vec![u32::MAX; 1 << a];
+                for (h, &p) in layout.pos.iter().enumerate() {
+                    let p = p as usize;
+                    if p >= 1 << a || local[p] != u32::MAX || (p >= start && p >= start + layout.used) {
+                        return Err(geometry("stacked hint rows"));
+                    }
+                    local[p] = h as u32;
+                }
+                if (start..start + layout.used).any(|p| local[p] == u32::MAX) {
+                    return Err(geometry("the box's template rows"));
+                }
+                if regions.hb.is_some() || !matches!(opener, FlockRecOpener::Standard) {
+                    return Err(geometry("stacked blocks need one cell region and the standard opener"));
+                }
+                let f_const = layout.free(n, 0).ok_or_else(|| geometry("no box row for the constant"))?;
+                if layout.capacity(n) < 1 + st.tail_hints.len() {
+                    return Err(geometry("the tail does not fit the boxes"));
+                }
+                (a + r, a, a + r + s, None, f_const, Some(StackedMap { layout, local }))
+            }
+        };
+        let f_row = |h: usize| match &stacked {
+            Some(sm) => sm.layout.pos[h] as usize,
+            None => band.map_or(h, |b| b.row(h)),
+        };
+        let tail_at = |k: usize| match &stacked {
+            Some(sm) => sm.layout.free(n, 1 + k).expect("checked capacity"),
+            None => f_const + 1 + k,
+        };
         // Global committed → f, a chunk of global indices at a time: blocks'
         // hints are contiguous runs (instances in recording order), the tail's
         // hints ascending.
@@ -1197,9 +1439,9 @@ impl FlockRecRelation {
                     i += 1;
                 }
                 if i < n && st.instances[i].hint_base as usize <= g {
-                    *slot = ((i << ft) + f_row(g - st.instances[i].hint_base as usize)) as u32;
+                    *slot = ((i << fa) + f_row(g - st.instances[i].hint_base as usize)) as u32;
                 } else if k < st.tail_hints.len() && st.tail_hints[k] as usize == g {
-                    *slot = (f_const + 1 + k) as u32;
+                    *slot = tail_at(k) as u32;
                     k += 1;
                 }
             }
@@ -1221,8 +1463,8 @@ impl FlockRecRelation {
         let logarithmic = matches!(opener, FlockRecOpener::Logarithmic { .. });
         let reference = crate::bitz::params::reference_log_rows(ceil_log2(h_live).max(regions.ha + 1)).max(regions.ha);
         let hr = opening_row_vars.unwrap_or(if logarithmic { reference } else { regions.ha });
-        if hr < regions.ha {
-            return Err(geometry("opening columns lower than a block's region"));
+        if hr < regions.ha + stacked.as_ref().map_or(0, |sm| sm.layout.r) {
+            return Err(geometry("opening columns lower than a block's region (times the blocks per committed column)"));
         }
         let h_vars = ceil_log2(h_live).max(hr + 1);
         let h_layout = IntegerMatrixLayout { row_vars: hr, col_vars: h_vars - hr };
@@ -1336,9 +1578,22 @@ impl FlockRecRelation {
                 hasher.update(&(v as u64).to_le_bytes());
             }
         }
+        // The stacked layout (likewise): its grid, box and hint rows.
+        if let Some(sm) = &stacked {
+            let l = &sm.layout;
+            hasher.update(b"stacked");
+            for v in [l.a, l.r, l.s, l.box_log, l.used] {
+                hasher.update(&(v as u64).to_le_bytes());
+            }
+            for p in &l.pos {
+                hasher.update(&p.to_le_bytes());
+            }
+        }
         let digest = *hasher.finalize().as_bytes();
         let map = FlockRecMap {
             ft,
+            fa,
+            stacked,
             regions,
             hr,
             template,
@@ -1432,7 +1687,7 @@ impl FlockRecRelation {
     pub fn witness(&self, g: &PackedWitness, h: &PackedWitness) -> Result<FlockRecWitness, ProtocolError> {
         let st = &self.st;
         let t = &self.map.template;
-        if g.bit_len() != st.committed || h.bit_len() != st.cells + 1 {
+        if g.bit_len() != st.committed || h.bit_len() != st.cells + 1 || self.map.stacked.is_some() {
             return Err(ProtocolError::InvalidGeometry);
         }
         let mut f_rows = vec![vec![0u64; self.f_layout.rows() / 64]; self.f_layout.cols()];
@@ -1464,6 +1719,65 @@ impl FlockRecRelation {
         }
         let h_rows = self.derived_rows(h);
         Ok(FlockRecWitness { f_rows, h_rows })
+    }
+
+    /// The stacked layout's rows: `host`, the host relation's committed
+    /// rows of the shared grid, with the bits this relation owns written into
+    /// the boxes (the template's box hints, the constant, the tail). The
+    /// hints at the host's own cells are the host's bits; the prover's `w`
+    /// must agree with them (the relation then holds on the shared grid).
+    pub fn witness_stacked(
+        &self,
+        g: &PackedWitness,
+        h: &PackedWitness,
+        mut host: Vec<Vec<u64>>,
+    ) -> Result<FlockRecWitness, ProtocolError> {
+        let st = &self.st;
+        let t = &self.map.template;
+        let Some(sm) = &self.map.stacked else {
+            return Err(ProtocolError::InvalidGeometry);
+        };
+        if g.bit_len() != st.committed
+            || h.bit_len() != st.cells + 1
+            || host.len() != self.f_layout.cols()
+            || host.iter().any(|row| row.len() * 64 != self.f_layout.rows())
+        {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        let (ft, fa) = (self.map.ft, self.map.fa);
+        let start = sm.layout.box_start();
+        let boxed: Vec<(usize, usize)> =
+            (0..t.hints).map(|h| (h, sm.layout.pos[h] as usize)).filter(|&(_, p)| p >= start).collect();
+        // A column's blocks, then the constant and the tail (box rows,
+        // anywhere in the grid).
+        let per = 1usize << (ft - fa);
+        let fill = |(c, column): (usize, &mut Vec<u64>)| {
+            for i in c * per..((c + 1) * per).min(self.n) {
+                let base = st.instances[i].hint_base as usize;
+                let row = (i - c * per) << fa;
+                for &(h, p) in &boxed {
+                    if g.bit(base + h) {
+                        column[(row + p) / 64] |= 1u64 << ((row + p) % 64);
+                    }
+                }
+            }
+        };
+        #[cfg(feature = "parallel")]
+        host.par_iter_mut().enumerate().for_each(fill);
+        #[cfg(not(feature = "parallel"))]
+        host.iter_mut().enumerate().for_each(fill);
+        let mut set = |idx: usize| {
+            let (c, b) = (idx >> ft, idx & ((1 << ft) - 1));
+            host[c][b / 64] |= 1u64 << (b % 64);
+        };
+        set(self.map.f_const);
+        for &gidx in &st.tail_hints {
+            if g.bit(gidx as usize) {
+                set(self.global_f[gidx as usize] as usize);
+            }
+        }
+        let h_rows = self.derived_rows(h);
+        Ok(FlockRecWitness { f_rows: host, h_rows })
     }
 
     /// The derived rows from `M·w` (entry 0 the constant).
@@ -1669,26 +1983,49 @@ impl FlockRecRelation {
         let eta_sum = eq_eta[..self.n].iter().fold(zero, |acc, w| cfg.add(&acc, w));
         let mut v_one = cfg.add(&omega, &cfg.mul(&beta_const, &eta_sum));
         let st = &self.st;
+        if st.tail_a.nnz() != 0 || st.tail_b.nnz() != 0 {
+            return Err(ProtocolError::InvalidGeometry);
+        }
         let mut v_tail = vec![zero; st.tail_cells.len()];
         let rows = &st.tail_c;
-        for k in 0..st.tail_rows.len() {
-            let pos = (self.n << self.rt) + k;
-            let w = cfg.mul(&eq_xi[pos & ((1 << self.rt) - 1)], &eq_eta[pos >> self.rt]);
-            for (col, c) in rows.row(k) {
-                let v = cfg.mul(&w, &Self::coeff(c, &pow2, cfg));
-                if col == 0 {
-                    v_one = cfg.add(&v_one, &v);
-                } else {
-                    let cell = col - 1;
-                    let pos = self
-                        .tail_rows_local
-                        .binary_search(&cell)
-                        .map_err(|_| ProtocolError::InvalidGeometry)?;
-                    v_tail[pos] = cfg.add(&v_tail[pos], &v);
-                }
+        // A tail cell's position: read off when the tail's cells are
+        // contiguous (a renumbered circuit's), else searched.
+        let cells = &self.tail_rows_local;
+        let contiguous = cells.first().is_some_and(|&first| cells.last().copied() == Some(first + cells.len() as u32 - 1));
+        let position = |cell: u32| -> Option<usize> {
+            if contiguous {
+                cell.checked_sub(cells[0]).map(|p| p as usize).filter(|&p| p < cells.len())
+            } else {
+                cells.binary_search(&cell).ok()
             }
-            if st.tail_a.row(k).next().is_some() || st.tail_b.row(k).next().is_some() {
-                return Err(ProtocolError::InvalidGeometry);
+        };
+        // Each row's terms in chunks of rows (the products in parallel), then
+        // the sums in order (field addition: the serial sums exactly).
+        const CHUNK: usize = 1 << 12;
+        let count = st.tail_rows.len();
+        let parts: Vec<(F, Vec<(u32, F)>)> = cfg_into_iter!(0..count.div_ceil(CHUNK))
+            .map(|chunk| -> Result<(F, Vec<(u32, F)>), ProtocolError> {
+                let mut one = zero;
+                let mut out = Vec::new();
+                for k in chunk * CHUNK..((chunk + 1) * CHUNK).min(count) {
+                    let pos = (self.n << self.rt) + k;
+                    let w = cfg.mul(&eq_xi[pos & ((1 << self.rt) - 1)], &eq_eta[pos >> self.rt]);
+                    for (col, c) in rows.row(k) {
+                        let v = cfg.mul(&w, &Self::coeff(c, &pow2, cfg));
+                        if col == 0 {
+                            one = cfg.add(&one, &v);
+                        } else {
+                            out.push((position(col - 1).ok_or(ProtocolError::InvalidGeometry)? as u32, v));
+                        }
+                    }
+                }
+                Ok((one, out))
+            })
+            .collect::<Result<_, _>>()?;
+        for (one, terms) in parts {
+            v_one = cfg.add(&v_one, &one);
+            for (pos, v) in terms {
+                v_tail[pos as usize] = cfg.add(&v_tail[pos as usize], &v);
             }
         }
         Ok(Batching { beta, eq_eta, v_one, v_tail })
@@ -1715,10 +2052,14 @@ impl FlockRecRelation {
             v = cfg.add(&v, &cfg.mul(&beta_b, &dot(&b.eq_eta[..self.n], &high_b[base..base + self.n])));
         }
         v = cfg.add(&v, &cfg.mul(&b.v_one, &eq_at(self.map.h_tail)));
-        for (k, vt) in b.v_tail.iter().enumerate() {
-            v = cfg.add(&v, &cfg.mul(vt, &eq_at(self.map.h_tail + 1 + k)));
-        }
-        Ok(v)
+        const CHUNK: usize = 1 << 12;
+        let tail = cfg_into_iter!(0..b.v_tail.len().div_ceil(CHUNK))
+            .map(|chunk| {
+                let range = chunk * CHUNK..((chunk + 1) * CHUNK).min(b.v_tail.len());
+                range.fold(zero, |acc, k| cfg.add(&acc, &cfg.mul(&b.v_tail[k], &eq_at(self.map.h_tail + 1 + k))))
+            })
+            .reduce(|| zero, |x, y| cfg.add(&x, &y));
+        Ok(cfg.add(&v, &tail))
     }
 }
 
@@ -1766,6 +2107,34 @@ impl FlockRecProof {
     pub fn piop_bytes(&self) -> usize {
         2 * 8 + 3 * 16 * self.inner.round_polynomials.len() + 8 * self.inner_nonces.len()
     }
+}
+
+/// The relation's PIOP messages: [`FlockRecProof`] without its opening, for
+/// a protocol that opens the claim with another relation's on one
+/// commitment.
+#[derive(Clone)]
+pub struct FlockRecPiop {
+    pub initial_nonce: u64,
+    pub terminal_nonce: u64,
+    pub inner: SumcheckProof<F, 3>,
+    pub inner_nonces: Vec<u64>,
+}
+
+impl FlockRecPiop {
+    pub fn bytes(&self) -> usize {
+        2 * 8 + 3 * 16 * self.inner.round_polynomials.len() + 8 * self.inner_nonces.len()
+    }
+}
+
+/// The PIOP's bound opening claim: the runtime prime, the inner sumcheck's
+/// point with `V(r)` and its final claim, and the claim on the derived grid
+/// (row weights, column weights, target).
+pub(crate) struct FlockRecClaim {
+    pub prime: Config,
+    pub point: Vec<F>,
+    pub v_at: F,
+    pub final_claim: F,
+    pub claim: (Vec<u128>, Vec<u128>, u128),
 }
 
 fn trace(label: &str, started: std::time::Instant) {
@@ -1971,9 +2340,11 @@ impl FlockRecRelation {
             if let Some((w, v)) = &inst_b {
                 add(&mut sums, pair_sums(w, v));
             }
-            for (v, h) in tail_v.iter().zip(&tail_h) {
-                add(&mut sums, pair_sums(v, h));
-            }
+            // The tail's chunks in parallel (field sums: the serial sums).
+            let tail_sums = cfg_into_iter!(0..tail_v.len())
+                .map(|k| pair_sums(&tail_v[k], &tail_h[k]))
+                .reduce(|| (zero, zero), |x, y| (cfg.add(&x.0, &y.0), cfg.add(&x.1, &y.1)));
+            add(&mut sums, tail_sums);
             let r = round(transcript, sums.0, sums.1, &mut claim, &mut point, &mut proof, j)?;
             fold(&mut beta_a, &r);
             fold(&mut g_a, &r);
@@ -1985,6 +2356,12 @@ impl FlockRecRelation {
                 fold(w, &r);
                 fold(v, &r);
             }
+            #[cfg(feature = "parallel")]
+            tail_v.par_iter_mut().zip(tail_h.par_iter_mut()).for_each(|(v, h)| {
+                fold(v, &r);
+                fold(h, &r);
+            });
+            #[cfg(not(feature = "parallel"))]
             for (v, h) in tail_v.iter_mut().zip(tail_h.iter_mut()) {
                 fold(v, &r);
                 fold(h, &r);
@@ -2025,20 +2402,24 @@ impl FlockRecRelation {
         })
     }
 
-    pub fn prove<T: Transcript + Send>(
-        &self,
-        transcript: &mut T,
-        witness: &FlockRecWitness,
-        hint: &FlockCommitHint,
-    ) -> Result<FlockRecProof, ProtocolError> {
-        let security = &self.security;
-        let started = std::time::Instant::now();
-        for (tag, bytes) in self.statement_frames(&hint.commitment)? {
+    /// The statement: the relation's frames, then its opener configuration.
+    pub(crate) fn bind_statement<T: Transcript>(&self, transcript: &mut T, commitment: &Commitment) -> Result<(), ProtocolError> {
+        for (tag, bytes) in self.statement_frames(commitment)? {
             absorb_spartan_message(transcript, tag, &bytes);
         }
         self.ligerito.bind(transcript);
-        let ood = bind_prover_ood(transcript, hint, security.ood);
-        trace("statement + round 0", started);
+        Ok(())
+    }
+
+    /// The PIOP after the statement and Round 0: the boundaries, the prime,
+    /// the batching and the inner sumcheck, ending with the bound opening
+    /// claim (returned for the opening).
+    pub(crate) fn prove_piop<T: Transcript + Send>(
+        &self,
+        transcript: &mut T,
+        witness: &FlockRecWitness,
+    ) -> Result<(FlockRecPiop, FlockRecClaim), ProtocolError> {
+        let security = &self.security;
         let started = std::time::Instant::now();
         let initial_nonce = grind_boundary(transcript, DOMAIN_INITIAL, security.initial_grinding_bits)?;
         let prime = sample_mod_q(transcript, DOMAIN_PRIME, security.projection_min, security.projection_max)?;
@@ -2066,11 +2447,66 @@ impl FlockRecRelation {
         let claim = opening_claim(self, &inner.point, &v_at, &inner.final_claim, cfg)?;
         bind_opening_claim(transcript, self, &xi, &eta, &omega, &inner.point, &v_at, &claim, cfg);
         trace("inner sumcheck", started);
-        let started = std::time::Instant::now();
+        let piop = FlockRecPiop { initial_nonce, terminal_nonce, inner: inner.proof, inner_nonces };
+        let claim = FlockRecClaim { point: inner.point, v_at, final_claim: inner.final_claim, claim, prime };
+        Ok((piop, claim))
+    }
 
-        let params = opening_params(&self.h_layout, prime.modulus_u128())?;
+    /// [`FlockRecRelation::prove_piop`]'s verifier: the bound opening claim.
+    pub(crate) fn verify_piop<T: Transcript + Send>(
+        &self,
+        transcript: &mut T,
+        piop: &FlockRecPiop,
+    ) -> Result<FlockRecClaim, ProtocolError> {
+        let security = &self.security;
+        let n_vars = self.h_layout.row_vars + self.h_layout.col_vars;
+        if piop.inner.round_polynomials.len() != n_vars {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        check_boundary(transcript, DOMAIN_INITIAL, security.initial_grinding_bits, piop.initial_nonce)?;
+        let prime = sample_mod_q(transcript, DOMAIN_PRIME, security.projection_min, security.projection_max)?;
+        let cfg = &prime;
+        absorb_spartan_message(transcript, b"runtime-field-modulus", &F::canonical_modulus_encoding(cfg));
+        let xi = challenge_point(transcript, b"flockrec/local-rows", self.rt, cfg)?;
+        let eta = challenge_point(transcript, b"flockrec/instances", self.inst_vars, cfg)?;
+        check_boundary(transcript, DOMAIN_TERMINAL, security.terminal_grinding_bits, piop.terminal_nonce)?;
+        let omega = challenge_point(transcript, b"flockrec/constant-one", 1, cfg)?[0];
+        let batching = self.batching(&xi, &eta, omega, cfg)?;
+        let (point, final_claim) = piop
+            .inner
+            .verify_grinded::<Sha256InnerGrinding>(
+                transcript,
+                omega,
+                n_vars,
+                cfg,
+                &piop.inner_nonces,
+                security.piop_round_grinding_bits,
+            )
+            .map_err(super::SpartanError::from)?;
+        let v_at = self.evaluate(&batching, &point, cfg)?;
+        let claim = opening_claim(self, &point, &v_at, &final_claim, cfg)?;
+        bind_opening_claim(transcript, self, &xi, &eta, &omega, &point, &v_at, &claim, cfg);
+        Ok(FlockRecClaim { point, v_at, final_claim, claim, prime })
+    }
+
+    pub fn prove<T: Transcript + Send>(
+        &self,
+        transcript: &mut T,
+        witness: &FlockRecWitness,
+        hint: &FlockCommitHint,
+    ) -> Result<FlockRecProof, ProtocolError> {
+        let security = &self.security;
+        let started = std::time::Instant::now();
+        self.bind_statement(transcript, &hint.commitment)?;
+        let ood = bind_prover_ood(transcript, hint, security.ood);
+        trace("statement + round 0", started);
+        let (piop, claim) = self.prove_piop(transcript, witness)?;
+        let started = std::time::Instant::now();
+        let cfg = &claim.prime;
+        let params = opening_params(&self.h_layout, claim.prime.modulus_u128())?;
         let committed = opening_shape(&self.f_layout)?;
-        let native_claim = LinearClaim::new(&params, claim.0, claim.1, claim.2)
+        let (rows, cols, target) = claim.claim.clone();
+        let native_claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ claim: {e:?}")))?;
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
@@ -2079,13 +2515,14 @@ impl FlockRecRelation {
             .with_extension(self.ligerito.extension());
         let bitz = match &self.log {
             Some(log) => {
-                let statement = self.log_statement(&inner.point, &v_at, &inner.final_claim, cfg);
+                let statement = self.log_statement(&claim.point, &claim.v_at, &claim.final_claim, cfg);
                 bitz_opener::prove_virtual_log_opening(transcript, log, &statement, &opening, &pcs, hint, &witness.h_rows, ood)?
             }
             None => bitz_opener::prove_virtual_opening(transcript, &opening, &pcs, hint, &witness.h_rows, ood)?,
         };
         trace("virtual opening", started);
-        Ok(FlockRecProof { initial_nonce, terminal_nonce, inner: inner.proof, inner_nonces, bitz })
+        let FlockRecPiop { initial_nonce, terminal_nonce, inner, inner_nonces } = piop;
+        Ok(FlockRecProof { initial_nonce, terminal_nonce, inner, inner_nonces, bitz })
     }
 
     pub fn verify<T: Transcript + Send>(
@@ -2095,16 +2532,12 @@ impl FlockRecRelation {
         proof: &FlockRecProof,
     ) -> Result<(), ProtocolError> {
         let security = &self.security;
-        let n_vars = self.h_layout.row_vars + self.h_layout.col_vars;
-        if proof.inner.round_polynomials.len() != n_vars || commitment.params.m != self.f_layout.row_vars + self.f_layout.col_vars {
+        if commitment.params.m != self.f_layout.row_vars + self.f_layout.col_vars {
             return Err(ProtocolError::InvalidGeometry);
         }
         crate::ligerito_flock::validate_ligerito_commitment(commitment, self.ligerito.verifier())
             .map_err(ProtocolError::Bitz)?;
-        for (tag, bytes) in self.statement_frames(commitment)? {
-            absorb_spartan_message(transcript, tag, &bytes);
-        }
-        self.ligerito.bind(transcript);
+        self.bind_statement(transcript, commitment)?;
         let ood = bind_verifier_ood(
             transcript,
             self.f_layout.row_vars + self.f_layout.col_vars - LOG_PACKING,
@@ -2112,32 +2545,18 @@ impl FlockRecRelation {
             proof.bitz.ood.as_ref(),
         )
         .map_err(ProtocolError::Bitz)?;
-        check_boundary(transcript, DOMAIN_INITIAL, security.initial_grinding_bits, proof.initial_nonce)?;
-        let prime = sample_mod_q(transcript, DOMAIN_PRIME, security.projection_min, security.projection_max)?;
-        let cfg = &prime;
-        absorb_spartan_message(transcript, b"runtime-field-modulus", &F::canonical_modulus_encoding(cfg));
-        let xi = challenge_point(transcript, b"flockrec/local-rows", self.rt, cfg)?;
-        let eta = challenge_point(transcript, b"flockrec/instances", self.inst_vars, cfg)?;
-        check_boundary(transcript, DOMAIN_TERMINAL, security.terminal_grinding_bits, proof.terminal_nonce)?;
-        let omega = challenge_point(transcript, b"flockrec/constant-one", 1, cfg)?[0];
-        let batching = self.batching(&xi, &eta, omega, cfg)?;
-        let (point, final_claim) = proof
-            .inner
-            .verify_grinded::<Sha256InnerGrinding>(
-                transcript,
-                omega,
-                n_vars,
-                cfg,
-                &proof.inner_nonces,
-                security.piop_round_grinding_bits,
-            )
-            .map_err(super::SpartanError::from)?;
-        let v_at = self.evaluate(&batching, &point, cfg)?;
-        let claim = opening_claim(self, &point, &v_at, &final_claim, cfg)?;
-        bind_opening_claim(transcript, self, &xi, &eta, &omega, &point, &v_at, &claim, cfg);
-        let params = opening_params(&self.h_layout, prime.modulus_u128())?;
+        let piop = FlockRecPiop {
+            initial_nonce: proof.initial_nonce,
+            terminal_nonce: proof.terminal_nonce,
+            inner: proof.inner.clone(),
+            inner_nonces: proof.inner_nonces.clone(),
+        };
+        let claim = self.verify_piop(transcript, &piop)?;
+        let cfg = &claim.prime;
+        let params = opening_params(&self.h_layout, claim.prime.modulus_u128())?;
         let committed = opening_shape(&self.f_layout)?;
-        let native_claim = LinearClaim::new(&params, claim.0, claim.1, claim.2)
+        let (rows, cols, target) = claim.claim.clone();
+        let native_claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ claim: {e:?}")))?;
         let opening = VirtualStatement::new(params, committed, &self.map, &native_claim)
             .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ statement: {e:?}")))?;
@@ -2146,7 +2565,7 @@ impl FlockRecRelation {
             .with_extension(self.ligerito.extension());
         match &self.log {
             Some(log) => {
-                let statement = self.log_statement(&point, &v_at, &final_claim, cfg);
+                let statement = self.log_statement(&claim.point, &claim.v_at, &claim.final_claim, cfg);
                 bitz_opener::verify_virtual_log_opening(transcript, log, &statement, &opening, &pcs, commitment, &proof.bitz, ood)
             }
             None => bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood),
@@ -2190,7 +2609,7 @@ impl FlockRecRelation {
             let slots: Vec<bool> = (0..t.slots).map(slot).collect();
             for l in 0..t.cells() {
                 let v = t.cell(l).iter().fold(t.m_const[l], |acc, &c| {
-                    acc ^ if (c as usize) < t.hints { bit((i << ft) + self.map.f_row(c as usize)) } else { slots[c as usize - t.hints] }
+                    acc ^ if (c as usize) < t.hints { bit((i << self.map.fa) + self.map.f_row(c as usize)) } else { slots[c as usize - t.hints] }
                 });
                 if v {
                     flip(&mut h_rows, self.map.regions.cell(i, l));
