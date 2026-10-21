@@ -132,6 +132,24 @@ pub(crate) fn gkr_reduce_prove_packed(
     query_from_terminal(fold, shape, point, claim)
 }
 
+/// [`gkr_reduce_prove_packed`] with the grid's nibble rows already built
+/// ([`super::forest::nibble_rows_for`], shared with the column folds).
+pub(crate) fn gkr_reduce_prove_packed_with(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    packed_cols: &[Vec<u64>],
+    nibble: Option<NibbleRows>,
+) -> Result<OpeningQuery, ClaimError> {
+    let Some(nibble) = nibble else {
+        return gkr_reduce_prove_packed(transcript, fold, shape, packed_cols);
+    };
+    let forest = Forest::new(shape.log_rows(), shape.log_columns(), packed_cols, &fold.row_images)
+        .with_nibble_rows(nibble);
+    let (point, claim) = forest.prove(transcript, &fold.zeta);
+    query_from_terminal(fold, shape, point, claim)
+}
+
 pub(crate) fn gkr_reduce_verify(
     transcript: &mut VerifierState<'_>,
     fold: &Fold,

@@ -33,9 +33,8 @@ serde = { version = "1", features = ["derive"] }
 # workspace so fresh checkouts do not require a sibling repository.
 circuit = { path = "crates/circuit", default-features = false }
 
-# Optional Plonky3 stack used by the PCS and native SHA-256 comparisons.
+# Optional Plonky3 stack used by the PCS comparison.
 # Pin all P3 crates to the same benchmark fork revision.
-p3-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-baby-bear = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-challenger = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-commit = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
@@ -44,12 +43,9 @@ p3-field = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209ae
 p3-goldilocks = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-matrix = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-merkle-tree = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
-p3-multi-stark = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-multilinear-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
-p3-sha256-air = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-sumcheck = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 p3-symmetric = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
-p3-util = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", optional = true }
 p3-whir = { git = "https://github.com/wu-s-john/plonky3.git", rev = "62f49209aec15ab060c83afbaf9eeb74d8c0c411", features = ["parallel"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
 
@@ -193,38 +189,13 @@ harness = false
 name = "sha256_compressions"
 required-features = ["span-metrics"]
 harness = false
-# Independent SHA-256 compression batches through the structured Spartan +
-# virtual BitZ path. Unified output schema (benches/common/output.rs). Exponents
+# Independent SHA-256 compressions: the CM relation with Ch as product slots,
+# its linear PIOP + product sumcheck, and the BitZ opening on the Id⊗M
+# block-layout commitment (BITZ_OPENER=virtual: the packed source through the
+# virtual map). Unified output schema (benches/common/output.rs). Exponents
 # via BITZ_BENCH_SHAPES (alias BITZ_SHA_LOG2S); reps via BITZ_BENCH_REPS
-# (alias BITZ_SHA_REPS); profile via BITZ_BENCH_LAMBDA.
-
-[[bench]]
-name = "sha256_chain"
-required-features = ["span-metrics"]
-harness = false
-# CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
-# intermediate chaining values as witness) through the same linear PIOP +
-# direct product opening, on the chained virtual map. Unified output
-# schema (benches/common/output.rs). Exponents via BITZ_BENCH_SHAPES; reps via
-# BITZ_BENCH_REPS; profile via BITZ_BENCH_LAMBDA.
-
-[[bench]]
-name = "sha256_e2e_compare"
-harness = false
-required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
-# Claim-equivalent fixed-IV native SHA-256 comparison across BitZ, full
-# Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
-# Exponents via BITZ_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
-# 21 measured verified samples by default.
-
-[[bench]]
-name = "sha256_chain_compare"
-harness = false
-required-features = ["span-metrics", "binius64-bench"]
-
-[[test]]
-name = "sha256_chain_comparison"
-required-features = ["span-metrics", "binius64-bench"]
+# (alias BITZ_SHA_REPS); profile via BITZ_BENCH_LAMBDA; BITZ_SHA_PRIVATE_IO=1
+# for a statement with nothing public.
 
 [[bench]]
 name = "hybrid_u32_sha256"
@@ -252,19 +223,6 @@ required-features = ["span-metrics"]
 [[test]]
 name = "benchmark_perfetto"
 required-features = ["bench-perfetto"]
-
-[[test]]
-name = "native_sha256_compare"
-path = "tests/native_sha256_compare.rs"
-required-features = ["bench-internals", "native-sha256-compare"]
-
-[[bench]]
-name = "sha256_product_layout"
-harness = false
-required-features = ["span-metrics", "bench-internals"]
-# Fixed-q controlled sweep for 2^14 compressions and t+s=29. Defaults to
-# t=7..=27, one warmup + 21 samples; t=28 is memory-skipped. Select t with
-# BITZ_SHA_PRODUCT_TS.
 
 [[example]]
 name = "mul_corpus_export"
@@ -365,24 +323,11 @@ plonky3-whir-bench = [
     "dep:p3-whir",
     "dep:postcard",
 ]
-plonky3-sha256-bench = [
-    "plonky3-whir-bench",
-    "dep:p3-air",
-    "dep:p3-multi-stark",
-    "dep:p3-sha256-air",
-    "dep:p3-util",
-]
 native-mul-compare = [
     "span-metrics",
     "binius64-bench",
     # Limber's own wrapping-multiplication rows, proved in process through
     # its Brakedown Mod-PCS engine (benches/mul/native/limber.rs).
-    "dep:limber",
-]
-native-sha256-compare = [
-    "span-metrics",
-    "plonky3-sha256-bench",
-    "binius64-bench",
     "dep:limber",
 ]
 # Selects the audited degree-4/unique-decoding WHIR comparison profile.  The

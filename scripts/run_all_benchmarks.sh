@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the seven README campaigns sequentially, under one benchmark lock.
+# Run six of the README campaigns sequentially, under one benchmark lock.
 set -euo pipefail
 
 usage() {
@@ -7,7 +7,7 @@ usage() {
 Usage: bash scripts/run_all_benchmarks.sh [--smoke] [--dry-run] [--output DIR]
                                         [--no-gate] [--swap-grow-gb N]
 
-Full: all seven campaigns with the README sizes, rates and thread counts.
+Full: all six campaigns with the README sizes, rates and thread counts.
 Smoke: one size and one measured sample per campaign, keeping every listed
 backend/rate/thread count; also checks the equal-count hybrid table.
 Smoke still builds and runs real proofs, warmups and memory trials.
@@ -76,8 +76,8 @@ if [[ "$NO_GATE" == 0 && "$INSIDE_GATE" == 0 ]]; then
   fi
 fi
 
-# These seven campaigns set their own experiment controls. Inherited SHA shape
-# aliases, for example, can conflict with the layout sweep in step 6.
+# These six campaigns set their own experiment controls. Inherited SHA shape
+# aliases, for example, would change the SHA batch sizes in step 2.
 # BITZ_REVISION and BITZ_DIRTY are optional metadata that benches/common/mod.rs
 # allows, so they are not treated as unknown knobs.
 while IFS= read -r benchmark_env_name; do
@@ -109,41 +109,39 @@ unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS
 
 REPS=5
 P256_EXPONENTS=(4 5 6 7)
-CHAIN_EXPONENTS=(7 8 9 10 11 12 13 14 15 16)
+SHA_EXPONENTS=(13 14 15 16)
 MUL_LOG_N=15,17,19
 FULL_PRODUCT_RANGE=15-22
 FULL_PRODUCT_COOLDOWN=20
 MULTISWAP_BATCHES=1,2,4,8,16
 MULTISWAP_SAMPLES=10
 HYBRID_SHAPES="15:7,16:8,17:9,18:10,19:11,20:12"
-LAYOUT_ENV=()
 if [[ "$SMOKE" == 1 ]]; then
   REPS=1
   P256_EXPONENTS=(4)
-  CHAIN_EXPONENTS=(7)
+  SHA_EXPONENTS=(7)
   MUL_LOG_N=15
   FULL_PRODUCT_RANGE=15-15
   FULL_PRODUCT_COOLDOWN=0
   MULTISWAP_BATCHES=1
   MULTISWAP_SAMPLES=1
   HYBRID_SHAPES="15:7"
-  LAYOUT_ENV=(BITZ_SHA_PRODUCT_TS=13 BITZ_BENCH_REPS=1)
 fi
 
-printf '\n[1/7] SHA-256 + ECDSA over secp256k1\n'
+printf '\n[1/6] SHA-256 + ECDSA over secp256k1\n'
 logged "$RUN_DIR/sha256-ecdsa-secp256k1.log" python3 scripts/run_sha256_ecdsa_compare.py \
   --curve secp256k1 --output "$RUN_DIR/sha256-ecdsa-secp256k1" \
   --methods bitz-split binius64 binius64-ligerito \
   --exponents "${P256_EXPONENTS[@]}" --targets 100 --threads 1 10 --reps "$REPS" \
   --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 --timing spans
 
-printf '\n[2/7] SHA-256 chains\n'
-logged "$RUN_DIR/sha256-chain.log" python3 scripts/run_sha256_chain_compare.py \
-  --methods bitz binius64 binius64-ligerito --exponents "${CHAIN_EXPONENTS[@]}" \
-  --threads 1 10 --reps "$REPS" --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 \
-  --output "$RUN_DIR/sha256-chain"
+printf '\n[2/6] SHA-256 compressions\n'
+logged "$RUN_DIR/sha256-compressions.log" python3 scripts/run_sha256_bitz_bench.py \
+  --shapes "${SHA_EXPONENTS[@]}" --threads 1 10 --reps "$REPS" \
+  --profiles custom:1:4 custom:3:4 --private-io --rss \
+  --out-dir "$RUN_DIR/sha256-compressions"
 
-printf '\n[3/7] Multiplication comparisons\n'
+printf '\n[3/6] Multiplication comparisons\n'
 for workload in u32-mod32 u64 u128; do
   logged "$RUN_DIR/multiplication-$workload.log" python3 scripts/run_multiplication_benchmarks.py compare \
     --output "$RUN_DIR/multiplication-$workload" --no-gate -- \
@@ -152,13 +150,13 @@ for workload in u32-mod32 u64 u128; do
     --binius-ligerito-accounting rbr
 done
 
-printf '\n[4/7] BitZ full-product multiplication\n'
+printf '\n[4/6] BitZ full-product multiplication\n'
 logged "$RUN_DIR/u32-full-product.log" cargo +1.98.1 run --release --locked --bin bitz \
   --features unchecked,span-metrics -- --mul-sweep "$FULL_PRODUCT_RANGE" --threads 10 \
   --reps "$REPS" --profile custom:1:4 --cooldown "$FULL_PRODUCT_COOLDOWN" \
   --latex "$RUN_DIR/u32-full-product.tex"
 
-printf '\n[5/7] MultiSwap\n'
+printf '\n[5/6] MultiSwap\n'
 # The BitZ harness emits Limber-compatible canonical comparison digests while
 # preserving its v2 proof transcript hashes. Keep the runner's digest checks on.
 logged "$RUN_DIR/multiswap.log" python3 scripts/run_matched_multiswap_campaign.py \
@@ -166,12 +164,7 @@ logged "$RUN_DIR/multiswap.log" python3 scripts/run_matched_multiswap_campaign.p
   --all-threads 10 --warmups 1 --samples "$MULTISWAP_SAMPLES" --rustflags="-C target-cpu=native" \
   --output-dir "$RUN_DIR/multiswap"
 
-printf '\n[6/7] SHA-256 layout parameter sweep\n'
-logged "$RUN_DIR/sha256-layout.log" env ${LAYOUT_ENV[@]+"${LAYOUT_ENV[@]}"} \
-  RAYON_NUM_THREADS=10 BITZ_SHA_RESULT_PATH="$RUN_DIR/sha256-layout.csv" \
-  cargo +1.98.1 bench --locked --bench sha256_product_layout --features unchecked,span-metrics,bench-internals
-
-printf '\n[7/7] Hybrid SHA-256 + multiplication\n'
+printf '\n[6/6] Hybrid SHA-256 + multiplication\n'
 HYBRID_BUILD=(cargo +1.98.1 bench --locked --no-run --bench hybrid_u32_sha256 --features hybrid --message-format=json)
 if [[ "$DRY_RUN" == 1 ]]; then
   print_command "${HYBRID_BUILD[@]}"
@@ -237,5 +230,5 @@ if [[ "$SMOKE" == 1 ]]; then HYBRID_SHAPES="9:9"; hybrid_campaign counts; fi
 if [[ "$DRY_RUN" == 1 ]]; then
   printf '\nDry-run complete; no campaigns were executed.\n'
 else
-  printf '\nAll seven campaigns completed. Results: %s\n' "$RUN_DIR"
+  printf '\nAll six campaigns completed. Results: %s\n' "$RUN_DIR"
 fi

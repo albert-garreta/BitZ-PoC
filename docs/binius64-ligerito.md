@@ -9,7 +9,6 @@ out-of-domain sample). It is available in the supported benchmarks listed below.
 | bench | scheme id | what it measures |
 | --- | --- | --- |
 | `benches/mul_compare.rs` (u32, BabyBear, u64, u128) | `binius64-ligerito` | Binius64's native multiplication circuits, end to end |
-| `benches/sha256_e2e_compare` | `binius64-ligerito` | Binius64's two-lane SHA-256 circuit, end to end |
 | `benches/hybrid_u32_sha256` | mode `binius-ligerito` | the all-Binius circuit (four-limb mod-2^32 gadget + chained SHA) |
 | `mul_compare pcs --workload u32-full,baby-bear` | `bitz-ligerito-binary` | PCS only: the Binius64 packed rows and the identical bit-MLE claim, opened by the BitZ opener instead of BaseFold |
 
@@ -122,10 +121,6 @@ python3 scripts/run_multiplication_benchmarks.py compare -- \
 python3 scripts/run_multiplication_benchmarks.py compare --output PerfRuns/binary-pcs -- \
   pcs --workload u32-full,baby-bear --backends binius64-basefold,bitz-ligerito-binary \
   --log-n 15 --threads 8
-
-# SHA-256 comparison.
-BITZ_SHA_COMPARE_BACKENDS=binius64,binius64-ligerito BITZ_SHA_COMPARE_LOG_INV_RATE=3 \
-  bash scripts/run_native_sha256_compare.sh
 
 # Hybrid all-Binius circuit with the BitZ opener.
 RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \

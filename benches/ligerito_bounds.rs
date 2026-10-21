@@ -120,7 +120,7 @@ fn inputs() -> Vec<(u128, u128)> {
 struct Args {
     #[command(flatten)]
     cargo: common::cli::CargoArgs,
-    #[arg(value_parser = ["sha-compression", "sha-chain", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
+    #[arg(value_parser = ["sha-compression", "ecdsa-split", "ecdsa-all", "hybrid-15-7", "hybrid-15-2", "pcs-22"])]
     case: String,
     profile: String,
     #[arg(long)]
@@ -201,45 +201,6 @@ fn main() -> Result<()> {
                         16 + proof.inner_nonces().len() * 8
                             + proof.inner().round_polynomials.len() * 3 * 16,
                     ))
-                },
-            )
-        }
-        "sha-chain" => {
-            let p = sha256::prepare_sha256_chain_batch(7)?.with_ligerito(e.selection)?;
-            let source: Vec<_> = (0..128)
-                .map(|i| std::array::from_fn(|j| (i * 16 + j) as u32))
-                .collect();
-            e.run(
-                setup,
-                p.ligerito_configuration()?,
-                p.security().ood,
-                &bincode::serialize(&source)?,
-                || Ok(sha256::generate_sha256_chain_witnesses(&p, &source)?),
-                |w| Ok(sha256::commit_sha256_chain_witness(&p, w)?),
-                |w, h| {
-                    Ok(sha256::prove_sha256_chain(
-                        &mut Blake3Transcript::new(),
-                        &p,
-                        &w.statement(),
-                        w,
-                        h,
-                    )?)
-                },
-                |w, h, proof| {
-                    Ok(sha256::verify_sha256_chain(
-                        &mut Blake3Transcript::new(),
-                        &p,
-                        &w.statement(),
-                        &h.commitment,
-                        proof,
-                    )?)
-                },
-                |h, proof| {
-                    let b = proof.bitz().to_bytes();
-                    let decoded =
-                        BitZOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
-                    assert_eq!(decoded.to_bytes(), b);
-                    Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
             )
         }

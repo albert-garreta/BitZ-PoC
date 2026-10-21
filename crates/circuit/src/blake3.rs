@@ -92,6 +92,7 @@ impl<CS: Circuit> Lane<CS> {
                 full: z.clone(),
                 low_32: z,
             },
+            z_bits: Vec::new(),
         }
     }
 }
@@ -110,20 +111,20 @@ fn g<CS: Circuit>(
         state[b].uint(circuit),
         message[x].uint(circuit),
     ];
-    state[a] = Lane::from_sum(sum_32::<34, 3, _>(circuit, terms));
+    state[a] = Lane::from_sum(sum_32::<34, 3, _>(circuit, terms, false));
     state[d] = Lane::bits(state[d].word.xor(circuit, &state[a].word).rotate_right(16));
     let terms = [state[c].uint(circuit), state[d].uint(circuit)];
-    state[c] = Lane::from_sum(sum_32::<33, 2, _>(circuit, terms));
+    state[c] = Lane::from_sum(sum_32::<33, 2, _>(circuit, terms, false));
     state[b] = Lane::bits(state[b].word.xor(circuit, &state[c].word).rotate_right(12));
     let terms = [
         state[a].uint(circuit),
         state[b].uint(circuit),
         message[y].uint(circuit),
     ];
-    state[a] = Lane::from_sum(sum_32::<34, 3, _>(circuit, terms));
+    state[a] = Lane::from_sum(sum_32::<34, 3, _>(circuit, terms, false));
     state[d] = Lane::bits(state[d].word.xor(circuit, &state[a].word).rotate_right(8));
     let terms = [state[c].uint(circuit), state[d].uint(circuit)];
-    state[c] = Lane::from_sum(sum_32::<33, 2, _>(circuit, terms));
+    state[c] = Lane::from_sum(sum_32::<33, 2, _>(circuit, terms, false));
     state[b] = Lane::bits(state[b].word.xor(circuit, &state[c].word).rotate_right(7));
 }
 

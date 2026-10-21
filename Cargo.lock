@@ -557,7 +557,6 @@ dependencies = [
  "num-integer",
  "num-traits",
  "p256",
- "p3-air",
  "p3-baby-bear",
  "p3-challenger 0.6.0",
  "p3-commit",
@@ -566,12 +565,9 @@ dependencies = [
  "p3-goldilocks",
  "p3-matrix 0.6.0",
  "p3-merkle-tree",
- "p3-multi-stark",
  "p3-multilinear-util",
- "p3-sha256-air",
  "p3-sumcheck",
  "p3-symmetric 0.6.0",
- "p3-util 0.6.0",
  "p3-whir",
  "perfetto-sdk",
  "postcard",
@@ -1878,24 +1874,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p3-lookup"
-version = "0.6.0"
-source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
-dependencies = [
- "hashbrown 0.17.1",
- "itertools 0.15.0",
- "num-bigint 0.5.1",
- "p3-air",
- "p3-field 0.6.0",
- "p3-matrix 0.6.0",
- "p3-maybe-rayon 0.6.0",
- "p3-uni-stark",
- "serde",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
 name = "p3-matrix"
 version = "0.6.0"
 source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
@@ -2030,27 +2008,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p3-multi-stark"
-version = "0.6.0"
-source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
-dependencies = [
- "itertools 0.15.0",
- "p3-air",
- "p3-challenger 0.6.0",
- "p3-commit",
- "p3-field 0.6.0",
- "p3-lookup",
- "p3-matrix 0.6.0",
- "p3-maybe-rayon 0.6.0",
- "p3-multilinear-util",
- "p3-sumcheck",
- "p3-util 0.6.0",
- "serde",
- "thiserror 2.0.20",
- "tracing",
-]
-
-[[package]]
 name = "p3-multilinear-util"
 version = "0.6.0"
 source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
@@ -2126,19 +2083,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p3-sha256-air"
-version = "0.6.0"
-source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
-dependencies = [
- "p3-air",
- "p3-field 0.6.0",
- "p3-matrix 0.6.0",
- "p3-maybe-rayon 0.6.0",
- "rand 0.10.3",
- "tracing",
-]
-
-[[package]]
 name = "p3-sumcheck"
 version = "0.6.0"
 source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
@@ -2179,26 +2123,6 @@ dependencies = [
  "p3-field 0.6.3",
  "p3-util 0.6.3",
  "serde",
-]
-
-[[package]]
-name = "p3-uni-stark"
-version = "0.6.0"
-source = "git+https://github.com/wu-s-john/plonky3.git?rev=62f49209aec15ab060c83afbaf9eeb74d8c0c411#62f49209aec15ab060c83afbaf9eeb74d8c0c411"
-dependencies = [
- "itertools 0.15.0",
- "libm",
- "p3-air",
- "p3-challenger 0.6.0",
- "p3-commit",
- "p3-field 0.6.0",
- "p3-matrix 0.6.0",
- "p3-maybe-rayon 0.6.0",
- "p3-security",
- "p3-util 0.6.0",
- "serde",
- "thiserror 2.0.20",
- "tracing",
 ]
 
 [[package]]

@@ -83,19 +83,34 @@ gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
 ```
 
-## 3. SHA-256 chains: BitZ, Binius64, Binius64-Ligerito
+## 3. SHA-256 compressions: BitZ
+
+`2^k` independent SHA-256 compressions in one proof, for `k = 13..16`, at
+rates 1/2 and 1/8 and with 1 and 10 threads. Each compression is an instance
+of the CM relation with `Ch` as product slots (16,361 integer cells per
+compression), and BitZ opens the final claim through a commitment of the
+witness in the `Id ⊗ M` block layout; `docs/sha256-bitz-bench.md` describes
+the relation, the opening and the runner. `--private-io` proves the
+compressions with nothing public, which is the statement of Flock's
+`sha2_proof` benchmark; drop it to make the input states, blocks and outputs
+public. `--rss` adds the peak resident set size of each process to the
+summary.
 
 ```bash
-gate sha256-chain 12 python3 scripts/run_sha256_chain_compare.py \
-  --methods bitz binius64 binius64-ligerito \
-  --exponents 7 8 9 10 11 12 13 14 15 16 \
+gate sha256-compressions 12 python3 scripts/run_sha256_bitz_bench.py \
+  --shapes 13 14 15 16 \
   --threads 1 10 \
   --reps 5 \
-  --bitz-profiles custom:1:4 custom:3:4 \
-  --binius-rates 1 3 \
-  --output "$RUN_DIR/sha256-chain" \
-  2>&1 | tee "$RUN_DIR/sha256-chain.log"
+  --profiles custom:1:4 custom:3:4 \
+  --private-io \
+  --rss \
+  --out-dir "$RUN_DIR/sha256-compressions" \
+  2>&1 | tee "$RUN_DIR/sha256-compressions.log"
 ```
+
+The results are in `$RUN_DIR/sha256-compressions/summary.csv`, one row per
+thread count, rate and size. Its `prove_ms` is the whole prover, commitment
+included (`commit_ms` is the commitment alone, not an extra cost).
 
 ## 4. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Limber
 
@@ -193,28 +208,7 @@ gate multiswap 10 python3 scripts/run_matched_multiswap_campaign.py \
   2>&1 | tee "$RUN_DIR/multiswap.log"
 ```
 
-## 8. SHA-256 layout parameter sweep over s and t
-
-The `sha256_product_layout` benchmark holds the workload at `2^14` SHA-256
-compressions and sweeps the layout split with `s + t = 29`. By default, it runs
-`t = 7..27` (`s = 29 - t`), with one warmup and 21 measured samples per split.
-The `t = 28` case is skipped because its projected peak memory exceeds 60 GiB.
-This is a controlled fixed-prime layout experiment.
-
-```bash
-RUSTFLAGS="-C target-cpu=native" \
-RAYON_NUM_THREADS=10 \
-cargo +1.98.1 bench --locked \
-  --bench sha256_product_layout \
-  --features unchecked,span-metrics,bench-internals
-```
-
-To select particular splits and change the sample count, prepend
-`BITZ_SHA_PRODUCT_TS="13 17" BITZ_BENCH_REPS=5` to the command. This selects
-`(t, s) = (13, 16)` and `(17, 12)`, with five measured samples per split.
-Add `--no-run` to the Cargo command to compile without executing the sweep.
-
-## 9. Hybrid SHA-256 chain + multiplication modulo 2^32
+## 8. Hybrid SHA-256 chain + multiplication modulo 2^32
 
 This is the paper's **"Modular multiplications and bit operations"** experiment
 (table label `tab:hybrid-sha256-mul`). It proves `N` relations

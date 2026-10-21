@@ -34,7 +34,7 @@ args = sys.argv[1:]
 root = Path(os.environ['TEST_ROOT'])
 with open(os.environ['TEST_TRACE'], 'a') as stream:
     stream.write(json.dumps(dict(name=name,args=args,cargo_target_dir=os.environ.get('CARGO_TARGET_DIR'),
-        layout=os.environ.get('BITZ_SHA_PRODUCT_TS'), reps=os.environ.get('BITZ_BENCH_REPS'),
+        reps=os.environ.get('BITZ_BENCH_REPS'),
         rate=os.environ.get('BITZ_BINIUS_LOG_INV_RATE'),threads=os.environ.get('RAYON_NUM_THREADS'),
         inherited_shape=os.environ.get('BITZ_SHA_LOG2S'), inherited_reps=os.environ.get('BITZ_SHA_REPS'),
         lock=os.environ.get('BITZ_BENCH_LOCK'))) + '\n')
@@ -70,7 +70,7 @@ elif name == 'hybrid':
     def commands(self):
         return [json.loads(line) for line in self.trace.read_text().splitlines()]
 
-    def test_full_run_preserves_seven_steps_and_takes_one_outer_lock(self):
+    def test_full_run_preserves_six_steps_and_takes_one_outer_lock(self):
         result = self.run_wrapper()
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
@@ -80,7 +80,7 @@ elif name == 'hybrid':
         self.assertEqual(names.count('scripts/bench_gate.py'), 1)
         self.assertEqual(names, [
             'scripts/bench_gate.py',
-            'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_chain_compare.py',
+            'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_bitz_bench.py',
             *(['scripts/run_multiplication_benchmarks.py'] * 3), 'scripts/run_matched_multiswap_campaign.py',
             'scripts/hybrid_table.py'])
         multiplication = next(c['args'] for c in scripts if c['args'][0].endswith('run_multiplication_benchmarks.py'))
@@ -88,6 +88,10 @@ elif name == 'hybrid':
         self.assertNotIn('--exponents', multiplication)
         ecdsa = next(c['args'] for c in scripts if c['args'][0].endswith('run_sha256_ecdsa_compare.py'))
         self.assertEqual(ecdsa[ecdsa.index('--timing')+1], 'spans')
+        sha = next(c['args'] for c in scripts if c['args'][0].endswith('run_sha256_bitz_bench.py'))
+        self.assertEqual(sha[sha.index('--shapes')+1:sha.index('--shapes')+5], ['13', '14', '15', '16'])
+        self.assertEqual(sha[sha.index('--profiles')+1:sha.index('--profiles')+3], ['custom:1:4', 'custom:3:4'])
+        self.assertIn('--private-io', sha)
         hybrid = [c for c in commands if c['name'] == 'hybrid']
         self.assertEqual(len(hybrid), 12)
         for c in hybrid:
@@ -96,15 +100,15 @@ elif name == 'hybrid':
         self.assertEqual({c['rate'] for c in hybrid}, {'1','3'})
         self.assertEqual({c['threads'] for c in hybrid}, {'1','10'})
         self.assertTrue(all(c['cargo_target_dir'] == '/reused/build-cache' for c in commands))
-        self.assertEqual([f'[{n}/7]' in result.stdout for n in range(1,8)], [True]*7)
-        self.assertIn('All seven campaigns completed.', result.stdout)
+        self.assertEqual([f'[{n}/6]' in result.stdout for n in range(1,7)], [True]*6)
+        self.assertIn('All six campaigns completed.', result.stdout)
 
     def test_smoke_reduces_sizes_and_samples_but_keeps_backends_rates_and_threads(self):
         result = self.run_wrapper('--smoke', '--no-gate')
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
         self.assertFalse(any('scripts/bench_gate.py' in c['args'] for c in commands))
-        for script in ['run_sha256_ecdsa_compare.py', 'run_sha256_chain_compare.py', 'run_multiplication_benchmarks.py']:
+        for script in ['run_sha256_ecdsa_compare.py', 'run_sha256_bitz_bench.py', 'run_multiplication_benchmarks.py']:
             args = next(c['args'] for c in commands if c['args'][0] == 'scripts/'+script)
             self.assertEqual(args[args.index('--reps')+1], '1')
             threads = args[args.index('--threads') + 1]
@@ -114,9 +118,9 @@ elif name == 'hybrid':
         self.assertEqual(len(hybrid), 24)
         self.assertEqual({c['args'][c['args'].index('--shapes')+1] for c in hybrid}, {'15:7','9:9'})
         self.assertTrue(all(c['args'][c['args'].index('--iterations')+1] == '1' for c in hybrid))
-        layout = next(c for c in commands if 'sha256_product_layout' in c['args'])
-        self.assertEqual((layout['layout'],layout['reps']), ('13','1'))
-        self.assertIn('All seven campaigns completed.', result.stdout)
+        sha = next(c['args'] for c in commands if c['args'][0] == 'scripts/run_sha256_bitz_bench.py')
+        self.assertEqual(sha[sha.index('--shapes')+1], '7')
+        self.assertIn('All six campaigns completed.', result.stdout)
 
     def test_dry_run_never_starts_tools_or_creates_output(self):
         result = self.run_wrapper('--smoke', '--dry-run')
@@ -138,11 +142,11 @@ elif name == 'hybrid':
         self.assertEqual(marker.read_text(), 'unchanged')
 
     def test_failed_campaign_keeps_logs_and_cannot_claim_success(self):
-        result = self.run_wrapper('--smoke', FAIL_STEP='run_sha256_chain_compare.py')
+        result = self.run_wrapper('--smoke', FAIL_STEP='run_sha256_bitz_bench.py')
         self.assertEqual(result.returncode, 7)
-        self.assertTrue((self.output/'sha256-chain.log').is_file())
-        self.assertNotIn('[3/7]', result.stdout)
-        self.assertNotIn('All seven campaigns completed.', result.stdout)
+        self.assertTrue((self.output/'sha256-compressions.log').is_file())
+        self.assertNotIn('[3/6]', result.stdout)
+        self.assertNotIn('All six campaigns completed.', result.stdout)
 
     def test_darwin_sampler_is_used_and_its_artifacts_are_moved(self):
         uname = self.bin / 'uname'
@@ -168,8 +172,6 @@ elif name == 'hybrid':
             self.assertIsNone(command['inherited_shape'])
             self.assertIsNone(command['inherited_reps'])
             self.assertEqual(command['lock'], '/custom/lock')
-        layout = next(c for c in self.commands() if 'sha256_product_layout' in c['args'])
-        self.assertEqual((layout['layout'],layout['reps'],layout['threads']), ('13','1','10'))
 
 
 if __name__ == '__main__':

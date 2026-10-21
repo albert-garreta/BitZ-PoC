@@ -1,12 +1,15 @@
-//! The linear-batching PIOP: relations whose constraints are all linear in
-//! a derived bit grid `h = M·f` (the SHA-256 compression and chain
-//! relations). There is no nonlinear outer sumcheck: the verifier draws a
-//! local-row point `ξ` and an instance point `η`, batches the public
-//! input/output equalities and the shared constant behind two more
-//! challenges, and the collapsed relation is one rank-one functional over
-//! the assignment grid. A power-of-two batch in the product layout opens
-//! that functional directly; otherwise a quadratic inner sumcheck over the
-//! assignment domain first reduces it to a point (the legacy path).
+//! The linear-batching PIOP: relations whose constraints are linear in a
+//! derived bit grid `h = M·f`, possibly plus product slots `h[l] (h[p] −
+//! h[m])` on their output side (the SHA-256 compression relation, whose
+//! `Ch` is one slot per round and bit). There is no nonlinear outer
+//! sumcheck: the verifier draws a local-row point `ξ` and an instance point
+//! `η`, batches the public input/output equalities and the shared constant
+//! behind two more challenges, and the collapsed relation is one rank-one
+//! functional over the assignment grid once the product sumcheck
+//! ([`super::product`]) has reduced the slots. A power-of-two batch in the
+//! product layout opens that functional directly; otherwise a quadratic
+//! inner sumcheck over the assignment domain first reduces it to a point
+//! (the legacy path).
 //!
 //! The steps, on one transcript:
 //!
@@ -14,18 +17,28 @@
 //! 2. the initial grinding boundary, the runtime prime, the runtime
 //!    relation frames;
 //! 3. `ξ`, `η`, the terminal boundary, the constant-one batch challenge,
-//!    the public-IO batch challenges; the relation's batching;
+//!    the public-IO batch challenges; the relation's batching; for a
+//!    relation with product slots, the product sumcheck and the draw that
+//!    folds its three terminal claims into one rank-one functional at its
+//!    instance point;
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
-//! 5. the virtual opening of the derived grid.
+//! 5. the opening of the derived grid: virtual (the transpose through the
+//!    map), or through a block-layout commitment ([`crate::bitz::block`]).
 
 use super::bitz_opener::{self, BitZOpeningProof, opening_params, opening_shape, pcs_from_config};
-use crate::bitz::{LinearClaim, VirtualStatement};
-use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
+use super::product::{
+    InstanceBits, LinearProductGrinding, ProductSlots, ProductSumcheckProof,
+    prove_product_sumcheck, reduced_local_weights, verify_product_sumcheck,
+};
+use crate::bitz::{BlockRepeatedMap, BlockStatement, LinearClaim, VirtualStatement};
+use crate::sumcheck::boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary};
 use crate::sumcheck::inner::{
     packed::{PackedInput, Sha256InnerGrinding},
     prove_inner_sumcheck,
 };
 use field::RingOps;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
@@ -46,7 +59,7 @@ use {
 
 use super::{
     super::{
-        absorb_spartan_message,
+        absorb_field_elements, absorb_spartan_message,
         sha256::inner_sumcheck::{SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource},
         squeeze_field,
         sumcheck::SumcheckProof,
@@ -90,6 +103,36 @@ pub(crate) trait LinearBatching {
         point: &[SpartanBitzField],
         config: &FieldConfig,
     ) -> Result<SpartanBitzField, ProtocolError>;
+
+    /// The collapsed local coefficients `β`, one per local assignment column.
+    fn local_coefficients(&self) -> &[SpartanBitzField];
+
+    /// `κ = Kᵀ eq(·, ξ)` padded to a power of two, when the relation has
+    /// product slots.
+    fn product_slot_weights(&self) -> Option<&[SpartanBitzField]> {
+        None
+    }
+
+    /// The terms of `β` beyond the collapsed relation `Cᵀ eq(·, ξ)` (the
+    /// constant-one and public batching), as `(column, coefficient)` pairs.
+    /// When the witness satisfies the relation, `⟨β, h_i⟩` is their value
+    /// on `h_i` minus `Σ_s κ_s slot_s(h_i)`, which the product prover may
+    /// use instead of the dense `⟨β, h_i⟩`.
+    fn product_free_coefficients(&self) -> Option<&[(u32, SpartanBitzField)]> {
+        None
+    }
+
+    /// The same batching at another instance point, with other local
+    /// coefficients and claim (the product sumcheck's reduced claim).
+    fn reanchored(
+        &self,
+        instance_point: &[SpartanBitzField],
+        local_coefficients: Vec<SpartanBitzField>,
+        claim: SpartanBitzField,
+        config: &FieldConfig,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }
 
 /// The rank-one functional the virtual opening discharges: the canonical
@@ -192,16 +235,39 @@ pub(crate) trait LinearRelationSpec: Sync {
 
     /// The derived rows the opening runs against.
     fn opened_rows<'a>(&self, witness: &'a Self::Witness) -> Result<&'a [Vec<u64>], ProtocolError>;
+
+    /// The relation's local product slots, if its rows carry any.
+    fn product_slots(&self) -> Option<ProductSlots<'_>> {
+        None
+    }
+
+    /// Prover-side per-instance access to the opened assignment's bits, for
+    /// the product sumcheck.
+    fn instance_bits<'a>(
+        &'a self,
+        _witness: &'a Self::Witness,
+    ) -> Result<Box<dyn InstanceBits + 'a>, ProtocolError> {
+        Err(ProtocolError::UnsupportedKernel)
+    }
+
+    /// The block map, when the source is committed in the block layout of
+    /// `h = (Id ⊗ M) f` ([`crate::bitz::block`]) and opened through it; the
+    /// virtual opening otherwise.
+    fn block_map(&self) -> Option<&BlockRepeatedMap> {
+        None
+    }
 }
 
 /// A linear-relation proof: the boundary nonces, the legacy inner sumcheck
-/// (empty on the product path) and the virtual opening.
+/// (empty on the product path), the product sumcheck (for relations with
+/// product slots) and the opening.
 #[derive(Clone)]
 pub struct LinearProof {
     initial_nonce: u64,
     inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
+    product: Option<ProductSumcheckProof>,
     bitz: BitZOpeningProof,
 }
 
@@ -226,10 +292,21 @@ impl LinearProof {
         &self.bitz
     }
 
+    pub const fn product(&self) -> Option<&ProductSumcheckProof> {
+        self.product.as_ref()
+    }
+
+    pub fn product_mut(&mut self) -> Option<&mut ProductSumcheckProof> {
+        self.product.as_mut()
+    }
+
     /// PIOP payload bytes: the two boundary nonces, the inner round
-    /// coefficients and their nonces.
+    /// coefficients and their nonces, and the product sumcheck.
     pub fn piop_bytes(&self) -> usize {
-        2 * 8 + 3 * 16 * self.inner.round_polynomials.len() + 8 * self.inner_nonces.len()
+        2 * 8
+            + 3 * 16 * self.inner.round_polynomials.len()
+            + 8 * self.inner_nonces.len()
+            + self.product.as_ref().map_or(0, ProductSumcheckProof::bytes)
     }
 
     pub fn initial_nonce_mut(&mut self) -> &mut u64 {
@@ -356,9 +433,14 @@ fn claim_digest(
     }
     hasher.element(&challenges.public_io_batch, field_config);
     hasher.usize(rows.len())?;
-    for &weight in rows {
-        hasher.u128_le(weight);
-    }
+    // Every row weight's little-endian bytes in order, as one string.
+    let mut weights = vec![0u8; 16 * rows.len()];
+    let write = |(out, weight): (&mut [u8], &u128)| out.copy_from_slice(&weight.to_le_bytes());
+    #[cfg(feature = "parallel")]
+    weights.par_chunks_mut(16).zip(rows).for_each(write);
+    #[cfg(not(feature = "parallel"))]
+    weights.chunks_mut(16).zip(rows).for_each(write);
+    hasher.bytes(&weights);
     hasher.usize(claim.cols.len())?;
     for weight in &claim.cols {
         hasher.u128_le(*weight);
@@ -463,6 +545,49 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             config,
         )?
     };
+    let (batching, product) = match spec.product_slots() {
+        None => (batching, None),
+        Some(slots) => {
+            let _scope = tracing::info_span!("sha256:product_sumcheck_prove").entered();
+            let slot_weights = batching
+                .product_slot_weights()
+                .ok_or(ProtocolError::InvalidGeometry)?;
+            let bits = spec.instance_bits(witness)?;
+            let mut boundary = ProverGrindingRoundBoundary::<LinearProductGrinding>::with_round_offset(
+                security.piop_round_grinding_bits,
+                0,
+            );
+            let output = prove_product_sumcheck(
+                transcript,
+                config,
+                &instance_point,
+                batching.local_coefficients(),
+                batching.product_free_coefficients(),
+                slot_weights,
+                slots,
+                &*bits,
+                batching.initial_claim(),
+                &mut boundary,
+            )?;
+            let terminal = output.terminal.to_vec();
+            let (reduced, value) = product_terminal_batch(
+                transcript,
+                config,
+                &batching,
+                slot_weights,
+                slots,
+                &output.slot_point,
+                &terminal,
+            )?;
+            let batching = batching.reanchored(&output.instance_point, reduced, value, config)?;
+            let proof = ProductSumcheckProof {
+                rounds: output.rounds,
+                nonces: boundary.into_nonces(),
+                terminal,
+            };
+            (batching, Some(proof))
+        }
+    };
 
     let (inner, inner_nonces, claim, assignment) = if spec.product_layout() {
         drop(step3_scope);
@@ -564,12 +689,23 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         let committed = opening_shape(f_layout)?;
         let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
-        let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
-            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
         let pcs = pcs_from_config(&committed, pc)?.with_native_policy(security.native_policy()?);
-        bitz_opener::prove_virtual_opening(
-            transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
-        )?
+        match spec.block_map() {
+            Some(map) => {
+                let opening = BlockStatement::new(params, committed, map, &native_claim)
+                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
+                bitz_opener::prove_block_opening(
+                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
+                )?
+            }
+            None => {
+                let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+                    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+                bitz_opener::prove_virtual_opening(
+                    transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
+                )?
+            }
+        }
     };
 
     Ok(LinearProof {
@@ -577,8 +713,42 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         inner,
         inner_nonces,
         terminal_nonce,
+        product,
         bitz,
     })
+}
+
+/// The transcript domain of the draw that folds the product sumcheck's
+/// three terminal claims into one.
+const PRODUCT_TERMINAL_BATCH_DOMAIN: &[u8] = b"bitz/spartan-linear/product-terminal-batch/v1";
+
+/// Absorbs the product sumcheck's terminal evaluations, draws `γ₁, γ₂`, and
+/// returns the reduced claim's local weights and value.
+fn product_terminal_batch<T: Transcript, Bt: LinearBatching>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    batching: &Bt,
+    slot_weights: &[SpartanBitzField],
+    slots: ProductSlots<'_>,
+    slot_point: &[SpartanBitzField],
+    terminal: &[SpartanBitzField],
+) -> Result<(Vec<SpartanBitzField>, SpartanBitzField), ProtocolError> {
+    absorb_field_elements(transcript, terminal, config);
+    let gamma = challenge_point(
+        transcript,
+        PRODUCT_TERMINAL_BATCH_DOMAIN,
+        terminal.len().saturating_sub(1),
+        config,
+    )?;
+    reduced_local_weights(
+        config,
+        batching.local_coefficients(),
+        slot_weights,
+        slots,
+        slot_point,
+        terminal,
+        &gamma,
+    )
 }
 
 /// Verifies a linear-relation proof, re-deriving the prime from the bound
@@ -606,6 +776,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     if commitment.params.m != f_layout.row_vars + f_layout.col_vars
         || proof.inner.round_polynomials.len() != expected_inner_rounds
         || (product_layout && !proof.inner_nonces.is_empty())
+        || spec.product_slots().is_some() != proof.product.is_some()
     {
         return Err(ProtocolError::InvalidGeometry);
     }
@@ -682,6 +853,43 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
             config,
         )?
     };
+    let batching = match (spec.product_slots(), proof.product.as_ref()) {
+        (Some(slots), Some(product)) => {
+            let _scope = tracing::info_span!("sha256:product_sumcheck_verify").entered();
+            let slot_weights = batching
+                .product_slot_weights()
+                .ok_or(ProtocolError::InvalidGeometry)?;
+            if !slot_weights.len().is_power_of_two() {
+                return Err(ProtocolError::InvalidGeometry);
+            }
+            let mut boundary = VerifierGrindingRoundBoundary::<LinearProductGrinding>::new(
+                security.piop_round_grinding_bits,
+                &product.nonces,
+            );
+            let slot_vars = slot_weights.len().ilog2() as usize;
+            let (instance_point, slot_point) = verify_product_sumcheck(
+                transcript,
+                config,
+                product,
+                &instance_point,
+                slot_vars,
+                batching.initial_claim(),
+                &mut boundary,
+            )?;
+            let (reduced, value) = product_terminal_batch(
+                transcript,
+                config,
+                &batching,
+                slot_weights,
+                slots,
+                &slot_point,
+                &product.terminal,
+            )?;
+            batching.reanchored(&instance_point, reduced, value, config)?
+        }
+        (None, None) => batching,
+        _ => return Err(ProtocolError::InvalidGeometry),
+    };
 
     let (claim, assignment) = if product_layout {
         drop(step3_scope);
@@ -743,12 +951,27 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     let committed = opening_shape(f_layout)?;
     let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
-    let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
-        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
     let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
-    bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+    match spec.block_map() {
+        Some(map) => {
+            let opening = BlockStatement::new(params, committed, map, &native_claim)
+                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ block statement: {error:?}")))?;
+            bitz_opener::verify_block_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+        }
+        None => {
+            let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+                .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+            bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+        }
+    }
 }
 
+/// Every opened row's canonical weight, in row order.
 fn canonical_rows(layout: &IntegerMatrixLayout, claim: &OpeningClaim<'_>) -> Result<Vec<u128>, ProtocolError> {
-    (0..layout.rows()).map(|row| (claim.rows)(row).ok_or(ProtocolError::InvalidGeometry)).collect()
+    let row = |row: usize| (claim.rows)(row).ok_or(ProtocolError::InvalidGeometry);
+    #[cfg(feature = "parallel")]
+    let rows = (0..layout.rows()).into_par_iter().map(row).collect();
+    #[cfg(not(feature = "parallel"))]
+    let rows = (0..layout.rows()).map(row).collect();
+    rows
 }

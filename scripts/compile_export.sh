@@ -18,8 +18,8 @@ compile sha256-p256 cargo +1.98.1 build --release --locked \
     --features sha256-ecdsa-compare --bench sha256_ecdsa_compare
 compile binius-worker cargo +1.98.1 build --release --locked \
     --manifest-path benchmarks/binius64/Cargo.toml
-compile sha256-chain cargo +1.98.1 build --release --locked \
-    --features unchecked,span-metrics,binius64-bench --bench sha256_chain_compare
+compile sha256-compressions cargo +1.98.1 bench --no-run --locked \
+    --features unchecked,span-metrics --bench sha256_compressions
 compile multiplication cargo +1.98.1 bench --no-run --locked \
     --features bench-internals,native-mul-compare --bench mul_compare --bench mul_bitz
 compile full-product cargo +1.98.1 build --release --locked \
@@ -31,11 +31,9 @@ compile limber-multiswap cargo +nightly-2026-07-01 bench --no-run --locked \
     --manifest-path "$LIMBER_DIR/Cargo.toml" --bench multiswap_modp
 compile hybrid cargo +1.98.1 bench --no-run --locked \
     --features hybrid --bench hybrid_u32_sha256
-compile sha256-layout cargo +1.98.1 bench --no-run --locked \
-    --features unchecked,span-metrics,bench-internals --bench sha256_product_layout
 compile comparison-tests cargo +1.98.1 test --release --locked --no-run \
     --features bench-internals,native-mul-compare,sha256-ecdsa-compare,hybrid \
-    --test sha256_ecdsa_comparison --test sha256_chain_comparison \
+    --test sha256_ecdsa_comparison \
     --test native_mul_compare --test mul_bench --test benchmark_reporting
 compile binius-worker-tests cargo +1.98.1 test --release --locked --no-run \
     --manifest-path benchmarks/binius64/Cargo.toml

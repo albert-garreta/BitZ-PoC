@@ -18,21 +18,8 @@ use crate::{
 };
 
 use super::super::SpartanBitzField;
-#[cfg(any(feature = "bench-internals", test))]
-use super::super::profile::{SoundnessAccounting, SoundnessTerm};
 
 const PRIME_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-sha256/runtime-prime/v1";
-const FIXED_PRIME_DOMAIN: &[u8] = b"bitz/spartan-sha256/fixed-prime/v1";
-
-/// Fixed 98-bit modulus used only by the controlled product-geometry sweep.
-/// It is the largest prime below `2^98`.
-pub const SHA256_FIXED_98_PRIME: u128 = (1_u128 << 98) - 51;
-#[cfg(any(feature = "bench-internals", test))]
-pub const SHA256_FIXED_98_PRIME_BITS: usize = 98;
-#[cfg(any(feature = "bench-internals", test))]
-pub const SHA256_FIXED_98_INITIAL_GRINDING_BITS: u32 = 8;
-#[cfg(any(feature = "bench-internals", test))]
-pub const SHA256_FIXED_98_TERMINAL_GRINDING_BITS: u32 = 4;
 
 /// Smallest supported batch: `2^7` independent compressions.
 ///
@@ -57,7 +44,9 @@ pub const SHA256_TAU_LOCAL_VARS: u32 = 8;
 /// below any sampled prime (Bit assignment, coefficients `< 2^33`, a
 /// few hundred entries per row — `< 2^96` conservatively), the Step-5.1
 /// lift sums `2^t` terms, and the opening is the VIRTUAL path (fold width
-/// capped from `q_bits`, so the one-chunk fold bound does not gate q).
+/// capped from `q_bits`, so the one-chunk fold bound does not gate q). The
+/// `Ch` product slots add `< 2^34` to a row's defect and are reduced by a
+/// cubic sumcheck, so a PIOP round message has degree 3.
 pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInstanceFacts {
     IopInstanceFacts {
         defect_log2_bound: 96,
@@ -66,7 +55,7 @@ pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInst
 
         direct_opening: false,
         tau_arity: SHA256_TAU_LOCAL_VARS + log_instance_capacity,
-        piop_degree: 2,
+        piop_degree: 3,
         step50_magnitude_log2: 0,
     }
 }
@@ -78,7 +67,6 @@ pub(super) struct Sha256PrimeProfile {
     log_instance_capacity: usize,
     pub(super) min_prime: u128,
     max_prime: u128,
-    fixed_prime: bool,
     initial_grinding: usize,
     inner_grinding: usize,
     terminal_grinding: usize,
@@ -109,36 +97,10 @@ impl Sha256PrimeProfile {
             log_instance_capacity,
             min_prime: params.projection_min,
             max_prime: params.projection_max,
-            fixed_prime: false,
             initial_grinding: params.initial_grinding_bits as usize,
             inner_grinding: params.piop_round_grinding_bits as usize,
             terminal_grinding: params.terminal_grinding_bits as usize,
         }
-    }
-
-    /// Adopts the fixed 98-bit benchmark profile.
-    pub(super) fn fixed_98(
-        params: &IopSecurityParams,
-        log_instance_capacity: usize,
-    ) -> Result<Self, Sha256PrimeError> {
-        validate_instance_capacity_exponent(log_instance_capacity)?;
-        if params.profile_name != "sha-fixed98-lambda100"
-            || params.projection_min != SHA256_FIXED_98_PRIME
-            || params.projection_max != SHA256_FIXED_98_PRIME
-            || params.projection_full_width
-            || params.reduction.is_some()
-        {
-            return Err(Sha256PrimeError::ProfileStrategyMismatch);
-        }
-        Ok(Self {
-            log_instance_capacity,
-            min_prime: SHA256_FIXED_98_PRIME,
-            max_prime: SHA256_FIXED_98_PRIME,
-            fixed_prime: true,
-            initial_grinding: params.initial_grinding_bits as usize,
-            inner_grinding: params.piop_round_grinding_bits as usize,
-            terminal_grinding: params.terminal_grinding_bits as usize,
-        })
     }
 
     /// Initial proof-of-work bits before sampling `q` and the Spartan point.
@@ -164,80 +126,6 @@ impl Sha256PrimeProfile {
             && q & 1 == 1
             && q - 1 <= u128::MAX / ((1_u128 << self.log_instance_capacity) + 1)
     }
-
-    pub const fn is_fixed(self) -> bool {
-        self.fixed_prime
-    }
-}
-
-/// Fixed-prime λ=100 accounting for the `2^14` SHA geometry sweep.
-#[cfg(any(feature = "bench-internals", test))]
-pub(super) fn fixed_98_security_params() -> IopSecurityParams {
-    let log_q = (SHA256_FIXED_98_PRIME as f64).log2();
-    let tau_bits = log_q - 22_f64.log2() + f64::from(SHA256_FIXED_98_INITIAL_GRINDING_BITS);
-    let degree_two_bits = log_q - 2_f64.log2() + f64::from(SHA256_FIXED_98_TERMINAL_GRINDING_BITS);
-    let terms = vec![
-        SoundnessTerm {
-            name: "step3:tau-draw",
-            bits: tau_bits,
-            grinding_bits: SHA256_FIXED_98_INITIAL_GRINDING_BITS,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step3:piop-round",
-            bits: degree_two_bits,
-            grinding_bits: SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step4:terminal-draw",
-            bits: degree_two_bits,
-            grinding_bits: SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step5_2:gkr-round",
-            bits: 128.0 - 3_f64.log2(),
-            grinding_bits: 0,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step5_3:ring-switch",
-            bits: 128.0,
-            grinding_bits: 0,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step5_3:ligerito-tracked",
-            bits: 100.0,
-            grinding_bits: 0,
-            floor: false,
-        },
-        SoundnessTerm {
-            name: "step5_3:gf128-floor-untracked",
-            bits: 128.0 - 3_f64.log2(),
-            grinding_bits: 0,
-            floor: true,
-        },
-    ];
-    IopSecurityParams {
-        profile_name: "sha-fixed98-lambda100",
-        design_only: false,
-        native_schedule: None,
-        lambda: 100,
-        projection_min: SHA256_FIXED_98_PRIME,
-        projection_max: SHA256_FIXED_98_PRIME,
-        projection_full_width: false,
-        initial_grinding_bits: SHA256_FIXED_98_INITIAL_GRINDING_BITS,
-        piop_round_grinding_bits: SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
-        terminal_grinding_bits: SHA256_FIXED_98_TERMINAL_GRINDING_BITS,
-        reduction: None,
-        forest_round_grinding_bits: 0,
-        ring_switch_grinding_bits: 0,
-        ligerito_target_bits: 100,
-        ood: None,
-        accounting: SoundnessAccounting { target: 100, terms },
-    }
 }
 
 /// Samples `q` from the transcript and immediately binds its canonical
@@ -246,17 +134,6 @@ pub(super) fn sample_sha256_mod_q_context(
     transcript: &mut impl Transcript,
     profile: Sha256PrimeProfile,
 ) -> Result<field::FpCtx<2>, Sha256PrimeError> {
-    if profile.is_fixed() {
-        absorb_spartan_message(transcript, b"prime-domain", FIXED_PRIME_DOMAIN);
-        absorb_spartan_message(
-            transcript,
-            b"log-instance-capacity",
-            &(profile.log_instance_capacity as u64).to_le_bytes(),
-        );
-        absorb_spartan_message(transcript, b"prime-q", &SHA256_FIXED_98_PRIME.to_le_bytes());
-        validate_fixed_98_prime(SHA256_FIXED_98_PRIME)?;
-        return Ok(field::create_prime_field(Uint::from(SHA256_FIXED_98_PRIME)));
-    }
     absorb_spartan_message(transcript, b"prime-domain", PRIME_SAMPLING_DOMAIN);
     absorb_spartan_message(
         transcript,
@@ -279,23 +156,7 @@ pub(super) fn sample_sha256_mod_q_context(
 pub(super) fn validate_sha256_field_config(
     field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
 ) -> Result<(), Sha256PrimeError> {
-    let encoding = SpartanBitzField::canonical_modulus_encoding(field_config);
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&encoding);
-    let q = u128::from_le_bytes(bytes);
-    if q == SHA256_FIXED_98_PRIME {
-        validate_fixed_98_prime(q)
-    } else {
-        Fp::<2>::validate_config(field_config)
-            .map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)
-    }
-}
-
-fn validate_fixed_98_prime(q: u128) -> Result<(), Sha256PrimeError> {
-    if q != SHA256_FIXED_98_PRIME || !field::is_probable_prime_public(&field::Uint::from(q)) {
-        return Err(Sha256PrimeError::InvalidFieldConfiguration);
-    }
-    Ok(())
+    Fp::<2>::validate_config(field_config).map_err(|_| Sha256PrimeError::InvalidFieldConfiguration)
 }
 
 fn validate_instance_capacity_exponent(
@@ -381,22 +242,6 @@ mod tests {
         assert_eq!(
             Fp::<2>::canonical_modulus_encoding(&first),
             first.modulus_u128().to_le_bytes()
-        );
-    }
-
-    #[test]
-    fn fixed_98_profile_binds_the_exact_prime_and_field() {
-        let security = fixed_98_security_params();
-        let profile = Sha256PrimeProfile::fixed_98(&security, 14).unwrap();
-        let mut transcript = Blake3Transcript::new();
-        let context = sample_sha256_mod_q_context(&mut transcript, profile).unwrap();
-
-        assert_eq!(context.modulus_u128(), SHA256_FIXED_98_PRIME);
-        assert_eq!(context.modulus_bits(), SHA256_FIXED_98_PRIME_BITS);
-        assert_eq!(security.accounting.achieved_bits(), 100.0);
-        assert_eq!(
-            Fp::<2>::canonical_modulus_encoding(&context),
-            SHA256_FIXED_98_PRIME.to_le_bytes()
         );
     }
 

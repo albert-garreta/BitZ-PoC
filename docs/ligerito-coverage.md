@@ -37,9 +37,7 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 | BabyBear multiplication; `mul_bitz proof --workload baby-bear` | `PreparedRelation<BabyBearMulLayout>`; target inherited from Lambda100 or Lambda128 | L=15..28; paper-path proof tests and fixed-modulus compatibility tests |
 | Terminal u32 / BabyBear PCS comparisons; `mul_compare pcs` | Prepared terminal opener retains resolved Ligerito policy; fixed-q BabyBear exposes explicit `_with_ligerito` APIs | Terminal and combined adapter roundtrips; same committed-source shape eligibility |
 | CM-AND; `cm_and` | `PreparedCmAndRelation::with_ligerito`; 100-bit Ligerito policy | L=15..28 configuration preflight; both-regime `ligerito_protocols` proof/codec checks. Tiny algebra fixtures have no production security claim |
-| SHA compression; `sha256_compressions`, `sha256_e2e_compare` BitZ arm | Prepared SHA compression policy, target inherited from enclosing profile | K=7..16; explicit inner-sumcheck, assignment-row-sized, and product layouts; proof/public-output tests |
-| SHA chain; `sha256_chain` | Prepared SHA chain policy | K=7..16; both-regime chain proof and public-statement tampering tests |
-| SHA layout sweep; `sha256_product_layout` | Same prepared SHA policy; explicitly labelled fixed-98 projection experiment | t=7..28 shape preflight and existing layout/forest-count tests; this is not a new complete-protocol 100-bit claim |
+| SHA compression; `sha256_compressions` | Prepared SHA compression policy, target inherited from enclosing profile; the block opening commits the source in its block layout under the same policy | K=7..16; block-layout opening, explicit inner-sumcheck, assignment-row-sized, and product layouts; proof, public-output and private-I/O tests |
 | `lambda_sweep` | Lambda100 arm defaults Johnson; higher-target arms preserve their UDR defaults | SHA profile preflights and higher-security roundtrips |
 | Raw PCS; `pcs`, `bitz` / `bitz --sweep` | Resolver and early OOD before prime/point sampling; extension wrapper also binds OOD before projection | m=20..35 resolver tests; mod-q, extension, virtual proof/codec tests |
 | SHA+ECDSA; `sha256_ecdsa`, `sha256_ecdsa_compare` BitZ arms | Prepared composed opener shared by execution/security derivation; split and all-rows outer modes | K=3..16 target preflights; both outer modes and both regimes, plus 128-bit roundtrip |
@@ -154,13 +152,9 @@ Additional reproducible correctness commands:
 RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 \
   cargo +1.98.1 test --release --test ligerito_protocols \
   --features ecdsa,hybrid,bench-internals -- --test-threads=1
-RUSTFLAGS='-C target-cpu=native' RAYON_NUM_THREADS=8 \
-  cargo +1.98.1 test --release --test native_sha256_compare \
-  --features bench-internals,native-sha256-compare ligerito_isolation_tests
 python3 -m unittest discover -s scripts -p test_ligerito_results.py
 python3 -m unittest discover -s scripts -p test_sha256_ecdsa_compare.py
 python3 -m unittest discover -s scripts -p test_native_mul_runner.py
-python3 -m unittest discover -s scripts -p test_native_sha256_runner.py
 ```
 
 Deferred: paired Johnson/UDR timing and fresh-process RSS runs, published

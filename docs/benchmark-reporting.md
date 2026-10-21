@@ -46,10 +46,7 @@ file opener remains outside `benches/common/output.rs`.
 | --- | --- | --- |
 | `benches/multiswap.rs` | Optional JSONL trace | Create new; create parents |
 | `benches/sha256_compressions.rs` | Optional JSONL trace and text samples/summary | Replace; create parents |
-| `benches/sha256_product_layout.rs` | Optional status file | Append existing |
-| `benches/sha256_e2e_compare.rs` | Trace, summary, metrics CSV | Trace create new; summary/CSV replace; create directories |
 | `benches/mul_bitz.rs`, `benches/mul_compare.rs` | Manifest, raw samples, worker logs | Create new campaign artifacts; Python owns reports |
-| `benches/common/whir_tuning.rs` | Tuning records | Create new |
 | `benches/support/sha256_ecdsa_fixture.rs` | Validated compact JSON fixtures, including worker exports | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/runner.rs` (also hybrid binary) | Proof bytes, binary/text statement, configuration JSON; CSV on stdout | Replace; no implicit parents |
 | `benches/hybrid_u32_sha256/sweep.rs` | Run metadata, child CSV/log capture, combined CSV, configuration JSON | New results directory; replace files inside it |
@@ -96,11 +93,11 @@ Other comparison runners retain their own reporting formats.
 
 ```sh
 cargo test --test benchmark_output
-cargo test --test benchmark_reporting --test native_mul_compare --test native_sha256_compare \
-  --features 'bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid' reporting
+cargo test --test benchmark_reporting --test native_mul_compare \
+  --features 'bench-internals,native-mul-compare,sha256-ecdsa-compare,hybrid' reporting
 cargo test --bin hybrid-u32-sha256 --features hybrid
 cargo check --benches --bin hybrid-u32-sha256 \
-  --features 'bench-internals,bench-peak-memory,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid'
+  --features 'bench-internals,bench-peak-memory,native-mul-compare,sha256-ecdsa-compare,hybrid'
 cargo check --manifest-path benchmarks/binius64/Cargo.toml
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
