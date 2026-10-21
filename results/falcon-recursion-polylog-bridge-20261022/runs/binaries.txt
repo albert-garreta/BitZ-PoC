@@ -1,0 +1,3 @@
+bin /Users/albertgarretafontelles/f2z-pcs/.claude/worktrees/falcon-recursion/target-bench/release/deps/falcon_recursion-4f2a12645512d21d 9ec94f5f10998963b5a25a6e77952c1d
+92d258f2b82185257d5f48bdba744ed66a44336b
+ -InternalBattery-0 (id=36110435)	100%; charged; 0:00 remaining present: true

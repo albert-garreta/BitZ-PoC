@@ -1,0 +1,12 @@
+00:24:01 standard-t18-b1024 exit=0 ghz=3.88 AC Power
+00:24:26 polylog-t18-b1024 exit=0 ghz=3.85 AC Power
+00:24:49 standard-t16-b1024 exit=0 ghz=3.93 AC Power
+00:25:13 polylog-t16-b1024 exit=0 ghz=3.92 AC Power
+00:25:39 standard-t18-b4096 exit=0 ghz=3.85 AC Power
+00:26:06 polylog-t18-b4096 exit=0 ghz=3.87 AC Power
+00:26:32 standard-t16-b4096 exit=0 ghz=3.94 AC Power
+00:26:59 polylog-t16-b4096 exit=0 ghz=3.87 AC Power
+00:27:49 standard-t18-b32768 exit=0 ghz=3.98 AC Power
+00:28:39 polylog-t18-b32768 exit=0 ghz=3.96 AC Power
+00:29:29 standard-t16-b32768 exit=0 ghz=4.00 AC Power
+00:30:19 polylog-t16-b32768 exit=0 ghz=4.00 AC Power

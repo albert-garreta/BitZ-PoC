@@ -9,8 +9,10 @@ proved with FlockRec. Campaign data: `results/falcon-recursion-20261018/`
 verifier optimizations, A/B against the baseline binary),
 `results/falcon-recursion-polylog-20261020/` (polylog BitZ for the outer
 proof), `results/falcon-recursion-sha-breakdown-20261021/` (the circuit's
-SHA-256 compressions per stage) and `results/falcon-recursion-ext-20261021/`
-(Johnson over GF(2^256) for the outer proof at λ=128); results below.
+SHA-256 compressions per stage), `results/falcon-recursion-ext-20261021/`
+(Johnson over GF(2^256) for the outer proof at λ=128) and
+`results/falcon-recursion-polylog-bridge-20261022/` (the base proof with the
+logarithmic BitZ bridge); results below.
 
 ## The circuit
 
@@ -416,6 +418,41 @@ at most min(113, 128 − T) bits), so T = 18 spends most of its PIOP time on
 proof of work; T = 17 (1K/4K) or T = 16 (32K) is 15–17 % faster per step for
 5–27 % more proof.
 
+## The logarithmic BitZ bridge in the base proof (2026-10-22)
+
+With `BITZ_FALCON_BRIDGE=polylog` the base proof commits its bridge folds
+instead of sending them (`integer_bridge::polylog`, `8b5c534d3`), and the
+circuit verifies that bridge (`polylog_bridge`, `92d258f2b`). The fold
+commitment's root is public and gets its own Round 0. The root value R
+is committed. The source forest runs from R, and a fold tree over the
+folds' bits runs from g·R: it proves the exponentiations g^T[c] as a
+product tree with public images g^(2^k). The read-off on the reshaped
+folds is an unsplit bridge with few public sums. Both fold claims are
+batched, reduced by their own joint sumcheck and opened by ext:5:4. The
+tests (transcript match, fourteen polylog tamper parts, the recursion
+step) pass at 1K. The polylog bridge needs t ≥ 8 and s ≥ 7, so batches
+of ≥ 512 at 16 bridge rows.
+(`results/falcon-recursion-polylog-bridge-20261022/summary.md`, λ=128,
+ext:3:4 main and outer):
+
+| batch | standard t18 | polylog t18 | polylog t16 |
+|---|---|---|---|
+| 1,024 | 0.47 s / 190.9 KB | 0.70 s / 204.8 KB | 0.60 s / 252.1 KB |
+| 4,096 | 0.50 s / 204.6 KB | 0.72 s / 206.4 KB | 0.67 s / 254.4 KB |
+| 32,768 | 0.66 s / 330.6 KB | 0.93 s / 211.5 KB | 0.78 s / 259.8 KB |
+
+(rec step / π + public stream.) At 32K the folds' 131 KB leave the public
+stream: −36 % total proof for a 63 % larger circuit (7,681 → 12,549
+compressions) and a final verifier 0.34 → 0.48 s. At 1K and 4K it does not
+pay off. Of the extra compressions, the two forests cost 3,711 against
+the standard forest's 1,725, and the read-off (1,004), the fold sumcheck
+(190) and the fold opening (1,704) are new. The forests pay 7 compressions
+per round against the standard bridge's 4, because of the grinding
+boundary: the standard bridge's 58-byte domain makes each round's public
+label run 4 blocks long (`PUBLISH_RUN`), so the chaining value is published
+and the labels are hashed natively; the polylog's 38-byte domain gives
+3-block runs, hashed in-circuit.
+
 ## Results (2026-10-18 baseline)
 
 M5 (10 cores, 24 GiB), AC power, one gated campaign (2026-10-18 15:54–16:07,
@@ -552,6 +589,13 @@ python3 scripts/bench_gate.py run --label falcon-vs-sha -- zsh results/falcon-re
 # the circuit's SHA-256 compressions per stage (the dev test binary above)
 zsh results/falcon-recursion-sha-breakdown-20261021/shabreak.zsh /tmp/shabreak
 python3 results/falcon-recursion-sha-breakdown-20261021/shabreak_table.py /tmp/shabreak
+
+# standard against the logarithmic bridge in the base proof (one binary,
+# BITZ_FALCON_BRIDGE=standard|polylog), and its per-stage compressions
+python3 scripts/bench_gate.py run --label falcon-polylog -- zsh results/falcon-recursion-polylog-bridge-20261022/campaign.zsh
+python3 results/falcon-recursion-polylog-bridge-20261022/summarize.py results/falcon-recursion-polylog-bridge-20261022/runs
+zsh results/falcon-recursion-polylog-bridge-20261022/stages.sh
+python3 results/falcon-recursion-polylog-bridge-20261022/stages_table.py results/falcon-recursion-polylog-bridge-20261022/stages
 ```
 
 `campaign.zsh` writes to `bench_results/falcon-recursion-20261018/` and

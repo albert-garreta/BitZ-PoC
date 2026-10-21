@@ -1,0 +1,17 @@
+
+running 1 test
+[falcon witness opening] ring switch 0.000 sha 45/2/0 | L0 folds 0.000 sha 34/6/0 | L0 opening 0.003 sha 34/3/607 | level 1 0.003 sha 63/9/441 | final level 0.003 sha 47/5/319 | total 0.010
+[falcon witness opening merkle] L0 48 rows x 16: leaves 192 nodes 415 | level 1 41 rows x 16: leaves 164 nodes 277 | final level 35 rows x 16: leaves 140 nodes 179
+[falcon witness opening] ring switch 0.000 sha 43/2/0 | L0 folds 0.000 sha 34/6/0 | L0 opening 0.007 sha 50/3/1245 | level 1 0.006 sha 72/9/870 | level 2 0.004 sha 61/8/585 | level 3 0.003 sha 58/8/446 | final level 0.003 sha 47/5/329 | total 0.023
+[falcon witness opening merkle] L0 79 rows x 16: leaves 316 nodes 929 | level 1 60 rows x 16: leaves 240 nodes 630 | level 2 48 rows x 16: leaves 192 nodes 393 | level 3 41 rows x 16: leaves 164 nodes 282 | final level 35 rows x 16: leaves 140 nodes 189
+[falcon witness] statement 0.002 sha 4/0/0 | keyed ring 0.002 sha 75/1/0 | norm 0.003 sha 265/23/0 | binder 0.003 sha 248/24/0 | polylog forests 0.036 sha 2764/395/0 | polylog read-off 0.020 sha 611/153/0 | polylog joint 0.001 sha 166/20/0 | polylog opening 0.010 sha 223/25/1367 | bridge 0.002 sha 0/0/0 | joint 0.002 sha 209/26/0 | opening 0.023 sha 365/41/3475 | total 0.103
+[falcon record opening] ring switch 0.001 sha 45/2/0 | L0 folds 0.001 sha 34/6/0 | L0 opening 0.006 sha 34/3/607 | level 1 0.007 sha 63/9/441 | final level 0.006 sha 47/5/319 | total 0.021
+[falcon record opening merkle] L0 48 rows x 16: leaves 192 nodes 415 | level 1 41 rows x 16: leaves 164 nodes 277 | final level 35 rows x 16: leaves 140 nodes 179
+[falcon record opening] ring switch 0.001 sha 43/2/0 | L0 folds 0.001 sha 34/6/0 | L0 opening 0.011 sha 50/3/1245 | level 1 0.013 sha 72/9/870 | level 2 0.008 sha 61/8/585 | level 3 0.007 sha 58/8/446 | final level 0.006 sha 47/5/329 | total 0.047
+[falcon record opening merkle] L0 79 rows x 16: leaves 316 nodes 929 | level 1 60 rows x 16: leaves 240 nodes 630 | level 2 48 rows x 16: leaves 192 nodes 393 | level 3 41 rows x 16: leaves 164 nodes 282 | final level 35 rows x 16: leaves 140 nodes 189
+[falcon record] statement 0.005 sha 4/0/0 | keyed ring 0.009 sha 75/1/0 | norm 0.011 sha 265/23/0 | binder 0.009 sha 248/24/0 | polylog forests 0.107 sha 2764/395/0 | polylog read-off 0.059 sha 611/153/0 | polylog joint 0.003 sha 166/20/0 | polylog opening 0.021 sha 223/25/1367 | bridge 0.002 sha 0/0/0 | joint 0.004 sha 209/26/0 | opening 0.047 sha 365/41/3475 | total 0.277
+record 0.324 s (10480 blocks) digest 91353a8df306828b1e5e71f463703689559a84ffc884c016f60edfe96ff05a97
+test recursion::falcon_verifier::tests::falcon_record_profile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1070 filtered out; finished in 0.64s
+

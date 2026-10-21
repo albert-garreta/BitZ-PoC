@@ -411,6 +411,7 @@ fn polylog_bridge<CS: Circuit>(
     cfg: &Cfg,
     grinding: u32,
     v: Option<&hooks::PolylogView<'_>>,
+    stages: &mut Stages,
 ) -> ((Vec<Gf>, G<CS::Bool>), super::falcon_opening::OpeningCounts) {
     use crate::hybrid::integer_bridge::polylog::recursion as polylog;
     let public = t.public().clone();
@@ -450,6 +451,7 @@ fn polylog_bridge<CS: Circuit>(
         bt.finish("polylog bridge");
         (source, fold_point, fold_exit)
     };
+    stages.mark("polylog forests", [t.duplex.counts.circuit, t.pow.circuit, 0]);
     let fold = polylog::fold_claim(params, &fold_point).expect("public fold claim");
     let (a, readoff) = polylog::readoff_layout(params);
     let readoff_weights = polylog::readoff_weights(a, column_point, cfg);
@@ -468,6 +470,7 @@ fn polylog_bridge<CS: Circuit>(
         ("polylog read-off sums", "polylog read-off"),
     );
     let readoff_claim = bridge::binary_claim(&readoff, &readoff_weights, &readoff_point, Gf::ZERO).expect("public read-off claim");
+    stages.mark("polylog read-off", [t.duplex.counts.circuit, t.pow.circuit, 0]);
     // The batch: each claim's value is its forest's exit plus one.
     let plus_one = |cs: &mut CS, exit: &G<CS::Bool>| {
         let mut lc = Lc::of(exit);
@@ -489,12 +492,14 @@ fn polylog_bridge<CS: Circuit>(
     public.borrow_mut().set_label("polylog joint");
     let joint_proof = v.map(|v| (v.joint_rounds, v.joint_nonces, v.joint_value));
     let (point, mu) = joint_sumcheck(cs, t, pl.geometry(), [&coefficients], &target, pl.joint_bits(), joint_proof);
+    stages.mark("polylog joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
     let config = super::falcon_opening::OpeningConfig {
         resolved: pl.resolved(),
         plan: pl.pcs_plan(),
         grinding_domain: polylog::OPENING_GRINDING_DOMAIN,
     };
     let opening = super::falcon_opening::verify(cs, t, &config, pl.geometry(), &root, &root, &point, &mu, v.map(|v| &v.opening), pl.opening_bits(), round0.as_ref());
+    stages.mark("polylog opening", [t.duplex.counts.circuit, t.pow.circuit + opening.pow.circuit, opening.merkle.circuit]);
     public.borrow_mut().set_label("bridge");
     (source, opening)
 }
@@ -711,7 +716,7 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
                 fail("polylog bridge shape");
             }
             let polylog = v.and_then(|v| v.polylog.as_ref());
-            let (exit, opening) = polylog_bridge(cs, &mut t, pl, &params, &column_point, &row_weights, &value, cfg, d.bridge, polylog);
+            let (exit, opening) = polylog_bridge(cs, &mut t, pl, &params, &column_point, &row_weights, &value, cfg, d.bridge, polylog, &mut stages);
             (exit, Some(opening))
         }
     };
@@ -724,7 +729,9 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     };
     let coefficients = hooks::coefficients(prepared, &params, exceptions, binary).expect("public coefficients");
 
-    stages.mark("bridge", [t.duplex.counts.circuit, t.pow.circuit, 0]);
+    // Stage marks are cumulative: the polylog bridge's fold opening counts on.
+    let fold = fold_opening.unwrap_or_default();
+    stages.mark("bridge", [t.duplex.counts.circuit, t.pow.circuit + fold.pow.circuit, fold.merkle.circuit]);
 
     // The joint binary sumcheck, then the opening.
     public.borrow_mut().set_label("joint");
@@ -734,16 +741,19 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     let opening = match hooks::geometry(prepared) {
         hooks::GeometryRef::Single(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, [&coefficients[0]], &target, d.joint, joint_proof);
-            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
+            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit + fold.pow.circuit, fold.merkle.circuit]);
             super::falcon_opening::verify(cs, &mut t, &config, g, &digest, root, &point, &mu, main_view.as_ref(), d.opening, round0.as_ref())
         }
         hooks::GeometryRef::Split(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, coefficients.each_ref(), &target, d.joint, joint_proof);
-            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
+            stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit + fold.pow.circuit, fold.merkle.circuit]);
             super::falcon_opening::verify(cs, &mut t, &config, g, &digest, root, &point, &mu, main_view.as_ref(), d.opening, round0.as_ref())
         }
     };
-    stages.mark("opening", [t.duplex.counts.circuit, t.pow.circuit + opening.pow.circuit, opening.merkle.circuit]);
+    stages.mark(
+        "opening",
+        [t.duplex.counts.circuit, t.pow.circuit + fold.pow.circuit + opening.pow.circuit, fold.merkle.circuit + opening.merkle.circuit],
+    );
     stages.print();
     if let Some(log) = log {
         *log = t.duplex.log.clone().unwrap_or_default();
