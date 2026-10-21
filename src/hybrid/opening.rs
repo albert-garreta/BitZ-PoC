@@ -2762,6 +2762,52 @@ pub(crate) mod recursion {
         out
     }
 
+    /// `verify_joint_ext`'s basis evaluation at an extension residual: the
+    /// ring-switch tensor, Round 0's `η·eq(ζ, ·)` and the padding terms.
+    pub(crate) fn residual_ext(
+        prefix: &[flock_core::field::Gf256],
+        log_y: usize,
+        point_hi: &[Gf],
+        eq_r2: &[Gf],
+        zeta: &[flock_core::field::Gf256],
+        eta: Gf,
+        padding: &[(Vec<Gf>, Gf)],
+    ) -> Vec<flock_core::field::Gf256> {
+        use flock_core::field::Gf256;
+        let mut out = crate::ligerito::residual_b_evals_ext(prefix, log_y, point_hi, eq_r2);
+        for (slot, term) in out.iter_mut().zip(ood_residual_evals_ext(prefix, log_y, zeta, eta)) {
+            *slot += term;
+        }
+        for (point, scale) in padding {
+            let point: Vec<Gf256> = point.iter().copied().map(Gf256::from_base).collect();
+            for (slot, term) in out.iter_mut().zip(ood_residual_evals_ext(prefix, log_y, &point, *scale)) {
+                *slot += term;
+            }
+        }
+        out
+    }
+
+    /// `verify_joint_ext`'s shape checks of a standard-terminal proof.
+    pub(crate) fn check_shape_ext(vc: &ligerito::VerifierConfig, proof: &ligerito::ext::LigeritoProofExt) -> Result<(), Error> {
+        let expected_ood_values: usize = vc.ood_samples.iter().skip(1).sum();
+        let level_ks = std::iter::once(vc.initial_k).chain(vc.recursive_ks.iter().copied());
+        let expected_fold_nonces: usize = vc
+            .fold_grinding_bits
+            .iter()
+            .zip(level_ks)
+            .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
+            .sum();
+        if proof.recursive_roots.len() != vc.recursive_steps
+            || proof.recursive_proofs.len() + 1 != vc.recursive_steps
+            || proof.grinding_nonces.len() != vc.recursive_steps + 1
+            || proof.ood_values.len() != expected_ood_values
+            || proof.fold_grinding_nonces.len() != expected_fold_nonces
+        {
+            return Err(Error::Invalid("Ligerito proof shape"));
+        }
+        Ok(())
+    }
+
     /// The Ligerito proof-shape checks of `verify_initial_with_security`.
     pub(crate) fn check_shape(vc: &ligerito::VerifierConfig, proof: &LigeritoProof<Vec<F>>) -> Result<(), Error> {
         let expected_ood_values: usize = vc.ood_samples.iter().skip(1).sum();

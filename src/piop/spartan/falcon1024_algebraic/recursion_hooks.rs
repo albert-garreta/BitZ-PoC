@@ -86,10 +86,17 @@ pub(crate) fn check_configuration(prepared: &PreparedFalconAlgebraic) -> Result<
         || prepared.uses_compact_binding()
         || prepared.uses_legacy_transcript()
         || bridge_mode() != BridgeMode::Unsplit
-        || prepared.ligerito.ood_bits().is_some()
     {
         return Err(error(
             "the Falcon verifier circuit needs the keyed-ring, word-binder, unsplit-bridge configuration",
+        ));
+    }
+    // Unique decoding, or Johnson over GF(2^256) with the standard terminal.
+    if prepared.ligerito.ood_bits().is_some()
+        && !(prepared.ligerito.extension() && prepared.terminal() == crate::hybrid::opening::Terminal::Standard)
+    {
+        return Err(error(
+            "the Falcon verifier circuit opens unique-decoding or ext: profiles with the standard terminal",
         ));
     }
     Ok(())
@@ -279,6 +286,15 @@ pub(crate) fn pcs_plan(prepared: &PreparedFalconAlgebraic) -> &GrindingPlan {
     &prepared.pcs_grinding
 }
 
+/// Round 0's parameters (Johnson profiles), right after the statement.
+pub(crate) fn round0(prepared: &PreparedFalconAlgebraic) -> Option<crate::ligerito_flock::OodRoundParams> {
+    prepared.round0
+}
+
+pub(crate) fn terminal(prepared: &PreparedFalconAlgebraic) -> crate::hybrid::opening::Terminal {
+    prepared.terminal()
+}
+
 /// A proof's parts as the circuit reads them.
 pub(crate) struct ProofView<'a> {
     pub quotient: &'a [i64],
@@ -300,7 +316,12 @@ pub(crate) struct ProofView<'a> {
     pub joint_value: Gf,
     pub joint_nonces: &'a [u64],
     pub s_v: &'a [Gf],
-    pub ligerito: &'a flock_core::pcs::ligerito::LigeritoProof<Vec<Gf>>,
+    /// The GF(2^128) opening, or (`ext:` profiles, standard terminal) the
+    /// GF(2^256) one.
+    pub ligerito: Option<&'a flock_core::pcs::ligerito::LigeritoProof<Vec<Gf>>>,
+    pub ligerito_ext: Option<&'a flock_core::pcs::ligerito::ext::LigeritoProofExt>,
+    /// Round 0 of the Johnson profiles.
+    pub round0: Option<&'a crate::ligerito_flock::OodRound>,
     pub opening_nonces: &'a [u64],
     pub pcs_nonces: &'a [u64],
 }
@@ -316,8 +337,15 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
     let crate::bitz::column_sums::ColumnSums::Unsplit(sums) = &bridge.sums else {
         return Err(error("unsplit bridge sum shape"));
     };
-    let crate::hybrid::opening::JointOpening::Base(opening) = &proof.opening else {
-        return Err(error("the Falcon verifier circuit reads GF(2^128) joint openings"));
+    use crate::hybrid::opening::{ExtLigerito, JointOpening};
+    let (s_v, ligerito, ligerito_ext) = match &proof.opening {
+        JointOpening::Base(opening) => (&opening.ring.s_v[..], Some(&opening.ligerito), None),
+        JointOpening::Ext(opening) => match &opening.ligerito {
+            ExtLigerito::Standard(lig) => (&opening.ring.s_v[..], None, Some(lig)),
+            ExtLigerito::Compact(_) => {
+                return Err(error("the Falcon verifier circuit reads the standard extension terminal"));
+            }
+        },
     };
     Ok(ProofView {
         quotient: &ring.quotient,
@@ -338,8 +366,10 @@ pub(crate) fn view(proof: &FalconAlgebraicProof) -> Result<ProofView<'_>, Falcon
         joint_rounds: &proof.joint.rounds,
         joint_value: proof.joint.value,
         joint_nonces: &proof.joint.nonces,
-        s_v: &opening.ring.s_v,
-        ligerito: &opening.ligerito,
+        s_v,
+        ligerito,
+        ligerito_ext,
+        round0: proof.ood.as_ref(),
         opening_nonces: &proof.opening_nonces,
         pcs_nonces: &proof.pcs_nonces,
     })
@@ -386,16 +416,31 @@ pub(crate) const TAMPERED_PARTS: &[&str] = &[
     "opening-nonce",
 ];
 
+/// The parts [`tamper`] alters in `proof`: an extension opening has no fold
+/// nonces, and adds Round 0, an OOD value and the standard terminal's rows
+/// and paths.
+#[cfg(test)]
+pub(crate) fn tampered_parts(proof: &FalconAlgebraicProof) -> Vec<&'static str> {
+    match &proof.opening {
+        crate::hybrid::opening::JointOpening::Base(_) => TAMPERED_PARTS.to_vec(),
+        crate::hybrid::opening::JointOpening::Ext(_) => TAMPERED_PARTS
+            .iter()
+            .copied()
+            .filter(|&part| part != "fold-nonce")
+            .chain(["round0", "ood-value", "final-row", "final-path"])
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
+    if tamper_opening(proof, part) {
+        return;
+    }
     let (RingProof::Keyed(ring), ArithmeticProof::Raw(arithmetic)) = (&mut proof.ring, &mut proof.arithmetic) else {
         panic!("a keyed-ring raw-arithmetic proof");
     };
     let bridge = &mut proof.bridges[0];
-    let crate::hybrid::opening::JointOpening::Base(opening) = &mut proof.opening else {
-        panic!("a GF(2^128) joint opening");
-    };
-    let lig = &mut opening.ligerito;
     match part {
         "quotient" => ring.quotient[0] += Q,
         "norm-round" => arithmetic.norm.sumcheck.round_polynomials[0].swap(1, 2),
@@ -412,15 +457,51 @@ pub(crate) fn tamper(proof: &mut FalconAlgebraicProof, part: &str) {
         "forest" => bridge.forest[5][0] += Gf::ONE,
         "joint-round" => proof.joint.rounds[2][1] += Gf::ONE,
         "joint-value" => proof.joint.value += Gf::ONE,
-        "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
-        "initial-row" => lig.initial_proof.opened_rows[0][0] += Gf::ONE,
-        "initial-path" => lig.initial_proof.merkle_proof[0][0] ^= 1,
-        "recursive-row" => lig.recursive_proofs[0].opened_rows[1][0] += Gf::ONE,
-        "recursive-root" => lig.recursive_roots[1][0] ^= 1,
-        "final-message" => lig.final_proof[3] += Gf::ONE,
-        "ligerito-message" => lig.sumcheck_transcript[2].u_0 += Gf::ONE,
-        "fold-nonce" => lig.fold_grinding_nonces[0] += 1,
         "opening-nonce" => proof.opening_nonces[0] ^= 1,
         _ => panic!("unknown part {part}"),
     }
+}
+
+/// [`tamper`]'s opening parts; `false` for any other part.
+#[cfg(test)]
+fn tamper_opening(proof: &mut FalconAlgebraicProof, part: &str) -> bool {
+    use crate::hybrid::opening::{ExtLigerito, JointOpening};
+    use flock_core::field::Gf256;
+    match &mut proof.opening {
+        JointOpening::Base(opening) => {
+            let lig = &mut opening.ligerito;
+            match part {
+                "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
+                "initial-row" => lig.initial_proof.opened_rows[0][0] += Gf::ONE,
+                "initial-path" => lig.initial_proof.merkle_proof[0][0] ^= 1,
+                "recursive-row" => lig.recursive_proofs[0].opened_rows[1][0] += Gf::ONE,
+                "recursive-root" => lig.recursive_roots[1][0] ^= 1,
+                "final-message" => lig.final_proof[3] += Gf::ONE,
+                "ligerito-message" => lig.sumcheck_transcript[2].u_0 += Gf::ONE,
+                "fold-nonce" => lig.fold_grinding_nonces[0] += 1,
+                _ => return false,
+            }
+        }
+        JointOpening::Ext(opening) => {
+            let ExtLigerito::Standard(lig) = &mut opening.ligerito else {
+                panic!("a standard-terminal extension opening");
+            };
+            let y = Gf256::new(Gf::ZERO, Gf::ONE);
+            match part {
+                "ring-switch" => opening.ring.s_v[3] += Gf::ONE,
+                "round0" => *proof.ood.as_mut().and_then(|r| r.y_ext.as_mut()).expect("an extension Round 0") += Gf::ONE,
+                "initial-row" => lig.initial_proof.opened_rows[0][0] += Gf::ONE,
+                "initial-path" => lig.initial_proof.merkle_proof[0][0] ^= 1,
+                "recursive-row" => lig.recursive_proofs[0].opened_rows[1][0] += y,
+                "recursive-root" => lig.recursive_roots[1][0] ^= 1,
+                "final-message" => lig.final_proof.yr[1] += y,
+                "ligerito-message" => lig.sumcheck_transcript[2].u_0 += y,
+                "ood-value" => lig.ood_values[0] += Gf256::ONE,
+                "final-row" => lig.final_proof.opened_rows[0][0] += Gf256::ONE,
+                "final-path" => lig.final_proof.merkle_proof[0][0] ^= 1,
+                _ => return false,
+            }
+        }
+    }
+    true
 }

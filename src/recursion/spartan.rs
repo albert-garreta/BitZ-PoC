@@ -356,6 +356,34 @@ pub fn ood_round<CS: Circuit>(
     (crate::ligerito_flock::ood_point(zeta, packed_vars), y)
 }
 
+/// [`ood_round`] over GF(2^256): the header carries the extension domain,
+/// `ζ` is two public draws, `y` is two committed coordinates absorbed
+/// under tag `0x51`. Returns the OOD point (`ζ, ζ², ζ⁴, …`) and `y`.
+pub fn ood_round_ext<CS: Circuit>(
+    cs: &mut CS,
+    t: &mut SpartanTranscript<CS::Bool>,
+    packed_vars: usize,
+    grinding_bits: u32,
+    nonce: Option<u64>,
+    y: flock_core::field::Gf256,
+) -> (Vec<flock_core::field::Gf256>, super::ext::E2<CS::Bool>) {
+    {
+        let mut p = t.proxy(cs);
+        p.absorb_slice(b"bitz/core/ood-round/v1");
+        p.absorb_slice(&(packed_vars as u64).to_le_bytes());
+        p.absorb_slice(&grinding_bits.to_le_bytes());
+        p.absorb_slice(b"bitz/core/ood-round/gf2-256/v1");
+    }
+    if grinding_bits > 0 {
+        t.grinding_boundary(cs, b"bitz/core/ood-round-grinding/v1", 0, grinding_bits, nonce.expect("Round-0 nonce"));
+    }
+    let a: Gf = t.proxy(cs).get_field_challenge(&());
+    let b: Gf = t.proxy(cs).get_field_challenge(&());
+    let y = super::ext::witness_ext(cs, y);
+    t.absorb_gf_slice(cs, 0x51, &[y.a.clone(), y.b.clone()]);
+    (crate::ligerito_flock::ood_point_ext(flock_core::field::Gf256::new(a, b), packed_vars), y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

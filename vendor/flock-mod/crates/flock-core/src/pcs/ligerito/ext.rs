@@ -556,7 +556,7 @@ fn induce_sumcheck_poly_ext<R: RowEntry>(
 
 /// [`induce_sumcheck_evaluate_at_residual`] over the extension: the
 /// induced basis's MLE at `ris_for_basis ‖ y` for every `y ∈ {0,1}^yr_log_n`.
-fn evaluate_at_residual_ext(
+pub fn evaluate_at_residual_ext(
     log_msg_cols: usize,
     sks_vks: &[Gf128],
     queries: &[usize],

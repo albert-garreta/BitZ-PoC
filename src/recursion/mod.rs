@@ -23,6 +23,7 @@ pub mod bitz_pcs;
 pub mod bitz_transcript;
 pub mod bytes;
 pub mod ecdsa_verifier;
+pub mod ext;
 #[cfg(all(feature = "falcon-hybrid", feature = "bench-internals"))]
 pub mod falcon_opening;
 #[cfg(all(feature = "falcon-hybrid", feature = "bench-internals"))]

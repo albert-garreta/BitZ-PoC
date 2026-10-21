@@ -347,6 +347,21 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
     // The statement and the prime.
     public.borrow_mut().set_label("statement");
     let digest = hooks::bind_statement(prepared, statement, root, exceptions, &mut t.proxy(cs)).expect("public statement");
+    // Round 0 (`ext:` profiles), right after the statement: ζ public, y committed.
+    let round0 = hooks::round0(prepared).map(|params| {
+        assert!(params.extension, "the circuit runs Round 0 over GF(2^256)");
+        let round = v.and_then(|v| v.round0);
+        if v.is_some() && round.is_none_or(|r| r.y_ext.is_none() || r.nonce.is_some() != (params.grinding_bits > 0)) {
+            fail("Round 0 shape");
+        }
+        let y = flock_core::field::Gf256::new(round.map_or(Gf::ZERO, |r| r.y), round.and_then(|r| r.y_ext).unwrap_or(Gf::ZERO));
+        let nonce = (params.grinding_bits > 0).then(|| round.and_then(|r| r.nonce).unwrap_or(0));
+        let packed_log = match hooks::geometry(prepared) {
+            hooks::GeometryRef::Single(g) => g.packed_log(),
+            hooks::GeometryRef::Split(g) => g.packed_log(),
+        };
+        super::spartan::ood_round_ext(cs, &mut t, packed_log, params.grinding_bits, nonce, y)
+    });
     let field = hooks::sample_field(&mut t.proxy(cs)).expect("public prime");
     let cfg = &field;
     let q = modulus(cfg);
@@ -554,12 +569,12 @@ pub fn verify_falcon_algebraic<CS: Circuit>(
         hooks::GeometryRef::Single(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, [&coefficients[0]], &target, d.joint, v);
             stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
-            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening)
+            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening, round0.as_ref())
         }
         hooks::GeometryRef::Split(g) => {
             let (point, mu) = joint_sumcheck(cs, &mut t, g, coefficients.each_ref(), &target, d.joint, v);
             stages.mark("joint", [t.duplex.counts.circuit, t.pow.circuit, 0]);
-            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening)
+            super::falcon_opening::verify(cs, &mut t, prepared, g, &digest, root, &point, &mu, v, d.opening, round0.as_ref())
         }
     };
     stages.mark("opening", [t.duplex.counts.circuit, t.pow.circuit + opening.pow.circuit, opening.merkle.circuit]);
@@ -879,7 +894,7 @@ pub(super) mod tests {
     fn falcon_circuit_rejects_tampered_proofs() {
         let batch: usize = std::env::var("BITZ_REC_FALCON_BATCH").ok().map_or(16, |v| v.parse().unwrap());
         let (prepared, public, proof) = proof_at(batch);
-        for part in hooks::TAMPERED_PARTS {
+        for part in hooks::tampered_parts(&proof) {
             let mut altered = proof.clone();
             hooks::tamper(&mut altered, part);
             assert!(prepared.verify(&public, &altered).is_err(), "{part}: the native verifier rejects");
