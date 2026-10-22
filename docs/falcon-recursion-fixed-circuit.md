@@ -63,7 +63,15 @@ This is the polylog bridge's fold-tree trick, applied to the row weights:
    I(τ) = Σ_r eq(τ, r)·g^(W_r)) replaces the 2^16 exponentiations: ≈ 140
    GKR rounds for the verifier. Its exit is a binary claim on W, batched
    into the joint sumcheck. The binary claim's eq(ρ_row, ·)·eq(σ, ·)
-   weights cost one more 16-round sumcheck down to I(τ).
+   weights need no extra sumcheck. Coordinate-wise,
+   eq(ρ_i, ·)·eq(σ_i, ·) = d_i·eq(ρ''_i, ·), with d_i = 1 + σ_i + ρ_i and
+   ρ''_i = σ_i ρ_i / d_i (`merge_points`), so τ = ρ''. This tree is the
+   `(⋆)` tree of branch bitz-logarithmic (2026-10-22, `StarMode::Gkr`).
+   That branch leaves W uncommitted: its verifier evaluates the exit claim
+   from every row, and step 3 is what replaces that. In Falcon's split
+   joint geometry the images reach the terminal through three branches:
+   lanes 0–7; lanes 8–10 and 11 + … + 14; lane 15's slack gathers. The tree
+   therefore starts from one combined root claim.
 3. W's correctness without a second integer claim. Checking W by its MLE
    at a fresh point would need a bridge on W, with its own challenge-
    dependent row images: a regress. Instead:
