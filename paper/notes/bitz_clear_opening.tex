@@ -1,0 +1,182 @@
+% Draft for the technical overview of the BitZ paper: opening small commitments in the clear (2026-11-02).
+% [AI-drafted in the author's register (Claude Fable 5.1), 2026-11-02, at the author's request: how BitZ opens a commitment of at most about 2^16 bits in the clear, its soundness, and what it costs; please review]
+% Compile from paper/notes/ so that \input{../macros} finds the paper's macros.tex and \bibliography{../references} its bib file.
+\documentclass[11pt,letterpaper,usenames,dvipsnames]{article}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{aliascnt}
+\usepackage{fullpage}
+\usepackage{bbm,soul}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{bm}
+\usepackage{braket}
+\usepackage[operators,sets,primitives,asymptotics,lambda,keys,ff]{cryptocode}
+\usepackage{enumitem}
+\usepackage{mleftright}
+\usepackage{xspace}
+\usepackage{algorithm,algorithmic}
+\usepackage{comment}
+\usepackage[T1]{fontenc}
+\usepackage{stmaryrd}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=PineGreen, citecolor=PineGreen, urlcolor=PineGreen}
+\usepackage[capitalize, nameinlink]{cleveref}
+
+\input{../macros}
+
+\title{\ftwoz\ for small vectors: opening the commitment in the clear\\ \large a draft for the technical overview}
+\author{}
+\date{2026-11-02}
+
+\begin{document}
+\maketitle
+
+\section{Context}\label{s:to_simple_bitz}
+
+What follows is a draft subsection for the technical overview of the \ftwoz\ paper, meant to sit after Step 6 of its prime-field warm-up (the paper's \S2.1) and its remark on succinctness. It describes how \ftwoz\ handles vectors of at most about $2^{16}$ bits, where the opening of Step 6 costs more than the vector it opens, and gives measured sizes. We recall the equations of the warm-up that we use, with the paper's labels, so that the references resolve in this standalone build; the only new labels are \eqref{e:to_packed} and \eqref{e:to_clear_bytes}.
+
+In the warm-up the prover claims it knows $\bff\in\FF_q^{\codedim_0}$ with
+%
+\begin{equation}\label{e:new_to_0}\langle \vv, \bff\rangle =\mu \qquad \text{in  } \FF_q,
+\end{equation}
+%
+for a public ``eq'' vector $\vv=\vv^{(1)}\otimes\vv^{(2)}$. In Step 1 the prover bit-decomposes $\bff$ into $\bitstext(\bff)\in\bits^\codedim\subseteq\ZZ^\codedim$, with $B\defeq\lceil\log q\rceil$ bits per entry and $\codedim\defeq B\cdot\codedim_0$, and packs $\pi_2(\bitstext(\bff))$ into the vector
+%
+\begin{equation}\label{e:to_packed}
+P\defeq \pack\circ\pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}
+\end{equation}
+%
+(every $\comfieldexp$ consecutive bits make one element from $\comfield$). It encodes $P$ with the code $\cC$ and sends the Merkle root of the codeword $f=\Enc_\cC(P)\in\comfield^{\codelength}$. In Step 2 the claim becomes
+%
+\begin{equation}\label{e:intro_eq_2}\langle \uu, \pi_q(\bitstext(\bff))\rangle =\mu \ \text{in  } \FF_q, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),
+\end{equation}
+%
+with $\uu\defeq\vv\otimes(1,2,\ldots,2^{B-1})=\uu^{(1)}\otimes\uu^{(2)}\in\FF_q^{\codedim_1\cdot\codedim_2}$. In Step 4 the prover arranges $\bitstext(\bff)$ as an $\codedim_1\times\codedim_2$ matrix with columns $\bitstext(\bff)_{*j}$ and sends the integers $\mu_j\defeq\langle\pi_q^{-1}(\uu^{(1)}),\bitstext(\bff)_{*j}\rangle\in\ZZ$. The verifier checks that each $\mu_j$ lies in $\range{0}{(q-1)\cdot\codedim_1}$ and that the $\mu_j$ recombine to $\mu$, and the claim becomes
+%
+\begin{equation}\label{e:intro_eq_3}\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle =\mu_j \ \text{in  } \ZZ, \text{ for all } j\in [\codedim_2], \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)).
+\end{equation}
+%
+Step 5 proves \eqref{e:intro_eq_3} ``in the exponent'' of a generator $g$ of $\comfield^*$, through the batched grand products
+%
+\begin{equation}\label{e:intro_eq_4}
+g^{\mu_j} = \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu_i^{(1)})} -1\right)\cdot \pi_2(\bitstext(\bff)_{ij})  +1\right) \qquad \text{in  } \comfield \qquad \text{for all } j\in [\codedim_2],
+\end{equation}
+%
+with the GKR protocol of \cref{s:to_low_entropy_gkr} (the paper's \S2.3). At its end the prover and verifier are left with one linear claim over $\comfield$ on the committed bits,
+%
+\begin{equation}\label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),
+\end{equation}
+%
+whose weights are a tensor $\zz'=\zz^{(1)}\otimes\zz^{(2)}$ that the verifier can write down in time $O(\codedim_1+\codedim_2)$. Concretely, in our implementation the last sumcheck of the GKR ends at a point $(\rr,\rr')\in\comfield^{\log\codedim_1}\times\comfield^{\log\codedim_2}$ with a value $e$. Then \eqref{e:intro_eq_5_batched} holds with $\zz^{(1)}_i=(g^{\pi_q^{-1}(\uu_i^{(1)})}-1)\cdot\eq(i;\rr)$, $\zz^{(2)}_j=\eq(j;\rr')$ and $c=e-1$, since the multilinear extension of the factors of \eqref{e:intro_eq_4} at $(\rr,\rr')$ is $1+\langle\zz',\pi_2(\bitstext(\bff))\rangle$. Step 6 proves \eqref{e:intro_eq_5_batched} through the opening of the commitment. A sumcheck reduces it to an evaluation claim on the multilinear extension of $\pi_2(\bitstext(\bff))$, the ring switch of \cite{binius2} turns that claim into claims on $P$ (the prover sends $\comfieldexp$ elements from $\comfield$), and Ligerito \cite{Ligerito} proves those, as in Flock \cite{flock}.
+
+\paragraph{Pointers.}\label{s:to_low_entropy_gkr} The paper's \S2.3 (GKR for low-entropy batched grand products), \S2.6 (round-by-round knowledge soundness), its instantiation section, its SNARK section, its SHA-256 experiments and its raw-performance table are cited below as \cref{s:to_simple_bitz}; in the paper they are separate sections.\label{s:to_soundness_prime}\label{s:instantiation}\label{c:core_iop}\label{t:thm_core_IOPP}\label{s:to_snark}\label{s:to_f2_virtual}\label{s:experiments_sha}\label{tab:f2z-raw-performance}
+
+\section{Technical overview (draft excerpt)}
+
+% [AI-drafted in the author's register (Claude Fable 5.1), 2026-11-02, at the author's request: the clear opening for vectors of at most about 2^16 bits; please review]
+\subsection{Small vectors: opening the commitment in the clear}\label{s:to_clear}
+
+At every size we measured, the proof size of \cref{s:to_simple_bitz} is dominated by Step 6. At $\codedim=2^{20}$ Step 6 accounts for $84$\,KB of $102$\,KB, and at $\codedim=2^{28}$ for $190$\,KB of $271$\,KB (\cref{tab:f2z-raw-performance}).
+
+The reason is that a Ligerito opening at $100$ bits of soundness pays for a few tens to a few hundreds of queries, each of which reveals a column of the interleaved codeword together with its Merkle path. This cost shrinks only slowly with $\codedim$, whereas the messages of Steps 4 and 5 are $\codedim_2$ integers and $O(\log^2\codedim)$ elements from $\comfield$. Below $\codedim=2^{20}$ our implementation has no Ligerito parameters at all (we derive the parameters of \cref{s:instantiation} from $2^{20}$ up). At $\codedim=2^{13}$, say, the vector $P$ of \eqref{e:to_packed} has $64$ entries, i.e.\ it is $1$\,KB long. We next explain what we do at such sizes.
+
+\medskip
+
+\noindent \emph{\underline{A key point}:} at these sizes no opening of $f$ is succinct. Any configuration of Ligerito at $100$ bits of soundness opens at least a few tens of columns of the codeword, and at $\codedim\le 2^{16}$ these columns contain more symbols than $P$ has entries (see \cref{tab:to_clear_sampled} below). The verifier learns $P$ whatever we do, and the question is only how many bytes it costs to learn it.
+
+\paragraph{Step $6'$: the clear opening.} We replace Step 6 by the following. The prover sends $P$, i.e.\ $\codedim/\comfieldexp$ elements from $\comfield$, which is $\codedim/8$ bytes. The verifier does two things:
+\begin{enumerate}[leftmargin=*,nosep]
+    \item it encodes $P$ with $\cC$, computes the Merkle root of $\Enc_\cC(P)$, and checks that it equals the root received in Step 1;
+    \item it unpacks $P$ into a vector of bits $\bfg\in\bits^\codedim$ and checks \eqref{e:intro_eq_5_batched} on it, i.e.\ that $\langle\zz',\pi_2(\bfg)\rangle=c$ in $\comfield$.
+\end{enumerate}
+There is no sumcheck, no ring switch and no Ligerito, and Round 0 of \cref{c:core_iop} (the out-of-domain sample) is not run either. Step 1 is unchanged. The codeword and the root are the same whether the commitment is to be opened with Ligerito or in the clear, so we can choose the opener by the size of the commitment alone, after the commitment is made.
+
+\paragraph{Soundness.} In the decomposition $\Pi=\Pi_1\Pi_2\Pi_3$ of \cref{s:to_soundness_prime}, Step $6'$ replaces $\Pi_3$ by an IOR in which the prover sends $P$ as a plain message and the verifier reads the oracle $f$ entirely (all $\codelength$ positions), checks $f=\Enc_\cC(P)$, and checks \eqref{e:intro_eq_5_batched} on the bits of $P$. This IOR uses no randomness, so it has no error term, and it needs no relaxation. The witness it extracts is $P$ itself, and $f$ is exactly the encoding of $P$, not approximately.
+
+In particular the proximity parameter of $\cC$ plays no role, which is why Round 0 is not needed. There is no list of codewords close to $f$ to disambiguate, since the verifier recomputes $f$. We stress that the code is not used for proximity at all here, it is only re-encoded. In the Merkle-compiled protocol, reading $f$ entirely is the first check above, and the binding of the root is what binds the prover to one $P$. The errors of \cref{t:thm_core_IOPP} lose the terms $(\ksiopp_i)_i$ (and $\kappa_{\mathsf{OOD}}$, when Round 0 would have run) and keep the rest, and no grinding is needed in the opening.
+
+\paragraph{Costs.} The proof now consists of the integers $\mu_j$ of Step 4, the GKR transcript of Step 5 and the vector $P$. We write $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$. Layer $i$ of the GKR, for $i\in\range{0}{r_1-1}$, runs a sumcheck on $r_2+i$ variables, and we send two elements from $\comfield$ per sumcheck round (following \cite{gruen}) and two per layer (the unification step of \cref{s:to_low_entropy_gkr}), so the proof is
+%
+\begin{equation}\label{e:to_clear_bytes}
+16\cdot 2^{r_2} \;+\; 32\cdot\Bigl(r_1 r_2+\frac{r_1(r_1+1)}{2}\Bigr)\;+\;\frac{\codedim}{8} \qquad \text{bytes},
+\end{equation}
+%
+up to $21$ bytes of framing. The three terms are the integers of Step 4 (each $\mu_j<(q-1)\cdot\codedim_1<2^{128}$ takes $16$ bytes), the GKR transcript, and $P$. We give the measured values in \cref{tab:to_clear}; they match \eqref{e:to_clear_bytes} exactly.
+
+The verifier computes the $\codedim_1$ images $g^{\pi_q^{-1}(\uu_i^{(1)})}$ and replays the GKR, as before. Then it encodes $P$ ($2\codedim/\comfieldexp$ elements at rate $1/2$), hashes the codeword, and evaluates \eqref{e:intro_eq_5_batched} with $\codedim$ conditional additions and $\codedim_2$ multiplications in $\comfield$ (the weights are a tensor, so it folds every column with $\zz^{(1)}$ first). At $\codedim=2^{13}$ this takes $0.3$\,ms in total.
+
+The prover does the work of Steps 1 to 5 and then copies $P$. We measured $0.5$\,ms at $\codedim=2^{13}$ on one thread with $\codedim_1=2^7$, almost all of it in the GKR. Ten threads do not help at this size.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}rrrrrrr@{}}
+\toprule
+$\log\codedim$ & $(r_1,r_2)$ & prover (ms) & verifier (ms) & proof (B) & of which $P$ & of which Steps 4, 5 \\
+\midrule
+$10$ & $(7,3)$ & $0.43$ & $0.20$ & $1\,845$ & $132$ & $1\,696$ \\
+$12$ & $(7,5)$ & $0.54$ & $0.32$ & $3\,061$ & $516$ & $2\,528$ \\
+$13$ & $(7,6)$ & $0.49$ & $0.31$ & $4\,309$ & $1\,028$ & $3\,264$ \\
+$13$ & $(9,4)$ & $0.84$ & $0.31$ & $3\,893$ & $1\,028$ & $2\,848$ \\
+$13$ & $(13,0)$ & $5.2$ & $0.73$ & $3\,973$ & $1\,028$ & $2\,928$ \\
+$14$ & $(8,6)$ & $0.59$ & $0.25$ & $5\,781$ & $2\,052$ & $3\,712$ \\
+$15$ & $(8,7)$ & $0.73$ & $0.37$ & $9\,109$ & $4\,100$ & $4\,992$ \\
+$16$ & $(9,7)$ & $0.93$ & $0.35$ & $13\,717$ & $8\,196$ & $5\,504$ \\
+$17$ & $(10,7)$ & $1.48$ & $0.48$ & $22\,453$ & $16\,388$ & $6\,048$ \\
+\bottomrule
+\end{tabular}
+\caption{\ftwoz\ with the clear opening for $\codedim=2^{10},\ldots,2^{17}$ committed bits, proving one claim \eqref{e:new_to_0} with a transcript-sampled prime $q$ of $113$ bits, at $100$ bits of round-by-round knowledge soundness. Rows $(7,r_2)$, $(8,r_2)$, $(9,7)$, $(10,7)$ are the paper's split $\codedim_1=2^{\lceil 0.6\log\codedim\rceil-1}$, clamped to $\codedim_1\ge\comfieldexp$; the two other rows at $2^{13}$ are the split with the smallest proof and the single-column split. Medians of $5$ runs on a MacBook Air M5, one thread, blake3 Merkle trees; the prover time includes the commitment. The proof size does not depend on the number of threads.}
+\label{tab:to_clear}
+\end{table}
+
+\paragraph{Why not sample.} One could instead keep Step 6 and look for Ligerito parameters at these sizes. \Cref{tab:to_clear_sampled} prices this option. For each size we took the cheapest parameters that our configuration rule accepts (the rule of \cref{s:instantiation}, i.e.\ Johnson bound, $100$ bits round by round, queries and grinding set per level), and we counted $16$ bytes per opened symbol and $32$ bytes per node of the batched Merkle authentication paths (simulated for random query positions). We also allowed Ligerito to stop right after its first fold, with no recursive level, which our implementation does not support. The result is a floor on what a sampled opening would cost, not a measurement.
+
+To it we add the sumcheck of Step 6, the ring switch ($\comfieldexp=128$ elements from $\comfield$, i.e.\ $2$\,KB on its own), and the messages of Steps 4 and 5 at the same split.
+
+At $\codedim=2^{13}$ the cheapest sampled opening uses rate $1/4$, two interleaved rows and $90$ queries out of $128$ positions. It reveals $180$ symbols of a vector $P$ with $64$ entries, and it costs $4.6$\,KB on its own and $10.1$\,KB in total, against $3.9$\,KB in the clear. The two options cross between $2^{17}$ and $2^{18}$ bits. From $2^{20}$ on we use the parameters of \cref{s:instantiation}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+$\log\codedim$ & clear (B) & sampled (B) & of which Ligerito & cheapest level $0$ (rate, rows, queries) \\
+\midrule
+$10$ & $1\,845$ & $6\,409$ & $2\,168$ & $1/16$, $2$, $45$ \\
+$12$ & $2\,965$ & $8\,937$ & $3\,864$ & $1/8$, $2$, $60$ \\
+$13$ & $3\,893$ & $10\,145$ & $4\,608$ & $1/4$, $2$, $90$ \\
+$14$ & $5\,365$ & $13\,449$ & $7\,416$ & $1/16$, $4$, $45$ \\
+$15$ & $7\,893$ & $16\,145$ & $9\,584$ & $1/1024$, $8$, $20$ \\
+$16$ & $12\,501$ & $19\,161$ & $12\,040$ & $1/1024$, $16$, $20$ \\
+$17$ & $21\,237$ & $24\,577$ & $16\,864$ & $1/4096$, $32$, $18$ \\
+$18$ & $38\,197$ & $29\,153$ & $20\,816$ & $1/1024$, $8$, $20$ (two levels) \\
+\bottomrule
+\end{tabular}
+\caption{The clear opening against a floor for a sampled one, at $100$ bits. The clear column is \eqref{e:to_clear_bytes} at the split with the smallest proof (which is why its $2^{12}$ to $2^{17}$ entries are a little below \cref{tab:to_clear}). The sampled column adds, to the same Steps 4 and 5, the sumcheck of Step 6, the ring switch and the Ligerito floor described in the text; ``rows'' is the number of interleaved rows of the level-$0$ code.}
+\label{tab:to_clear_sampled}
+\end{table}
+
+\begin{remark}[What the proof certifies at these sizes]
+Once the verifier reads $P$ it could check the original claim \eqref{e:new_to_0} by itself, with $O(\codedim)$ operations in $\FF_q$, and skip Steps 2 to $6'$ altogether. At these sizes the shortest proof of \eqref{e:new_to_0} is $\bitstext(\bff)$ itself, $\codedim/8$ bytes and no commitment.
+
+We keep Steps 2 to 5 for two reasons. First, the clear opening is an \emph{opener}. Step 1 and everything built on top of it (the grand product, the projection to a random prime of Step 3, the PIOP of a SNARK built on \ftwoz, cf.\ \cref{s:to_snark}) run unchanged, and we choose the opener by the size of the commitment alone. This is what one wants when the same code handles vectors of $2^{13}$ and of $2^{30}$ bits.
+
+Second, the numbers of \cref{tab:to_clear} are then the sizes of \ftwoz's own messages, which is the quantity to compare with other polynomial commitment schemes at small sizes, whose sampled openings reveal the committed vector just the same. What the clear opening cannot give is hiding. An application where the verifier must not learn $\bitstext(\bff)$ needs a masked, sampled opening, and pays at least the floor of \cref{tab:to_clear_sampled}.
+\end{remark}
+
+\begin{remark}[The split]
+The rule $\codedim_1\approx\codedim^{0.6}$ of \cref{s:instantiation} was set for prover time and proof size at $\codedim\ge 2^{20}$. At $\codedim=2^{13}$ the expression \eqref{e:to_clear_bytes} is within $100$ bytes of $3.9$\,KB for every $r_1$ from $8$ to $13$, since the integers of Step 4 and the rounds of Step 5 trade off against each other. The minimum is at $r_1=9$ or $10$. The smallest $\codedim_1$ our layout allows ($\codedim_1=\comfieldexp=128$, i.e.\ $r_1=7$) gives $4.3$\,KB and is the fastest to prove, since the GKR has fewer layers.
+
+A single column ($r_1=13$) proves in $5$\,ms. Our prover is tuned for many columns (its tables are shared across columns, see \cref{s:to_low_entropy_gkr}), and we have not tuned it for one.
+\end{remark}
+
+\begin{remark}[Implementation, and where this applies]
+In our implementation (the \texttt{clear} ladder of \texttt{bitz\_bench}, with the split as an option) the commitment keeps Ligerito's geometry at rate $1/2$ with $\min(4,\log\codedim-8)$ interleaving bits, so that a commitment is the same object whichever way it is opened, and the verifier encodes with the same NTT. Nothing forces one to encode at all here. A Merkle tree over $P$ itself would do and would save the verifier the encoding, at the price of having two kinds of commitments. We have not done this. The clear opening keeps the proof under $10$\,KB up to $\codedim=2^{15}$. By the same accounting, a proof of one SHA-256 compression with the $\mathsf{CM}$ relation of \cref{s:experiments_sha} ($7\,144$ committed bits, with the grand product running over the $2^{15}$ cells of its virtual grid, cf.\ \cref{s:to_f2_virtual}) would be about $5.6$\,KB; we have not run it.
+\end{remark}
+
+\bibliographystyle{alpha}
+\bibliography{../references}
+
+\end{document}
