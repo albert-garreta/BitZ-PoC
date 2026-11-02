@@ -532,7 +532,10 @@ pub fn custom_johnson_config_bits(
         .expect("custom config passes flock's validator")
 }
 
-fn try_custom_johnson_config_bits(
+/// [`custom_johnson_config_bits`] as a `Result`: the validator's or the
+/// ladder rule's objection instead of a panic (sizing probes below the
+/// ladders' window, `examples/tiny_opening_probe.rs`).
+pub fn try_custom_johnson_config_bits(
     m: usize,
     r0: usize,
     k0: usize,

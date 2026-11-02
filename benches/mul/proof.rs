@@ -233,8 +233,12 @@ where
     "ligerito":{
         "requested_profile":opener.ligerito().name(),
         "resolved_profile":format!("bitz-{}", opener.ligerito().name()),
-        "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
-        "target_bits":ladder_config.target_security_bits,
+        "regime":match ladder_config {
+            Some(config) if config.levels.first().is_some_and(|l| l.eta.is_some()) => "johnson",
+            Some(_) => "udr",
+            None => "clear",
+        },
+        "target_bits":ladder_config.map_or(target, |config| config.target_security_bits),
         "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
         "outer_ood":prefix.security().ood.is_some(),
         "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),

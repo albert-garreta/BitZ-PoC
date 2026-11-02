@@ -38,6 +38,9 @@ use super::{
 
 /// The session tag of the forked BitZ transcript.
 const SESSION: &[u8] = b"bitz/bitz-opener/v1";
+/// The clear opener's identity domain (its digest covers the mode and the
+/// commitment's parameter frame).
+const CLEAR_DIGEST_DOMAIN: &[u8] = b"bitz/bitz-opener/clear/v1";
 
 /// Which Ligerito ladder the BitZ opener commits and opens under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +53,11 @@ pub enum BitZLigerito {
     /// with fold grinding; a Johnson `custom:<r>:<k>` ladder, which
     /// [`BitZOpener::prepare`] pairs with the crate's Round 0).
     Selected(LigeritoSelection),
+    /// The clear opening ([`crate::bitz::pcs::OpeningMode::Clear`]) for
+    /// sizes below the ladders (`m ≲ 16`): the packed message is sent and
+    /// the verifier re-commits it and evaluates the GKR's exit claim on
+    /// the bits itself. No ring switch, no Ligerito, no Round 0.
+    Clear,
 }
 
 impl BitZLigerito {
@@ -57,6 +65,7 @@ impl BitZLigerito {
     pub fn parse(request: &str, target: usize) -> Result<Self, String> {
         match request.trim() {
             "fast" | "bitz" => Ok(Self::Fast),
+            "clear" => Ok(Self::Clear),
             other => LigeritoSelection::parse(other, target).map(Self::Selected),
         }
     }
@@ -65,6 +74,7 @@ impl BitZLigerito {
         match self {
             Self::Fast => "fast".to_string(),
             Self::Selected(selection) => selection.name(),
+            Self::Clear => "clear".to_string(),
         }
     }
 }
@@ -77,7 +87,8 @@ pub struct BitZOpener {
     shape: Shape,
     pcs: BitzPcs,
     ligerito: BitZLigerito,
-    security: LigeritoSecurityConfig,
+    /// The ladder; `None` for the clear opening, which runs none.
+    security: Option<LigeritoSecurityConfig>,
     /// The ladder's identity, bound with the statement.
     digest: [u8; 32],
     /// A resolved selection as the crate's own opener carries it (`None`
@@ -112,7 +123,21 @@ impl BitZOpener {
                     .map_err(ProtocolError::LigeritoConfig)?;
                 security.hash = "blake3".to_owned();
                 let digest = *blake3::hash(source.as_bytes()).as_bytes();
-                (pcs, security, digest, None)
+                (pcs, Some(security), digest, None)
+            }
+            BitZLigerito::Clear => {
+                use spongefish::Encoding as _;
+                let pcs = BitzPcs::clear(&shape, HashKind::Blake3).map_err(|error| {
+                    ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}"))
+                })?;
+                // The opener's identity: the mode and the commitment's
+                // geometry (the parameter frame).
+                let digest = *blake3::Hasher::new()
+                    .update(CLEAR_DIGEST_DOMAIN)
+                    .update(pcs.encode().as_ref())
+                    .finalize()
+                    .as_bytes();
+                (pcs, None, digest, None)
             }
             BitZLigerito::Selected(selection) => {
                 let resolved = selection
@@ -124,7 +149,7 @@ impl BitZOpener {
                             ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}"))
                         })?;
                 let (security, digest) = (resolved.security().clone(), resolved.digest());
-                (pcs, security, digest, Some(resolved))
+                (pcs, Some(security), digest, Some(resolved))
             }
         };
         let policy = crate::bitz::grinding::Policy::new(
@@ -171,7 +196,9 @@ impl BitZOpener {
     /// The theorem's Round-0 collision bound at the ladder's level 0
     /// ([`ood_round_bits`]); `None` in unique decoding (no round).
     pub fn ood_bits(&self) -> Option<f64> {
-        ood_round_bits(&self.security, self.packed_vars)
+        self.security
+            .as_ref()
+            .and_then(|security| ood_round_bits(security, self.packed_vars))
     }
 
     pub fn layout(&self) -> &IntegerMatrixLayout {
@@ -186,9 +213,9 @@ impl BitZOpener {
         self.ligerito
     }
 
-    /// The ladder the opener runs.
-    pub fn security(&self) -> &LigeritoSecurityConfig {
-        &self.security
+    /// The ladder the opener runs (`None` for the clear opening).
+    pub fn security(&self) -> Option<&LigeritoSecurityConfig> {
+        self.security.as_ref()
     }
 
     pub fn pcs(&self) -> &BitzPcs {
@@ -251,8 +278,10 @@ impl BitZOpener {
         if self.ood_bits().is_some() != ood.is_some() {
             return (0.0, "round 0 inconsistent with the ladder");
         }
+        // The clear opening has no level and no term of its own: the
+        // revealed message is bound by the Merkle hash.
         let mut weakest = (f64::INFINITY, "ligerito");
-        for level in &self.security.levels {
+        for level in self.security.iter().flat_map(|security| &security.levels) {
             let (pg, query) = level.paper_predicted_bits();
             // The level's weakest fold round (a unique-decoding level's last
             // round keeps `k − 1` bits less than `fold_grinding_bits`).
@@ -574,11 +603,13 @@ impl BitZOpener {
     /// Round 0 at the ladder's own target (`None` for a unique-decoding
     /// ladder), as the crate's standalone opener runs it.
     fn standalone_ood(&self) -> Option<crate::ligerito_flock::OodRoundParams> {
-        crate::ligerito_flock::ood_round_params(
-            &self.security,
-            self.packed_vars,
-            self.security.target_security_bits as u32,
-        )
+        self.security.as_ref().and_then(|security| {
+            crate::ligerito_flock::ood_round_params(
+                security,
+                self.packed_vars,
+                security.target_security_bits as u32,
+            )
+        })
     }
 }
 
@@ -926,6 +957,159 @@ mod tests {
         }
     }
 
+    /// The clear opening below the ladders: n = 10, n = 13 (the
+    /// byte-optimal split and the reference split) and n = 16. The honest
+    /// value verifies with no Round 0 and the proof at n = 13 is under
+    /// 4 KB; a wrong value, a flipped message bit (the re-commit), a
+    /// flipped GKR byte and a stray Round-0 record are rejected; the bytes
+    /// round-trip; the ladders refuse these sizes.
+    #[test]
+    fn clear_opening_proves_tiny_sizes() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for (shape, cap) in [
+            (Shape::new(7, 3).unwrap(), 2_000),
+            (Shape::new(9, 4).unwrap(), 4_000),
+            (Shape::reference(13).unwrap(), 4_400),
+            (Shape::reference(16).unwrap(), 14_000),
+        ] {
+            let n = shape.log_bits();
+            let rows: Vec<Vec<u64>> = (0..shape.columns())
+                .map(|_| (0..shape.rows() / 64).map(|_| next()).collect())
+                .collect();
+            let opener = BitZOpener::new(
+                shape.layout(),
+                BitZLigerito::parse("clear", 100).unwrap(),
+                100,
+            )
+            .unwrap();
+            assert_eq!(opener.ligerito(), BitZLigerito::Clear);
+            assert!(opener.ood_bits().is_none());
+            assert!(opener.security().is_none());
+            assert_eq!(opener.pcs().opening(), crate::bitz::pcs::OpeningMode::Clear);
+            let hint = opener.commit(rows.clone()).unwrap();
+            let claimed = standalone_evaluation(&opener, &hint).unwrap();
+            let proof = prove_standalone(&opener, &hint, claimed).unwrap();
+            assert!(proof.ood.is_none(), "n = {n}");
+            verify_standalone(&opener, &hint.commitment, claimed, &proof).unwrap();
+            let bytes = proof.to_bytes();
+            assert!(bytes.len() <= cap, "n = {n}: {} bytes", bytes.len());
+            assert_eq!(
+                BitZOpeningProof::from_bytes(&bytes).as_ref(),
+                Some(&proof)
+            );
+            // The hint stream is the message: a length and `2^{n−7}` elements.
+            assert_eq!(proof.transcript.hints.len(), 4 + (1usize << (n - 7)) * 16);
+            let (bits, term) = opener.opening_bits(None);
+            assert!(bits >= 100.0, "n = {n}: {bits} bits ({term})");
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed ^ 1, &proof).is_err(),
+                "n = {n}: a wrong value"
+            );
+            let mut tampered = proof.clone();
+            tampered.transcript.hints[5] ^= 1;
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
+                "n = {n}: a flipped message bit"
+            );
+            let mut tampered = proof.clone();
+            tampered.transcript.narg_string[9] ^= 1;
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
+                "n = {n}: a flipped GKR byte"
+            );
+            let mut tampered = proof.clone();
+            tampered.ood = Some(OodRound {
+                y: field::Gf128::ONE,
+                nonce: None,
+            });
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
+                "n = {n}: a stray Round-0 record"
+            );
+            for ladder in ["custom:1:4", "udr:1:4", "fast"] {
+                assert!(
+                    BitZOpener::new(
+                        shape.layout(),
+                        BitZLigerito::parse(ladder, 100).unwrap(),
+                        100
+                    )
+                    .is_err(),
+                    "n = {n}: {ladder} below the ladders' window"
+                );
+            }
+        }
+    }
+
+    /// The u32 relation at its smallest batch (`2^15` committed bits, below
+    /// every ladder) proves through the clear opener; a flipped message
+    /// byte and a flipped GKR byte are rejected.
+    #[test]
+    fn u32_products_prove_through_the_clear_opener() {
+        let multiplications = 256;
+        let witness = u32_witness(multiplications);
+        let layout = MulLayout::<u32>::new(multiplications).unwrap();
+        assert!(BitZOpener::prepare::<Lambda100, _>(layout, BitZLigerito::Fast, 100).is_err());
+        let (prefix, opener) =
+            BitZOpener::prepare::<Lambda100, _>(layout, BitZLigerito::Clear, 100).unwrap();
+        assert!(prefix.security().ood.is_none());
+        let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
+        let proof = prove(
+            &mut Blake3Transcript::new(),
+            &prefix,
+            &opener,
+            &witness,
+            &hint,
+        )
+        .unwrap();
+        verify(
+            &mut Blake3Transcript::new(),
+            &prefix,
+            &opener,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
+        assert!(proof.bitz().ood.is_none());
+        let bytes = proof.bitz().to_bytes();
+        assert_eq!(
+            BitZOpeningProof::from_bytes(&bytes).as_ref(),
+            Some(proof.bitz())
+        );
+        let (bits, term) = opener.opening_bits(prefix.security().ood);
+        assert!(bits >= 100.0, "{bits} bits ({term})");
+        let mut tampered = proof.clone();
+        let last = tampered.bitz().transcript.hints.len() - 1;
+        tampered.bitz_mut().transcript.hints[last] ^= 1;
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &prefix,
+                &opener,
+                &hint.commitment,
+                &tampered
+            )
+            .is_err()
+        );
+        let mut tampered = proof.clone();
+        tampered.bitz_mut().transcript.narg_string[7] ^= 1;
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &prefix,
+                &opener,
+                &hint.commitment,
+                &tampered
+            )
+            .is_err()
+        );
+    }
+
     /// A proof under one ladder does not verify under the other (the
     /// statement binding covers the ladder).
     #[test]
@@ -1206,8 +1390,12 @@ mod tests {
         assert_eq!(opener.round_0_bits(None), None);
         // The ladder's own target would grind more than runs.
         let at_target =
-            crate::ligerito_flock::ood_round_params(opener.security(), opener.packed_vars, 110)
-                .unwrap();
+            crate::ligerito_flock::ood_round_params(
+                opener.security().expect("a ladder"),
+                opener.packed_vars,
+                110,
+            )
+            .unwrap();
         assert!(at_target.grinding_bits > executed.grinding_bits, "{bits}");
         let (reported, term) = opener.opening_bits(Some(executed));
         assert!(reported <= booked.bits, "{reported} ({term})");

@@ -11,7 +11,7 @@ use core::mem::size_of;
 use bincode::Options;
 use flock_core::challenger::Challenger;
 use flock_core::merkle::{Hash, HashKind};
-use flock_core::pcs::commit::PcsParams;
+use flock_core::pcs::commit::{PcsParams, commit as flock_commit};
 use flock_core::pcs::ligerito::{
     LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig, VerifierConfig,
     embedded_security_config, recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
@@ -24,6 +24,7 @@ use flock_core::pcs::ring_switch::{
 use flock_core::zerocheck::univariate_skip::build_eq;
 use spongefish::Encoding;
 
+use super::codec::{gf_from_bytes, gf_to_bytes};
 use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
 use super::grinding::{Geometry, Policy, Schedule, Stage};
@@ -43,6 +44,12 @@ const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
 /// (this crate's addition; absent in their protocol).
 const OOD_CLAIM_LABEL: &[u8] = b"bitz/bitz/round0-claim/v1";
 const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
+/// The clear opening's frame (this crate's addition; absent in their
+/// protocol).
+const CLEAR_OPENING_LABEL: &[u8] = b"bitz/pcs/clear-opening/v1";
+/// The lane bits of a clear-opened commitment's geometry (flock's
+/// `log_batch_size`), capped by the message's size.
+const CLEAR_COMMIT_LOG_BATCH: usize = 4;
 
 const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";
 const POW_TAG: &[u8] = b"pcs/flock/pow/v1";
@@ -115,6 +122,26 @@ impl OpeningQuery {
     }
 }
 
+/// How a commitment is opened once the GKR has reduced the claim to a
+/// linear functional of the committed bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpeningMode {
+    /// The inner-product sumcheck, the ring switch and the recursive
+    /// Ligerito opening: the scheme as shipped.
+    Ligerito,
+    /// The clear opening for sizes below Ligerito's ladders: the prover
+    /// sends the packed message itself as one hint string (`2^{m−7}`
+    /// elements, `2^{m−3}` bytes); the verifier re-commits it under the
+    /// commitment's geometry, checks the root and evaluates the query on
+    /// the bits directly. No sumcheck, no ring switch, no Ligerito and no
+    /// Round-0 claim: the opening is binding through the Merkle hash alone
+    /// and adds no soundness term. The verifier reads the whole witness, so
+    /// the opening is not succinct — it is the right opener exactly where
+    /// the message is smaller than any sampled opening at the target
+    /// (`m ≲ 16`: at `m = 13` the message is 1 KiB).
+    Clear,
+}
+
 /// Their `Pcs`: flock parameters for one bit length, with the checked
 /// Ligerito configs. The profile is `Fast` on their k = 4 ladder — the
 /// crate's embedded `fast` TOML, the same file their `bitz-k4` branch
@@ -129,6 +156,7 @@ pub struct Pcs {
     packed_len: usize,
     native_policy: Policy,
     flock_plan: Option<Arc<GrindingPlan>>,
+    opening: OpeningMode,
 }
 
 impl Pcs {
@@ -159,9 +187,15 @@ impl Pcs {
         if ood.is_some_and(|(point, _)| point.len() != self.params.m - LOG_PACKING) {
             return Err(ConfigError::Invalid("OOD point arity"));
         }
+        // The clear opening runs no inner-product sumcheck and no ring
+        // switch, and takes no Round-0 claim: its schedule ends with the GKR.
+        let clear = self.opening == OpeningMode::Clear;
+        if clear && ood.is_some() {
+            return Err(ConfigError::Invalid("the clear opening takes no Round-0 claim"));
+        }
         Schedule::new(self.native_policy, Geometry {
             integer: integer.map(|shape| (shape.log_rows(), shape.log_columns())),
-            binary, ring: true, ood: ood.is_some(),
+            binary: if clear { None } else { binary }, ring: !clear, ood: ood.is_some(),
         }).map_err(|_| ConfigError::Invalid("native opening schedule"))
     }
 
@@ -174,6 +208,62 @@ impl Pcs {
         let profile = LigeritoProfile::Fast;
         let security = security_config(m, profile, merkle_hash)?;
         Self::with_security(shape, &security, profile)
+    }
+
+    /// The scheme with the clear opening ([`OpeningMode::Clear`]). The
+    /// commitment keeps flock's geometry — rate 1/2, `min(4, m − 8)` lane
+    /// bits, `merkle_hash` — so a commitment is the same object whichever
+    /// way it is opened; the Ligerito configurations the frames carry
+    /// describe that geometry only (one formal recursive level of one
+    /// query, never run). Needs `m ≥ 9`.
+    pub fn clear(shape: &Shape, merkle_hash: HashKind) -> Result<Self, ConfigError> {
+        let m = shape.log_bits();
+        let log_n = m
+            .checked_sub(LOG_PACKING)
+            .ok_or(ConfigError::Invalid("m below packing width"))?;
+        if log_n < 2 {
+            return Err(ConfigError::Invalid("the clear opening needs m >= 9"));
+        }
+        let initial_k = (log_n - 1).min(CLEAR_COMMIT_LOG_BATCH);
+        let initial_log_msg_cols = log_n - initial_k;
+        let prover_config = ProverConfig {
+            log_inv_rates: vec![1, 2],
+            recursive_steps: 1,
+            initial_log_msg_cols,
+            initial_log_num_interleaved: initial_k,
+            initial_k,
+            recursive_log_msg_cols: vec![initial_log_msg_cols - 1],
+            recursive_ks: vec![1],
+            queries: vec![1, 1],
+            grinding_bits: vec![0, 0],
+            fold_grinding_bits: vec![0, 0],
+            ood_samples: vec![0, 0],
+            merkle_hash,
+        };
+        let verifier_config = VerifierConfig {
+            log_inv_rates: prover_config.log_inv_rates.clone(),
+            recursive_steps: prover_config.recursive_steps,
+            initial_log_msg_cols: prover_config.initial_log_msg_cols,
+            initial_log_num_interleaved: prover_config.initial_log_num_interleaved,
+            initial_k: prover_config.initial_k,
+            recursive_log_msg_cols: prover_config.recursive_log_msg_cols.clone(),
+            recursive_ks: prover_config.recursive_ks.clone(),
+            queries: prover_config.queries.clone(),
+            grinding_bits: prover_config.grinding_bits.clone(),
+            fold_grinding_bits: prover_config.fold_grinding_bits.clone(),
+            ood_samples: prover_config.ood_samples.clone(),
+            merkle_hash,
+        };
+        let params = PcsParams {
+            m,
+            log_inv_rate: 1,
+            log_batch_size: initial_k,
+            profile: LigeritoProfile::Fast,
+            merkle_hash,
+        };
+        let mut pcs = Self::from_parts(params, prover_config, verifier_config)?;
+        pcs.opening = OpeningMode::Clear;
+        Ok(pcs)
     }
 
     /// The same scheme over any validated flock ladder (the crate's own
@@ -262,7 +352,13 @@ impl Pcs {
             packed_len,
             native_policy: Policy::UNGRINDED,
             flock_plan: None,
+            opening: OpeningMode::Ligerito,
         })
+    }
+
+    /// How this scheme opens.
+    pub fn opening(&self) -> OpeningMode {
+        self.opening
     }
 
     /// Commits the per-column bit rows (their packed witness in this
@@ -358,12 +454,18 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &root, point, *target, transcript);
                 }
+                if self.opening == OpeningMode::Clear {
+                    return self.prove_clear(hint, query, transcript);
+                }
                 self.prove_mle(hint, &ring_switch, *target, transcript, ood)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
                 if statement_binding == StatementBinding::Bind {
                     bind_inner_product_statement(self, &root, claim, transcript);
+                }
+                if self.opening == OpeningMode::Clear {
+                    return self.prove_clear(hint, query, transcript);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
@@ -377,6 +479,9 @@ impl Pcs {
                 validate_sum_claim(self, claim)?;
                 if statement_binding == StatementBinding::Bind {
                     bind_sum_statement(self, &root, claim, transcript);
+                }
+                if self.opening == OpeningMode::Clear {
+                    return self.prove_clear(hint, query, transcript);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
@@ -407,12 +512,18 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &commitment.0, point, *target, transcript);
                 }
+                if self.opening == OpeningMode::Clear {
+                    return self.verify_clear(commitment, query, transcript);
+                }
                 self.verify_mle(commitment, &ring_switch, *target, transcript, ood)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
                 if statement_binding == StatementBinding::Bind {
                     bind_inner_product_statement(self, &commitment.0, claim, transcript);
+                }
+                if self.opening == OpeningMode::Clear {
+                    return self.verify_clear(commitment, query, transcript);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let reduced = sumcheck::verify(claim, transcript)?;
@@ -425,6 +536,9 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_sum_statement(self, &commitment.0, claim, transcript);
                 }
+                if self.opening == OpeningMode::Clear {
+                    return self.verify_clear(commitment, query, transcript);
+                }
                 transcript.public_message(SUMCHECK_LABEL);
                 let reduced = sumcheck::verify_sum(claim, transcript)?;
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
@@ -432,6 +546,67 @@ impl Pcs {
                 self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
             }
         }
+    }
+
+    /// The clear opening ([`OpeningMode::Clear`]): the packed message as
+    /// one hint string, after the caller bound the query. The honest
+    /// prover checks the claim it is about to leave to the verifier.
+    fn prove_clear(
+        &self,
+        hint: &FlockCommitHint,
+        query: &OpeningQuery,
+        transcript: &mut ProverState,
+    ) -> Result<(), ProveError> {
+        let started = std::time::Instant::now();
+        let packed = hint.packed_message();
+        if evaluate_clear_query(packed, query)? != query_target(query) {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.public_message(CLEAR_OPENING_LABEL);
+        let mut bytes = Vec::with_capacity(packed.len() * size_of::<Gf>());
+        for value in packed {
+            bytes.extend_from_slice(&gf_to_bytes(*value));
+        }
+        transcript.hint_bytes(&bytes);
+        transcript.finish_native().map_err(|_| ProveError::Internal)?;
+        super::trace("  clear opening", started);
+        Ok(())
+    }
+
+    /// [`Self::prove_clear`]'s verifier: the message re-committed under the
+    /// commitment's geometry must give the committed root, and the bound
+    /// query must hold on its bits.
+    fn verify_clear(
+        &self,
+        commitment: &Root,
+        query: &OpeningQuery,
+        transcript: &mut VerifierState<'_>,
+    ) -> Result<(), VerifyError> {
+        transcript.public_message(CLEAR_OPENING_LABEL);
+        let len = self
+            .packed_len
+            .checked_mul(size_of::<Gf>())
+            .ok_or(VerifyError::Internal)?;
+        let bytes = transcript
+            .hint_bytes(len)
+            .map_err(|_| VerifyError::MalformedProof)?;
+        if bytes.len() != len {
+            return Err(VerifyError::MalformedProof);
+        }
+        let packed: Vec<Gf> = bytes
+            .chunks_exact(size_of::<Gf>())
+            .map(|chunk| gf_from_bytes(chunk.try_into().expect("16-byte chunk")))
+            .collect();
+        let (recommitted, _) = flock_commit(&packed, &self.params);
+        if recommitted.root != commitment.0 {
+            return Err(VerifyError::VerificationFailed);
+        }
+        if evaluate_clear_query(&packed, query)? != query_target(query) {
+            return Err(VerifyError::VerificationFailed);
+        }
+        transcript
+            .finish_native()
+            .map_err(|_| VerifyError::VerificationFailed)
     }
 
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching
@@ -593,6 +768,76 @@ impl Pcs {
         }
         Ok(())
     }
+}
+
+/// The value a query claims.
+fn query_target(query: &OpeningQuery) -> Gf {
+    match query {
+        OpeningQuery::Mle { target, .. } => *target,
+        OpeningQuery::InnerProduct { claim } => claim.target(),
+        OpeningQuery::InnerProductSum { claim } => claim.target(),
+    }
+}
+
+/// A query evaluated on the packed message in the clear: the MLE of the
+/// bits at the point (through flock's ring-switch kernels, the same
+/// arithmetic the prover's claims come from), or the factored inner
+/// product(s) on the bit grid.
+fn evaluate_clear_query(packed: &[Gf], query: &OpeningQuery) -> Result<Gf, QueryError> {
+    match query {
+        OpeningQuery::Mle { point, .. } => {
+            if point.len() < LOG_PACKING {
+                return Err(QueryError::PointLengthMismatch);
+            }
+            let (prefix_tensor, suffix_tensor) = build_eq_split(point, LOG_PACKING);
+            if suffix_tensor.len() != packed.len() {
+                return Err(QueryError::PointLengthMismatch);
+            }
+            let claims = fold_1b_rows_naive(packed, &suffix_tensor);
+            Ok(claim_check(&prefix_tensor, &claims))
+        }
+        OpeningQuery::InnerProduct { claim } => {
+            clear_inner_product(packed, claim.row_weights(), claim.column_weights())
+        }
+        OpeningQuery::InnerProductSum { claim } => {
+            let mut total = Gf::zero();
+            for (rows, columns) in claim.terms() {
+                total = total + clear_inner_product(packed, rows, columns)?;
+            }
+            Ok(total)
+        }
+    }
+}
+
+/// `Σ_{i,j} rows[i]·columns[j]·f[i][j]` on the packed message, whose
+/// elements hold column `j`'s bit row in order, 128 bits each (the commit
+/// layout: bit `i` of the column is bit `i mod 64` of the `lo` (`i mod 128
+/// < 64`) or `hi` word of element `j·W + ⌊i/128⌋`, `W = rows/128`).
+fn clear_inner_product(packed: &[Gf], rows: &[Gf], columns: &[Gf]) -> Result<Gf, QueryError> {
+    let bits_per_element = 2 * u64::BITS as usize;
+    if rows.len() % bits_per_element != 0 {
+        return Err(QueryError::WeightLengthMismatch);
+    }
+    let per_column = rows.len() / bits_per_element;
+    if per_column.checked_mul(columns.len()) != Some(packed.len()) {
+        return Err(QueryError::WeightLengthMismatch);
+    }
+    let mut total = Gf::zero();
+    for (column, &column_weight) in packed.chunks_exact(per_column).zip(columns) {
+        let mut folded = Gf::zero();
+        for (k, element) in column.iter().enumerate() {
+            for (half, word) in [element.lo, element.hi].into_iter().enumerate() {
+                let base = k * bits_per_element + half * u64::BITS as usize;
+                let mut remaining = word;
+                while remaining != 0 {
+                    folded = folded + rows[base + remaining.trailing_zeros() as usize];
+                    remaining &= remaining - 1;
+                }
+            }
+        }
+        total = total + column_weight * folded;
+    }
+    Ok(total)
 }
 
 /// Their 40-byte frame: `m`, `log_inv_rate`, `log_batch_size`, the profile
@@ -1295,4 +1540,156 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
         }
     }
     total
+}
+
+#[cfg(test)]
+mod clear_tests {
+    use super::super::transcript::{Proof, build_prover, build_verifier};
+    use super::*;
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn gf(&mut self) -> Gf {
+            Gf::from_polynomial_words([self.next(), self.next()])
+        }
+    }
+
+    fn rows(rng: &mut Rng, shape: &Shape) -> Vec<Vec<u64>> {
+        (0..shape.columns())
+            .map(|_| (0..shape.rows() / 64).map(|_| rng.next()).collect())
+            .collect()
+    }
+
+    /// The clear inner product reads the commit layout the way the bit grid
+    /// defines it, and the clear opening of a factored claim round-trips:
+    /// the prover refuses a wrong claim and a Round-0 claim; the verifier
+    /// refuses a wrong claim, a flipped message bit (the re-commit misses
+    /// the root) and a short message.
+    #[test]
+    fn clear_inner_product_matches_the_bit_grid_and_opens() {
+        let shape = Shape::new(8, 3).unwrap();
+        let pcs = Pcs::clear(&shape, HashKind::Blake3).unwrap();
+        assert_eq!(pcs.opening(), OpeningMode::Clear);
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let rows = rows(&mut rng, &shape);
+        let (root, hint) = pcs.commit(&shape, rows.clone()).unwrap();
+        let row_weights: Vec<Gf> = (0..shape.rows()).map(|_| rng.gf()).collect();
+        let column_weights: Vec<Gf> = (0..shape.columns()).map(|_| rng.gf()).collect();
+        let mut expected = Gf::zero();
+        for (c, row) in rows.iter().enumerate() {
+            for (w, &word) in row.iter().enumerate() {
+                for b in 0..64 {
+                    if (word >> b) & 1 == 1 {
+                        expected = expected + row_weights[w * 64 + b] * column_weights[c];
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            clear_inner_product(hint.packed_message(), &row_weights, &column_weights).unwrap(),
+            expected
+        );
+        let query = |target: Gf| OpeningQuery::InnerProduct {
+            claim: LinearClaimGf::from_shape(
+                &shape,
+                row_weights.clone(),
+                column_weights.clone(),
+                target,
+            )
+            .unwrap(),
+        };
+        let prove = |query: &OpeningQuery, ood: Option<(&[Gf], Gf)>| -> Result<Proof, ProveError> {
+            let mut prover = build_prover(b"clear-test", b"instance");
+            pcs.prove_lin(&hint, query, StatementBinding::Bind, &mut prover, ood)?;
+            Ok(prover.finish())
+        };
+        let verify = |query: &OpeningQuery, proof: &Proof| -> bool {
+            let mut verifier = build_verifier(b"clear-test", b"instance", proof);
+            pcs.verify_lin(&root, query, StatementBinding::Bind, &mut verifier, None)
+                .is_ok()
+                && verifier.check_eof().is_ok()
+        };
+        let proof = prove(&query(expected), None).unwrap();
+        // The hint stream is the message: a length and `2^{m−7}` elements.
+        assert_eq!(proof.hints.len(), 4 + pcs.packed_len() * 16);
+        assert!(verify(&query(expected), &proof));
+        assert!(!verify(&query(expected + Gf::one()), &proof));
+        let mut tampered = proof.clone();
+        tampered.hints[4] ^= 1;
+        assert!(!verify(&query(expected), &tampered));
+        let mut truncated = proof.clone();
+        truncated.hints.truncate(proof.hints.len() - 16);
+        assert!(!verify(&query(expected), &truncated));
+        assert_eq!(
+            prove(&query(expected + Gf::one()), None).err(),
+            Some(ProveError::InvalidClaim)
+        );
+        let point: Vec<Gf> = (0..pcs.packed_len().ilog2()).map(|_| rng.gf()).collect();
+        assert!(prove(&query(expected), Some((&point, Gf::zero()))).is_err());
+    }
+
+    /// The clear opening of an MLE claim: the value flock's ring-switch
+    /// kernels give (the one `prove_mle` would certify) round-trips, a
+    /// different one does not.
+    #[test]
+    fn clear_mle_claim_opens() {
+        let shape = Shape::new(7, 4).unwrap();
+        let pcs = Pcs::clear(&shape, HashKind::Blake3).unwrap();
+        let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+        let (root, hint) = pcs.commit(&shape, rows(&mut rng, &shape)).unwrap();
+        let point: Vec<Gf> = (0..shape.log_bits()).map(|_| rng.gf()).collect();
+        let probe = OpeningQuery::Mle {
+            point: point.clone(),
+            target: Gf::zero(),
+        };
+        let target = evaluate_clear_query(hint.packed_message(), &probe).unwrap();
+        let query = |target: Gf| OpeningQuery::Mle {
+            point: point.clone(),
+            target,
+        };
+        let mut prover = build_prover(b"clear-mle", b"instance");
+        pcs.prove_lin(&hint, &query(target), StatementBinding::Bind, &mut prover, None)
+            .unwrap();
+        let proof = prover.finish();
+        let verify = |query: &OpeningQuery| -> bool {
+            let mut verifier = build_verifier(b"clear-mle", b"instance", &proof);
+            pcs.verify_lin(&root, query, StatementBinding::Bind, &mut verifier, None)
+                .is_ok()
+                && verifier.check_eof().is_ok()
+        };
+        assert!(verify(&query(target)));
+        assert!(!verify(&query(target + Gf::one())));
+        let mut prover = build_prover(b"clear-mle", b"instance");
+        assert_eq!(
+            pcs.prove_lin(
+                &hint,
+                &query(target + Gf::one()),
+                StatementBinding::Bind,
+                &mut prover,
+                None
+            ),
+            Err(ProveError::InvalidClaim)
+        );
+    }
+
+    /// Below `m = 9` there is no clear scheme; the commitment geometry
+    /// caps its lane bits by the size.
+    #[test]
+    fn clear_geometry() {
+        assert!(Pcs::clear(&Shape::new(7, 1).unwrap(), HashKind::Blake3).is_err());
+        for (t, s, k) in [(7, 2, 1), (7, 3, 2), (7, 6, 4), (9, 4, 4), (12, 8, 4)] {
+            let pcs = Pcs::clear(&Shape::new(t, s).unwrap(), HashKind::Blake3).unwrap();
+            assert_eq!(pcs.params().log_batch_size, k, "t = {t}, s = {s}");
+            assert_eq!(pcs.params().log_inv_rate, 1);
+            assert_eq!(pcs.opening(), OpeningMode::Clear);
+        }
+    }
 }

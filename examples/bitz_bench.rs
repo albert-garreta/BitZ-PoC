@@ -93,11 +93,18 @@ fn main() {
     // flock's embedded ladder as shipped. A Johnson ladder runs Round 0; a
     // unique-decoding one (`udr`, `udrg`) does not need it.
     let mut ladder = String::from("custom:1:4");
+    // `--t T`: the split `2^T` rows × `2^{n−T}` columns instead of the
+    // scheme's reference split.
+    let mut rows_override: Option<usize> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--reps" => {
                 reps = args[i + 1].parse().expect("--reps");
+                i += 2;
+            }
+            "--t" => {
+                rows_override = Some(args[i + 1].parse().expect("--t"));
                 i += 2;
             }
             "--ladder" => {
@@ -114,8 +121,13 @@ fn main() {
             }
         }
     }
-    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder custom:r:k|fast]");
-    let shape = Shape::reference(n).expect("shape");
+    let n = n.expect(
+        "usage: bitz_bench <n> [--reps R] [--seed S] [--ladder custom:r:k|fast|clear] [--t T]",
+    );
+    let shape = match rows_override {
+        Some(t) => Shape::new(t, n.checked_sub(t).expect("--t at most n")).expect("shape"),
+        None => Shape::reference(n).expect("shape"),
+    };
     let (t, s) = (shape.log_rows(), shape.log_columns());
     let layout = shape.layout();
     let opener = BitZOpener::new(
